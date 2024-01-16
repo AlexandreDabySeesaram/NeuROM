@@ -18,18 +18,18 @@ class LinearLeft(nn.Module):
         - the coordinate x where the function is evaluated
         - the left node of the element x_im1
         - the node associated to the shape functino being built x_i   """
-    def __init__(self, x_im1, x_i):
+    def __init__(self):
         super(LinearLeft, self).__init__()
-        self.x_im1 = x_im1
-        self.x_i = x_i
         self.relu = nn.ReLU()
         self.l1 = nn.Linear(1,1)
-        self.l1.weight.data.fill_(-1/(self.x_i-self.x_im1))
+        # self.l1.weight.data.fill_(-1/(self.x_i-self.x_im1))
         self.l1.bias.data.fill_(1)
         self.l1.bias.requires_grad = False
-        self.l1.weight.requires_grad = False
+        # self.l1.weight.requires_grad = False
 
-    def forward(self,x):
+    def forward(self,x, x_im1, x_i):
+        self.l1.weight.data.fill_(-1/(x_i-x_im1))
+        self.l1.weight.requires_grad = False
         mid = self.relu(x)
         mid = self.l1(mid)
         return self.relu(mid)
@@ -40,18 +40,18 @@ class LinearRight(nn.Module):
         - the coordinate x where the function is evaluated
         - the right node of the element x_ip1
         - the node associated to the shape functino being built x_i   """
-    def __init__(self, x_ip1, x_i):
+    def __init__(self):
         super(LinearRight, self).__init__()
-        self.x_ip1 = x_ip1
-        self.x_i = x_i
         self.relu = nn.ReLU()
         self.l1 = nn.Linear(1,1)
-        self.l1.weight.data.fill_(-1/(self.x_ip1-self.x_i))
+        # self.l1.weight.data.fill_(-1/(self.x_ip1-self.x_i))
         self.l1.bias.data.fill_(1)
         self.l1.bias.requires_grad = False
-        self.l1.weight.requires_grad = False
+        # self.l1.weight.requires_grad = False
 
-    def forward(self,x):
+    def forward(self,x,x_ip1,x_i):
+        self.l1.weight.data.fill_(-1/(x_ip1-x_i))
+        self.l1.weight.requires_grad = False
         mid = self.relu(x)
         mid = self.l1(mid)
         return self.relu(mid)
@@ -69,20 +69,19 @@ class Shapefunction(nn.Module):
          /!\ 
         / ! \ see if it they get updated once the weight of the "coordinates" in the MeshNN layer have been updated"""
     
-    def __init__(self, x_im1, x_i, x_ip1):
+    def __init__(self, i):
         super(Shapefunction, self).__init__()
+        # Node associated to the shape function
+        self.i = i
         # Local neighbours coordinates
-        self.x_im1 = x_im1
-        self.x_i = x_i
-        self.x_ip1 = x_ip1
+        # self.x_im1 = x_im1
+        # self.x_i = x_i
+        # self.x_ip1 = x_ip1
         # Layer 1
         self.l1 = nn.Linear(1,2)
         # Set weight and bias for first layer and freeze them
         self.l1.weight.data.fill_(-1)
         self.l1.weight[1].data.fill_(1)
-        self.l1.bias.data.fill_(x_i)
-        self.l1.bias[1].data.fill_(-x_i) 
-        self.l1.bias.requires_grad = False
         self.l1.weight.requires_grad = False
         # Layer end
         self.l2 = nn.Linear(2,1)
@@ -92,13 +91,29 @@ class Shapefunction(nn.Module):
         self.l2.bias.requires_grad = False
         self.l2.weight.requires_grad = False
         # Defines the right and left linear functions
-        self.Linears = nn.ModuleList([LinearLeft(self.x_im1,self.x_i),LinearRight(self.x_ip1,self.x_i)])
+        self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
     
-    def forward(self, x):
+    def forward(self, x, coordinates):
+        i = self.i
+        if i == -1:
+            x_i = coordinates[i]
+            x_im1 = coordinates[i]-1/1000
+            x_ip1 = coordinates[i+1]
+        elif i == -2:
+            x_i = coordinates[i]
+            x_im1 = coordinates[i-1]
+            x_ip1 = coordinates[i]+1/1000
+        else:
+            x_i = coordinates[i]
+            x_im1 = coordinates[i-1]
+            x_ip1 = coordinates[i+1]
+        self.l1.bias.data.fill_(x_i)
+        self.l1.bias[1].data.fill_(-x_i) 
+        self.l1.bias.requires_grad = False
         l1 = self.l1(x)
         # l2 = torch.empty((2,1),dtype=torch.float32)
-        top = self.Linears[0](l1[:,0].view(-1,1))
-        bottom = self.Linears[1](l1[:,1].view(-1,1))
+        top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
+        bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
         # top = self.Linears[0](l1[0:1])
         # bottom = self.Linears[1](l1[1:2])
         l2 = torch.empty((bottom.shape[0],2),dtype=torch.float32)
@@ -113,10 +128,11 @@ class MeshNN(nn.Module):
     The Interpolation layer weights correspond to the nodal values. Updating them is equivqlent to solving the PDE. """
     def __init__(self, np, L):
         super(MeshNN, self).__init__()
-        self.coordinates = nn.Parameter(data=torch.linspace(0,L,np), requires_grad=False)
+        # self.coordinates = nn.Parameter(data=torch.linspace(0,L,np), requires_grad=True)
+        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor(i)) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
-        self.Functions = nn.ModuleList([Shapefunction(self.coordinates[i-1], self.coordinates[i],self.coordinates[i+1]) for i in range(1,np-1)])
+        self.Functions = nn.ModuleList([Shapefunction(i) for i in range(1,np-1)])
         # self.Functions.insert(0, Shapefunction(self.coordinates[0]-self.L/1000, self.coordinates[0],self.coordinates[0+1]))
         # self.Functions.append(Shapefunction(self.coordinates[self.np-2], self.coordinates[self.np-1],self.coordinates[self.np-1]+self.L/1000))
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
@@ -125,7 +141,7 @@ class MeshNN(nn.Module):
         self.NodalValues_uu = nn.Parameter(data=torch.ones(np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         # self.InterpoLayer.weight.requires_grad = False # To fix the nodal value and update solely the coordinates
-        self.Functions_dd = nn.ModuleList([Shapefunction(self.coordinates[0]-self.L/1000, self.coordinates[0],self.coordinates[0+1]),Shapefunction(self.coordinates[self.np-2], self.coordinates[self.np-1],self.coordinates[self.np-1]+self.L/1000)])
+        self.Functions_dd = nn.ModuleList([Shapefunction(-1),Shapefunction(-2)])
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)
@@ -135,8 +151,8 @@ class MeshNN(nn.Module):
 
 
     def forward(self,x):
-        intermediate_uu = [self.Functions[l](x) for l in range(self.np-2)]
-        intermediate_dd = [self.Functions_dd[l](x) for l in range(2)]
+        intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
+        intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
         out_uu = torch.stack(intermediate_uu)
         out_dd = torch.stack(intermediate_dd)
         u_uu = self.InterpoLayer_uu(out_uu.T)
@@ -236,7 +252,7 @@ plt.plot(X,AnalyticSolution(A,E,X), label = 'Ground Truth')
 plt.plot(X,MeshBeam(X).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$u\left(\underline{x}\right)$')
-plt.legend(loc="upper right")
+plt.legend(loc="upper left")
 plt.title('On test coordinates')
 plt.show()
 
@@ -249,10 +265,12 @@ plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
 plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$f\left(\underline{x}\right)$')
-plt.legend(loc="lower left")
+plt.legend(loc="upper left")
 plt.title('On new coordinates')
 plt.show()
 
 
 
 
+
+# %%

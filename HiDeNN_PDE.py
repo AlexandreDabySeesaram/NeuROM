@@ -26,8 +26,10 @@ class LinearLeft(nn.Module):
         self.l1.bias.requires_grad = False
 
     def forward(self,x, x_im1, x_i):
-        self.l1.weight.data.fill_(-1/(x_i-x_im1))
-        self.l1.weight.requires_grad = False
+        # self.l1.weight.data.fill_(-1/(x_i-x_im1))
+        with torch.no_grad():
+            self.l1.weight.copy_(-1/(x_i-x_im1))
+            self.l1.weight.requires_grad = False
         mid = self.relu(x)
         mid = self.l1(mid)
         return self.relu(mid)
@@ -46,8 +48,9 @@ class LinearRight(nn.Module):
         self.l1.bias.requires_grad = False
 
     def forward(self,x,x_ip1,x_i):
-        self.l1.weight.data.fill_(-1/(x_ip1-x_i))
-        self.l1.weight.requires_grad = False
+        with torch.no_grad():
+            self.l1.weight.copy_(-1/(x_ip1-x_i))
+            self.l1.weight.requires_grad = False
         mid = self.relu(x)
         mid = self.l1(mid)
         return self.relu(mid)
@@ -61,7 +64,7 @@ class Shapefunction(nn.Module):
         
         All the weights and biais are set as untranable and are evaluated given the nodal position fed while initialising the network"""
     
-    def __init__(self, i):
+    def __init__(self, i,x_i, r_adaptivity = False):
         super(Shapefunction, self).__init__()
         # Index of the node associated to the shape function
         self.i = i
@@ -71,6 +74,11 @@ class Shapefunction(nn.Module):
         self.l1.weight.data.fill_(-1)
         self.l1.weight[1].data.fill_(1)
         self.l1.weight.requires_grad = False
+        # Initialisation of the weights
+        with torch.no_grad():
+            self.l1.bias[0].copy_(x_i)
+            self.l1.bias[1].copy_(-x_i) 
+            self.l1.bias.requires_grad = r_adaptivity
         # Layer end
         self.l2 = nn.Linear(2,1)
         # Set weight and bias for end layer and freeze them
@@ -86,21 +94,22 @@ class Shapefunction(nn.Module):
         i = self.i
         # For the SF on the left
         if i == -1:
-            x_i = coordinates[i]
-            x_im1 = coordinates[i]-1/1000
-            x_ip1 = coordinates[i+1]
+            x_i = coordinates[0]
+            x_im1 = coordinates[0]-1/1000
+            x_ip1 = coordinates[0+1]
         # For the SF on the right
         elif i == -2:
-            x_i = coordinates[i]
-            x_im1 = coordinates[i-1]
-            x_ip1 = coordinates[i]+1/1000
+            x_i = coordinates[-1]
+            x_im1 = coordinates[-2]
+            x_ip1 = coordinates[-1]+1/1000
         else:
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
             x_ip1 = coordinates[i+1]
-        self.l1.bias.data.fill_(x_i)
-        self.l1.bias[1].data.fill_(-x_i) 
-        self.l1.bias.requires_grad = False
+        with torch.no_grad():
+            # self.l1.bias[0].copy_(x_i)
+            self.l1.bias[1].copy_(-x_i) 
+        # self.l1.bias.requires_grad = False
         l1 = self.l1(x)
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
@@ -119,11 +128,11 @@ class MeshNN(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor(i)) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
-        self.Functions = nn.ModuleList([Shapefunction(i) for i in range(1,np-1)])
+        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = True) for i in range(1,np-1)])
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=torch.ones(np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.Functions_dd = nn.ModuleList([Shapefunction(-1),Shapefunction(-2)])
+        self.Functions_dd = nn.ModuleList([Shapefunction(-1,self.coordinates[0], r_adaptivity = False),Shapefunction(-2,self.coordinates[-1], r_adaptivity = False)])
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)
@@ -132,6 +141,10 @@ class MeshNN(nn.Module):
 
 
     def forward(self,x):
+        # Updates the coordinates
+        for i in range(1,self.np-1):
+            self.coordinates[i] = self.Functions[i-1].l1.bias[0]
+        # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
         out_uu = torch.stack(intermediate_uu)
@@ -148,8 +161,8 @@ class MeshNN(nn.Module):
             Inputs are:
                 - u_0 the left BC
                 - u_L the right BC """
-        self.u_0 = u_0
-        self.u_L = u_L
+        self.u_0 = torch.tensor(u_0, dtype=torch.float32)
+        self.u_L = torch.tensor(u_L, dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -159,14 +172,14 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 100                     # Number of Nodes in the Mesh
+np = 30                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
 # Boundary conditions
 u_0 = 0                    #Left BC
 u_L = 0                  #Right BC
-MeshBeam.SetBCs(torch.tensor(u_0, dtype=torch.float32),torch.tensor(u_L, dtype=torch.float32))
+MeshBeam.SetBCs(u_0,u_L)
 
 
 #%% Debug Training samples (function Y to learn and its support X)
@@ -176,7 +189,7 @@ Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 5000
+n_epochs = 350
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 loss = nn.MSELoss()
 

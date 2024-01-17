@@ -199,7 +199,7 @@ def AnalyticSolution(A,E,x):
 
 #%% Training loop
 
-TrialCoordinates = torch.tensor([[i/10] for i in range(2,10)], dtype=torch.float32, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
 
 error = []
 for epoch in range(n_epochs):
@@ -227,7 +227,7 @@ for epoch in range(n_epochs):
 #%% Post-processing
 
 # Tests on trained data and compare to reference
-plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
+# plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
 plt.plot(X,AnalyticSolution(A,E,X), label = 'Ground Truth')
 plt.plot(X,MeshBeam(X).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
@@ -240,7 +240,7 @@ plt.show()
 # # Tests extrapolation on unseen coordinates 
 X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
 Y2 = torch.tensor([[np.cos(float(i))] for i in X2], dtype=torch.float32)
-plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
+# plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
 plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
 plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')

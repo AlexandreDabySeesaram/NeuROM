@@ -9,8 +9,14 @@ The first hidden layers play the role of linear shape functions by applying cons
 
    * Linear left and right classes that are the two elementary blocks to create a linear 1D shape function
    * Shape class that are based on the two afforemetionned building blocks and, given a index, build the shape function associated to that index i
-   * Mesh class that, given geometric parameters, "assemble" the shape functions accordingly
-   * The Dirichlet boudary conditions (BCs) are set by calling Mesh.setBCs($x_0,x_L$) with %x_0% and %x_L% being the prescribed displacement at x=0 and x=L respectivly
+   * MeshNN class that, given geometric parameters, "assemble" the shape functions accordingly
+    
+        * model = MeshNN(np,L)
+        * np & L being the number of DoFs and the length of the bar respectively
+   * The Dirichlet boudary conditions (BCs) are set by calling
+   
+        * model.setBCs($x_0,x_L$) 
+        * with $x_0$ and $x_L$ being the prescribed displacement at $x=0$ and $x=L$ respectivly
 
 
 ## Definition of the Geometry and BCs

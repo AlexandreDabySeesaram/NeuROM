@@ -24,7 +24,7 @@ class LinearLeft(nn.Module):
         self.l1 = nn.Linear(1,1)
         self.l1.bias.data.fill_(1)
         self.l1.bias.requires_grad = False
-
+    
     def forward(self,x, x_im1, x_i):
         # self.l1.weight.data.fill_(-1/(x_i-x_im1))
         with torch.no_grad():

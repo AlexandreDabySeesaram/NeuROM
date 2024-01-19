@@ -24,9 +24,8 @@ class LinearLeft(nn.Module):
         self.l1 = nn.Linear(1,1)
         self.l1.bias.data.fill_(1)
         self.l1.bias.requires_grad = False
-    
+
     def forward(self,x, x_im1, x_i):
-        # self.l1.weight.data.fill_(-1/(x_i-x_im1))
         with torch.no_grad():
             self.l1.weight.copy_(-1/(x_i-x_im1))
             self.l1.weight.requires_grad = False
@@ -105,29 +104,9 @@ class Shapefunction(nn.Module):
         else:
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
-            x_ip1 = coordinates[i+1]
-
-            ### DEBUG
-            # Stop the coordinates to move more than half of the distance to its neighbours
-            # b=self.l1.bias[1].data
-            # b=b.clamp(x_i-0.5*(x_i-x_im1),x_i+0.5*(x_ip1-x_i))
-            # self.l1.bias[1].data=b
-
-            # self.l1.bias[1].clamp(x_i-0.5*(x_i-x_im1),x_i+0.5*(x_ip1-x_i))
-
-          
-            ### DEBUG
-        
+            x_ip1 = coordinates[i+1] 
         with torch.no_grad():
-            # self.l1.bias[0].copy_(x_i)
-            ### DEBUG
-            # Threshold_min = torch.tensor([x_i-0.5*(x_i-x_im1), 0])
-            # Threshold_max = torch.tensor([x_i+0.5*(x_ip1-x_i), 0])
-            # torch.where(self.l1.bias < Threshold_min, Threshold_min, self.l1.bias)
-            # torch.where(self.l1.bias > Threshold_max, Threshold_max, self.l1.bias)
-            ### DEBUG
             self.l1.bias[1].copy_(-x_i) 
-        # self.l1.bias.requires_grad = False
         l1 = self.l1(x)
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
@@ -146,7 +125,7 @@ class MeshNN(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor(i)) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
-        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = True) for i in range(1,np-1)])
+        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = False) for i in range(1,np-1)])
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=torch.ones(np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
@@ -197,7 +176,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 6                     # Number of Nodes in the Mesh
+np = 30                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -214,7 +193,7 @@ Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 730
+n_epochs = 5000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 loss = nn.MSELoss()
 

@@ -233,7 +233,7 @@ plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, labe
 plt.plot(X,AnalyticSolution(A,E,X), label = 'Ground Truth')
 plt.plot(X,MeshBeam(X).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$u\left(\underline{x}\right)$')
+plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 plt.title('On test coordinates')
 plt.show()
@@ -246,13 +246,15 @@ Y2 = torch.tensor([[np.cos(float(i))] for i in X2], dtype=torch.float32)
 plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
 plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$f\left(\underline{x}\right)$')
+plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 plt.title('On new coordinates')
 plt.show()
 
 
-
+plt.plot(error)
+plt.xlabel(r'epochs')
+plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
 
 
 # %%

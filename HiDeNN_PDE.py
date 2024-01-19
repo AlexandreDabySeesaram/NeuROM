@@ -85,9 +85,11 @@ class Shapefunction(nn.Module):
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
             x_ip1 = coordinates[i+1] 
-        
-        # x_i = torch.minimum(x_i, self.threshold_p*x_ip1)
-        # x_i = torch.maximum(x_i, self.threshold_m*x_ip1)
+
+        #  Stop nodes from getting too close 
+        x_i = torch.minimum(x_i, self.threshold_p*x_ip1)
+        x_i = torch.maximum(x_i, self.threshold_m*x_im1)
+            
         l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),torch.tensor([1,-1])*x_i[0])
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)

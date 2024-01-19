@@ -30,7 +30,8 @@ class LinearLeft(nn.Module):
             self.l1.weight.copy_(-1/(x_i-x_im1))
             self.l1.weight.requires_grad = False
         mid = self.relu(x)
-        mid = self.l1(mid)
+        mid = torch.nn.functional.linear(mid,(-1/(x_i-x_im1)),torch.tensor([1],dtype=torch.float32))
+        # mid = self.l1(mid)
         return self.relu(mid)
 
 class LinearRight(nn.Module):
@@ -42,16 +43,26 @@ class LinearRight(nn.Module):
     def __init__(self):
         super(LinearRight, self).__init__()
         self.relu = nn.ReLU()
+
+
+
         self.l1 = nn.Linear(1,1)
         self.l1.bias.data.fill_(1)
         self.l1.bias.requires_grad = False
 
     def forward(self,x,x_ip1,x_i):
+
         with torch.no_grad():
             self.l1.weight.copy_(-1/(x_ip1-x_i))
             self.l1.weight.requires_grad = False
+
         mid = self.relu(x)
-        mid = self.l1(mid)
+
+
+        mid = torch.nn.functional.linear(mid,(-1/(x_ip1-x_i)),torch.tensor([1],dtype=torch.float32))
+        # mid = self.l1(mid)
+
+
         return self.relu(mid)
 
 class Shapefunction(nn.Module):
@@ -75,8 +86,8 @@ class Shapefunction(nn.Module):
         self.l1.weight.requires_grad = False
         # Initialisation of the weights
         with torch.no_grad():
-            self.l1.bias[0].copy_(x_i)
-            self.l1.bias[1].copy_(-x_i) 
+            self.l1.bias[0].copy_(x_i[0,0])
+            self.l1.bias[1].copy_(-x_i[0,0]) 
             self.l1.bias.requires_grad = r_adaptivity
         # Layer end
         self.l2 = nn.Linear(2,1)
@@ -106,7 +117,7 @@ class Shapefunction(nn.Module):
             x_im1 = coordinates[i-1]
             x_ip1 = coordinates[i+1] 
         with torch.no_grad():
-            self.l1.bias[1].copy_(-x_i) 
+            self.l1.bias[1].copy_(-x_i[0,0]) 
         l1 = self.l1(x)
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
@@ -122,7 +133,9 @@ class MeshNN(nn.Module):
     The Interpolation layer weights correspond to the nodal values. Updating them is equivqlent to solving the PDE. """
     def __init__(self, np, L):
         super(MeshNN, self).__init__()
-        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor(i)) for i in torch.linspace(0,L,np)])
+        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
+        for param in self.coordinates:
+            param.requires_grad = False
         self.np = np 
         self.L = L 
         self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = False) for i in range(1,np-1)])
@@ -138,16 +151,6 @@ class MeshNN(nn.Module):
 
 
     def forward(self,x):
-        # Updates the coordinates
-        for i in range(1,self.np-1):
-            self.coordinates[i] = self.Functions[i-1].l1.bias[0]
-            if i>= 2:
-                if self.coordinates[i] < self.coordinates[i-1]:
-                    self.coordinates[i-1] = self.coordinates[i]
-                    self.coordinates[i] = self.Functions[i-2].l1.bias[0]
-                    with torch.no_grad():
-                        self.Functions[i-2].l1.bias[0] = self.coordinates[i-1]
-                        self.Functions[i-1].l1.bias[0] = self.coordinates[i]
         # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]

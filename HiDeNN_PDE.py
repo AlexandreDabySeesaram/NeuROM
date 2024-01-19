@@ -106,8 +106,26 @@ class Shapefunction(nn.Module):
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
             x_ip1 = coordinates[i+1]
+
+            ### DEBUG
+            # Stop the coordinates to move more than half of the distance to its neighbours
+            # b=self.l1.bias[1].data
+            # b=b.clamp(x_i-0.5*(x_i-x_im1),x_i+0.5*(x_ip1-x_i))
+            # self.l1.bias[1].data=b
+
+            # self.l1.bias[1].clamp(x_i-0.5*(x_i-x_im1),x_i+0.5*(x_ip1-x_i))
+
+          
+            ### DEBUG
+        
         with torch.no_grad():
             # self.l1.bias[0].copy_(x_i)
+            ### DEBUG
+            # Threshold_min = torch.tensor([x_i-0.5*(x_i-x_im1), 0])
+            # Threshold_max = torch.tensor([x_i+0.5*(x_ip1-x_i), 0])
+            # torch.where(self.l1.bias < Threshold_min, Threshold_min, self.l1.bias)
+            # torch.where(self.l1.bias > Threshold_max, Threshold_max, self.l1.bias)
+            ### DEBUG
             self.l1.bias[1].copy_(-x_i) 
         # self.l1.bias.requires_grad = False
         l1 = self.l1(x)
@@ -144,6 +162,13 @@ class MeshNN(nn.Module):
         # Updates the coordinates
         for i in range(1,self.np-1):
             self.coordinates[i] = self.Functions[i-1].l1.bias[0]
+            if i>= 2:
+                if self.coordinates[i] < self.coordinates[i-1]:
+                    self.coordinates[i-1] = self.coordinates[i]
+                    self.coordinates[i] = self.Functions[i-2].l1.bias[0]
+                    with torch.no_grad():
+                        self.Functions[i-2].l1.bias[0] = self.coordinates[i-1]
+                        self.Functions[i-1].l1.bias[0] = self.coordinates[i]
         # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
@@ -172,7 +197,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 30                     # Number of Nodes in the Mesh
+np = 6                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -189,7 +214,7 @@ Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 350
+n_epochs = 730
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 loss = nn.MSELoss()
 
@@ -213,7 +238,7 @@ def AnalyticSolution(A,E,x):
 #%% Training loop
 
 TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
-
+InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
 for epoch in range(n_epochs):
     # predict = forward pass with our model
@@ -232,15 +257,18 @@ for epoch in range(n_epochs):
     optimizer.zero_grad()
     with torch.no_grad():
         error.append(l.item())
-    if (epoch+1) % 100 == 0:
+    if (epoch+1) % 10 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
 
 
 
 #%% Post-processing
 
+# Retrieve coordinates
+Coordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 # Tests on trained data and compare to reference
-# plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
+plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
 plt.plot(X,AnalyticSolution(A,E,X), label = 'Ground Truth')
 plt.plot(X,MeshBeam(X).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')

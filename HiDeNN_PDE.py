@@ -21,17 +21,10 @@ class LinearLeft(nn.Module):
     def __init__(self):
         super(LinearLeft, self).__init__()
         self.relu = nn.ReLU()
-        self.l1 = nn.Linear(1,1)
-        self.l1.bias.data.fill_(1)
-        self.l1.bias.requires_grad = False
 
     def forward(self,x, x_im1, x_i):
-        with torch.no_grad():
-            self.l1.weight.copy_(-1/(x_i-x_im1))
-            self.l1.weight.requires_grad = False
         mid = self.relu(x)
         mid = torch.nn.functional.linear(mid,(-1/(x_i-x_im1)),torch.tensor([1],dtype=torch.float32))
-        # mid = self.l1(mid)
         return self.relu(mid)
 
 class LinearRight(nn.Module):
@@ -44,25 +37,9 @@ class LinearRight(nn.Module):
         super(LinearRight, self).__init__()
         self.relu = nn.ReLU()
 
-
-
-        self.l1 = nn.Linear(1,1)
-        self.l1.bias.data.fill_(1)
-        self.l1.bias.requires_grad = False
-
     def forward(self,x,x_ip1,x_i):
-
-        with torch.no_grad():
-            self.l1.weight.copy_(-1/(x_ip1-x_i))
-            self.l1.weight.requires_grad = False
-
         mid = self.relu(x)
-
-
         mid = torch.nn.functional.linear(mid,(-1/(x_ip1-x_i)),torch.tensor([1],dtype=torch.float32))
-        # mid = self.l1(mid)
-
-
         return self.relu(mid)
 
 class Shapefunction(nn.Module):
@@ -119,6 +96,9 @@ class Shapefunction(nn.Module):
         with torch.no_grad():
             self.l1.bias[1].copy_(-x_i[0,0]) 
         l1 = self.l1(x)
+
+        # l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),)
+
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
         l2 = torch.empty((bottom.shape[0],2),dtype=torch.float32)

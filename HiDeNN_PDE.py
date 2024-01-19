@@ -55,17 +55,6 @@ class Shapefunction(nn.Module):
         super(Shapefunction, self).__init__()
         # Index of the node associated to the shape function
         self.i = i
-        # Layer 1
-        self.l1 = nn.Linear(1,2)
-        # Set weight and bias for first layer and freeze them
-        self.l1.weight.data.fill_(-1)
-        self.l1.weight[1].data.fill_(1)
-        self.l1.weight.requires_grad = False
-        # Initialisation of the weights
-        with torch.no_grad():
-            self.l1.bias[0].copy_(x_i[0,0])
-            self.l1.bias[1].copy_(-x_i[0,0]) 
-            self.l1.bias.requires_grad = r_adaptivity
         # Layer end
         self.l2 = nn.Linear(2,1)
         # Set weight and bias for end layer and freeze them
@@ -75,6 +64,9 @@ class Shapefunction(nn.Module):
         self.l2.weight.requires_grad = False
         # Defines the right and left linear functions
         self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
+        # Defines threshold so that two coordinates cannot go too close to one another
+        self.threshold_p = torch.tensor(0.95,dtype=torch.float32)
+        self.threshold_m = torch.tensor(1.05,dtype=torch.float32)
     
     def forward(self, x, coordinates):
         """ The forward function takes as an input the coordonate x at which the NN is evaluated and the parameters' list coordinates where the nodes' corrdinates of the mesh are stored"""
@@ -93,12 +85,10 @@ class Shapefunction(nn.Module):
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
             x_ip1 = coordinates[i+1] 
-        with torch.no_grad():
-            self.l1.bias[1].copy_(-x_i[0,0]) 
-        l1 = self.l1(x)
-
-        # l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),)
-
+        
+        # x_i = torch.minimum(x_i, self.threshold_p*x_ip1)
+        # x_i = torch.maximum(x_i, self.threshold_m*x_ip1)
+        l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),torch.tensor([1,-1])*x_i[0])
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
         l2 = torch.empty((bottom.shape[0],2),dtype=torch.float32)
@@ -115,7 +105,7 @@ class MeshNN(nn.Module):
         super(MeshNN, self).__init__()
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
         for param in self.coordinates:
-            param.requires_grad = False
+            param.requires_grad = True
         self.np = np 
         self.L = L 
         self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = False) for i in range(1,np-1)])
@@ -159,7 +149,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 30                     # Number of Nodes in the Mesh
+np = 10                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model

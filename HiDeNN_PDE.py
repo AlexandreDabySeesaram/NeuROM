@@ -109,7 +109,7 @@ class MeshNN(nn.Module):
         for param in self.coordinates:
             param.requires_grad = True
         #Freeze external coorinates to keep geometry    
-        self.coordinates[1].requires_grad = False
+        self.coordinates[0].requires_grad = False
         self.coordinates[-1].requires_grad = False
 
         self.np = np 
@@ -172,7 +172,7 @@ Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 10000
+n_epochs = 5000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 loss = nn.MSELoss()
 
@@ -217,8 +217,11 @@ for epoch in range(n_epochs):
         error.append(l.item())
     if (epoch+1) % 10 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
+    if epoch >= 100:
+        for param in MeshBeam.coordinates:
+            param.requires_grad = False
 
-
+    # Strange: if coordinates move for too long then results is worse than with fixed coordinates, probable error somewhere, I think that not every thing is accounted for in the gradient w.r.t. the coordinates (check each step and specifically the reassembly of tensors when branches of NN meet)
 
 #%% Post-processing
 

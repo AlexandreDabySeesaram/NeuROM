@@ -65,8 +65,8 @@ class Shapefunction(nn.Module):
         # Defines the right and left linear functions
         self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
         # Defines threshold so that two coordinates cannot go too close to one another
-        self.threshold_p = torch.tensor(0.95,dtype=torch.float32)
-        self.threshold_m = torch.tensor(1.05,dtype=torch.float32)
+        self.threshold_p = torch.tensor(1-1/1500,dtype=torch.float32)
+        self.threshold_m = torch.tensor(1+1/1500,dtype=torch.float32)
     
     def forward(self, x, coordinates):
         """ The forward function takes as an input the coordonate x at which the NN is evaluated and the parameters' list coordinates where the nodes' corrdinates of the mesh are stored"""
@@ -74,13 +74,13 @@ class Shapefunction(nn.Module):
         # For the SF on the left
         if i == -1:
             x_i = coordinates[0]
-            x_im1 = coordinates[0]-1/1000
+            x_im1 = coordinates[0]-coordinates[-1]*1/1000
             x_ip1 = coordinates[0+1]
         # For the SF on the right
         elif i == -2:
             x_i = coordinates[-1]
             x_im1 = coordinates[-2]
-            x_ip1 = coordinates[-1]+1/1000
+            x_ip1 = coordinates[-1]*(1+1/1000)
         else:
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
@@ -107,7 +107,7 @@ class MeshNN(nn.Module):
         super(MeshNN, self).__init__()
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
         for param in self.coordinates:
-            param.requires_grad = True
+            param.requires_grad = False
         #Freeze external coorinates to keep geometry    
         self.coordinates[0].requires_grad = False
         self.coordinates[-1].requires_grad = False
@@ -155,7 +155,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 20                     # Number of Nodes in the Mesh
+np = 30                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model

@@ -26,3 +26,11 @@ The user interface is easy to use. The geometric parameters need to be specified
 ## Training the NN 
 
 The Volumic forces are accounted for in the loss function through the right hand side (RHS) function and the loss function is the potential energy.
+
+The trainable parameters can be changed on the fly. 
+
+* `model.Freeze_Mesh()` Freezes the mesh so that only the nodale values are trained
+* `model.UnFreeze_Mesh()` Unfreezes the mesh so that the coordinates values can be trained
+
+* `model.Freeze_FEM()` Freezes the nodale values so that only the coordinates are trained
+* `model.UnFreeze_FEM()` Unfreezes the nodale so that FEM problem can be solved

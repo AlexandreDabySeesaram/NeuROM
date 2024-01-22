@@ -106,8 +106,8 @@ class MeshNN(nn.Module):
     def __init__(self, np, L):
         super(MeshNN, self).__init__()
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
-        for param in self.coordinates:
-            param.requires_grad = False
+        # for param in self.coordinates:
+        #     param.requires_grad = True
         #Freeze external coorinates to keep geometry    
         self.coordinates[0].requires_grad = False
         self.coordinates[-1].requires_grad = False
@@ -149,7 +149,26 @@ class MeshNN(nn.Module):
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
+    def Freeze_Mesh(self):
+        """Set the coordinates as untrainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = False
 
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters """
+        for param in self.coordinates:
+            param.requires_grad = True
+        #Freeze external coorinates to keep geometry    
+        self.coordinates[0].requires_grad = False
+        self.coordinates[-1].requires_grad = False
+
+    def UnFreeze_FEM(self):
+        """Set the nodale values as trainable parameters """
+        self.InterpoLayer_uu.weight.requires_grad = True
+            
+    def Freeze_FEM(self):
+        """Set the nodale values as untrainable parameters """
+        self.InterpoLayer_uu.weight.requires_grad = False
 
 
 #%% Application of the NN
@@ -160,9 +179,11 @@ A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
 # Boundary conditions
-u_0 = 0                    #Left BC
-u_L = 0                  #Right BC
+u_0 = 0                     #Left BC
+u_L = 0                     #Right BC
 MeshBeam.SetBCs(u_0,u_L)
+# Set the coordinates as trainable
+MeshBeam.UnFreeze_Mesh()
 
 
 #%% Debug Training samples (function Y to learn and its support X)
@@ -172,7 +193,7 @@ Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 5000
+n_epochs = 7000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 loss = nn.MSELoss()
 
@@ -198,10 +219,14 @@ def AnalyticSolution(A,E,x):
 TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
+
+MeshBeam.Freeze_Mesh()
+
+
 for epoch in range(n_epochs):
     # predict = forward pass with our model
     u_predicted = MeshBeam(TrialCoordinates)  ######## regarder ce que ca donne ici pour une entrée vectorielle
-
+    
     # loss
     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
 
@@ -217,12 +242,12 @@ for epoch in range(n_epochs):
         error.append(l.item())
     if (epoch+1) % 10 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
-    if epoch >= 100:
-        for param in MeshBeam.coordinates:
-            param.requires_grad = False
-
-    # Strange: if coordinates move for too long then results is worse than with fixed coordinates, probable error somewhere, I think that not every thing is accounted for in the gradient w.r.t. the coordinates (check each step and specifically the reassembly of tensors when branches of NN meet)
-
+    if epoch >= 3000:
+        MeshBeam.UnFreeze_Mesh()
+        MeshBeam.Freeze_FEM()
+    if epoch >= 3020:
+        MeshBeam.Freeze_Mesh()
+        MeshBeam.UnFreeze_FEM()
 #%% Post-processing
 
 # Retrieve coordinates

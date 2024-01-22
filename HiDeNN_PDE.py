@@ -170,7 +170,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 23                      # Number of Nodes in the Mesh
+np = 15                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -180,7 +180,7 @@ u_L = 0                     #Right BC
 MeshBeam.SetBCs(u_0,u_L)
 # Set the coordinates as trainable
 MeshBeam.UnFreeze_Mesh()
-
+BoolPlot = True             # Bool for plots used for gif
 
 #%% Define loss and optimizer
 learning_rate = 0.001
@@ -213,11 +213,10 @@ def AnalyticGradientSolution(A,E,x):
 
 #%% Training loop
 
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
 Coord_trajectories = []
-
 
 for epoch in range(n_epochs):
     # predict = forward pass with our model
@@ -230,16 +229,45 @@ for epoch in range(n_epochs):
     optimizer.step()
     # zero the gradients after updating
     optimizer.zero_grad()
-    with torch.no_grad():
-        error.append(l.item())
-        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-        Coord_trajectories.append(Coordinates_i)
-    if (epoch+1) % 100 == 0:
-        print('epoch ', epoch+1, ' loss = ', l.item())
+
     # Training strategy
     # if epoch >= 100:
     #     MeshBeam.Freeze_Mesh()
     #     MeshBeam.UnFreeze_FEM()
+
+    with torch.no_grad():
+        error.append(l.item())
+        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coord_trajectories.append(Coordinates_i)
+
+    if (epoch+1) % 100 == 0:
+        print('epoch ', epoch+1, ' loss = ', l.item())
+
+        if BoolPlot:
+        # with torch.no_grad():
+            plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+            plt.plot(Coordinates_i,[coord*0 for coord in Coordinates_i],'.k', markersize=2, label = 'Mesh Nodes')
+            plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
+            plt.plot(TrialCoordinates.data,MeshBeam(TrialCoordinates).data,'--', label = 'HiDeNN')
+            plt.xlabel(r'$\underline{x}$ [m]')
+            plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+            plt.legend(loc="upper left")
+            plt.title('epoch number '+str(epoch))
+            plt.savefig('Results/Gifs/Solution_'+str(epoch)+'.png', transparent=True)  
+            plt.clf()
+            # with torch.no_grad():
+            plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+            plt.plot(Coordinates_i,[coord*0 for coord in Coordinates_i],'.k', markersize=2, label = 'Mesh Nodes')
+            plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
+            plt.plot(TrialCoordinates.data,Derivative(MeshBeam(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
+            plt.xlabel(r'$\underline{x}$ [m]')
+            plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+            plt.legend(loc="upper left")
+            plt.title('epoch number '+str(epoch))
+            plt.savefig('Results/Gifs/Solution_gardient'+str(epoch)+'.png', transparent=True)  
+            plt.clf()
+
+
 
 
 
@@ -248,7 +276,6 @@ for epoch in range(n_epochs):
 
 # Retrieve coordinates
 Coordinates = Coord_trajectories[-1]
-# Coordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 # Tests on trained data and compare to reference
 plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
 plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
@@ -257,12 +284,11 @@ plt.plot(TrialCoordinates.data,MeshBeam(TrialCoordinates).data,'--', label = 'Hi
 plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
-plt.title('On test coordinates')
-plt.savefig('Results/Solution_displacement.pdf')  
+# plt.title('Displacement')
+plt.savefig('Results/Solution_displacement_200.pdf', transparent=True)  
 plt.show()
 
-
-
+# Plots the gradient & compare to reference
 plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
 plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
 plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
@@ -270,21 +296,8 @@ plt.plot(TrialCoordinates.data,Derivative(MeshBeam(TrialCoordinates),TrialCoordi
 plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
-plt.title('On test coordinates')
-plt.savefig('Results/Solution_displacement.pdf')  
-plt.show()
-
-
-# # Tests extrapolation on unseen coordinates 
-X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
-# plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
-plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
-plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
-plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-plt.legend(loc="upper left")
-plt.title('On new coordinates')
-plt.savefig('Results/InterpolatedSolution.pdf')  
+# plt.title('Displacement first derivative')
+plt.savefig('Results/Solution_gradients_200.pdf', transparent=True)  
 plt.show()
 
 plt.plot(error)
@@ -296,22 +309,34 @@ plt.show()
 plt.plot(Coord_trajectories)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$x_i\left(\underline{x}\right)$')
-plt.savefig('Results/Trajectories.pdf')  
+plt.savefig('Results/Trajectories.pdf', transparent=True)  
 plt.show()
 
-
-
+# # # Tests extrapolation on unseen coordinates 
+# X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
+# # plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
+# plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
+# plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
+# plt.xlabel(r'$\underline{x}$ [m]')
+# plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+# plt.legend(loc="upper left")
+# plt.title('On new coordinates')
+# plt.savefig('Results/InterpolatedSolution.pdf')  
+# plt.show()
 
 
 #%% Further training 
+
 # TrialCoordinates2 = torch.tensor([[random.uniform(0, 10)] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
+# TrialCoordinates, indices = torch.sort(TrialCoordinates2)
+
 # n_epochs_2 = 1000
 # for epoch in range(n_epochs_2):
 #     # predict = forward pass with our model
-#     u_predicted = MeshBeam(TrialCoordinates2)  ######## regarder ce que ca donne ici pour une entrée vectorielle
+#     u_predicted = MeshBeam(TrialCoordinates)  ######## regarder ce que ca donne ici pour une entrée vectorielle
     
 #     # loss
-#     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates2,RHS(TrialCoordinates2))
+#     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
 
 #     # calculate gradients = backward pass
 #     l.backward()

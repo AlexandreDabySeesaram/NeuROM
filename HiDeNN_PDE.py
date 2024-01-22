@@ -1,5 +1,6 @@
 
 import torch
+import random
 import torch.nn as nn
 import matplotlib.pyplot as plt
 plt.rcParams['svg.fonttype'] = 'none'
@@ -10,6 +11,7 @@ plt.rcParams.update({
     "text.usetex": True,
     "font.family": "Helvetica"
 })
+
 
 #%% Define the model for a 1D linear Beam mesh
 class LinearLeft(nn.Module):
@@ -106,12 +108,6 @@ class MeshNN(nn.Module):
     def __init__(self, np, L):
         super(MeshNN, self).__init__()
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
-        # for param in self.coordinates:
-        #     param.requires_grad = True
-        #Freeze external coorinates to keep geometry    
-        self.coordinates[0].requires_grad = False
-        self.coordinates[-1].requires_grad = False
-
         self.np = np 
         self.L = L 
         self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = False) for i in range(1,np-1)])
@@ -174,7 +170,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 30                     # Number of Nodes in the Mesh
+np = 8                      # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -186,16 +182,11 @@ MeshBeam.SetBCs(u_0,u_L)
 MeshBeam.UnFreeze_Mesh()
 
 
-#%% Debug Training samples (function Y to learn and its support X)
-import numpy as np
-X = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32)
-Y = torch.tensor([[np.cos(float(i))] for i in X], dtype=torch.float32)
-
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 5000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
-loss = nn.MSELoss()
+import numpy as np
 
 def RHS(x):
     b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) - (8*np.pi**2*(x-7.5)**2-4*np.pi)/(torch.exp(np.pi*(x-7.5)**2))
@@ -216,47 +207,47 @@ def AnalyticSolution(A,E,x):
 
 #%% Training loop
 
-TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
-
-MeshBeam.Freeze_Mesh()
+Coord_trajectories = []
 
 
 for epoch in range(n_epochs):
     # predict = forward pass with our model
-    u_predicted = MeshBeam(TrialCoordinates)  ######## regarder ce que ca donne ici pour une entrée vectorielle
-    
+    u_predicted = MeshBeam(TrialCoordinates) 
     # loss
     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-
     # calculate gradients = backward pass
     l.backward()
-    
     # update weights
     optimizer.step()
-
     # zero the gradients after updating
     optimizer.zero_grad()
     with torch.no_grad():
         error.append(l.item())
-    if (epoch+1) % 10 == 0:
+        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coord_trajectories.append(Coordinates_i)
+    if (epoch+1) % 100 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
-    if epoch >= 3000:
-        MeshBeam.UnFreeze_Mesh()
-        MeshBeam.Freeze_FEM()
-    if epoch >= 3020:
-        MeshBeam.Freeze_Mesh()
-        MeshBeam.UnFreeze_FEM()
+    # Training strategy
+    # if epoch >= 100:
+    #     MeshBeam.Freeze_Mesh()
+    #     MeshBeam.UnFreeze_FEM()
+
+
+
+
 #%% Post-processing
 
 # Retrieve coordinates
-Coordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+Coordinates = Coord_trajectories[-1]
+# Coordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 # Tests on trained data and compare to reference
 plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
 plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
-plt.plot(X,AnalyticSolution(A,E,X), label = 'Ground Truth')
-plt.plot(X,MeshBeam(X).data,'--', label = 'HiDeNN')
+plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
+plt.plot(TrialCoordinates.data,MeshBeam(TrialCoordinates).data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
@@ -266,7 +257,6 @@ plt.show()
 
 # # Tests extrapolation on unseen coordinates 
 X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
-Y2 = torch.tensor([[np.cos(float(i))] for i in X2], dtype=torch.float32)
 # plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
 plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
 plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
@@ -276,10 +266,42 @@ plt.legend(loc="upper left")
 plt.title('On new coordinates')
 plt.show()
 
-
 plt.plot(error)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+plt.show()
+
+plt.plot(Coord_trajectories)
+plt.xlabel(r'epochs')
+plt.ylabel(r'$x_i\left(\underline{x}\right)$')
+plt.show()
 
 
+#%% Further training 
+# TrialCoordinates2 = torch.tensor([[random.uniform(0, 10)] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
+# n_epochs_2 = 1000
+# for epoch in range(n_epochs_2):
+#     # predict = forward pass with our model
+#     u_predicted = MeshBeam(TrialCoordinates2)  ######## regarder ce que ca donne ici pour une entrée vectorielle
+    
+#     # loss
+#     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates2,RHS(TrialCoordinates2))
+
+#     # calculate gradients = backward pass
+#     l.backward()
+    
+#     # update weights
+#     optimizer.step()
+
+#     # zero the gradients after updating
+#     optimizer.zero_grad()
+#     with torch.no_grad():
+#         error.append(l.item())
+#     if (epoch+1) % 10 == 0:
+#         print('epoch ', epoch+1, ' loss = ', l.item())
+#     if epoch >= 100:
+#         MeshBeam.Freeze_Mesh()
+#         # MeshBeam.UnFreeze_FEM()
+#     Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+#     Coord_trajectories.append(Coordinates_i)
 # %%

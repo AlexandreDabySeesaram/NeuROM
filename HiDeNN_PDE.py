@@ -67,8 +67,8 @@ class Shapefunction(nn.Module):
         # Defines the right and left linear functions
         self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
         # Defines threshold so that two coordinates cannot go too close to one another
-        self.threshold_p = torch.tensor(1-1/1500,dtype=torch.float32)
-        self.threshold_m = torch.tensor(1+1/1500,dtype=torch.float32)
+        self.threshold_p = torch.tensor(1-1/150,dtype=torch.float32)
+        self.threshold_m = torch.tensor(1+1/150,dtype=torch.float32)
     
     def forward(self, x, coordinates):
         """ The forward function takes as an input the coordonate x at which the NN is evaluated and the parameters' list coordinates where the nodes' corrdinates of the mesh are stored"""
@@ -76,13 +76,13 @@ class Shapefunction(nn.Module):
         # For the SF on the left
         if i == -1:
             x_i = coordinates[0]
-            x_im1 = coordinates[0]-coordinates[-1]*1/1000
+            x_im1 = coordinates[0]-coordinates[-1]*1/100
             x_ip1 = coordinates[0+1]
         # For the SF on the right
         elif i == -2:
             x_i = coordinates[-1]
             x_im1 = coordinates[-2]
-            x_ip1 = coordinates[-1]*(1+1/1000)
+            x_ip1 = coordinates[-1]*(1+1/100)
         else:
             x_i = coordinates[i]
             x_im1 = coordinates[i-1]
@@ -170,7 +170,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 8                      # Number of Nodes in the Mesh
+np = 23                      # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -252,6 +252,7 @@ plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 plt.title('On test coordinates')
+plt.savefig('Results/Solution_displacement.pdf')  
 plt.show()
 
 
@@ -264,16 +265,19 @@ plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 plt.title('On new coordinates')
+plt.savefig('Results/InterpolatedSolution.pdf')  
 plt.show()
 
 plt.plot(error)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+# plt.savefig('Results/Loss.pdf')  
 plt.show()
 
 plt.plot(Coord_trajectories)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$x_i\left(\underline{x}\right)$')
+plt.savefig('Results/Trajectories.pdf')  
 plt.show()
 
 

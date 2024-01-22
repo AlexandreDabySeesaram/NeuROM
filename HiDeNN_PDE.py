@@ -199,11 +199,17 @@ def PotentialEnergy(A,E,u,x,b):
         integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
     return integral
 
+def Derivative(u,x):
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    return du_dx
 
 def AnalyticSolution(A,E,x):
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out
 
+def AnalyticGradientSolution(A,E,x):
+    out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
+    return out
 
 #%% Training loop
 
@@ -256,6 +262,19 @@ plt.savefig('Results/Solution_displacement.pdf')
 plt.show()
 
 
+
+plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
+plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
+plt.plot(TrialCoordinates.data,Derivative(MeshBeam(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
+plt.xlabel(r'$\underline{x}$ [m]')
+plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+plt.legend(loc="upper left")
+plt.title('On test coordinates')
+plt.savefig('Results/Solution_displacement.pdf')  
+plt.show()
+
+
 # # Tests extrapolation on unseen coordinates 
 X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
 # plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
@@ -279,6 +298,9 @@ plt.xlabel(r'epochs')
 plt.ylabel(r'$x_i\left(\underline{x}\right)$')
 plt.savefig('Results/Trajectories.pdf')  
 plt.show()
+
+
+
 
 
 #%% Further training 

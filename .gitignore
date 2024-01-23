@@ -1,4 +1,5 @@
 ToSort/
+__pycache__/
 Drafts/
 .DS_Store
 .ipynb_checkpoints/

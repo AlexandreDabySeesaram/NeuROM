@@ -95,9 +95,7 @@ class Shapefunction(nn.Module):
         l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),torch.tensor([1,-1])*x_i[0])
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
-        l2 = torch.empty((bottom.shape[0],2),dtype=torch.float32)
-        l2[:,0] = top[:,0]
-        l2[:,1] = bottom[:,0]
+        l2 = torch.cat((top,bottom),1)
         l3 = self.l2(l2)
         return l3
 
@@ -126,13 +124,20 @@ class MeshNN(nn.Module):
         # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
+        ####################### more eleguant but differs
+        # For some reason the results differ slightly with this implementation
+        # out_uu = torch.hstack(intermediate_uu)
+        # out_dd = torch.hstack(intermediate_dd)
+        # u_uu = self.InterpoLayer_uu(out_uu)
+        # u_dd = self.InterpoLayer_dd(out_dd)
+        # u = torch.cat((u_uu.view(-1,1),u_dd.view(-1,1)),1)
+        # return self.SumLayer(u)
+        #######################
         out_uu = torch.stack(intermediate_uu)
         out_dd = torch.stack(intermediate_dd)
         u_uu = self.InterpoLayer_uu(out_uu.T)
         u_dd = self.InterpoLayer_dd(out_dd.T)
-        u = torch.empty((2,u_uu.shape[1]),dtype=torch.float32)
-        u[0,:] = u_uu[0,:]
-        u[1,:] = u_dd[0,:]       
+        u = torch.cat((u_uu,u_dd),0)
         return self.SumLayer(u.T)
     
     def SetBCs(self,u_0,u_L):
@@ -189,15 +194,25 @@ optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 import numpy as np
 
 def RHS(x):
+    """Defines the right hand side (RHS) of the equation (the body force)"""
     b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) - (8*np.pi**2*(x-7.5)**2-4*np.pi)/(torch.exp(np.pi*(x-7.5)**2))
     return  b
 
 def PotentialEnergy(A,E,u,x,b):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     integral = 0
     for i in range(1,u.data.shape[0]):
         integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
     return integral
+
+def AlternativePotentialEnergy(A,E,u,x,b):
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    f_x = 0.5*(A*E*du_dx**2) - u*b
+    f_x = f_x.view(-1)
+    dx = torch.diff(x.view(-1))
+    av = 0.5*(f_x[0:-1]+f_x[1:])*dx
+    return torch.sum(av)
 
 def Derivative(u,x):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
@@ -222,6 +237,7 @@ for epoch in range(n_epochs):
     # predict = forward pass with our model
     u_predicted = MeshBeam(TrialCoordinates) 
     # loss
+    # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     # calculate gradients = backward pass
     l.backward()
@@ -270,6 +286,8 @@ for epoch in range(n_epochs):
 
 
 
+#%%
+            
 
 
 #%% Post-processing
@@ -285,7 +303,7 @@ plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement')
-plt.savefig('Results/Solution_displacement_200.pdf', transparent=True)  
+plt.savefig('Results/Solution_displacement.pdf', transparent=True)  
 plt.show()
 
 # Plots the gradient & compare to reference
@@ -297,13 +315,19 @@ plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement first derivative')
-plt.savefig('Results/Solution_gradients_200.pdf', transparent=True)  
+plt.savefig('Results/Solution_gradients.pdf', transparent=True)  
 plt.show()
 
 plt.plot(error)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
-# plt.savefig('Results/Loss.pdf')  
+plt.savefig('Results/Loss.pdf')  
+plt.show()
+
+plt.plot(error[2500:])
+plt.xlabel(r'epochs')
+plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+plt.savefig('Results/Loss_zoomed.pdf')  
 plt.show()
 
 plt.plot(Coord_trajectories)

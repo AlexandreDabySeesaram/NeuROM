@@ -186,6 +186,9 @@ MeshBeam.SetBCs(u_0,u_L)
 # Set the coordinates as trainable
 MeshBeam.UnFreeze_Mesh()
 BoolPlot = False             # Bool for plots used for gif
+BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
+MSE = nn.MSELoss()
+
 
 #%% Define loss and optimizer
 learning_rate = 0.001
@@ -245,6 +248,7 @@ def AnalyticGradientSolution(A,E,x):
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
+error2 = []
 Coord_trajectories = []
 
 for epoch in range(n_epochs):
@@ -270,6 +274,8 @@ for epoch in range(n_epochs):
         error.append(l.item())
         Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         Coord_trajectories.append(Coordinates_i)
+        if BoolCompareNorms:
+            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
     if (epoch+1) % 100 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
@@ -394,4 +400,19 @@ plt.show()
 #         # MeshBeam.UnFreeze_FEM()
 #     Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 #     Coord_trajectories.append(Coordinates_i)
+# %%
+
+if BoolCompareNorms:
+    # Lift to be able to use semilogy
+    error3 = error-np.min(error)
+    plt.semilogy(error2)
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+
+    ax2 = plt.gca().twinx()
+
+    ax2.semilogy(error3,color='#F39C12')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/Loss_Comaprison.pdf')  
+
+
 # %%

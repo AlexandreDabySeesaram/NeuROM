@@ -170,7 +170,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 15                     # Number of Nodes in the Mesh
+np = 23                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -213,7 +213,7 @@ def AnalyticGradientSolution(A,E,x):
 
 #%% Training loop
 
-TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
 Coord_trajectories = []

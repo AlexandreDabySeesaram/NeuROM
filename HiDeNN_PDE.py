@@ -206,12 +206,26 @@ def PotentialEnergy(A,E,u,x,b):
         integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
     return integral
 
+def PotentialEnergyVectorised(A, E, u, x, b):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    # Calculate dx
+    dx = x[1:] - x[:-1]
+    # Vectorised calculation of the integral terms
+    int_term1 = 0.25 * A * E * dx * (du_dx[1:]**2 + du_dx[:-1]**2)
+    int_term2 = 0.5 * dx * (u[1:] * b[1:] + u[:-1] * b[:-1])
+
+    # Vectorised calculation of the integral using the trapezoidal rule
+    integral = torch.sum(int_term1 - int_term2)
+
+    return integral
+
 def AlternativePotentialEnergy(A,E,u,x,b):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     f_x = 0.5*(A*E*du_dx**2) - u*b
     f_x = f_x.view(-1)
     dx = torch.diff(x.view(-1))
-    av = 0.5*(f_x[0:-1]+f_x[1:])*dx
+    av = 0.5*(f_x[1:]+f_x[:-1])*dx
     return torch.sum(av)
 
 def Derivative(u,x):
@@ -238,7 +252,8 @@ for epoch in range(n_epochs):
     u_predicted = MeshBeam(TrialCoordinates) 
     # loss
     # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+    # l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     # calculate gradients = backward pass
     l.backward()
     # update weights

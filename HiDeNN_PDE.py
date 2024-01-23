@@ -74,12 +74,12 @@ class Shapefunction(nn.Module):
         """ The forward function takes as an input the coordonate x at which the NN is evaluated and the parameters' list coordinates where the nodes' corrdinates of the mesh are stored"""
         i = self.i
         # For the SF on the left
-        if i == -1:
+        if i == -1: # for the outter Shape functions the index acts as a tag, -1 for the left, -2 for the right
             x_i = coordinates[0]
             x_im1 = coordinates[0]-coordinates[-1]*1/100
             x_ip1 = coordinates[0+1]
         # For the SF on the right
-        elif i == -2:
+        elif i == -2: # for the outter Shape functions the index acts as a tag, -1 for the left, -2 for the right
             x_i = coordinates[-1]
             x_im1 = coordinates[-2]
             x_ip1 = coordinates[-1]*(1+1/100)
@@ -180,7 +180,7 @@ u_L = 0                     #Right BC
 MeshBeam.SetBCs(u_0,u_L)
 # Set the coordinates as trainable
 MeshBeam.UnFreeze_Mesh()
-BoolPlot = True             # Bool for plots used for gif
+BoolPlot = False             # Bool for plots used for gif
 
 #%% Define loss and optimizer
 learning_rate = 0.001

@@ -2,6 +2,7 @@
 import torch
 import random
 import torch.nn as nn
+torch.set_default_dtype(torch.float64)
 
 #%% Define the model for a 1D linear Beam mesh
 class LinearLeft(nn.Module):
@@ -16,7 +17,7 @@ class LinearLeft(nn.Module):
 
     def forward(self,x, x_im1, x_i):
         mid = self.relu(x)
-        mid = torch.nn.functional.linear(mid,(-1/(x_i-x_im1)),torch.tensor([1],dtype=torch.float32))
+        mid = torch.nn.functional.linear(mid,(-1/(x_i-x_im1)),torch.tensor([1],dtype=torch.float64))
         return self.relu(mid)
 
 class LinearRight(nn.Module):
@@ -31,7 +32,7 @@ class LinearRight(nn.Module):
 
     def forward(self,x,x_ip1,x_i):
         mid = self.relu(x)
-        mid = torch.nn.functional.linear(mid,(-1/(x_ip1-x_i)),torch.tensor([1],dtype=torch.float32))
+        mid = torch.nn.functional.linear(mid,(-1/(x_ip1-x_i)),torch.tensor([1],dtype=torch.float64))
         return self.relu(mid)
 
 class Shapefunction(nn.Module):
@@ -57,8 +58,8 @@ class Shapefunction(nn.Module):
         # Defines the right and left linear functions
         self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
         # Defines threshold so that two coordinates cannot go too close to one another
-        self.threshold_p = torch.tensor(1-1/150,dtype=torch.float32)
-        self.threshold_m = torch.tensor(1+1/150,dtype=torch.float32)
+        self.threshold_p = torch.tensor(1-1/150,dtype=torch.float64)
+        self.threshold_m = torch.tensor(1+1/150,dtype=torch.float64)
     
     def forward(self, x, coordinates):
         """ The forward function takes as an input the coordonate x at which the NN is evaluated and the parameters' list coordinates where the nodes' corrdinates of the mesh are stored"""
@@ -83,7 +84,7 @@ class Shapefunction(nn.Module):
         x_i = torch.maximum(x_i, self.threshold_m*x_im1)
             
         l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],
-                                                       dtype=torch.float32),
+                                                       dtype=torch.float64),
                                                        torch.tensor([1,-1])*x_i[0])
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
@@ -143,8 +144,8 @@ class MeshNN(nn.Module):
             Inputs are:
                 - u_0 the left BC
                 - u_L the right BC """
-        self.u_0 = torch.tensor(u_0, dtype=torch.float32)
-        self.u_L = torch.tensor(u_L, dtype=torch.float32)
+        self.u_0 = torch.tensor(u_0, dtype=torch.float64)
+        self.u_L = torch.tensor(u_L, dtype=torch.float64)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -207,7 +208,7 @@ MSE = nn.MSELoss()
 
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float32, requires_grad=True)
+                                dtype=torch.float64, requires_grad=True)
 # Store the initial coordinates before training (could be merged with Coord_trajectories)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []              # Stores the loss

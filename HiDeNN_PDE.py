@@ -95,8 +95,9 @@ class MeshNN(nn.Module):
     """This is the main Neural Network building the FE interpolation, the coordinates parameters are trainable are correspond to the coordinates of the nodes in the Mesh which are passed as parameters to the sub NN where they are fixed. 
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them is equivqlent to solving the PDE. """
-    def __init__(self, np, L):
+    def __init__(self, np, L, alpha = 0.005):
         super(MeshNN, self).__init__()
+        self.alpha = alpha # set the weight for the Mesh regularisation 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
@@ -171,11 +172,12 @@ class MeshNN(nn.Module):
 
 #%% Application of the NN
 # Geometry of the Mesh
-L = 10                      # Length of the Beam
-np = 23                     # Number of Nodes in the Mesh
-A = 1                       # Section of the beam
-E = 175                     # Young's Modulus (should be 175)
-MeshBeam = MeshNN(np,L)     # Creates the associated model
+L = 10                           # Length of the Beam
+np = 23                          # Number of Nodes in the Mesh
+A = 1                            # Section of the beam
+E = 175                          # Young's Modulus (should be 175)
+alpha =0.005                     # Weight for the Mesh regularisation 
+MeshBeam = MeshNN(np,L,alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
 u_L = 0                     #Right BC
@@ -189,6 +191,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
 
 # Set the coordinates as trainable
 MeshBeam.UnFreeze_Mesh()
+# Set the coordinates as untrainable
+# MeshBeam.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False             # Bool for plots used for gif
 BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
@@ -217,6 +221,15 @@ for epoch in range(n_epochs):
     # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     # l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+
+    # Mesh regularisation term
+    # Compute the ratio of the smallest jacobian and the largest jacobian
+    Jacobians = [MeshBeam.coordinates[i]-MeshBeam.coordinates[i-1] for i in range(1,len(MeshBeam.coordinates))]
+    Jacobians = torch.stack(Jacobians)
+    Ratio = torch.max(Jacobians)/torch.min(Jacobians)
+    # Add the ratio to the loss
+    l+=MeshBeam.alpha*(Ratio-1)
+
     # calculate gradients = backward pass
     l.backward()
     # update weights

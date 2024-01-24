@@ -124,21 +124,16 @@ class MeshNN(nn.Module):
         # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
-        ####################### more eleguant but differs
-        # For some reason the results differ slightly with this implementation
-        # out_uu = torch.hstack(intermediate_uu)
-        # out_dd = torch.hstack(intermediate_dd)
-        # u_uu = self.InterpoLayer_uu(out_uu)
-        # u_dd = self.InterpoLayer_dd(out_dd)
-        # u = torch.cat((u_uu.view(-1,1),u_dd.view(-1,1)),1)
-        # return self.SumLayer(u)
-        #######################
-        out_uu = torch.stack(intermediate_uu)
-        out_dd = torch.stack(intermediate_dd)
-        u_uu = self.InterpoLayer_uu(out_uu.T)
-        u_dd = self.InterpoLayer_dd(out_dd.T)
-        u = torch.cat((u_uu,u_dd),0)
-        return self.SumLayer(u.T)
+
+        out_uu = torch.cat(intermediate_uu, dim=1)
+        out_dd = torch.cat(intermediate_dd, dim=1)
+
+        u_uu = self.InterpoLayer_uu(out_uu)
+        u_dd = self.InterpoLayer_dd(out_dd)
+
+        u = torch.stack((u_uu,u_dd), dim=1)
+
+        return self.SumLayer(u)
     
     def SetBCs(self,u_0,u_L):
         """Set the two Dirichlet boundary conditions
@@ -192,7 +187,7 @@ MSE = nn.MSELoss()
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 5000
+n_epochs = 10
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 import numpy as np
 
@@ -249,6 +244,7 @@ TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.floa
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
 error2 = []
+CoordinatesGT = [0.0, 0.464534729719162, 0.909274160861969, 1.3622970581054688, 1.8098012208938599, 2.281587600708008, 2.719331741333008, 3.1904959678649902, 3.638345718383789, 4.090588569641113, 4.545549392700195, 4.996726036071777, 5.453673839569092, 5.906627655029297, 6.368518829345703, 6.811662197113037, 7.281474590301514, 7.718526840209961, 8.18874454498291, 8.635870933532715, 9.087241172790527, 9.535466194152832, 10.0]
 Coord_trajectories = []
 
 for epoch in range(n_epochs):
@@ -305,6 +301,8 @@ for epoch in range(n_epochs):
             plt.clf()
 
 
+assert( np.isclose(np.array(Coordinates_i), np.array(CoordinatesGT)).all())
+
 
 
 #%%
@@ -325,7 +323,8 @@ plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement')
 plt.savefig('Results/Solution_displacement.pdf', transparent=True)  
-plt.show()
+#plt.show()
+plt.clf()
 
 # Plots the gradient & compare to reference
 plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
@@ -337,25 +336,32 @@ plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement first derivative')
 plt.savefig('Results/Solution_gradients.pdf', transparent=True)  
-plt.show()
+#plt.show()
+plt.clf()
 
 plt.plot(error)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
 plt.savefig('Results/Loss.pdf')  
+#plt.clf()
 plt.show()
 
 plt.plot(error[2500:])
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
 plt.savefig('Results/Loss_zoomed.pdf')  
-plt.show()
+#plt.show()
+plt.clf()
 
 plt.plot(Coord_trajectories)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$x_i\left(\underline{x}\right)$')
 plt.savefig('Results/Trajectories.pdf', transparent=True)  
-plt.show()
+#plt.show()
+plt.clf()
+
+
+
 
 # # # Tests extrapolation on unseen coordinates 
 # X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)

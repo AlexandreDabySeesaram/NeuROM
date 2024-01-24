@@ -34,3 +34,12 @@ The trainable parameters can be changed on the fly.
 
 * `model.Freeze_FEM()` Freezes the nodale values so that only the coordinates are trained
 * `model.UnFreeze_FEM()` Unfreezes the nodale so that FEM problem can be solved
+
+## TODO
+ Here is a list of short term ojectives
+
+ * Compare the frozen-mesh solutions to similarly discretised FE solutions
+ * Test different training strategies (when to freeze or un freeze part of the NN)
+     * Use the hybrid training (with real FEM in between)
+* Test to "Train"the hyper parameter $\alpha$ in the regularisation
+* Implement reference elements

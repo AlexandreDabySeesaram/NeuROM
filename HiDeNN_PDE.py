@@ -170,7 +170,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                      # Length of the Beam
-np = 23                     # Number of Nodes in the Mesh
+np = 50                     # Number of Nodes in the Mesh
 A = 1                       # Section of the beam
 E = 175                     # Young's Modulus (should be 175)
 MeshBeam = MeshNN(np,L)     # Creates the associated model
@@ -187,7 +187,7 @@ MSE = nn.MSELoss()
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 10
+n_epochs = 1000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 import numpy as np
 
@@ -244,10 +244,13 @@ TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.floa
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []
 error2 = []
-CoordinatesGT = [0.0, 0.464534729719162, 0.909274160861969, 1.3622970581054688, 1.8098012208938599, 2.281587600708008, 2.719331741333008, 3.1904959678649902, 3.638345718383789, 4.090588569641113, 4.545549392700195, 4.996726036071777, 5.453673839569092, 5.906627655029297, 6.368518829345703, 6.811662197113037, 7.281474590301514, 7.718526840209961, 8.18874454498291, 8.635870933532715, 9.087241172790527, 9.535466194152832, 10.0]
+#CoordinatesGT = [0.0, 0.464534729719162, 0.909274160861969, 1.3622970581054688, 1.8098012208938599, 2.281587600708008, 2.719331741333008, 3.1904959678649902, 3.638345718383789, 4.090588569641113, 4.545549392700195, 4.996726036071777, 5.453673839569092, 5.906627655029297, 6.368518829345703, 6.811662197113037, 7.281474590301514, 7.718526840209961, 8.18874454498291, 8.635870933532715, 9.087241172790527, 9.535466194152832, 10.0]
 Coord_trajectories = []
 
 for epoch in range(n_epochs):
+
+    coord_old = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+
     # predict = forward pass with our model
     u_predicted = MeshBeam(TrialCoordinates) 
     # loss
@@ -258,6 +261,18 @@ for epoch in range(n_epochs):
     l.backward()
     # update weights
     optimizer.step()
+
+    coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+
+    coord_dif = np.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
+    if np.all(coord_dif > (L/23/6)) == False:
+        corrected = []
+        for j in range(coord_dif.shape[0]):
+            if coord_dif[j] < L/23/6:
+
+                MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
+                MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
+
     # zero the gradients after updating
     optimizer.zero_grad()
 
@@ -300,8 +315,8 @@ for epoch in range(n_epochs):
             plt.savefig('Results/Gifs/Solution_gardient'+str(epoch)+'.png', transparent=True)  
             plt.clf()
 
-
-assert( np.isclose(np.array(Coordinates_i), np.array(CoordinatesGT)).all())
+# Test 500 points | 10 iterations
+#assert( np.isclose(np.array(Coordinates_i), np.array(CoordinatesGT)).all())
 
 
 
@@ -343,8 +358,8 @@ plt.plot(error)
 plt.xlabel(r'epochs')
 plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
 plt.savefig('Results/Loss.pdf')  
-#plt.clf()
-plt.show()
+plt.clf()
+#plt.show()
 
 plt.plot(error[2500:])
 plt.xlabel(r'epochs')

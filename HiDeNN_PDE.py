@@ -357,51 +357,6 @@ plt.ylabel(r'$x_i\left(\underline{x}\right)$')
 plt.savefig('Results/Trajectories.pdf', transparent=True)  
 plt.show()
 
-# # # Tests extrapolation on unseen coordinates 
-# X2 = torch.tensor([[(i-50)/10] for i in range(2,200)], dtype=torch.float32)
-# # plt.plot(MeshBeam.coordinates.data,0*MeshBeam.coordinates.data,'.k', markersize=2, label = 'Mesh Nodes')
-# plt.plot(X2,AnalyticSolution(A,E,X2), label = 'Ground Truth')
-# plt.plot(X2,MeshBeam(X2).data,'--', label = 'HiDeNN')
-# plt.xlabel(r'$\underline{x}$ [m]')
-# plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-# plt.legend(loc="upper left")
-# plt.title('On new coordinates')
-# plt.savefig('Results/InterpolatedSolution.pdf')  
-# plt.show()
-
-
-#%% Further training 
-
-# TrialCoordinates2 = torch.tensor([[random.uniform(0, 10)] for i in range(2,100)], dtype=torch.float32, requires_grad=True)
-# TrialCoordinates, indices = torch.sort(TrialCoordinates2)
-
-# n_epochs_2 = 1000
-# for epoch in range(n_epochs_2):
-#     # predict = forward pass with our model
-#     u_predicted = MeshBeam(TrialCoordinates)  ######## regarder ce que ca donne ici pour une entrée vectorielle
-    
-#     # loss
-#     l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-
-#     # calculate gradients = backward pass
-#     l.backward()
-    
-#     # update weights
-#     optimizer.step()
-
-#     # zero the gradients after updating
-#     optimizer.zero_grad()
-#     with torch.no_grad():
-#         error.append(l.item())
-#     if (epoch+1) % 10 == 0:
-#         print('epoch ', epoch+1, ' loss = ', l.item())
-#     if epoch >= 100:
-#         MeshBeam.Freeze_Mesh()
-#         # MeshBeam.UnFreeze_FEM()
-#     Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-#     Coord_trajectories.append(Coordinates_i)
-# %%
-
 if BoolCompareNorms:
     # Lift to be able to use semilogy
     error3 = error-np.min(error)

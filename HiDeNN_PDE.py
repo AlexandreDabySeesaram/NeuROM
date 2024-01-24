@@ -244,17 +244,17 @@ def AnalyticGradientSolution(A,E,x):
     return out
 
 #%% Training loop
-
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
+# Store the initial coordinates before training (could be merged with Coord_trajectories)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-error = []
-error2 = []
-Coord_trajectories = []
+error = []              # Stores the loss
+error2 = []             # Stores the L2 error compared to the analytical solution
+Coord_trajectories = [] # Stores the trajectories of the coordinates while training
 
 for epoch in range(n_epochs):
     # predict = forward pass with our model
     u_predicted = MeshBeam(TrialCoordinates) 
-    # loss
+    # loss (several ways to compute the energy loss)
     # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     # l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
@@ -271,10 +271,13 @@ for epoch in range(n_epochs):
     #     MeshBeam.UnFreeze_FEM()
 
     with torch.no_grad():
+        # Stores the loss
         error.append(l.item())
+        # Stores the coordinates trajectories
         Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         Coord_trajectories.append(Coordinates_i)
         if BoolCompareNorms:
+            # Copute and store the L2 error w.r.t. the analytical solution
             error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
     if (epoch+1) % 100 == 0:
@@ -303,12 +306,6 @@ for epoch in range(n_epochs):
             plt.title('epoch number '+str(epoch))
             plt.savefig('Results/Gifs/Solution_gardient'+str(epoch)+'.png', transparent=True)  
             plt.clf()
-
-
-
-
-#%%
-            
 
 
 #%% Post-processing

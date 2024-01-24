@@ -2,15 +2,8 @@
 import torch
 import random
 import torch.nn as nn
-import matplotlib.pyplot as plt
-plt.rcParams['svg.fonttype'] = 'none'
-from IPython.display import set_matplotlib_formats
-set_matplotlib_formats('svg')
 import numpy as np
-plt.rcParams.update({
-    "text.usetex": True,
-    "font.family": "Helvetica"
-})
+
 
 
 #%% Define the model for a 1D linear Beam mesh
@@ -92,7 +85,9 @@ class Shapefunction(nn.Module):
         x_i = torch.minimum(x_i, self.threshold_p*x_ip1)
         x_i = torch.maximum(x_i, self.threshold_m*x_im1)
             
-        l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],dtype=torch.float32),torch.tensor([1,-1])*x_i[0])
+        l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],
+                                                       dtype=torch.float32),
+                                                       torch.tensor([1,-1])*x_i[0])
         top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
         bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
         l2 = torch.cat((top,bottom),1)
@@ -108,11 +103,16 @@ class MeshNN(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
-        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i], r_adaptivity = False) for i in range(1,np-1)])
+        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i],
+                                                       r_adaptivity = False) for i in range(1,np-1)])
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=torch.ones(np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.Functions_dd = nn.ModuleList([Shapefunction(-1,self.coordinates[0], r_adaptivity = False),Shapefunction(-2,self.coordinates[-1], r_adaptivity = False)])
+        self.Functions_dd = nn.ModuleList([Shapefunction(-1,
+                                                         self.coordinates[0], 
+                                                         r_adaptivity = False),
+                                                         Shapefunction(-2,self.coordinates[-1], 
+                                                                       r_adaptivity = False)])
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)
@@ -198,7 +198,8 @@ import numpy as np
 
 def RHS(x):
     """Defines the right hand side (RHS) of the equation (the body force)"""
-    b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) - (8*np.pi**2*(x-7.5)**2-4*np.pi)/(torch.exp(np.pi*(x-7.5)**2))
+    b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) \
+        - (8*np.pi**2*(x-7.5)**2-4*np.pi)/(torch.exp(np.pi*(x-7.5)**2))
     return  b
 
 def PotentialEnergy(A,E,u,x,b):
@@ -206,7 +207,8 @@ def PotentialEnergy(A,E,u,x,b):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     integral = 0
     for i in range(1,u.data.shape[0]):
-        integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
+        integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) \
+            - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
     return integral
 
 def PotentialEnergyVectorised(A, E, u, x, b):
@@ -236,15 +238,20 @@ def Derivative(u,x):
     return du_dx
 
 def AnalyticSolution(A,E,x):
-    out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
+    out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
+        + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
+            - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out
 
 def AnalyticGradientSolution(A,E,x):
-    out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
+    out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) \
+        + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \
+            - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out
 
 #%% Training loop
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], dtype=torch.float32, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                dtype=torch.float32, requires_grad=True)
 # Store the initial coordinates before training (could be merged with Coord_trajectories)
 InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 error = []              # Stores the loss
@@ -282,89 +289,39 @@ for epoch in range(n_epochs):
 
     if (epoch+1) % 100 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
-
         if BoolPlot:
-        # with torch.no_grad():
-            plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-            plt.plot(Coordinates_i,[coord*0 for coord in Coordinates_i],'.k', markersize=2, label = 'Mesh Nodes')
-            plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-            plt.plot(TrialCoordinates.data,MeshBeam(TrialCoordinates).data,'--', label = 'HiDeNN')
-            plt.xlabel(r'$\underline{x}$ [m]')
-            plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-            plt.legend(loc="upper left")
-            plt.title('epoch number '+str(epoch))
-            plt.savefig('Results/Gifs/Solution_'+str(epoch)+'.png', transparent=True)  
-            plt.clf()
-            # with torch.no_grad():
-            plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-            plt.plot(Coordinates_i,[coord*0 for coord in Coordinates_i],'.k', markersize=2, label = 'Mesh Nodes')
-            plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-            plt.plot(TrialCoordinates.data,Derivative(MeshBeam(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
-            plt.xlabel(r'$\underline{x}$ [m]')
-            plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
-            plt.legend(loc="upper left")
-            plt.title('epoch number '+str(epoch))
-            plt.savefig('Results/Gifs/Solution_gardient'+str(epoch)+'.png', transparent=True)  
-            plt.clf()
-
+            Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
+                                          TrialCoordinates,AnalyticSolution,MeshBeam,
+                                          '/Gifs/Solution_'+str(epoch))
+            Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
+                                              TrialCoordinates,AnalyticGradientSolution,
+                                          '/Gifs/Solution_gardient_'+str(epoch))
+    
 
 #%% Post-processing
-
 # Retrieve coordinates
 Coordinates = Coord_trajectories[-1]
+
+import Post.Plots as Pplot
 # Tests on trained data and compare to reference
-plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
-plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-plt.plot(TrialCoordinates.data,MeshBeam(TrialCoordinates).data,'--', label = 'HiDeNN')
-plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-plt.legend(loc="upper left")
-# plt.title('Displacement')
-plt.savefig('Results/Solution_displacement.pdf', transparent=True)  
-plt.show()
-
+Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
+                                          TrialCoordinates,AnalyticSolution,MeshBeam,
+                                          'Solution_displacement')
 # Plots the gradient & compare to reference
-plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
-plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-plt.plot(TrialCoordinates.data,Derivative(MeshBeam(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
-plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
-plt.legend(loc="upper left")
-# plt.title('Displacement first derivative')
-plt.savefig('Results/Solution_gradients.pdf', transparent=True)  
-plt.show()
+Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
+                                              TrialCoordinates,AnalyticGradientSolution,
+                                              MeshBeam,Derivative,'Solution_gradients')
 
-plt.plot(error)
-plt.xlabel(r'epochs')
-plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
-plt.savefig('Results/Loss.pdf')  
-plt.show()
+# plots zoomed energy loss
+Pplot.PlotEnergyLoss(error,0,'Loss')
 
-plt.plot(error[2500:])
-plt.xlabel(r'epochs')
-plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
-plt.savefig('Results/Loss_zoomed.pdf')  
-plt.show()
+# plots zoomed energy loss
+Pplot.PlotEnergyLoss(error,2500,'Loss_zoomed')
 
-plt.plot(Coord_trajectories)
-plt.xlabel(r'epochs')
-plt.ylabel(r'$x_i\left(\underline{x}\right)$')
-plt.savefig('Results/Trajectories.pdf', transparent=True)  
-plt.show()
+# Plots trajectories of the coordinates while training
+Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
 if BoolCompareNorms:
-    # Lift to be able to use semilogy
-    error3 = error-np.min(error)
-    plt.semilogy(error2)
-    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
-
-    ax2 = plt.gca().twinx()
-
-    ax2.semilogy(error3,color='#F39C12')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
-    plt.savefig('Results/Loss_Comaprison.pdf')  
-
+    Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
 # %%

@@ -123,21 +123,21 @@ class MeshNN(nn.Module):
         # Compute shape functions 
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.np-2)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
-        ####################### more eleguant but differs
-        # For some reason the results differ slightly with this implementation
-        # out_uu = torch.hstack(intermediate_uu)
-        # out_dd = torch.hstack(intermediate_dd)
-        # u_uu = self.InterpoLayer_uu(out_uu)
-        # u_dd = self.InterpoLayer_dd(out_dd)
-        # u = torch.cat((u_uu.view(-1,1),u_dd.view(-1,1)),1)
-        # return self.SumLayer(u)
-        #######################
-        out_uu = torch.stack(intermediate_uu)
-        out_dd = torch.stack(intermediate_dd)
-        u_uu = self.InterpoLayer_uu(out_uu.T)
-        u_dd = self.InterpoLayer_dd(out_dd.T)
-        u = torch.cat((u_uu,u_dd),0)
-        return self.SumLayer(u.T)
+        out_uu = torch.cat(intermediate_uu, dim=1)
+        out_dd = torch.cat(intermediate_dd, dim=1)
+        u_uu = self.InterpoLayer_uu(out_uu)
+        u_dd = self.InterpoLayer_dd(out_dd)
+        u = torch.stack((u_uu,u_dd), dim=1)
+        return self.SumLayer(u)
+        ######### LEGACY  #############
+        # Previous implementation (that gives slightly different results)
+        # out_uu = torch.stack(intermediate_uu)
+        # out_dd = torch.stack(intermediate_dd)
+        # u_uu = self.InterpoLayer_uu(out_uu.T)
+        # u_dd = self.InterpoLayer_dd(out_dd.T)
+        # u = torch.cat((u_uu,u_dd),0)
+        # return self.SumLayer(u.T)
+        ######### LEGACY  #############
     
     def SetBCs(self,u_0,u_L):
         """Set the two Dirichlet boundary conditions

@@ -5,34 +5,20 @@ import torch.nn as nn
 torch.set_default_dtype(torch.float64)
 
 #%% Define the model for a 1D linear Beam mesh
-class LinearLeft(nn.Module):
-    """This is an implementation of the left (increasing) part of the linear shape function in a DNN representation
+    
+class LinearBlock(nn.Module):
+    """This is an implementation of the linear block 
      See [Zhang et al. 2021] Linear block. The input parameters are:
         - the coordinate x where the function is evaluated
-        - the left node of the element x_im1
-        - the node associated to the shape functino being built x_i   """
+        - If used for left part: x_b = x_i else if used right part x_b = x_ip1
+        - If used for left part: x_a = x_im1 else if used right part x_a = x_i  """
     def __init__(self):
-        super(LinearLeft, self).__init__()
+        super(LinearBlock, self).__init__()
         self.relu = nn.ReLU()
 
-    def forward(self,x, x_im1, x_i):
+    def forward(self,x, x_a, x_b):
         mid = self.relu(x)
-        mid = torch.nn.functional.linear(mid,(-1/(x_i-x_im1)),torch.tensor([1],dtype=torch.float64))
-        return self.relu(mid)
-
-class LinearRight(nn.Module):
-    """This is an implementation of the Right (decreasing) part of the linear shape function in a DNN representation
-     See [Zhang et al. 2021] Linear block. The input parameters are:
-        - the coordinate x where the function is evaluated
-        - the right node of the element x_ip1
-        - the node associated to the shape functino being built x_i   """
-    def __init__(self):
-        super(LinearRight, self).__init__()
-        self.relu = nn.ReLU()
-
-    def forward(self,x,x_ip1,x_i):
-        mid = self.relu(x)
-        mid = torch.nn.functional.linear(mid,(-1/(x_ip1-x_i)),torch.tensor([1],dtype=torch.float64))
+        mid = torch.nn.functional.linear(mid,(-1/(x_b-x_a)),torch.tensor([1],dtype=torch.float64))
         return self.relu(mid)
 
 class Shapefunction(nn.Module):
@@ -40,9 +26,7 @@ class Shapefunction(nn.Module):
     See [Zhang et al. 2021] consisting of a linear(1,2) function leading the the Linear{Left+Right} layers which output then passes through Linear(2,1). 
     The input parameters are:
         - the coordinate x where the function is evaluated
-        - the index i of the node associated to the shape function 
-        
-        All the weights and biais are set as untranable and are evaluated given the nodal position fed while initialising the network"""
+        - the index i of the node associated to the shape function """
     
     def __init__(self, i,x_i, r_adaptivity = False):
         super(Shapefunction, self).__init__()
@@ -55,8 +39,8 @@ class Shapefunction(nn.Module):
         self.l2.bias.data.fill_(-1)
         self.l2.bias.requires_grad = False
         self.l2.weight.requires_grad = False
-        # Defines the right and left linear functions
-        self.Linears = nn.ModuleList([LinearLeft(),LinearRight()])
+        # Defines the linear block function
+        self.LinearBlock = LinearBlock()
         # Defines threshold so that two coordinates cannot go too close to one another
         self.threshold_p = torch.tensor(1-1/150,dtype=torch.float64)
         self.threshold_m = torch.tensor(1+1/150,dtype=torch.float64)
@@ -86,8 +70,8 @@ class Shapefunction(nn.Module):
         l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],
                                                        dtype=torch.float64),
                                                        torch.tensor([1,-1])*x_i[0])
-        top = self.Linears[0](l1[:,0].view(-1,1),x_im1,x_i)
-        bottom = self.Linears[1](l1[:,1].view(-1,1),x_ip1,x_i)
+        top = self.LinearBlock(l1[:,0].view(-1,1),x_im1,x_i)
+        bottom = self.LinearBlock(l1[:,1].view(-1,1),x_i,x_ip1)
         l2 = torch.cat((top,bottom),1)
         l3 = self.l2(l2)
         return l3

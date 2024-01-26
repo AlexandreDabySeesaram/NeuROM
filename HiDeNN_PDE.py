@@ -28,7 +28,7 @@ class Shapefunction(nn.Module):
         - the coordinate x where the function is evaluated
         - the index i of the node associated to the shape function """
     
-    def __init__(self, i,x_i, r_adaptivity = False):
+    def __init__(self, i):
         super(Shapefunction, self).__init__()
         # Index of the node associated to the shape function
         self.i = i
@@ -86,16 +86,12 @@ class MeshNN(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,np)])
         self.np = np 
         self.L = L 
-        self.Functions = nn.ModuleList([Shapefunction(i,self.coordinates[i],
-                                                       r_adaptivity = False) for i in range(1,np-1)])
+        self.Functions = nn.ModuleList([Shapefunction(i) for i in range(1,np-1)])
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=torch.ones(np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.Functions_dd = nn.ModuleList([Shapefunction(-1,
-                                                         self.coordinates[0], 
-                                                         r_adaptivity = False),
-                                                         Shapefunction(-2,self.coordinates[-1], 
-                                                                       r_adaptivity = False)])
+        self.Functions_dd = nn.ModuleList([Shapefunction(-1),
+                                                         Shapefunction(-2)])
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)

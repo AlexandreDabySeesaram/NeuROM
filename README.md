@@ -43,3 +43,4 @@ The trainable parameters can be changed on the fly.
      * Use the hybrid training (with real FEM in between)
 * Test to "Train"the hyper parameter $\alpha$ in the regularisation
 * Implement reference elements
+* Test if using "Operations layer"as opposed to python functions lead to different results when comupting the loss. 

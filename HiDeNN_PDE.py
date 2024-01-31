@@ -29,6 +29,28 @@ def plot_everything():
 
 #%% Define the model for a 1D linear Beam mesh
     
+class MultiplicationBlock(nn.Module):
+    
+    def __init__(self):
+        super(MultiplicationBlock, self).__init__()
+        self.relu = nn.ReLU()
+
+        self.SumLayer = nn.Linear(2,1,bias=False)
+        self.SumLayer.weight.data.fill_(1)
+        self.SumLayer.weight.requires_grad = False
+
+        self.Diff = nn.Linear(3,1,bias=False)
+        self.Diff.weight.data = nn.Parameter(data=torch.tensor([[-0.5, 0.5,-0.5]]), requires_grad=False)
+
+    def forward(self,x, y):
+        mid = torch.cat((x,y),dim=1)
+        mid = self.SumLayer(mid)
+        mid = torch.pow(mid,2)
+        mid = torch.cat((torch.pow(x,2),mid,torch.pow(y,2)),dim=1)
+        mid = self.Diff(mid)
+        return mid
+
+
 class LinearBlock(nn.Module):
     """This is an implementation of the linear block 
      See [Zhang et al. 2021] Linear block. The input parameters are:
@@ -121,6 +143,8 @@ class MeshNN(nn.Module):
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
 
+        self.Multiplication = MultiplicationBlock()
+
 
     def forward(self,x):
         # Compute shape functions 
@@ -210,6 +234,17 @@ optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
 
 MSE = nn.MSELoss()
 
+                            
+a = torch.tensor([[1],[-2],[0],[0.5]], dtype=torch.float64, requires_grad=True)
+b = torch.tensor([[3],[4],[5],[4]], dtype=torch.float64, requires_grad=True)
+prod = MeshBeam.Multiplication(a,b)
+
+print("a = ", a)
+print("b = ", b)
+print("a.b = ", prod)
+
+
+'''
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float64, requires_grad=True)
@@ -389,4 +424,4 @@ while epoch<n_epochs and stagnancy_counter < 3:
     epoch = epoch+1
 
 plot_everything()
-
+'''

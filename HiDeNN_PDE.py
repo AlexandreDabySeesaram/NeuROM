@@ -22,7 +22,7 @@ def plot_everything():
     # Plots trajectories of the coordinates while training
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
-    Pplot.Plot_LearningRate(Learning_Rate)
+    #Pplot.Plot_LearningRate(Learning_Rate)
 
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
@@ -177,10 +177,10 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-np = 23                          # Number of Nodes in the Mesh
+np = 12                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
-alpha =0.0                    # Weight for the Mesh regularisation 
+alpha =0.0                   # Weight for the Mesh regularisation 
 MeshBeam = MeshNN(np,L,alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
@@ -206,7 +206,7 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 learning_rate = 1.0e-3
 n_epochs = 25000
 optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
 
 MSE = nn.MSELoss()
 
@@ -224,12 +224,13 @@ Coord_trajectories = [] # Stores the trajectories of the coordinates while train
 stagnancy_counter = 0
 epoch = 0
 loss_old = 1.0e3
+loss_min = 1.0e3
 loss_counter = 0
 
 coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
 
-while epoch<n_epochs and stagnancy_counter < 50 and optimizer.param_groups[0]["lr"] > 1.0e-5:
+while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<2000:
 
     coord_old = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
     weights_old = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
@@ -249,12 +250,12 @@ while epoch<n_epochs and stagnancy_counter < 50 and optimizer.param_groups[0]["l
     # Add the ratio to the loss
     #l+=MeshBeam.alpha*(Ratio-1)
 
-
     loss_current = l.item()
     loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+    loss_old = loss_current
 
-    if loss_old > loss_current:
-        loss_old = loss_current
+    if loss_min > loss_current:
+        loss_min = loss_current
 
         coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
@@ -262,77 +263,130 @@ while epoch<n_epochs and stagnancy_counter < 50 and optimizer.param_groups[0]["l
     else:
         loss_counter = loss_counter + 1
 
-    if loss_counter < 1000:
-        # calculate gradients = backward pass
-        l.backward()
-        # update weights
-        optimizer.step()
-        #scheduler.step(l)
 
-        # zero the gradients after updating
-        optimizer.zero_grad()
+    # calculate gradients = backward pass
+    l.backward()
+    # update weights
+    optimizer.step()
+    #scheduler.step(l)
 
-        coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+    # zero the gradients after updating
+    optimizer.zero_grad()
 
-        coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
-        if numpy.all(coord_dif > ((L/np)/5)) == False:
-            for j in range(coord_dif.shape[0]):
-                if coord_dif[j] < (L/np)/5:
+    coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 
-                    MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
-                    MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
+    coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
+    if numpy.all(coord_dif > ((L/np)/5)) == False:
+        for j in range(coord_dif.shape[0]):
+            if coord_dif[j] < (L/np)/5:
 
-
-        with torch.no_grad():
-            # Stores the loss
-            error.append(l.item())
-            # Stores the coordinates trajectories
-            Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-            Coord_trajectories.append(Coordinates_i)
-            Learning_Rate.append(optimizer.param_groups[0]["lr"])
-
-            if BoolCompareNorms:
-                # Copute and store the L2 error w.r.t. the analytical solution
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-        if loss_decrease >0 and loss_decrease < 1.0e-8:
-            stagnancy_counter = stagnancy_counter +1
-        else:
-            stagnancy_counter = 0
+                MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
+                MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
 
 
+    with torch.no_grad():
+        # Stores the loss
+        error.append(l.item())
+        # Stores the coordinates trajectories
+        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coord_trajectories.append(Coordinates_i)
+        Learning_Rate.append(optimizer.param_groups[0]["lr"])
+
+        if BoolCompareNorms:
+            # Copute and store the L2 error w.r.t. the analytical solution
+            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+
+    if loss_decrease >= 0 and loss_decrease < 1.0e-5:
+        stagnancy_counter = stagnancy_counter +1
     else:
+        stagnancy_counter = 0
 
-        for j in range(len(coord_old)):
-            MeshBeam.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
-        MeshBeam.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
-
-        optimizer.param_groups[0]["lr"] = optimizer.param_groups[0]["lr"]*0.1
-        print("New learning rate = ", optimizer.param_groups[0]["lr"])
-        loss_counter = 0
-        
-        with torch.no_grad():
-            # Stores the loss
-            error.append(loss_old)
-            # Stores the coordinates trajectories
-            Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-            Coord_trajectories.append(Coordinates_i)
-            Learning_Rate.append(optimizer.param_groups[0]["lr"])
-
-            if BoolCompareNorms:
-                # Copute and store the L2 error w.r.t. the analytical solution
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-    if (epoch+1) % 100 == 0:
-        print('epoch ', epoch+1, ' loss = ', l.item(), " loss change = ", loss_decrease)
-        plot_everything()
-
-        if (epoch+1) % 100 == 0:
-        print('epoch ', epoch+1, ' loss = ', l.item(), " loss change = ", loss_decrease)
+    if (epoch+1) % 500 == 0:
+        print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+        print("    loss decrease = ", numpy.format_float_scientific( loss_decrease, precision=4))
+        print()
         plot_everything()
 
     epoch = epoch+1
 
+
+if loss_min < loss_current:
+   
+    for j in range(len(coord_old)):
+        MeshBeam.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
+    MeshBeam.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
+
+    u_predicted = MeshBeam(TrialCoordinates) 
+    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+    
+
+    with torch.no_grad():
+        # Stores the loss
+        error.append(l.item())
+        # Stores the coordinates trajectories
+        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coord_trajectories.append(Coordinates_i)
+        Learning_Rate.append(optimizer.param_groups[0]["lr"])
+
+        if BoolCompareNorms:
+            # Copute and store the L2 error w.r.t. the analytical solution
+            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+
 plot_everything()
 
+
+
+optim = torch.optim.LBFGS(MeshBeam.parameters(),
+                    #history_size=5, 
+                    #max_iter=15, 
+                    #tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")
+
+
+print("Minimal error = ", numpy.min(error))
+
+epoch = 0
+stagnancy_counter = 0
+
+while epoch<n_epochs and stagnancy_counter < 3:
+
+    def closure():
+        optim.zero_grad()
+        u_predicted = MeshBeam(TrialCoordinates) 
+        l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+        l.backward()
+        return l
+
+    optim.step(closure)
+    l = closure()
+
+    with torch.no_grad():
+        # Stores the loss
+        error.append(l.item())
+        # Stores the coordinates trajectories
+        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coord_trajectories.append(Coordinates_i)
+        Learning_Rate.append(optimizer.param_groups[0]["lr"])
+
+        if BoolCompareNorms:
+            # Copute and store the L2 error w.r.t. the analytical solution
+            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+
+    loss_current = l.item()
+    loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+
+    if loss_decrease >= 0 and loss_decrease < 1.0e-8:
+        stagnancy_counter = stagnancy_counter +1
+    else:
+        stagnancy_counter = 0
+
+    if loss_decrease > 0:
+        loss_old = loss_current
+
+    if (epoch+1) % 1 == 0:
+        print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+
+    epoch = epoch+1
+
+plot_everything()
 

@@ -18,7 +18,6 @@ def plot_everything():
     Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                                 TrialCoordinates,AnalyticGradientSolution,
                                                 MeshBeam,Derivative,'Solution_gradients')
-
     # Plots trajectories of the coordinates while training
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
@@ -26,10 +25,14 @@ def plot_everything():
 
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
+    #Pplot.Slot_ShapeFuctions(TrialCoordinates, ShapeFunction, pred, InitialCoordinates)
 
 #%% Define the model for a 1D linear Beam mesh
     
 class MultiplicationBlock(nn.Module):
+    """This is an implementation of the multiplication block 
+     See [Zhang et al. 2021] Multiplication block.
+     Input parameters - the two tensors to be multiplied."""
     
     def __init__(self):
         super(MultiplicationBlock, self).__init__()
@@ -52,7 +55,7 @@ class MultiplicationBlock(nn.Module):
 
 
 class LinearBlock(nn.Module):
-    """This is an implementation of the linear block 
+    """This is the new implementation of the linear block 
      See [Zhang et al. 2021] Linear block. The input parameters are:
         - the coordinate x where the function is evaluated
         - If used for left part: x_b = x_i else if used right part x_b = x_ip1
@@ -61,10 +64,13 @@ class LinearBlock(nn.Module):
         super(LinearBlock, self).__init__()
         self.relu = nn.ReLU()
 
-    def forward(self,x, x_a, x_b):
-        mid = self.relu(x)
-        mid = torch.nn.functional.linear(mid,(-1/(x_b-x_a)),torch.tensor([1],dtype=torch.float64))
-        return self.relu(mid)
+    def forward(self,x, x_a, x_b, y_a, y_b):
+        
+        mid = self.relu(-x + x_b)
+        mid = self.relu(1 - mid/(x_b-x_a))
+        mid = (y_b-y_a)*mid + y_a
+        return mid
+
 
 class Shapefunction(nn.Module):
     """This is an implementation of linear 1D shape function in a DNN representation
@@ -111,14 +117,11 @@ class Shapefunction(nn.Module):
         #  Stop nodes from getting too close 
         x_i = torch.minimum(x_i, self.threshold_p*x_ip1)
         x_i = torch.maximum(x_i, self.threshold_m*x_im1)
-            
-        l1 = torch.nn.functional.linear(x,torch.tensor([[-1],[1]],
-                                                       dtype=torch.float64),
-                                                       torch.tensor([1,-1])*x_i[0])
-        top = self.LinearBlock(l1[:,0].view(-1,1),x_im1,x_i)
-        bottom = self.LinearBlock(l1[:,1].view(-1,1),x_i,x_ip1)
-        l2 = torch.cat((top,bottom),1)
-        l3 = self.l2(l2)
+
+        left = self.LinearBlock(x, x_im1, x_i, 0, 1)
+        right = self.LinearBlock(x, x_i, x_ip1, 1, 0)
+        l3 = left + right - 1
+
         return l3
 
 class MeshNN(nn.Module):
@@ -155,7 +158,7 @@ class MeshNN(nn.Module):
         u_uu = self.InterpoLayer_uu(out_uu)
         u_dd = self.InterpoLayer_dd(out_dd)
         u = torch.stack((u_uu,u_dd), dim=1)
-        return self.SumLayer(u)
+        return self.SumLayer(u), intermediate_uu, out_dd
         ######### LEGACY  #############
         # Previous implementation (that gives slightly different results)
         # out_uu = torch.stack(intermediate_uu)
@@ -201,7 +204,7 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-np = 12                          # Number of Nodes in the Mesh
+np = 10                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.0                   # Weight for the Mesh regularisation 
@@ -234,14 +237,24 @@ optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
 
 MSE = nn.MSELoss()
 
-                            
+'''                  
 a = torch.tensor([[1],[-2],[0],[0.5]], dtype=torch.float64, requires_grad=True)
-b = torch.tensor([[3],[4],[5],[4]], dtype=torch.float64, requires_grad=True)
+b = torch.tensor([[3],[-4],[5],[4]], dtype=torch.float64, requires_grad=True)
 prod = MeshBeam.Multiplication(a,b)
 
 print("a = ", a)
 print("b = ", b)
 print("a.b = ", prod)
+'''
+
+
+TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                dtype=torch.float64, requires_grad=True)
+pred, ShapeFunctions, ShapeFunctions_BC = MeshBeam(TrialCoordinates)
+
+InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+Pplot.Slot_ShapeFuctions(TrialCoordinates.detach(), ShapeFunctions, ShapeFunctions_BC, pred, InitialCoordinates)
+
 
 
 '''

@@ -270,10 +270,20 @@ Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 if BoolCompareNorms:
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
-# %%
+# %% Test of mesh and parser
+    
+# User efines all boundary conditions 
+DirichletDictionryList = [{"Entity": 1, 
+                           "Value": 0, 
+                           "normal":1}, 
+                            {"Entity": 2, 
+                             "Value": 10, 
+                             "normal":1}]
+
 import Bin.Pre_processing as pre
 
 Beam_mesh = pre.Mesh('Beam',1)
-
+Volume_element = 3   # Volume element correspond to the 1D elem in 1D
+Beam_mesh.AddBCs(Volume_element,DirichletDictionryList) 
 Beam_mesh.MeshGeo()
 # %%

@@ -13,8 +13,8 @@ class Mesh:
         self.VolumeId = Volume
         NumberOfBCs = len(Dirichlets)
         for i in range(NumberOfBCs):
-            ListOfPhysicisBCs = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
-            self.ListOfPhysicisBCs = ListOfPhysicisBCs
+            ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
+            self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
             # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
         

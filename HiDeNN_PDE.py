@@ -271,3 +271,9 @@ if BoolCompareNorms:
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
 # %%
+import Bin.Pre_processing as pre
+
+Beam_mesh = pre.Mesh('Beam',1)
+
+Beam_mesh.MeshGeo()
+# %%

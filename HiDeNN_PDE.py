@@ -283,7 +283,7 @@ DirichletDictionryList = [{"Entity": 1,
 import Bin.Pre_processing as pre
 
 Beam_mesh = pre.Mesh('Beam',1)
-Volume_element = 3   # Volume element correspond to the 1D elem in 1D
+Volume_element = 100   # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,DirichletDictionryList) 
 Beam_mesh.MeshGeo()
 # %%

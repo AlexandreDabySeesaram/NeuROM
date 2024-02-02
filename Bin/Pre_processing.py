@@ -1,6 +1,29 @@
 import numpy as np 
 import os
 
+"""
+Cheat sheet msh format 2.2
+$MeshFormat
+version-number file-type data-size
+$EndMeshFormat
+$Nodes
+number-of-nodes
+node-number x-coord y-coord z-coord
+…
+$EndNodes
+$Elements
+number-of-elements
+elm-number elm-type number-of-tags < tag > … node-number-list
+…
+$EndElements
+$PhysicalNames
+number-of-names
+phyical-number "physical-name"
+…
+$EndPhysicalNames
+https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
+"""
+
 class Mesh:
     def __init__(self,name,h_max):
         """inputs the name of the geometry and the maximum size of the element"""
@@ -19,7 +42,7 @@ class Mesh:
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
         
     def MeshGeo(self):
-        path = '../Geometries/'+self.name_mesh
+        path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):
             pass
         else:
@@ -29,7 +52,7 @@ class Mesh:
             
     
     def ReadMesh(self):
-        with open(self.name_mesh) as mshfile:
+        with open('Geometries/'+self.name_mesh) as mshfile:
             line = mshfile.readline()
             line = mshfile.readline()
             self.MshFormat = line
@@ -52,5 +75,6 @@ class Mesh:
                 line = mshfile.readline()
                 Elems = line.split()  # Split the line at each space
                 ElemList = [float(Elem_item) for Elem_item in Elems]
+                # WARNING, index in barcket in ElemList[-2:] bellow must be adapted to all elements
                 if ElemList[3] == self.VolumeId:
-                    self.Elem.append(ElemList)   
+                    self.Elem.append(ElemList[-2:])   

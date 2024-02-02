@@ -158,11 +158,11 @@ np = 23                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.005                     # Weight for the Mesh regularisation 
-MeshBeam = MeshNN(np,L,alpha)    # Creates the associated model
+BeamModel = MeshNN(np,L,alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
 u_L = 0                     #Right BC
-MeshBeam.SetBCs(u_0,u_L)
+BeamModel.SetBCs(u_0,u_L)
 # Import mechanical functions
 
 from Bin.PDE_Library import RHS, PotentialEnergy, \
@@ -171,9 +171,9 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
 
 
 # Set the coordinates as trainable
-MeshBeam.UnFreeze_Mesh()
+BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-# MeshBeam.Freeze_Mesh()
+# BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False             # Bool for plots used for gif
 BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
@@ -182,7 +182,7 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 #%% Define loss and optimizer
 learning_rate = 0.001
 n_epochs = 5000
-optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
 
@@ -190,14 +190,14 @@ MSE = nn.MSELoss()
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float64, requires_grad=True)
 # Store the initial coordinates before training (could be merged with Coord_trajectories)
-InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
 error = []              # Stores the loss
 error2 = []             # Stores the L2 error compared to the analytical solution
 Coord_trajectories = [] # Stores the trajectories of the coordinates while training
 
 for epoch in range(n_epochs):
     # predict = forward pass with our model
-    u_predicted = MeshBeam(TrialCoordinates) 
+    u_predicted = BeamModel(TrialCoordinates) 
     # loss (several ways to compute the energy loss)
     # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
     l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
@@ -205,11 +205,11 @@ for epoch in range(n_epochs):
 
     # Mesh regularisation term
     # Compute the ratio of the smallest jacobian and the largest jacobian
-    Jacobians = [MeshBeam.coordinates[i]-MeshBeam.coordinates[i-1] for i in range(1,len(MeshBeam.coordinates))]
+    Jacobians = [BeamModel.coordinates[i]-BeamModel.coordinates[i-1] for i in range(1,len(BeamModel.coordinates))]
     Jacobians = torch.stack(Jacobians)
     Ratio = torch.max(Jacobians)/torch.min(Jacobians)
     # Add the ratio to the loss
-    l+=MeshBeam.alpha*(Ratio-1)
+    l+=BeamModel.alpha*(Ratio-1)
 
     # calculate gradients = backward pass
     l.backward()
@@ -220,14 +220,14 @@ for epoch in range(n_epochs):
 
     # Training strategy
     # if epoch >= 100:
-    #     MeshBeam.Freeze_Mesh()
-    #     MeshBeam.UnFreeze_FEM()
+    #     BeamModel.Freeze_Mesh()
+    #     BeamModel.UnFreeze_FEM()
 
     with torch.no_grad():
         # Stores the loss
         error.append(l.item())
         # Stores the coordinates trajectories
-        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+        Coordinates_i = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
         Coord_trajectories.append(Coordinates_i)
         if BoolCompareNorms:
             # Copute and store the L2 error w.r.t. the analytical solution
@@ -237,7 +237,7 @@ for epoch in range(n_epochs):
         print('epoch ', epoch+1, ' loss = ', l.item())
         if BoolPlot:
             Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
-                                          TrialCoordinates,AnalyticSolution,MeshBeam,
+                                          TrialCoordinates,AnalyticSolution,BeamModel,
                                           '/Gifs/Solution_'+str(epoch))
             Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
                                               TrialCoordinates,AnalyticGradientSolution,
@@ -251,12 +251,12 @@ Coordinates = Coord_trajectories[-1]
 import Post.Plots as Pplot
 # Tests on trained data and compare to reference
 Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
-                                          TrialCoordinates,AnalyticSolution,MeshBeam,
+                                          TrialCoordinates,AnalyticSolution,BeamModel,
                                           'Solution_displacement')
 # Plots the gradient & compare to reference
 Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                               TrialCoordinates,AnalyticGradientSolution,
-                                              MeshBeam,Derivative,'Solution_gradients')
+                                              BeamModel,Derivative,'Solution_gradients')
 
 # plots zoomed energy loss
 Pplot.PlotEnergyLoss(error,0,'Loss')
@@ -286,4 +286,8 @@ Beam_mesh = pre.Mesh('Beam',1)
 Volume_element = 100   # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,DirichletDictionryList) 
 Beam_mesh.MeshGeo()
+Beam_mesh.ReadMesh()
+
+
+
 # %%

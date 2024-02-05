@@ -4,28 +4,6 @@ import torch.nn as nn
 torch.set_default_dtype(torch.float64)
 import Post.Plots as Pplot
 import numpy as numpy
-import copy
-
-def plot_everything():
-    Coordinates = Coord_trajectories[-1]
-
-
-    # Tests on trained data and compare to reference
-    Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
-                                            TrialCoordinates,AnalyticSolution,MeshBeam,
-                                            'Solution_displacement')
-    # Plots the gradient & compare to reference
-    Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
-                                                TrialCoordinates,AnalyticGradientSolution,
-                                                MeshBeam,Derivative,'Solution_gradients')
-    # Plots trajectories of the coordinates while training
-    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
-
-    #Pplot.Plot_LearningRate(Learning_Rate)
-
-    Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
-
-    #Pplot.Slot_ShapeFuctions(TrialCoordinates, ShapeFunction, pred, InitialCoordinates)
 
 #%% Define the model for a 1D linear Beam mesh
     
@@ -131,26 +109,18 @@ class ElementBlock(nn.Module):
 
     def forward(self, x, coordinates):
         i = self.i
-        print("  Element no = ", i)
 
         # for the outter Shape functions the index acts as a tag, -1 for the left, -2 for the right
         if i == -1:     # Left
-            x_left = coordinates[0]
-            x_right = coordinates[1]
-            x_im1 = coordinates[0]-coordinates[-1]*1/100
-            x_ip1 = coordinates[2]
-
+            x_left = coordinates[0]-coordinates[-1]*1/100
+            x_right = coordinates[0]
         elif i == -2:   # Right
-            x_right = coordinates[-1]
-            x_left = coordinates[-2]
-            x_im1 = coordinates[-3]
-            x_ip1 = coordinates[-1]*(1+1/100)
+            x_left = coordinates[-1]
+            x_right = coordinates[-1]*(1+1/100)
         else:
             x_left = coordinates[i]
             x_right = coordinates[i+1]
-            x_im1 = coordinates[i-1] 
-            x_ip1 = coordinates[i+2] 
- 
+
         left = self.LinearBlock(x, x_left, x_right, 0, 1)
         right = self.LinearBlock(x, x_left, x_right, 1, 0)
 
@@ -217,12 +187,10 @@ class MeshNN(nn.Module):
         self.connectivity_matrix = connectivity_matrix
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,self.np)])
         
-        print("Elements = ", self.elements)
-
         self.L = L 
-        self.Functions = nn.ModuleList([ElementBlock(i) for i in range(1,self.n_elem-1)])
+        self.Functions = nn.ModuleList([ElementBlock(i) for i in range(self.n_elem)])
         
-        self.CompositionLayer = nn.Linear(2*self.n_elem,self.np,bias=False)
+        self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np,bias=False)
         self.CompositionLayer.weight.data = self.connectivity_matrix
 
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
@@ -241,24 +209,24 @@ class MeshNN(nn.Module):
 
     def forward(self,x):
         # Compute shape functions 
-        intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.n_elem-2)]
+        intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.n_elem)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
 
         out_uu = torch.cat(intermediate_uu, dim=1)
-        print("out_uu = ", out_uu.shape)
         out_dd = torch.cat(intermediate_dd, dim=1)
-        #print("out_dd = ", out_dd.shape)
-        long_vector = torch.cat((out_dd,out_uu),dim=1)
+        joined_vector = torch.cat((out_dd,out_uu),dim=1)
+        #print("joined_vector = ", joined_vector.shape)
+        recomposed_vector = self.CompositionLayer(joined_vector) - 1
+        #print("recomposed vector = ", recomposed_vector.shape)
 
-        recomposed_all = self.CompositionLayer(long_vector)
-        recomposed = recomposed_all[:,1:-1] - 1
-        recomposed_BC = torch.stack((recomposed_all[:,0],recomposed_all[:,-1]),dim=1)
+        recomposed = recomposed_vector[:,1:-1]
+        recomposed_BC = torch.stack((recomposed_vector[:,0],recomposed_vector[:,-1]),dim=1)
 
         u_inter = self.InterpoLayer_uu(recomposed)
         u_BC = self.InterpoLayer_dd(recomposed_BC)
 
         u = torch.stack((u_inter,u_BC), dim=1)
-        return self.SumLayer(u), recomposed, recomposed_BC
+        return self.SumLayer(u), recomposed_vector
 
         ######### LEGACY  #############
         # Previous implementation (that gives slightly different results)
@@ -305,29 +273,27 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-n_elem = 10                          # Number of Nodes in the Mesh
+n_elem = 22                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.0                   # Weight for the Mesh regularisation 
 
-connectivity_matrix = torch.zeros((n_elem+1,2*n_elem))
+connectivity_matrix = torch.zeros((n_elem+1,2*(n_elem+2)))
 
-connectivity_matrix[0,1] = 1.0          # left
-connectivity_matrix[n_elem,2] = 1.0     # right
+# node 0
+connectivity_matrix[0,0] = 1.0
+connectivity_matrix[0,5] = 1.0
 
-# node 1
-connectivity_matrix[1,0] = 1.0
-connectivity_matrix[1,5] = 1.0
-
-# node n-1
-connectivity_matrix[n_elem-1,3] = 1.0
-connectivity_matrix[n_elem-1,-2] = 1.0
+# node n
+connectivity_matrix[n_elem,3] = 1.0     
+connectivity_matrix[n_elem,-2] = 1.0     
 
 
-for node in range(2, n_elem-1):
+for node in range(1,n_elem):
     row = node
     left = node-1
-    cols = [2*(left+1), 2*(left+1)+3]
+
+    cols = [4+left*2, 4+left*2+3]
     print("node = ", node)
     print("cols = ", cols)
     for col in cols:
@@ -344,9 +310,8 @@ u_L = 0                     #Right BC
 MeshBeam.SetBCs(u_0,u_L)
 # Import mechanical functions
 
-from Bin.PDE_Library import RHS, PotentialEnergy, \
-    PotentialEnergyVectorised, AlternativePotentialEnergy, \
-        Derivative, AnalyticGradientSolution, AnalyticSolution
+
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage
 
 
 # Set the coordinates as trainable
@@ -361,7 +326,7 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 #%% Define loss and optimizer
 learning_rate = 1.0e-3
 n_epochs = 25000
-optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
 
 MSE = nn.MSELoss()
@@ -369,144 +334,15 @@ MSE = nn.MSELoss()
 
 TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], 
                                 dtype=torch.float64, requires_grad=True)
-InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-print("InitialCoordinates = ", InitialCoordinates)
-print()
 
-pred, ShapeFunctions, ShapeFunctions_BC = MeshBeam(TrialCoordinates)
-
-Pplot.Slot_ShapeFuctions(TrialCoordinates.detach(), ShapeFunctions, ShapeFunctions_BC, pred, InitialCoordinates)
-
-
-
+Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
 
 '''
-#%% Training loop
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float64, requires_grad=True)
-# Store the initial coordinates before training (could be merged with Coord_trajectories)
-InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-error = []              # Stores the loss
-error2 = []             # Stores the L2 error compared to the analytical solution
-Learning_Rate = []
 
-Coord_trajectories = [] # Stores the trajectories of the coordinates while training
+Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
+'''
 
-stagnancy_counter = 0
-epoch = 0
-loss_old = 1.0e3
-loss_min = 1.0e3
-loss_counter = 0
-
-coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
-
-while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<2000:
-
-    coord_old = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-    weights_old = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
-
-    # predict = forward pass with our model
-    u_predicted = MeshBeam(TrialCoordinates) 
-    # loss (several ways to compute the energy loss)
-    # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    # l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-
-    # Mesh regularisation term
-    # Compute the ratio of the smallest jacobian and the largest jacobian
-    #Jacobians = [MeshBeam.coordinates[i]-MeshBeam.coordinates[i-1] for i in range(1,len(MeshBeam.coordinates))]
-    #Jacobians = torch.stack(Jacobians)
-    #Ratio = torch.max(Jacobians)/torch.min(Jacobians)
-    # Add the ratio to the loss
-    #l+=MeshBeam.alpha*(Ratio-1)
-
-    loss_current = l.item()
-    loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
-    loss_old = loss_current
-
-    if loss_min > loss_current:
-        loss_min = loss_current
-
-        coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-        weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
-        loss_counter = 0
-    else:
-        loss_counter = loss_counter + 1
-
-
-    # calculate gradients = backward pass
-    l.backward()
-    # update weights
-    optimizer.step()
-    #scheduler.step(l)
-
-    # zero the gradients after updating
-    optimizer.zero_grad()
-
-    coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-
-    coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
-    if numpy.all(coord_dif > ((L/np)/5)) == False:
-        for j in range(coord_dif.shape[0]):
-            if coord_dif[j] < (L/np)/5:
-
-                MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
-                MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
-
-
-    with torch.no_grad():
-        # Stores the loss
-        error.append(l.item())
-        # Stores the coordinates trajectories
-        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-        Coord_trajectories.append(Coordinates_i)
-        Learning_Rate.append(optimizer.param_groups[0]["lr"])
-
-        if BoolCompareNorms:
-            # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-    if loss_decrease >= 0 and loss_decrease < 1.0e-6:
-        stagnancy_counter = stagnancy_counter +1
-    else:
-        stagnancy_counter = 0
-
-    if (epoch+1) % 500 == 0:
-        print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-        print("    loss decrease = ", numpy.format_float_scientific( loss_decrease, precision=4))
-        print()
-        plot_everything()
-
-    epoch = epoch+1
-
-
-if loss_min < loss_current:
-   
-    for j in range(len(coord_old)):
-        MeshBeam.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
-    MeshBeam.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
-
-    u_predicted = MeshBeam(TrialCoordinates) 
-    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    
-
-    with torch.no_grad():
-        # Stores the loss
-        error.append(l.item())
-        # Stores the coordinates trajectories
-        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-        Coord_trajectories.append(Coordinates_i)
-        Learning_Rate.append(optimizer.param_groups[0]["lr"])
-
-        if BoolCompareNorms:
-            # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-plot_everything()
-
-
-
+'''
 optim = torch.optim.LBFGS(MeshBeam.parameters(),
                     #history_size=5, 
                     #max_iter=15, 

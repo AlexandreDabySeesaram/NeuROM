@@ -20,14 +20,14 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     # Plots trajectories of the coordinates while training
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
-
+    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates)
 
 def Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates):
     
     InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 
     pred, ShapeFunctions = MeshBeam(TrialCoordinates)
-    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), ShapeFunctions, pred, InitialCoordinates)
+    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates)
 
 
 
@@ -128,7 +128,7 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("Revert")
-        for j in range(len(coord_old)):
+        for j in range(len(coord_min_loss)):
             MeshBeam.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
         MeshBeam.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
 

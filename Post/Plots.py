@@ -98,10 +98,15 @@ def Plot_LearningRate(Learning_Rate):
     plt.clf()
 
 
-def Plot_ShapeFuctions(TrialCoordinates, values, weights, InitCoord):
+def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord):
+    shape_function = model(TrialCoordinates)[1]
+    #nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
+    #nodal_values = np.zeros(shape_function.shape[1])
+    #nodal_values[1:-1] = nodal_values_inter
 
-    for i in range(values.shape[1]):
-        plt.plot(TrialCoordinates.data, values[:,i].detach(), label="Shape function "+str(i))
+    for i in range(shape_function.shape[1]):
+    #for i in range(8,10):
+        plt.plot(TrialCoordinates.data, shape_function[:,i].detach(), label="Shape function "+str(i))
     plt.scatter(InitCoord,[coord*0 for coord in InitCoord], s=6, color="pink", alpha=0.5)
 
     #plt.legend()

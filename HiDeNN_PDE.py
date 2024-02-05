@@ -192,6 +192,8 @@ class MeshNN(nn.Module):
         
         self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np,bias=False)
         self.CompositionLayer.weight.data = self.connectivity_matrix
+        self.CompositionLayer.weight. requires_grad=False
+
 
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.np-2), requires_grad=False)
@@ -325,8 +327,8 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 
 #%% Define loss and optimizer
 learning_rate = 1.0e-3
-n_epochs = 25000
-optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
+n_epochs = 20000
+optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
 
 MSE = nn.MSELoss()
@@ -335,12 +337,10 @@ MSE = nn.MSELoss()
 TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], 
                                 dtype=torch.float64, requires_grad=True)
 
-Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
-
-'''
+#Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
 
 Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
-'''
+
 
 '''
 optim = torch.optim.LBFGS(MeshBeam.parameters(),

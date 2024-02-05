@@ -1,5 +1,5 @@
 L=10;
-dh = 1; // Minimum size is the length of the beam
+dh = L; // Minimum size is the length of the beam
 Point(1) = {0,0,0,dh};
 Point(2) = {L,0,0,dh}; 
 Line(3) = {1,2};

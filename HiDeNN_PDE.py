@@ -282,7 +282,7 @@ DirichletDictionryList = [{"Entity": 1,
 
 import Bin.Pre_processing as pre
 
-MaxElemSize = L/10
+MaxElemSize = L/(np-1)
 Beam_mesh = pre.Mesh('Beam',MaxElemSize)
 Volume_element = 100   # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,DirichletDictionryList) 

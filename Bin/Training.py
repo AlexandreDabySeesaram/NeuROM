@@ -20,14 +20,14 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     # Plots trajectories of the coordinates while training
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
-    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates)
+    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates, True)
 
 def Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates):
     
     InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 
     pred, ShapeFunctions = MeshBeam(TrialCoordinates)
-    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates)
+    Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates, False)
 
 
 
@@ -49,7 +49,7 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
     coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
     weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
 
-    while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<2000:
+    while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<1000:
 
         coord_old = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         weights_old = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
@@ -92,9 +92,9 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
         # Chock colission - Revert if needed
         coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
-        if numpy.all(coord_dif > ((L/n_elem)/5)) == False:
+        if numpy.all(coord_dif > ((L/n_elem)/10)) == False:
             for j in range(coord_dif.shape[0]):
-                if coord_dif[j] < (L/n_elem)/5:
+                if coord_dif[j] < (L/n_elem)/10:
 
                     MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
                     MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
@@ -111,14 +111,14 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
                 # Copute and store the L2 error w.r.t. the analytical solution
                 error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
-        if loss_decrease >= 0 and loss_decrease < 1.0e-6:
+        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
             stagnancy_counter = stagnancy_counter +1
         else:
             stagnancy_counter = 0
 
-        if (epoch+1) % 500 == 0:
+        if (epoch+1) % 200 == 0:
             print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-            print()
+            print(" loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
             plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                             TrialCoordinates,AnalyticSolution,MeshBeam,Coord_trajectories,error, error2)                           
@@ -149,4 +149,57 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
     plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                                 TrialCoordinates,AnalyticSolution,MeshBeam,Coord_trajectories,error, error2)
 
+    return error, error2, InitialCoordinates, Coord_trajectories
 
+
+def Training_FinalStageLBFGS(MeshBeam, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error=[], error2 =[],Coord_trajectories=[]):
+    optim = torch.optim.LBFGS(MeshBeam.parameters(),
+                    #history_size=5, 
+                    #max_iter=15, 
+                    #tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")
+
+    loss_old = error[-1]
+    epoch = 0
+    stagnancy_counter = 0
+
+    while epoch<n_epochs and stagnancy_counter < 3:
+
+        def closure():
+            optim.zero_grad()
+            u_predicted, _ = MeshBeam(TrialCoordinates) 
+            l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+            l.backward()
+            return l
+
+        optim.step(closure)
+        l = closure()
+
+        with torch.no_grad():
+            # Stores the loss
+            error.append(l.item())
+            # Stores the coordinates trajectories
+            Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+            Coord_trajectories.append(Coordinates_i)
+
+            if BoolCompareNorms:
+                # Copute and store the L2 error w.r.t. the analytical solution
+                u_predicted, _ = MeshBeam(TrialCoordinates) 
+                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+
+        loss_current = l.item()
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+
+        if loss_decrease >= 0 and loss_decrease < 1.0e-8:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        loss_old = loss_current
+
+        if (epoch+1) % 1 == 0:
+            print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+        epoch = epoch+1
+
+    plot_everything(A,E,InitialCoordinates,Coordinates_i,
+                                                TrialCoordinates,AnalyticSolution,MeshBeam,Coord_trajectories,error, error2)

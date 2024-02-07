@@ -27,6 +27,7 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
 
 def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticGradientSolution,model,Derivative,name):
     pred = model(TrialCoordinates)[0]
+    
     # Plots the gradient & compare to reference
     plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
@@ -98,15 +99,19 @@ def Plot_LearningRate(Learning_Rate):
     plt.clf()
 
 
-def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord):
+def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     shape_function = model(TrialCoordinates)[1]
-    #nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
-    #nodal_values = np.zeros(shape_function.shape[1])
-    #nodal_values[1:-1] = nodal_values_inter
+    
+    nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
+    nodal_values = np.zeros(shape_function.shape[1])
+    nodal_values[1:-1] = nodal_values_inter
 
-    for i in range(shape_function.shape[1]):
-    #for i in range(8,10):
-        plt.plot(TrialCoordinates.data, shape_function[:,i].detach(), label="Shape function "+str(i))
+    if ProjectWeight == False:
+        for i in range(shape_function.shape[1]):
+            plt.plot(TrialCoordinates.data, shape_function[:,i].detach(), label="Shape function "+str(i))
+    else:
+        for i in range(shape_function.shape[1]):
+            plt.plot(TrialCoordinates.data, nodal_values[i]*shape_function[:,i].detach(), label="Shape function "+str(i))
     plt.scatter(InitCoord,[coord*0 for coord in InitCoord], s=6, color="pink", alpha=0.5)
 
     #plt.legend()

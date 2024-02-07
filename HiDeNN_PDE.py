@@ -6,7 +6,8 @@ import Post.Plots as Pplot
 import numpy as numpy
 
 #%% Define the model for a 1D linear Beam mesh
-    
+
+''' 
 class MultiplicationBlock(nn.Module):
     """This is an implementation of the multiplication block 
      See [Zhang et al. 2021] Multiplication block.
@@ -21,7 +22,8 @@ class MultiplicationBlock(nn.Module):
         self.SumLayer.weight.requires_grad = False
 
         self.Diff = nn.Linear(3,1,bias=False)
-        self.Diff.weight.data = nn.Parameter(data=torch.tensor([[-0.5, 0.5,-0.5]]), requires_grad=False)
+        self.Diff.weight.data = torch.tensor([[-0.5, 0.5,-0.5]])
+        self.Diff.weight.data.requires_grad=False
 
     def forward(self,x, y):
         mid = torch.cat((x,y),dim=1)
@@ -30,7 +32,7 @@ class MultiplicationBlock(nn.Module):
         mid = torch.cat((torch.pow(x,2),mid,torch.pow(y,2)),dim=1)
         mid = self.Diff(mid)
         return mid
-
+'''
 
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
@@ -49,6 +51,7 @@ class LinearBlock(nn.Module):
         mid = (y_b-y_a)*mid + y_a
         return mid
 
+'''
 class ShapefunctionQuadratic(nn.Module):
     """This is an implementation of quadratic 1D shape function in a DNN representation
     See [Zhang et al. 2021] consisting of a linear(1,2) function leading the the Linear{Left+Right} layers which output then passes through Linear(2,1). 
@@ -98,9 +101,55 @@ class ShapefunctionQuadratic(nn.Module):
         prod = -self.Multiplication(left,right)/(((x_i + x_ip1)*0.5 - x_i)*((x_i + x_ip1)*0.5 - x_ip1))
         #prod = -(left*right)/(((x_i + x_ip1)*0.5 - x_i)*((x_i + x_ip1)*0.5 - x_ip1))
         return prod
+'''
+
+class ElementBlockQuadratic(nn.Module):
+    """ Implementation of the Element block for quadratic shape functions - object handling all local shape functions in the given element. 
+        The input parameters are:
+        x - The coordinate where everything is evaluated
+        coordinates - Coordintaes of all nodes
+    """
+
+    def __init__(self, i ):
+        super(ElementBlockQuadratic, self).__init__()
+        self.i = i
+        self.LinearBlock = LinearBlock()
+        #self.Multiplication = MultiplicationBlock()
+
+    def forward(self, x, coordinates):
+        i = self.i
+        separ = int((len(coordinates)-1)/2)+1
+
+        x_left = coordinates[2*i]
+        x_right = coordinates[2*i+2]
+        x_mid = coordinates[2*i+1]
+
+        sh_mid_1 = self.LinearBlock(x, x_left, x_right, 0, x_right - x_left)
+        sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, 0)   
+        #sh_mid = -self.Multiplication(sh_mid_1,sh_mid_2)/((x_mid -x_left)*(x_mid - x_right))
+        sh_mid = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right))
+
+        sh_R_1 = self.LinearBlock(x, x_left, x_right, x_mid - x_left, x_mid - x_right)
+        sh_R_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, 0)   
+        #sh_R = self.Multiplication(sh_R_1,sh_R_2)/((x_left-x_mid)*(x_left - x_right))
+        sh_R = (sh_R_1*sh_R_2)/((x_left-x_mid)*(x_left - x_right))
+
+        sh_L_1 = self.LinearBlock(x, x_left, x_right, 0, x_right - x_left)
+        sh_L_2 = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
+        #sh_L = self.Multiplication(sh_L_1,sh_L_2)/((x_right-x_left)*(x_right - x_mid))
+        sh_L = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid))
+
+        out = torch.cat((sh_L, sh_mid, sh_R),dim=1)
+
+        return out
 
 
 class ElementBlock(nn.Module):
+    """ Implementation of the Element block for linear shape functions - object handling all local shape functions in the given element. 
+        The input parameters are:
+        x - The coordinate where everything is evaluated
+        coordinates - Coordintaes of all nodes
+    """
 
     def __init__(self, i ):
         super(ElementBlock, self).__init__()
@@ -177,30 +226,39 @@ class MeshNN(nn.Module):
     """This is the main Neural Network building the FE interpolation, the coordinates parameters are trainable are correspond to the coordinates of the nodes in the Mesh which are passed as parameters to the sub NN where they are fixed. 
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them is equivqlent to solving the PDE. """
-    def __init__(self, n_elem, L, connectivity_matrix, alpha = 0.005):
+    def __init__(self, n_elem, L, order, connectivity_matrix, connectivity_vector, alpha = 0.005):
         super(MeshNN, self).__init__()
         self.alpha = alpha # set the weight for the Mesh regularisation 
 
         self.elements = torch.arange(n_elem)
         self.n_elem = n_elem
-        self.np = n_elem+1 
         self.connectivity_matrix = connectivity_matrix
-        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,self.np)])
-        
+        self.connectivity_vector = connectivity_vector
         self.L = L 
-        self.Functions = nn.ModuleList([ElementBlock(i) for i in range(self.n_elem)])
-        
-        self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np,bias=False)
-        self.CompositionLayer.weight.data = self.connectivity_matrix
-        self.CompositionLayer.weight. requires_grad=False
 
+        if order ==1:
+            self.np = n_elem+1 
+            self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,self.np)])          
+            self.Functions = nn.ModuleList([ElementBlock(i) for i in range(self.n_elem)])
+            self.CompositionLayer = nn.Linear(3*n_elem + 2*2,self.np)
+
+        if order ==2:
+            self.np = 2*n_elem+1 
+            self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,2*self.n_elem+1)])          
+            self.Functions = nn.ModuleList([ElementBlockQuadratic(i) for i in range(self.n_elem)])
+            self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np)
+
+        self.CompositionLayer.weight.data = self.connectivity_matrix
+        self.CompositionLayer.weight.requires_grad=False
+        self.CompositionLayer.bias.data = self.connectivity_vector
+        self.CompositionLayer.bias.requires_grad=False
 
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.np-2), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
 
-        self.Functions_dd = nn.ModuleList([ElementBlock(-1),ElementBlock(-2)])
-
+        # Phantom elements outside domain = We can always use linear block
+        self.Functions_dd = nn.ModuleList([ElementBlock(-1),ElementBlock(-2)])        
         self.InterpoLayer_dd = nn.Linear(1,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -210,25 +268,31 @@ class MeshNN(nn.Module):
 
 
     def forward(self,x):
-        # Compute shape functions 
+        # All local versions of shape function.
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.n_elem)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
 
         out_uu = torch.cat(intermediate_uu, dim=1)
         out_dd = torch.cat(intermediate_dd, dim=1)
+        # The vector containing all local versions of all shape functions ordered in per-element manner.
         joined_vector = torch.cat((out_dd,out_uu),dim=1)
-        #print("joined_vector = ", joined_vector.shape)
-        recomposed_vector = self.CompositionLayer(joined_vector) - 1
-        #print("recomposed vector = ", recomposed_vector.shape)
+
+        # The local versions are summed-up based on their association with nodes.
+        # The final dimension = number of nodes.
+        recomposed_vector = self.CompositionLayer(joined_vector)
 
         recomposed = recomposed_vector[:,1:-1]
         recomposed_BC = torch.stack((recomposed_vector[:,0],recomposed_vector[:,-1]),dim=1)
 
+        # Interior and processed by interpolation layer separately. 
         u_inter = self.InterpoLayer_uu(recomposed)
         u_BC = self.InterpoLayer_dd(recomposed_BC)
 
         u = torch.stack((u_inter,u_BC), dim=1)
+        
         return self.SumLayer(u), recomposed_vector
+        #return joined_vector, joined_vector
+        
 
         ######### LEGACY  #############
         # Previous implementation (that gives slightly different results)
@@ -275,13 +339,38 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-n_elem = 22                          # Number of Nodes in the Mesh
+n_elem = 6                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.0                   # Weight for the Mesh regularisation 
 
-connectivity_matrix = torch.zeros((n_elem+1,2*(n_elem+2)))
+# Quadragic shape fucntions
+connectivity_vector = (-1)*torch.ones(2*n_elem+1)
+connectivity_matrix = torch.zeros((2*n_elem+1,3*n_elem + 2*2))
+# node 0
+connectivity_matrix[0,0] = 1.0
+connectivity_matrix[0,6] = 1.0
 
+# node n
+connectivity_matrix[2*n_elem,3] = 1.0     
+connectivity_matrix[2*n_elem,-3] = 1.0   
+
+for el in range(n_elem):
+    connectivity_matrix[el*2+1,4+el*3+1] = 1
+    connectivity_vector[el*2+1]=0
+
+for node in range(1,n_elem):
+    row = 2*node
+    left = node-1
+    cols = [4+left*3, 4+left*3+5]
+    for col in cols:
+        connectivity_matrix[row,col] = 1
+
+
+'''
+# Linear shape functions
+connectivity_vector = (-1)*torch.ones(n_elem+1)
+connectivity_matrix = torch.zeros((n_elem+1,2*(n_elem+2)))
 # node 0
 connectivity_matrix[0,0] = 1.0
 connectivity_matrix[0,5] = 1.0
@@ -290,22 +379,17 @@ connectivity_matrix[0,5] = 1.0
 connectivity_matrix[n_elem,3] = 1.0     
 connectivity_matrix[n_elem,-2] = 1.0     
 
-
 for node in range(1,n_elem):
     row = node
     left = node-1
 
     cols = [4+left*2, 4+left*2+3]
-    print("node = ", node)
-    print("cols = ", cols)
     for col in cols:
         connectivity_matrix[row,col] = 1
+'''
 
 
-print("connectivity matrix = ", connectivity_matrix.data)
-print()
-
-MeshBeam = MeshNN(n_elem,L,connectivity_matrix,alpha)    # Creates the associated model
+MeshBeam = MeshNN(n_elem,L,2, connectivity_matrix,connectivity_vector, alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
 u_L = 0                     #Right BC
@@ -313,13 +397,15 @@ MeshBeam.SetBCs(u_0,u_L)
 # Import mechanical functions
 
 
-from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS
 
 
 # Set the coordinates as trainable
 MeshBeam.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-# MeshBeam.Freeze_Mesh()
+#MeshBeam.Freeze_Mesh()
+#MeshBeam.Freeze_FEM()
+
 # Set the require output requirements
 BoolPlot = False             # Bool for plots used for gif
 BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
@@ -334,66 +420,10 @@ optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
 
-TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], 
-                                dtype=torch.float64, requires_grad=True)
+TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], dtype=torch.float64, requires_grad=True)
 
-#Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
-
-Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
+Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
 
 
-'''
-optim = torch.optim.LBFGS(MeshBeam.parameters(),
-                    #history_size=5, 
-                    #max_iter=15, 
-                    #tolerance_grad = 1.0e-9,
-                    line_search_fn="strong_wolfe")
-
-
-print("Minimal error = ", numpy.min(error))
-
-epoch = 0
-stagnancy_counter = 0
-
-while epoch<n_epochs and stagnancy_counter < 3:
-
-    def closure():
-        optim.zero_grad()
-        u_predicted = MeshBeam(TrialCoordinates) 
-        l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-        l.backward()
-        return l
-
-    optim.step(closure)
-    l = closure()
-
-    with torch.no_grad():
-        # Stores the loss
-        error.append(l.item())
-        # Stores the coordinates trajectories
-        Coordinates_i = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
-        Coord_trajectories.append(Coordinates_i)
-        Learning_Rate.append(optimizer.param_groups[0]["lr"])
-
-        if BoolCompareNorms:
-            # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-    loss_current = l.item()
-    loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
-
-    if loss_decrease >= 0 and loss_decrease < 1.0e-8:
-        stagnancy_counter = stagnancy_counter +1
-    else:
-        stagnancy_counter = 0
-
-    if loss_decrease > 0:
-        loss_old = loss_current
-
-    if (epoch+1) % 1 == 0:
-        print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-
-    epoch = epoch+1
-
-plot_everything()
-'''
+error, error2, InitialCoordinates, Coord_trajectories = Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
+Training_FinalStageLBFGS(MeshBeam, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)

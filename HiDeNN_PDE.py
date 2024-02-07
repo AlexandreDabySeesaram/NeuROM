@@ -88,13 +88,9 @@ class MeshNN(nn.Module):
         self.Functions_dd = nn.ModuleList([ElementBlock_Bar_2(-1,mesh.Connectivity),
                                            ElementBlock_Bar_2(-2,mesh.Connectivity)])
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
-        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
+        # self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
+        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total).detach()
         self.AssemblyLayer.weight. requires_grad=False
-
-        self.AssemblyLayer_u = nn.Linear(2*(self.NElem),self.dofs,bias=False)
-        self.AssemblyLayer_u.weight.data = torch.tensor(mesh.weights_assembly)
-        self.AssemblyLayer_u.weight. requires_grad=False
-
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.InterpoLayer_dd.weight.requires_grad = False
@@ -151,7 +147,7 @@ class MeshNN(nn.Module):
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 10                                     # Number of Nodes in the Mesh
+np = 50                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -187,7 +183,8 @@ BeamModel.UnFreeze_Mesh()
 BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False                        # Bool for plots used for gif
-BoolCompareNorms = True                 # Bool for comparing energy norm to L2 norm
+BoolPlotPost = False
+BoolCompareNorms = False                 # Bool for comparing energy norm to L2 norm
 
 
 #%% Define loss and optimizer
@@ -209,7 +206,7 @@ error = []              # Stores the loss
 error2 = []             # Stores the L2 error compared to the analytical solution
 Coord_trajectories = [] # Stores the trajectories of the coordinates while training
 
-
+print("**************** START TRAINING ***************\n")
 
 for epoch in range(n_epochs):
     # predict = forward pass with our model
@@ -262,26 +259,27 @@ for epoch in range(n_epochs):
                                           '/Gifs/Solution_gardient_'+str(epoch))
     
 #%% Post-processing
-# Retrieve coordinates
-Coordinates = Coord_trajectories[-1]
-# Tests on trained data and compare to reference
-Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
-                                          TrialCoordinates,AnalyticSolution,BeamModel,
-                                          'Solution_displacement')
-# Plots the gradient & compare to reference
-Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
-                                              TrialCoordinates,AnalyticGradientSolution,
-                                              BeamModel,Derivative,'Solution_gradients')
-# plots zoomed energy loss
-Pplot.PlotEnergyLoss(error,0,'Loss')
+if BoolPlot:
+    # Retrieve coordinates
+    Coordinates = Coord_trajectories[-1]
+    # Tests on trained data and compare to reference
+    Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
+                                            TrialCoordinates,AnalyticSolution,BeamModel,
+                                            'Solution_displacement')
+    # Plots the gradient & compare to reference
+    Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
+                                                TrialCoordinates,AnalyticGradientSolution,
+                                                BeamModel,Derivative,'Solution_gradients')
+    # plots zoomed energy loss
+    Pplot.PlotEnergyLoss(error,0,'Loss')
 
-# plots zoomed energy loss
-Pplot.PlotEnergyLoss(error,2500,'Loss_zoomed')
+    # plots zoomed energy loss
+    Pplot.PlotEnergyLoss(error,2500,'Loss_zoomed')
 
-# Plots trajectories of the coordinates while training
-Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+    # Plots trajectories of the coordinates while training
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
-if BoolCompareNorms:
-    Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
+    if BoolCompareNorms:
+        Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 
 # %%

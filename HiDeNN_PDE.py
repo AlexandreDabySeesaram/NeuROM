@@ -12,6 +12,7 @@ torch.set_default_dtype(torch.float64)
 #Import post processing libraries
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
+mps_device = torch.device("mps")
 
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
@@ -185,6 +186,8 @@ BeamModel.Freeze_Mesh()
 BoolPlot = False                        # Bool for plots used for gif
 BoolPlotPost = False
 BoolCompareNorms = False                 # Bool for comparing energy norm to L2 norm
+
+BeamModel.to(mps_device)
 
 
 #%% Define loss and optimizer

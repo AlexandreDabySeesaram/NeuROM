@@ -108,39 +108,9 @@ class MeshNN(nn.Module):
         intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.NElem)]
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
         out_uu = torch.cat(intermediate_uu, dim=1)
-        plt.plot(x.data,out_uu.data[:,0], label = '$N_1$')
-        plt.plot(x.data,out_uu.data[:,1], label = '$N_3^1$')
-        plt.plot(x.data,out_uu.data[:,2], label = '$N_3^2$')
-        plt.plot(x.data,out_uu.data[:,3], label = '$N_2$')
-        plt.legend(loc="upper left")
-        plt.savefig('Results/Shape.pdf', transparent=True)  
-        plt.clf()
         out_dd = torch.cat(intermediate_dd, dim=1)
         joined_vector = torch.cat((out_uu,out_dd),dim=1)
         recomposed_vector_u = self.AssemblyLayer(joined_vector) -1
-
-        plt.plot(x.data,recomposed_vector_u.data[:,0], label = '$N_1$')
-        plt.plot(x.data,recomposed_vector_u.data[:,1], label = '$N_2$')
-        plt.plot(x.data,recomposed_vector_u.data[:,2], label = '$N_3$')
-        plt.plot(x.data,recomposed_vector_u.data[:,3], label = '$N_4$')
-        plt.plot(x.data,recomposed_vector_u.data[:,-2], label = '$N_{p-3}$')
-
-        plt.plot(x.data,recomposed_vector_u.data[:,-1], label = '$N_{p-2}$')
-
-        plt.legend(loc="upper left")
-        plt.savefig('Results/Assembled.pdf', transparent=True)
-        plt.clf()
-
-        recomposed_vector_u_uu = self.AssemblyLayer_u(out_uu) - 1
-        plt.plot(x.data,recomposed_vector_u_uu.data[:,0], label = '$N_1$')
-        plt.plot(x.data,recomposed_vector_u_uu.data[:,1], label = '$N_2$')
-        plt.plot(x.data,recomposed_vector_u_uu.data[:,2], label = '$N_3$')
-        plt.plot(x.data,recomposed_vector_u_uu.data[:,3], label = '$N_4$')
-        plt.legend(loc="upper left")
-        plt.savefig('Results/Assembled_u.pdf', transparent=True)
-        plt.clf()
-
-
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
         u = torch.stack((u_u,u_d), dim=1)
@@ -214,7 +184,7 @@ BeamModel.SetBCs(u_0,u_L)
 # Set the coordinates as trainable
 BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-# BeamModel.Freeze_Mesh()
+BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False                        # Bool for plots used for gif
 BoolCompareNorms = True                 # Bool for comparing energy norm to L2 norm
@@ -228,9 +198,7 @@ MSE = nn.MSELoss()
 
 TestX = torch.tensor([[i/50-5] for i in range(2,1000)], 
                                 dtype=torch.float64, requires_grad=True)
-u_predicted = BeamModel(TestX) 
 
-plt.plot(TestX.data, u_predicted.data)
 
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 

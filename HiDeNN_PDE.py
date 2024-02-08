@@ -8,7 +8,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import torch librairies
 import torch
 import torch.nn as nn
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.float32)
 #Import post processing libraries
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
@@ -90,7 +90,7 @@ class MeshNN(nn.Module):
                                            ElementBlock_Bar_2(-2,mesh.Connectivity)])
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
         # self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
-        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total).detach()
+        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
         self.AssemblyLayer.weight. requires_grad=False
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
@@ -118,8 +118,8 @@ class MeshNN(nn.Module):
             Inputs are:
                 - u_0 the left BC
                 - u_L the right BC """
-        self.u_0 = torch.tensor(u_0, dtype=torch.float64)
-        self.u_L = torch.tensor(u_L, dtype=torch.float64)
+        self.u_0 = torch.tensor(u_0, dtype=torch.float32)
+        self.u_L = torch.tensor(u_L, dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -148,7 +148,7 @@ class MeshNN(nn.Module):
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 50                                     # Number of Nodes in the Mesh
+np = 10                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -183,11 +183,12 @@ BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 BeamModel.Freeze_Mesh()
 # Set the require output requirements
-BoolPlot = False                        # Bool for plots used for gif
-BoolPlotPost = False
-BoolCompareNorms = False                 # Bool for comparing energy norm to L2 norm
+BoolPlot = False                        # Boolean for plots used for gif
+BoolPlotPost = False                    # Boolean for plots used for gif
+BoolCompareNorms = False                # Boolean for comparing energy norm to L2 norm
+BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 
-BeamModel.to(mps_device)
+
 
 
 #%% Define loss and optimizer
@@ -197,12 +198,19 @@ optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
 TestX = torch.tensor([[i/50-5] for i in range(2,1000)], 
-                                dtype=torch.float64, requires_grad=True)
+                                dtype=torch.float32, requires_grad=True)
 
 
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float64, requires_grad=True)
+                                dtype=torch.float32, requires_grad=True)
+
+# If GPU
+if BoolGPU:
+    BeamModel.to(mps_device)
+    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                dtype=torch.float32, requires_grad=True).to(mps_device)
+
 # Store the initial coordinates before training (could be merged with Coord_trajectories)
 InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
 error = []              # Stores the loss

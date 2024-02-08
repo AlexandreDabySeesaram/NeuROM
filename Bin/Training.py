@@ -22,14 +22,30 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates, True)
 
+def FilterTrainingData(MeshBeam, TestData):
+
+    TestData = numpy.array(TestData.detach())
+
+    NodeCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+    idx = numpy.where( numpy.isclose(NodeCoordinates,TestData))
+    #print("idx = ", idx)
+
+    #print([NodeCoordinates[i] for i in idx[1]])
+    #print([TestData[i] for i in idx[0]])
+
+    for i in idx[0]:
+        TestData[i][0] = TestData[i][0] + (TestData[i+1][0] - TestData[i][0])/10
+
+    #print([TestData[i] for i in idx[0]])
+
+    return torch.tensor(TestData, dtype=torch.float64, requires_grad=True)
+
 def Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates):
     
     InitialCoordinates = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
 
     pred, ShapeFunctions = MeshBeam(TrialCoordinates)
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), MeshBeam, InitialCoordinates, False)
-
-
 
 def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE):
 
@@ -50,6 +66,8 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
     weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
 
     while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<1000:
+
+        #TrialCoordinates = FilterTrainingData(MeshBeam, TrialCoordinates)
 
         coord_old = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
         weights_old = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
@@ -76,6 +94,7 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
             loss_min = loss_current
             coord_min_loss = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
             weights_min_loss = copy.deepcopy(MeshBeam.InterpoLayer_uu.weight.data.detach())
+
             loss_counter = 0
         else:
             loss_counter = loss_counter + 1
@@ -116,25 +135,27 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
         else:
             stagnancy_counter = 0
 
+        
         if (epoch+1) % 200 == 0:
             print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
             print(" loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
             plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                             TrialCoordinates,AnalyticSolution,MeshBeam,Coord_trajectories,error, error2)                           
+        
         epoch = epoch+1
 
-
+    '''
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("Revert")
         for j in range(len(coord_min_loss)):
             MeshBeam.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
         MeshBeam.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
-
+        print("minimal loss = ", loss_min)
         u_predicted, _ = MeshBeam(TrialCoordinates) 
         l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-        print("loss = ", l.item())
+        print("loss after revert = ", l.item())
 
         with torch.no_grad():
             # Stores the loss
@@ -148,6 +169,7 @@ def Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer
 
     plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                                 TrialCoordinates,AnalyticSolution,MeshBeam,Coord_trajectories,error, error2)
+    '''
 
     return error, error2, InitialCoordinates, Coord_trajectories
 

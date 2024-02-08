@@ -4,6 +4,7 @@ import torch.nn as nn
 torch.set_default_dtype(torch.float64)
 import Post.Plots as Pplot
 import numpy as numpy
+import time
 
 #%% Define the model for a 1D linear Beam mesh
 
@@ -274,6 +275,7 @@ class MeshNN(nn.Module):
 
         out_uu = torch.cat(intermediate_uu, dim=1)
         out_dd = torch.cat(intermediate_dd, dim=1)
+
         # The vector containing all local versions of all shape functions ordered in per-element manner.
         joined_vector = torch.cat((out_dd,out_uu),dim=1)
 
@@ -282,14 +284,17 @@ class MeshNN(nn.Module):
         recomposed_vector = self.CompositionLayer(joined_vector)
 
         recomposed = recomposed_vector[:,1:-1]
-        recomposed_BC = torch.stack((recomposed_vector[:,0],recomposed_vector[:,-1]),dim=1)
+        #recomposed_BC = torch.stack((recomposed_vector[:,0],recomposed_vector[:,-1]),dim=1)
+        recomposed_BC = torch.cat(((recomposed_vector[:,0]).expand(1,-1).t(),(recomposed_vector[:,-1]).expand(1,-1).t()), dim=1)
+
 
         # Interior and processed by interpolation layer separately. 
         u_inter = self.InterpoLayer_uu(recomposed)
         u_BC = self.InterpoLayer_dd(recomposed_BC)
 
-        u = torch.stack((u_inter,u_BC), dim=1)
-        
+        #u = torch.stack((u_inter,u_BC), dim=1)
+        u = torch.cat((u_inter.expand(1,-1).t(),u_BC.expand(1,-1).t()), dim=1)
+
         return self.SumLayer(u), recomposed_vector
         #return joined_vector, joined_vector
         
@@ -339,11 +344,12 @@ class MeshNN(nn.Module):
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-n_elem = 6                          # Number of Nodes in the Mesh
+n_elem = 100                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.0                   # Weight for the Mesh regularisation 
 
+'''
 # Quadragic shape fucntions
 connectivity_vector = (-1)*torch.ones(2*n_elem+1)
 connectivity_matrix = torch.zeros((2*n_elem+1,3*n_elem + 2*2))
@@ -365,9 +371,9 @@ for node in range(1,n_elem):
     cols = [4+left*3, 4+left*3+5]
     for col in cols:
         connectivity_matrix[row,col] = 1
-
-
 '''
+
+
 # Linear shape functions
 connectivity_vector = (-1)*torch.ones(n_elem+1)
 connectivity_matrix = torch.zeros((n_elem+1,2*(n_elem+2)))
@@ -386,10 +392,10 @@ for node in range(1,n_elem):
     cols = [4+left*2, 4+left*2+3]
     for col in cols:
         connectivity_matrix[row,col] = 1
-'''
 
 
-MeshBeam = MeshNN(n_elem,L,2, connectivity_matrix,connectivity_vector, alpha)    # Creates the associated model
+
+MeshBeam = MeshNN(n_elem,L, 1, connectivity_matrix,connectivity_vector, alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
 u_L = 0                     #Right BC
@@ -397,13 +403,13 @@ MeshBeam.SetBCs(u_0,u_L)
 # Import mechanical functions
 
 
-from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS, FilterTrainingData
 
 
 # Set the coordinates as trainable
-MeshBeam.UnFreeze_Mesh()
+#MeshBeam.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-#MeshBeam.Freeze_Mesh()
+MeshBeam.Freeze_Mesh()
 #MeshBeam.Freeze_FEM()
 
 # Set the require output requirements
@@ -412,18 +418,27 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 
 
 #%% Define loss and optimizer
-learning_rate = 1.0e-3
-n_epochs = 20000
-optimizer = torch.optim.SGD(MeshBeam.parameters(), lr=learning_rate)
+learning_rate = 5.0e-4
+n_epochs = 1000
+optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
 
 MSE = nn.MSELoss()
 
+'''
+for param in MeshBeam.parameters():
+    if param.requires_grad==True:
+        print(param)
+'''
 
 TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], dtype=torch.float64, requires_grad=True)
 
 Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
 
-
+start = time.time()
 error, error2, InitialCoordinates, Coord_trajectories = Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
-Training_FinalStageLBFGS(MeshBeam, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)
+end = time.time()
+
+print(end-start)
+
+#Training_FinalStageLBFGS(MeshBeam, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)

@@ -1,5 +1,5 @@
 #%% Libraries import
-# import time 
+import time 
 # Import pre-processing functions
 import Bin.Pre_processing as pre
 # Import mechanical functions
@@ -84,7 +84,7 @@ class MeshNN(nn.Module):
         self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,mesh.Connectivity) \
                                         for i in range(self.NElem)])
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         self.Functions_dd = nn.ModuleList([ElementBlock_Bar_2(-1,mesh.Connectivity),
                                            ElementBlock_Bar_2(-2,mesh.Connectivity)])
@@ -143,12 +143,16 @@ class MeshNN(nn.Module):
     def Freeze_FEM(self):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = False
-
-
+np_vect = []
+Total_time_vect= []
+evaluation_time_vect= []
+Loss_time_vect= []
+Backward_time_vect=[]
+optimiser_time_vect=[]
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 10                                     # Number of Nodes in the Mesh
+np = 100                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -184,7 +188,7 @@ BeamModel.UnFreeze_Mesh()
 BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False                        # Boolean for plots used for gif
-BoolPlotPost = False                    # Boolean for plots used for gif
+BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = False                # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 
@@ -193,12 +197,10 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 5000
+n_epochs = 200
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
-TestX = torch.tensor([[i/50-5] for i in range(2,1000)], 
-                                dtype=torch.float32, requires_grad=True)
 
 
 #%% Training loop
@@ -218,35 +220,42 @@ error2 = []             # Stores the L2 error compared to the analytical solutio
 Coord_trajectories = [] # Stores the trajectories of the coordinates while training
 
 print("**************** START TRAINING ***************\n")
+start_train_time = time.time()
 
+evaluation_time = 0
+loss_time = 0
+optimizer_time = 0
+backward_time = 0
 for epoch in range(n_epochs):
     # predict = forward pass with our model
+    start_time = time.time()
     u_predicted = BeamModel(TrialCoordinates) 
-    # loss (several ways to compute the energy loss)
-    # l = AlternativePotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+    evaluation_time += time.time() - start_time
+    start_time = time.time()
+    # loss 
     l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    # l = PotentialEnergy(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-
+    loss_time += time.time() - start_time
+    TrialCoordinates.requires_grad = False
     # Mesh regularisation term
     # Compute the ratio of the smallest jacobian and the largest jacobian
-    Jacobians = [BeamModel.coordinates[i]-BeamModel.coordinates[i-1] \
-                 for i in range(1,len(BeamModel.coordinates))]
-    Jacobians = torch.stack(Jacobians)
-    Ratio = torch.max(Jacobians)/torch.min(Jacobians)
-    # Add the ratio to the loss
-    l+=BeamModel.alpha*(Ratio-1)
-
+    # Jacobians = [BeamModel.coordinates[i]-BeamModel.coordinates[i-1] \
+    #              for i in range(1,len(BeamModel.coordinates))]
+    # Jacobians = torch.stack(Jacobians)
+    # Ratio = torch.max(Jacobians)/torch.min(Jacobians)
+    # # Add the ratio to the loss
+    # l+=BeamModel.alpha*(Ratio-1)
     # calculate gradients = backward pass
+    start_time = time.time()
     l.backward()
+    backward_time += time.time() - start_time
+    TrialCoordinates.requires_grad = True
     # update weights
+    start_time = time.time()
     optimizer.step()
+    optimizer_time += time.time() - start_time
     # zero the gradients after updating
     optimizer.zero_grad()
 
-    # Training strategy
-    # if epoch >= 100:
-    #     BeamModel.Freeze_Mesh()
-    #     BeamModel.UnFreeze_FEM()
 
     with torch.no_grad():
         # Stores the loss
@@ -261,16 +270,40 @@ for epoch in range(n_epochs):
 
     if (epoch+1) % 100 == 0:
         print('epoch ', epoch+1, ' loss = ', l.item())
-        if BoolPlot:
-            Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
-                                          TrialCoordinates,AnalyticSolution,BeamModel,
-                                          '/Gifs/Solution_'+str(epoch))
-            Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates_i,
-                                              TrialCoordinates,AnalyticGradientSolution,
-                                          '/Gifs/Solution_gardient_'+str(epoch))
-    
+        
+stopt_train_time = time.time()
+
+print("*************** END OF TRAINING ***************\n")
+
+print(f'* Training time: {stopt_train_time-start_train_time}s\n\
+* Evaluation time: {evaluation_time}s\n\
+* Loss time: {loss_time}s\n\
+* Backward time: {backward_time}s\n\
+* Optimiser time: {optimizer_time}s\n')
+np_vect.append(np)
+Total_time_vect.append(stopt_train_time-start_train_time)
+evaluation_time_vect.append(evaluation_time)
+Loss_time_vect.append(loss_time)
+Backward_time_vect.append(backward_time)
+optimiser_time_vect.append(optimizer_time)
+
+
+
+
+
 #%% Post-processing
-if BoolPlot:
+if BoolPlotPost:
+    plt.plot(np_vect, evaluation_time_vect, label = 'Evaluation time')
+    plt.plot(np_vect, Total_time_vect, label = 'Total time')
+    plt.plot(np_vect, Loss_time_vect, label = 'Loss time')
+    plt.plot(np_vect, Backward_time_vect, label = 'Backward time')
+    plt.plot(np_vect, optimiser_time_vect, label = 'Optimiser time')
+    plt.xlabel('Dofs', fontsize=15)
+    plt.ylabel('Time (s)', fontsize=15)
+    plt.legend(loc="upper left", fontsize=15)
+    plt.savefig('Results/Profiler.pdf', transparent=True)  
+
+
     # Retrieve coordinates
     Coordinates = Coord_trajectories[-1]
     # Tests on trained data and compare to reference

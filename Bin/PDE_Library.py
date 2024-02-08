@@ -21,6 +21,9 @@ def PotentialEnergyVectorised(A, E, u, x, b):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     # Calculate dx
     dx = x[1:] - x[:-1]
+    # y = 0.5*A * E * du_dx**2 - u*b
+    # integral = torch.trapezoid(y.view(-1),x.view(-1))
+
     # Vectorised calculation of the integral terms
     int_term1 = 0.25 * A * E * dx * (du_dx[1:]**2 + du_dx[:-1]**2)
     int_term2 = 0.5 * dx * (u[1:] * b[1:] + u[:-1] * b[:-1])

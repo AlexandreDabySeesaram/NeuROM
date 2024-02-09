@@ -147,8 +147,8 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
 
         
         if (epoch+1) % 200 == 0:
-            print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-            print(" loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
+            print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+            print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
             # plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                             # TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)                           
@@ -203,7 +203,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
     epoch = 0
     stagnancy_counter = 0
 
-    while epoch<n_epochs and stagnancy_counter < 3:
+    while epoch<n_epochs and stagnancy_counter < 30:
 
         def closure():
             optim.zero_grad()
@@ -238,7 +238,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
         loss_old = loss_current
 
         if (epoch+1) % 1 == 0:
-            print('epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+            print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
         epoch = epoch+1
 
     plot_everything(A,E,InitialCoordinates,Coordinates_i,

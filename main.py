@@ -1,8 +1,17 @@
+#%% Libraries import
+# import HiDeNN library
 from HiDeNN_PDE import MeshNN
+# Import pre-processing functions
 import Bin.Pre_processing as pre
+# Import torch librairies
 import torch
 import torch.nn as nn
-
+mps_device = torch.device("mps")
+# Import mechanical functions
+from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
+        Derivative, AnalyticGradientSolution, AnalyticSolution
+#Import post processing libraries
+import Post.Plots as Pplot
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
@@ -68,13 +77,18 @@ if BoolGPU:
                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 
 
-from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS, FilterTrainingData
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
+    Training_FinalStageLBFGS, FilterTrainingData
 
 # Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
 n_elem = 1
-error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
+error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, 
+                                                                                         TrialCoordinates, optimizer, n_epochs, 
+                                                                                         BoolCompareNorms, MSE)
 
-Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)
+Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, 
+                         TrialCoordinates, n_epochs, BoolCompareNorms, 
+                         MSE, error, error2, Coord_trajectories)
 
 
 #%% Post-processing

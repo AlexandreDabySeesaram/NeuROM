@@ -94,7 +94,7 @@ class MeshNN(nn.Module):
         self.AssemblyLayer.weight. requires_grad=False
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
-        self.InterpoLayer_dd.weight.requires_grad = False
+        # self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
@@ -152,7 +152,7 @@ optimiser_time_vect=[]
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 100                                     # Number of Nodes in the Mesh
+np = 23                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -183,13 +183,13 @@ u_L = 0                                 #Right BC
 BeamModel.SetBCs(u_0,u_L)
 
 # Set the coordinates as trainable
-BeamModel.UnFreeze_Mesh()
+# BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
-BoolCompareNorms = False                # Boolean for comparing energy norm to L2 norm
+BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 
 
@@ -197,7 +197,7 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 200
+n_epochs = 5000
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
@@ -213,82 +213,14 @@ if BoolGPU:
     TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 
-# Store the initial coordinates before training (could be merged with Coord_trajectories)
-InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
-error = []              # Stores the loss
-error2 = []             # Stores the L2 error compared to the analytical solution
-Coord_trajectories = [] # Stores the trajectories of the coordinates while training
 
-print("**************** START TRAINING ***************\n")
-start_train_time = time.time()
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS, FilterTrainingData
 
-evaluation_time = 0
-loss_time = 0
-optimizer_time = 0
-backward_time = 0
-for epoch in range(n_epochs):
-    # predict = forward pass with our model
-    start_time = time.time()
-    u_predicted = BeamModel(TrialCoordinates) 
-    evaluation_time += time.time() - start_time
-    start_time = time.time()
-    # loss 
-    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
-    loss_time += time.time() - start_time
-    TrialCoordinates.requires_grad = False
-    # Mesh regularisation term
-    # Compute the ratio of the smallest jacobian and the largest jacobian
-    # Jacobians = [BeamModel.coordinates[i]-BeamModel.coordinates[i-1] \
-    #              for i in range(1,len(BeamModel.coordinates))]
-    # Jacobians = torch.stack(Jacobians)
-    # Ratio = torch.max(Jacobians)/torch.min(Jacobians)
-    # # Add the ratio to the loss
-    # l+=BeamModel.alpha*(Ratio-1)
-    # calculate gradients = backward pass
-    start_time = time.time()
-    l.backward()
-    backward_time += time.time() - start_time
-    TrialCoordinates.requires_grad = True
-    # update weights
-    start_time = time.time()
-    optimizer.step()
-    optimizer_time += time.time() - start_time
-    # zero the gradients after updating
-    optimizer.zero_grad()
+# Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
+n_elem = 1
+error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
 
-
-    with torch.no_grad():
-        # Stores the loss
-        error.append(l.item())
-        # Stores the coordinates trajectories
-        Coordinates_i = [BeamModel.coordinates[i].data.item() \
-                         for i in range(len(BeamModel.coordinates))]
-        Coord_trajectories.append(Coordinates_i)
-        if BoolCompareNorms:
-            # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
-
-    if (epoch+1) % 100 == 0:
-        print('epoch ', epoch+1, ' loss = ', l.item())
-        
-stopt_train_time = time.time()
-
-print("*************** END OF TRAINING ***************\n")
-
-print(f'* Training time: {stopt_train_time-start_train_time}s\n\
-* Evaluation time: {evaluation_time}s\n\
-* Loss time: {loss_time}s\n\
-* Backward time: {backward_time}s\n\
-* Optimiser time: {optimizer_time}s\n')
-np_vect.append(np)
-Total_time_vect.append(stopt_train_time-start_train_time)
-evaluation_time_vect.append(evaluation_time)
-Loss_time_vect.append(loss_time)
-Backward_time_vect.append(backward_time)
-optimiser_time_vect.append(optimizer_time)
-
-
-
+Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)
 
 
 #%% Post-processing

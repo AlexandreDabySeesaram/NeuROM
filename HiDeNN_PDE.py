@@ -147,12 +147,21 @@ class MeshNN(nn.Module):
 class InterpPara(nn.Module):
     """This class act as the 1D mesh in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
     def __init__(self, mu_min, mu_max,N_mu):
+        import numpy as np
         super(InterpPara, self).__init__()
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.N_mu = N_mu
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
                                              for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
-        n_elem = len(self.coordinates)-1 # linear 1D discretisation of the parametric field
-        Assembly_matrix = torch.zeros((n_elem,2*n_elem))
-
+        n_elem = self.N_mu-1 # linear 1D discretisation of the parametric field
+        weights_assembly = torch.zeros((n_elem,2*n_elem))
+        NodeList = np.linspace(1,self.N_mu,self.N_mu)
+        Connectivity = np.stack((NodeList[:-1],NodeList[1:]),axis=-1)
+        elem_range = np.arange(Connectivity.shape[0])
+        ne_values = np.arange(2) # 2 nodes per linear 1D element
+        ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
+        i_values = self.Connectivity[:, ne_values]-1 
+        j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
+        weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
+        self.weights_assembly = weights_assembly

@@ -15,7 +15,7 @@ import Post.Plots as Pplot
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 3                                     # Number of Nodes in the Mesh
+np = 23                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -48,7 +48,7 @@ BeamModel.SetBCs(u_0,u_L)
 # Set the coordinates as trainable
 BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-BeamModel.Freeze_Mesh()
+# BeamModel.Freeze_Mesh()
 # Set the require output requirements
 BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
@@ -60,18 +60,13 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 200
+n_epochs = 300
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
 
 
-#%% Debug
 
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float32, requires_grad=True)
-
-BeamModel(TrialCoordinates)
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)

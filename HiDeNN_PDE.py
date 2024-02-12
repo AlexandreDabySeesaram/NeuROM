@@ -105,26 +105,12 @@ class MeshNN(nn.Module):
         intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
         out_uu = torch.cat(intermediate_uu, dim=1)
         out_dd = torch.cat(intermediate_dd, dim=1)
-        joined_vector = torch.cat((out_uu,out_dd),dim=1)
-        plt.plot(x.data,joined_vector.data[:,0], label = '$N_1$')
-        plt.plot(x.data,joined_vector.data[:,1], label = '$N_2$')
-        plt.plot(x.data,joined_vector.data[:,2], label = '$N_3$')
-        plt.legend(loc="upper left")
-        plt.savefig('Results/Sep_SF_K.pdf', transparent=True)
-        plt.clf()        
+        joined_vector = torch.cat((out_uu,out_dd),dim=1)       
         recomposed_vector_u = self.AssemblyLayer(joined_vector) -1
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
         u = torch.stack((u_u,u_d), dim=1)
-        plt.plot(x.data,recomposed_vector_u.data[:,0], label = '$N_1$')
-        plt.plot(x.data,recomposed_vector_u.data[:,1], label = '$N_2$')
-        plt.plot(x.data,recomposed_vector_u.data[:,2], label = '$N_3$')
-        # plt.plot(x.data,recomposed_vector_u.data[:,3], label = '$N_4$')
-        # plt.plot(x.data,recomposed_vector_u.data[:,-2], label = '$N_{p-3}$')
-        plt.legend(loc="upper left")
-        plt.savefig('Results/Assembled_SF_K.pdf', transparent=True)
-        plt.clf()
-
+ 
         return self.SumLayer(u)
     
     def SetBCs(self,u_0,u_L):

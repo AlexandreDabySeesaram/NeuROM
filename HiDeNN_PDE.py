@@ -44,7 +44,7 @@ class ElementBlock_Bar_2(nn.Module):
     def forward(self, x, coordinates):
         i = self.i
         # For the outter Nodes, phantom elements are created 
-        #  to cancel out shape functions beyond the geometry of the structure in question, 
+        # to cancel out shape functions beyond the geometry of the structure in question, 
         # to prevent any form of extrapolation beyond its boundaries 
         if i ==-1:
             x_left = coordinates[0]-coordinates[1]/100
@@ -58,10 +58,9 @@ class ElementBlock_Bar_2(nn.Module):
 
         left = self.LinearBlock(x, x_left, x_right, 0, 1)
         right = self.LinearBlock(x, x_left, x_right, 1, 0)
-        # out = torch.cat((left, right),dim=1)
+        out = torch.cat((left, right),dim=1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
 
-        out = torch.cat((right, left),dim=1)
-
+        # out = torch.cat((right, left),dim=1) #  {[N1 N2] [N2 N3] [N3 N4]}
 
         return out
 
@@ -107,10 +106,25 @@ class MeshNN(nn.Module):
         out_uu = torch.cat(intermediate_uu, dim=1)
         out_dd = torch.cat(intermediate_dd, dim=1)
         joined_vector = torch.cat((out_uu,out_dd),dim=1)
+        plt.plot(x.data,joined_vector.data[:,0], label = '$N_1$')
+        plt.plot(x.data,joined_vector.data[:,1], label = '$N_2$')
+        plt.plot(x.data,joined_vector.data[:,2], label = '$N_3$')
+        plt.legend(loc="upper left")
+        plt.savefig('Results/Sep_SF_K.pdf', transparent=True)
+        plt.clf()        
         recomposed_vector_u = self.AssemblyLayer(joined_vector) -1
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
         u = torch.stack((u_u,u_d), dim=1)
+        plt.plot(x.data,recomposed_vector_u.data[:,0], label = '$N_1$')
+        plt.plot(x.data,recomposed_vector_u.data[:,1], label = '$N_2$')
+        plt.plot(x.data,recomposed_vector_u.data[:,2], label = '$N_3$')
+        # plt.plot(x.data,recomposed_vector_u.data[:,3], label = '$N_4$')
+        # plt.plot(x.data,recomposed_vector_u.data[:,-2], label = '$N_{p-3}$')
+        plt.legend(loc="upper left")
+        plt.savefig('Results/Assembled_SF_K.pdf', transparent=True)
+        plt.clf()
+
         return self.SumLayer(u)
     
     def SetBCs(self,u_0,u_L):
@@ -134,7 +148,7 @@ class MeshNN(nn.Module):
             param.requires_grad = True
         #Freeze external coorinates to keep geometry    
         self.coordinates[0].requires_grad = False
-        self.coordinates[-1].requires_grad = False
+        self.coordinates[1].requires_grad = False
 
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
@@ -143,4 +157,16 @@ class MeshNN(nn.Module):
     def Freeze_FEM(self):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = False
+
+class InterpPara(nn.Module):
+    """This class act as the 1D mesh in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
+    def __init__(self, mu_min, mu_max,N_mu):
+        super(InterpPara, self).__init__()
+        self.mu_min = mu_min
+        self.mu_max = mu_max
+        self.N_mu = N_mu
+        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
+                                             for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
+        n_elem = len(self.coordinates)-1 # linear 1D discretisation of the parametric field
+        Assembly_matrix = torch.zeros((n_elem,2*n_elem))
 

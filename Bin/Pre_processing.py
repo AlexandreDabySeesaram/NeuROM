@@ -133,13 +133,16 @@ class Mesh:
         import torch
         weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
         elem_range = np.arange(self.Connectivity.shape[0])
-        ne_values = np.arange(self.node_per_elem)
+        ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
+        ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
         i_values = self.Connectivity[:, ne_values]-1 
-        j_values = 2 * (elem_range[:, np.newaxis])+ ne_values 
+        j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
         weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
         self.weights_assembly = weights_assembly
         #For 1D elements, add phantom elements assembly:
         weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
-        weights_assembly_phantom[0,1] = 1
-        weights_assembly_phantom[1,-2] = 1
+        # weights_assembly_phantom[0,1] = 1  #  {[N1 N2] [N2 N3] [N3 N4]}
+        # weights_assembly_phantom[1,-2] = 1 # {[N1 N2] [N2 N3] [N3 N4]}
+        weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+        weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
         self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)

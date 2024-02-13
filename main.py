@@ -78,10 +78,10 @@ N_mu = 10
 BCs=[u_0,u_L]
 BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 
-TrialCoordinates = torch.tensor([[i/500] for i in range(2,5000)], 
+TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)
 
-TrialPara = torch.linspace(mu_min,mu_max,30)
+TrialPara = torch.linspace(mu_min,mu_max,300)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
 u_x = BeamModel(TrialCoordinates)
@@ -100,8 +100,15 @@ PaperPara = torch.tensor([175])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
 u_175 = BeamROM(TrialCoordinates,PaperPara)
 u_analytical_175 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(u_analytical_175)
-plt.plot(u_175.data)
+plt.plot(TrialCoordinates.data,u_analytical_175)
+plt.plot(TrialCoordinates.data,u_175.data)
+
+PaperPara = torch.tensor([200])
+PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+u_200 = BeamROM(TrialCoordinates,PaperPara)
+u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+plt.plot(u_analytical_200)
+plt.plot(u_200.data)
 
 PaperPara = torch.tensor([100])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match

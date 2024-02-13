@@ -163,7 +163,7 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
 * Training time per epochs: {(stopt_train_time-start_train_time)/n_epochs}s\n\
 * Optimiser time: {optimizer_time}s\n')
 
-    '''
+    
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("Revert")
@@ -171,7 +171,7 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
             BeamModel.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
         BeamModel.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
         print("minimal loss = ", loss_min)
-        u_predicted, _ = BeamModel(TrialCoordinates) 
+        u_predicted = BeamModel(TrialCoordinates) 
         l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
         print("loss after revert = ", l.item())
 
@@ -185,9 +185,9 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
                 # Copute and store the L2 error w.r.t. the analytical solution
                 error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
-    plot_everything(A,E,InitialCoordinates,Coordinates_i,
-                                                TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
-    '''
+    # plot_everything(A,E,InitialCoordinates,Coordinates_i,
+                                                # TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
+    
 
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
 
@@ -203,7 +203,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
     epoch = 0
     stagnancy_counter = 0
 
-    while epoch<n_epochs and stagnancy_counter < 30:
+    while epoch<n_epochs and stagnancy_counter < 5:
 
         def closure():
             optim.zero_grad()
@@ -243,3 +243,10 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
 
     plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                                 TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
+
+
+
+def Training_NeuROM(model, A, E, L, n_elem, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
+    for epoch in range(n_epochs):
+
+        loss = (torch.sum([PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])/E_trial.shape[0])

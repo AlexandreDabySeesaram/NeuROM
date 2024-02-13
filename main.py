@@ -1,6 +1,6 @@
 #%% Libraries import
 # import HiDeNN library
-from HiDeNN_PDE import MeshNN
+from HiDeNN_PDE import MeshNN, NeuROM
 # Import pre-processing functions
 import Bin.Pre_processing as pre
 # Import torch librairies
@@ -12,10 +12,11 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
         Derivative, AnalyticGradientSolution, AnalyticSolution
 #Import post processing libraries
 import Post.Plots as Pplot
+import time
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 23                                     # Number of Nodes in the Mesh
+np = 8                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -60,13 +61,31 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 300
+n_epochs = 500
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
+#%% Debuging cell
+n_modes = 3
+mu_min = 100
+mu_max = 200
+N_mu = 10
 
+BCs=[u_0,u_L]
+BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 
+TrialCoordinates = torch.tensor([[i/500] for i in range(2,5000)], 
+                                dtype=torch.float32, requires_grad=True)
 
+TrialPara = torch.linspace(mu_min,mu_max,300)
+TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+
+u_x = BeamModel(TrialCoordinates)
+t_start = time.time()
+u_x_para = BeamROM(TrialCoordinates,TrialPara)
+t_end = time.time()
+
+print(f'* Evaluation time of {u_x_para.shape[0]*u_x_para.shape[1]} values: {t_end-t_start}s')
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)

@@ -147,21 +147,76 @@ class MeshNN(nn.Module):
 class InterpPara(nn.Module):
     """This class act as the 1D mesh in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
     def __init__(self, mu_min, mu_max,N_mu):
+        super(InterpPara, self).__init__()
         import numpy as np
         super(InterpPara, self).__init__()
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.N_mu = N_mu
+        self.n_elem = self.N_mu-1 # linear 1D discretisation of the parametric field
+        # Parametric mesh coordinates
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
                                              for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
-        n_elem = self.N_mu-1 # linear 1D discretisation of the parametric field
-        weights_assembly = torch.zeros((n_elem,2*n_elem))
+
+        ### Assembly layer 
+        self.AssemblyLayer = nn.Linear(2*(self.n_elem),self.N_mu,bias=False)
+        weights_assembly = torch.zeros((self.N_mu,2*self.n_elem))
         NodeList = np.linspace(1,self.N_mu,self.N_mu)
-        Connectivity = np.stack((NodeList[:-1],NodeList[1:]),axis=-1)
-        elem_range = np.arange(Connectivity.shape[0])
+        self.Connectivity = np.stack((NodeList[:-1],NodeList[1:]),axis=-1) # The nodes are sorted in the ascending order (from 1 to n_elem-1)
+        elem_range = np.arange(self.Connectivity.shape[0])
         ne_values = np.arange(2) # 2 nodes per linear 1D element
         ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
         i_values = self.Connectivity[:, ne_values]-1 
         j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
         weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
         self.weights_assembly = weights_assembly
+        self.AssemblyLayer.weight.data = self.weights_assembly
+        self.AssemblyLayer.weight.requires_grad=False
+
+        self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
+
+        # Interpolation (nodal values) layer
+        self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu), requires_grad=False) 
+        self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
+        # Initialise with linear mode
+        self.InterpoLayer.weight.data = self.NodalValues_para
+
+    def forward(self,mu):
+        intermediate = [self.Functions[l](mu,self.coordinates) for l in range(self.n_elem)]
+        out_elements = torch.cat(intermediate, dim=1)
+        Assembled_vector = self.AssemblyLayer(out_elements)
+        out_interpolation = self.InterpoLayer(Assembled_vector)
+        return out_interpolation
+
+class NeuROM(nn.Module):
+    """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
+    def __init__(self, mesh, BCs, n_modes, mu_min, mu_max,N_mu):
+        super(NeuROM, self).__init__()
+        self.n_modes = n_modes
+        self.mu_min = mu_min
+        self.mu_max = mu_max
+        self.N_mu = N_mu
+        self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
+        self.Para_modes = nn.ModuleList([InterpPara(self.mu_min, self.mu_max, self.N_mu) for i in range(self.n_modes)])
+        # Set BCs 
+        # First modes get the Boundary conditions
+        self.Space_modes[0].SetBCs(BCs[0],BCs[1])
+        # Following modes are homogeneous (admissible to 0)
+        for i in range(1,self.n_modes):
+            self.Space_modes[i].SetBCs(0,0)
+
+    def forward(self,x,mu):
+        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
+        Para_modes = [self.Para_modes[l](mu)[:,None] for l in range(self.n_modes)]
+        Space_modes = torch.cat(Space_modes,dim=1)
+        Para_modes = torch.cat(Para_modes,dim=1)
+        out = torch.matmul(Space_modes,Para_modes.T)
+        return out
+
+        
+
+
+
+
+
+        

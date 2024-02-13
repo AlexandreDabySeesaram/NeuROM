@@ -90,8 +90,27 @@ u_x_para = BeamROM(TrialCoordinates,TrialPara)
 t_end = time.time()
 
 print(f'* Evaluation time of {u_x_para.shape[0]*u_x_para.shape[1]} values: {t_end-t_start}s')
+optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
 
 Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+
+#%% Check model
+
+PaperPara = torch.tensor([175])
+PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+u_175 = BeamROM(TrialCoordinates,PaperPara)
+u_analytical_175 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+plt.plot(u_analytical_175)
+plt.plot(u_175.data)
+
+PaperPara = torch.tensor([100])
+PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+u_100 = BeamROM(TrialCoordinates,PaperPara)
+u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+plt.plot(u_analytical_100)
+plt.plot(u_100.data)
+plt.show()
+plt.clf()
 
 
 #%% Training loop

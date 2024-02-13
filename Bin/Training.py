@@ -259,7 +259,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         with torch.no_grad():
             Loss_vect.append(loss.item())
         if (epoch+1) % 10 == 0:
-            print('epoch ', epoch+1, ' loss = ', l.item())
+            print('epoch ', epoch+1, ' loss = ', loss.item())
     
     return Loss_vect
     

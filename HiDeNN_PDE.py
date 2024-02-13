@@ -176,7 +176,8 @@ class InterpPara(nn.Module):
         self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
 
         # Interpolation (nodal values) layer
-        self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu), requires_grad=False) 
+        # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu), requires_grad=False)
+        self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
         self.InterpoLayer.weight.data = self.NodalValues_para

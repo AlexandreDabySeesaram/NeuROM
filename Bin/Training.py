@@ -246,7 +246,21 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
 
 
 
-def Training_NeuROM(model, A, E, L, n_elem, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
+def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
+    Loss_vect = []
     for epoch in range(n_epochs):
+        loss_vect = torch.stack([PotentialEnergyVectorised(A,E,model(TrialCoordinates,E),TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])
+        loss = torch.sum(loss_vect)/E_trial.shape[0]
+        loss.backward()
+        # update weights
+        optimizer.step()
+        # zero the gradients after updating
+        optimizer.zero_grad()
+        with torch.no_grad():
+            Loss_vect.append(loss.item())
+        if (epoch+1) % 10 == 0:
+            print('epoch ', epoch+1, ' loss = ', l.item())
+    
+    return Loss_vect
+    
 
-        loss = (torch.sum([PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])/E_trial.shape[0])

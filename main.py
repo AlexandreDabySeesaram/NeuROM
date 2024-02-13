@@ -10,6 +10,10 @@ mps_device = torch.device("mps")
 # Import mechanical functions
 from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
         Derivative, AnalyticGradientSolution, AnalyticSolution
+# Import Training funcitons
+
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
+    Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -77,7 +81,7 @@ BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 TrialCoordinates = torch.tensor([[i/500] for i in range(2,5000)], 
                                 dtype=torch.float32, requires_grad=True)
 
-TrialPara = torch.linspace(mu_min,mu_max,300)
+TrialPara = torch.linspace(mu_min,mu_max,30)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
 u_x = BeamModel(TrialCoordinates)
@@ -86,6 +90,10 @@ u_x_para = BeamROM(TrialCoordinates,TrialPara)
 t_end = time.time()
 
 print(f'* Evaluation time of {u_x_para.shape[0]*u_x_para.shape[1]} values: {t_end-t_start}s')
+
+Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+
+
 #%% Training loop
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)
@@ -97,8 +105,6 @@ if BoolGPU:
                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 
 
-from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
-    Training_FinalStageLBFGS, FilterTrainingData
 
 # Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
 n_elem = 1

@@ -263,9 +263,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         optimizer.zero_grad()
         with torch.no_grad():
             Loss_vect.append(loss.item())
-        if (epoch+1) % 1 == 0:
+        if (epoch+1) % 100 == 0:
             print('epoch ', epoch+1, ' loss = ', loss.item())
-            if (epoch+1) % 100 == 0:
+            if (epoch+1) % 1000 == 0:
                 import matplotlib.pyplot as plt
                 plt.plot(E_trial.data,model.Para_modes[0](E_trial).data)
                 plt.show()

@@ -81,7 +81,7 @@ BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)
 
-TrialPara = torch.linspace(mu_min,mu_max,1, 
+TrialPara = torch.linspace(mu_min,mu_max,50, 
                                 dtype=torch.float32, requires_grad=True)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
@@ -103,48 +103,43 @@ import matplotlib.pyplot as plt
 
 
 # Train Space
-# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
-Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 500, BoolCompareNorms, MSE)
-BeamROM.Freeze_Space()
 BeamROM.UnFreeze_Para()
-# TrialPara = torch.linspace(mu_min,mu_max,200)
-TrialPara = torch.linspace(mu_min,mu_max,200)
-TrialPara = TrialPara[:,None] # Add axis so that dimensions match
-# Train para
-Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
 
-#%%
-# BeamROM.Freeze_Space()
+# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 5000, BoolCompareNorms, MSE)
+BeamROM.Freeze_Space()
 # BeamROM.UnFreeze_Para()
-# TrialPara = torch.linspace(mu_min,mu_max,20)
+# # TrialPara = torch.linspace(mu_min,mu_max,200)
+# TrialPara = torch.linspace(mu_min,mu_max,200)
 # TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 # # Train para
-# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 200, BoolCompareNorms, MSE)
+# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+
 
 
 #%% Check model
 import matplotlib.pyplot as plt
 
-PaperPara = torch.tensor([175])
+PaperPara = torch.tensor([150])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
-u_175 = BeamROM(TrialCoordinates,PaperPara)
-u_analytical_175 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(TrialCoordinates.data,u_analytical_175)
-plt.plot(TrialCoordinates.data,u_175.data)
+u_150 = BeamROM(TrialCoordinates,PaperPara)
+u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A")
+plt.plot(TrialCoordinates.data,u_150.data,'--', color="#01426A")
 
 PaperPara = torch.tensor([200])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
 u_200 = BeamROM(TrialCoordinates,PaperPara)
 u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(TrialCoordinates.data,u_analytical_200)
-plt.plot(TrialCoordinates.data,u_200.data)
+plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F")
+plt.plot(TrialCoordinates.data,u_200.data,'--',color="#00677F")
 
 PaperPara = torch.tensor([100])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
 u_100 = BeamROM(TrialCoordinates,PaperPara)
 u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(TrialCoordinates.data,u_analytical_100)
-plt.plot(TrialCoordinates.data,u_100.data)
+plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021")
+plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021")
 plt.show()
 plt.clf()
 

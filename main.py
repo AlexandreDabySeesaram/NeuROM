@@ -148,15 +148,18 @@ from ipywidgets import interact, widgets
 
 def interactive_plot(E):
     # Calculate the corresponding function values for each x value
+    u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data)
     E = torch.tensor([E])
     E = E[:,None] # Add axis so that dimensions match
     u_E = BeamROM(TrialCoordinates,E)
     
     # Plot the function
-    plt.plot(TrialCoordinates.data, u_E.data)
+    plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
+    plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')
     plt.title('Displacement')
     plt.xlabel('x')
     plt.ylabel('u')
+    plt.legend(loc="upper left")
     plt.grid(True)
     plt.ylim((0,0.02))
     plt.show()

@@ -181,11 +181,12 @@ class InterpPara(nn.Module):
         self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
 
         # Interpolation (nodal values) layer
-        # self.NodalValues_para = nn.Parameter(data=torch.linspace(1,0,self.N_mu), requires_grad=False)
+        # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
         self.InterpoLayer.weight.data = self.NodalValues_para
+
 
     def forward(self,mu):
         intermediate = [self.Functions[l](mu,self.coordinates) for l in range(self.n_elem)]
@@ -201,6 +202,9 @@ class InterpPara(nn.Module):
         # plt.savefig('Results/Assembled_SF_Para.pdf', transparent=True)
         # plt.clf()
         out_interpolation = self.InterpoLayer(Assembled_vector)
+        # plt.plot(out_interpolation.data)
+        # plt.savefig('Results/Initial_interPara.pdf', transparent=True)
+        # plt.clf()
         return out_interpolation
     
     def Freeze_Mesh(self):

@@ -143,6 +143,29 @@ plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021")
 plt.show()
 plt.clf()
 
+#%% plot interactive
+from ipywidgets import interact, widgets
+
+def interactive_plot(E):
+    # Calculate the corresponding function values for each x value
+    E = torch.tensor([E])
+    E = E[:,None] # Add axis so that dimensions match
+    u_E = BeamROM(TrialCoordinates,E)
+    
+    # Plot the function
+    plt.plot(TrialCoordinates.data, u_E.data)
+    plt.title('Displacement')
+    plt.xlabel('x')
+    plt.ylabel('u')
+    plt.grid(True)
+    plt.ylim((0,0.02))
+    plt.show()
+
+# Create an interactive slider
+slider = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E')
+
+# Connect the slider to the interactive plot function
+interactive_plot_widget = interact(interactive_plot, E=slider)
 
 #%% Training loop
 # TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 

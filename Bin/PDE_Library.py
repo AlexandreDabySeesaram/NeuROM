@@ -16,9 +16,13 @@ def PotentialEnergy(A,E,u,x,b):
             - 0.5*((x[i]-x[i-1])*(u[i]*b[i]+u[i-1]*b[i-1]))
     return integral
 
-def PotentialEnergyVectorisedParametric(A, E, u, x, b):
+def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
-    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    u_i = model.Space_modes[0](x)
+    lambda_i = model.Para_modes[0](E)
+    lambda_i = lambda_i[:,None]
+    du_dx = torch.autograd.grad(u_i, x, grad_outputs=torch.ones_like(u_i), create_graph=True)[0]
+    du_dx = torch.matmul(du_dx,lambda_i.T)
     # Calculate dx
     dx = x[1:] - x[:-1]
     # y = 0.5*A * E * du_dx**2 - u*b
@@ -26,7 +30,7 @@ def PotentialEnergyVectorisedParametric(A, E, u, x, b):
 
     # Vectorised calculation of the integral terms
     int_term1_x = 0.25 * A * dx * (du_dx[1:]**2 + du_dx[:-1]**2)
-    int_term1 = torch.einsum('ij,kj->ik',int_term1_x,E)
+    int_term1 = torch.einsum('ik,kj->ik',int_term1_x,E)
     int_term2 = 0.5 * dx * (u[1:] * b[1:] + u[:-1] * b[:-1])
 
     # Vectorised calculation of the integral using the trapezoidal rule

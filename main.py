@@ -65,7 +65,7 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 300
+n_epochs = 700
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
@@ -101,9 +101,7 @@ BeamROM.Freeze_MeshPara()
 BeamROM.Freeze_Para()
 import matplotlib.pyplot as plt
 
-plt.plot(BeamROM.Para_modes[0](TrialPara).data)
-plt.show()
-plt.clf()
+
 # Train Space
 # Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
 Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 500, BoolCompareNorms, MSE)
@@ -116,12 +114,12 @@ TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
 
 #%%
-BeamROM.Freeze_Space()
-BeamROM.UnFreeze_Para()
-TrialPara = torch.linspace(mu_min,mu_max,20)
-TrialPara = TrialPara[:,None] # Add axis so that dimensions match
-# Train para
-Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 200, BoolCompareNorms, MSE)
+# BeamROM.Freeze_Space()
+# BeamROM.UnFreeze_Para()
+# TrialPara = torch.linspace(mu_min,mu_max,20)
+# TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+# # Train para
+# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 200, BoolCompareNorms, MSE)
 
 
 #%% Check model

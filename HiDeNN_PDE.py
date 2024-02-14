@@ -159,7 +159,7 @@ class InterpPara(nn.Module):
                                              for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
 
         ### Assembly layer 
-        self.AssemblyLayer = nn.Linear(2*(self.n_elem),self.N_mu,bias=False)
+        self.AssemblyLayer = nn.Linear(2*(self.n_elem),self.N_mu)
         weights_assembly = torch.zeros((self.N_mu,2*self.n_elem))
         NodeList = np.linspace(1,self.N_mu,self.N_mu)
         self.Connectivity = np.stack((NodeList[:-1],NodeList[1:]),axis=-1) # The nodes are sorted in the ascending order (from 1 to n_elem-1)
@@ -172,11 +172,16 @@ class InterpPara(nn.Module):
         self.weights_assembly = weights_assembly
         self.AssemblyLayer.weight.data = self.weights_assembly
         self.AssemblyLayer.weight.requires_grad=False
+        self.AssemblyLayer.bias.requires_grad=False
+        self.AssemblyLayer.bias.fill_(-1)
+        self.AssemblyLayer.bias[0] = torch.tensor(0)
+        self.AssemblyLayer.bias[-1] = torch.tensor(0)
+
 
         self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
 
         # Interpolation (nodal values) layer
-        # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu), requires_grad=False)
+        # self.NodalValues_para = nn.Parameter(data=torch.linspace(1,0,self.N_mu), requires_grad=False)
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
@@ -186,8 +191,38 @@ class InterpPara(nn.Module):
         intermediate = [self.Functions[l](mu,self.coordinates) for l in range(self.n_elem)]
         out_elements = torch.cat(intermediate, dim=1)
         Assembled_vector = self.AssemblyLayer(out_elements)
+        # plt.plot(mu.data,Assembled_vector.data[:,0], label = '$N_1$')
+        # plt.plot(mu.data,Assembled_vector.data[:,1], label = '$N_2$')
+        # plt.plot(mu.data,Assembled_vector.data[:,2], label = '$N_3$')
+        # plt.plot(mu.data,Assembled_vector.data[:,3], label = '$N_4$')
+        # plt.plot(mu.data,Assembled_vector.data[:,-2], label = '$N_{p-1}$')
+        # plt.plot(mu.data,Assembled_vector.data[:,-1], label = '$N_{p}$')
+        # plt.legend(loc="upper left")
+        # plt.savefig('Results/Assembled_SF_Para.pdf', transparent=True)
+        # plt.clf()
         out_interpolation = self.InterpoLayer(Assembled_vector)
         return out_interpolation
+    
+    def Freeze_Mesh(self):
+        """Set the coordinates as untrainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = False
+
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters """
+        for param in self.coordinates:
+            param.requires_grad = True
+        #Freeze external coorinates to keep geometry    
+        self.coordinates[0].requires_grad = False
+        self.coordinates[1].requires_grad = False
+
+    def UnFreeze_FEM(self):
+        """Set the nodale values as trainable parameters """
+        self.InterpoLayer.weight.requires_grad = True
+            
+    def Freeze_FEM(self):
+        """Set the nodale values as untrainable parameters """
+        self.InterpoLayer.weight.requires_grad = False
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
@@ -205,6 +240,45 @@ class NeuROM(nn.Module):
         # Following modes are homogeneous (admissible to 0)
         for i in range(1,self.n_modes):
             self.Space_modes[i].SetBCs(0,0)
+
+    def Freeze_Mesh(self):
+        """Set the space coordinates as untrainable parameters"""
+        for i in range(self.n_modes):
+            self.Space_modes[i].Freeze_Mesh()
+
+    def UnFreeze_Mesh(self):
+        """Set the space coordinates as trainable parameters"""
+        for i in range(self.n_modes):
+            self.Space_modes[i].UnFreeze_Mesh()
+    def Freeze_Space(self):
+        """Set the spatial modes as untrainable """
+        for i in range(self.n_modes):
+            self.Space_modes[i].Freeze_FEM()   
+
+    def UnFreeze_Space(self):
+        """Set the spatial modes as trainable """
+        for i in range(self.n_modes):
+            self.Space_modes[i].UnFreeze_FEM()   
+
+    def Freeze_MeshPara(self):
+        """Set the para coordinates as untrainable parameters"""
+        for i in range(self.n_modes):
+            self.Para_modes[i].Freeze_Mesh()
+
+    def UnFreeze_MeshPara(self):
+        """Set the para coordinates as trainable parameters"""
+        for i in range(self.n_modes):
+            self.Para_modes[i].UnFreeze_Mesh()
+
+    def Freeze_Para(self):
+        """Set the para modes as untrainable """
+        for i in range(self.n_modes):
+            self.Para_modes[i].Freeze_FEM()  
+
+    def UnFreeze_Para(self):
+        """Set the para modes as trainable """
+        for i in range(self.n_modes):
+            self.Para_modes[i].UnFreeze_FEM()  
 
     def forward(self,x,mu):
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]

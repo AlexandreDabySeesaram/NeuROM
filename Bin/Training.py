@@ -6,7 +6,8 @@ import time
 
 from Bin.PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
-        Derivative, AnalyticGradientSolution, AnalyticSolution
+        Derivative, AnalyticGradientSolution, AnalyticSolution,\
+            PotentialEnergyVectorisedParametric
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -249,8 +250,8 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
     Loss_vect = []
     for epoch in range(n_epochs):
-        loss_vect = torch.stack([PotentialEnergyVectorised(A,E,model(TrialCoordinates,E),TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])
-        loss = torch.sum(loss_vect)/E_trial.shape[0]
+        
+        loss = PotentialEnergyVectorisedParametric(A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
         loss.backward()
         # update weights
         optimizer.step()
@@ -258,8 +259,19 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         optimizer.zero_grad()
         with torch.no_grad():
             Loss_vect.append(loss.item())
-        if (epoch+1) % 10 == 0:
+        if (epoch+1) % 1 == 0:
             print('epoch ', epoch+1, ' loss = ', loss.item())
+            if (epoch+1) % 1000 == 0:
+                import matplotlib.pyplot as plt
+                plt.plot(model.Para_modes[0](E_trial).data)
+                plt.show()
+                plt.clf()
+                plt.plot(model.Space_modes[0](TrialCoordinates).data)
+                plt.show()
+                plt.clf()
+        # if epoch == 300:
+        #     model.Freeze_Space()
+        #     model.UnFreeze_Para()
     
     return Loss_vect
     

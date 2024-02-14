@@ -20,7 +20,7 @@ import time
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 8                                     # Number of Nodes in the Mesh
+np = 23                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -65,12 +65,12 @@ BoolGPU = False                         # Boolean enabling GPU computations (aut
 
 #%% Define loss and optimizer
 learning_rate = 0.001
-n_epochs = 500
+n_epochs = 5000
 optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 MSE = nn.MSELoss()
 
 #%% Debuging cell
-n_modes = 3
+n_modes = 1
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -81,7 +81,7 @@ BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)
 
-TrialPara = torch.linspace(mu_min,mu_max,300)
+TrialPara = torch.linspace(mu_min,mu_max,1)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
 u_x = BeamModel(TrialCoordinates)
@@ -92,9 +92,18 @@ t_end = time.time()
 print(f'* Evaluation time of {u_x_para.shape[0]*u_x_para.shape[1]} values: {t_end-t_start}s')
 optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
 
+
+#%% Training
+BeamROM.Freeze_Mesh()
+BeamROM.Freeze_MeshPara()
+# BeamROM.Freeze_Space()
+BeamROM.Freeze_Para()
+
+# Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
 Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
 
 #%% Check model
+import matplotlib.pyplot as plt
 
 PaperPara = torch.tensor([175])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
@@ -107,40 +116,40 @@ PaperPara = torch.tensor([200])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
 u_200 = BeamROM(TrialCoordinates,PaperPara)
 u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(u_analytical_200)
-plt.plot(u_200.data)
+plt.plot(TrialCoordinates.data,u_analytical_200)
+plt.plot(TrialCoordinates.data,u_200.data)
 
 PaperPara = torch.tensor([100])
 PaperPara = PaperPara[:,None] # Add axis so that dimensions match
 u_100 = BeamROM(TrialCoordinates,PaperPara)
 u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
-plt.plot(u_analytical_100)
-plt.plot(u_100.data)
+plt.plot(TrialCoordinates.data,u_analytical_100)
+plt.plot(TrialCoordinates.data,u_100.data)
 plt.show()
 plt.clf()
 
 
 #%% Training loop
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float32, requires_grad=True)
+# TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+#                                 dtype=torch.float32, requires_grad=True)
 
-# If GPU
-if BoolGPU:
-    BeamModel.to(mps_device)
-    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                dtype=torch.float32, requires_grad=True).to(mps_device)
+# # If GPU
+# if BoolGPU:
+#     BeamModel.to(mps_device)
+#     TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+#                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 
 
 
-# Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
-n_elem = 1
-error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, 
-                                                                                         TrialCoordinates, optimizer, n_epochs, 
-                                                                                         BoolCompareNorms, MSE)
+# # Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
+# n_elem = 1
+# error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, 
+#                                                                                          TrialCoordinates, optimizer, n_epochs, 
+#                                                                                          BoolCompareNorms, MSE)
 
-Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, 
-                         TrialCoordinates, n_epochs, BoolCompareNorms, 
-                         MSE, error, error2, Coord_trajectories)
+# Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, 
+#                          TrialCoordinates, n_epochs, BoolCompareNorms, 
+#                          MSE, error, error2, Coord_trajectories)
 
 
 #%% Post-processing

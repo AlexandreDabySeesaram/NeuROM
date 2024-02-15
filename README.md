@@ -37,7 +37,7 @@ The trainable parameters can be changed on the fly.
 
 ## Illustration of the ROM parametric solution
 
-![](Illustrations/Your_GIF_Name.gif)
+![](Illustrations/NeuROM_1D.gif)
 
 
 ## TODO

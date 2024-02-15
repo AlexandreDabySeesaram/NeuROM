@@ -142,6 +142,7 @@ plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 1
 plt.legend(loc="upper left")
 plt.xlabel('x (mm)')
 plt.ylabel('u (mm)')
+# plt.savefig('Results/Para_displacements_.pdf', transparent=True)  
 plt.show()
 plt.clf()
 
@@ -197,11 +198,16 @@ def interactive_plot(E):
     E = torch.tensor([E])
     E = E[:,None] # Add axis so that dimensions match
     u_E = BeamROM(TrialCoordinates,E)
-    
+    error_tensor = u_analytical_E - u_E
+    # Reative error in percentage
+    error_norm = 100*torch.sqrt(torch.sum(err*err))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
+    error_scientific_notation = f"{error_norm:.2e}"
+    # error_str = str(error_norm.item())
+    title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'
     # Plot the function
     plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
     plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')
-    plt.title('Displacement')
+    plt.title(title_error)
     plt.xlabel('x (mm)')
     plt.ylabel('u(x,E) (mm)')
     plt.legend(loc="upper left")

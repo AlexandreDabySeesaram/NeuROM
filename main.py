@@ -21,11 +21,11 @@ import os
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 23                                     # Number of Nodes in the Mesh
+np = 30                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
-
+name_model = 'ROM_1Para_np_'+str(np)
 # User defines all boundary conditions 
 DirichletDictionryList = [{"Entity": 1, 
                            "Value": 0, 
@@ -66,7 +66,7 @@ TrainingRequired = False                # Boolean leading to Loading pre trained
 
 #%% Define hyoerparameters
 learning_rate = 0.001
-n_epochs = 700
+n_epochs = 7000
 MSE = nn.MSELoss()
 
 #%% Parametric definition and initialisation of Reduced-order model
@@ -92,10 +92,10 @@ TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
 if not TrainingRequired:
     # Load pre trained model
-    BeamROM.load_state_dict(torch.load('TrainedModels/ROM_1Para'))
-    print('************ LOADING MODEL COMPLETE ***********\n')
-
-    if not os.path.isfile('TrainedModels/ROM_1Para'):
+    if os.path.isfile('TrainedModels/'+name_model):
+        BeamROM.load_state_dict(torch.load('TrainedModels/'+name_model))
+        print('************ LOADING MODEL COMPLETE ***********\n')
+    else: 
         TrainingRequired = True
         print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
 
@@ -103,11 +103,11 @@ if TrainingRequired:
     # Train model
     BeamROM.UnFreeze_Para()
     optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-    Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, 5000, BoolCompareNorms, MSE)
+    Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
     BeamROM.Freeze_Space()
 
     # Save model
-    # torch.save(BeamROM.state_dict(), 'TrainedModels/ROM_1Para')
+    # torch.save(BeamROM.state_dict(), 'TrainedModels/name_model')
 
 
 #%% Check model
@@ -200,7 +200,7 @@ def interactive_plot(E):
     u_E = BeamROM(TrialCoordinates,E)
     error_tensor = u_analytical_E - u_E
     # Reative error in percentage
-    error_norm = 100*torch.sqrt(torch.sum(err*err))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
+    error_norm = 100*torch.sqrt(torch.sum(error_tensor*error_tensor))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
     error_scientific_notation = f"{error_norm:.2e}"
     # error_str = str(error_norm.item())
     title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'

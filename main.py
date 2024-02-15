@@ -210,7 +210,7 @@ def interactive_plot(E):
     plt.show()
 
 # Create an interactive slider
-slider = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E (MPa)')
+slider = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E (GPa)')
 
 # Connect the slider to the interactive plot function
 interactive_plot_widget = interact(interactive_plot, E=slider)

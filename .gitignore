@@ -7,3 +7,4 @@ Results/
 *.msh
 draft.py
 logs/
+TrainedModels/

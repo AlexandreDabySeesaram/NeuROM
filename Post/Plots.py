@@ -27,17 +27,35 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
 
 def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticGradientSolution,model,Derivative,name):
     pred = model(TrialCoordinates)[0]
-    
     # Plots the gradient & compare to reference
     plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data,Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
+    #plt.show()
+    plt.clf()
+
+def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
+    pred = model(TrialCoordinates)[0]
+    
+    # Plots the gradient & compare to reference
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
+    plt.plot(TrialCoordinates.data, Force.data/(-A*E), label = 'Ground Truth')
+    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    # plt.title('Displacement first derivative')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+
+    #dif = np.array(((Force.data/(-A*E) - Derivative(pred,TrialCoordinates).data)**2)[:,0])
+    #print("mean = ", np.mean(dif))
     #plt.show()
     plt.clf()
 
@@ -62,7 +80,9 @@ def PlotTrajectories(Coord_trajectories,name):
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
+
     error3 = error-np.min(error)
+    #error3 = error
     #error3 = [-x for x in error]
     plt.semilogy(error2)
     plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
@@ -78,7 +98,8 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
 def Plot_end(error,error2):
     # Lift to be able to use semilogy
     #error3 = error-np.min(error)
-    error3 = [-x for x in error]
+    error3 = error
+    #error3 = [-x for x in error]
     #plt.semilogy(error2[-1000:-1])
     #plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()
@@ -99,11 +120,14 @@ def Plot_LearningRate(Learning_Rate):
     plt.clf()
 
 
-def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
+def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight, name):
     shape_function = model(TrialCoordinates)[1]
     
     nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
+    nodal_values_BC = model.InterpoLayer_dd.weight.data.detach()
     nodal_values = np.zeros(shape_function.shape[1])
+    nodal_values[0] = nodal_values_BC[0]
+    nodal_values[-1] = nodal_values_BC[1]
     nodal_values[1:-1] = nodal_values_inter
 
     if ProjectWeight == False:
@@ -115,6 +139,6 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.scatter(InitCoord,[coord*0 for coord in InitCoord], s=6, color="pink", alpha=0.5)
 
     #plt.legend()
-    plt.savefig('Results/ShapeFunctions.pdf')
+    plt.savefig('Results/'+name+'.pdf')
     plt.close()
 

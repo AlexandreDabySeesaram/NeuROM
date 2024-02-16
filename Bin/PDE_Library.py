@@ -5,11 +5,14 @@ def RHS(x):
     """Defines the right hand side (RHS) of the equation (the body force)"""
     b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) \
         - (8*np.pi**2*(x-7.5)**2-4*np.pi)/(torch.exp(np.pi*(x-7.5)**2))
+
+    #b[np.where(np.abs(b.data)<1.0e-6)]=0
     return  b
 
 def PotentialEnergy(A,E,u,x,b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+
     integral = 0
     for i in range(1,u.data.shape[0]):
         integral += (0.25*A*E*(x[i]-x[i-1])*(du_dx[i]**2+du_dx[i-1]**2)) \
@@ -54,3 +57,21 @@ def AnalyticGradientSolution(A,E,x):
         + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \
             - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out
+
+
+def MixedFormulation_Loss(A, E, u, du, x, b):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    du_dx_dx = torch.autograd.grad(du, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+
+    res_constit = (du - du_dx)**2
+    res_eq = (du_dx_dx + b/(A*E))**2
+
+    #print("x = ", (x).shape)
+    #print("b = ", (b).shape)
+    #print(" res_eq = ", ((A*E*ds_dx + force_b(x.detach()))**2).shape)
+
+    assert (res_constit.shape) == x.shape
+    assert (res_eq.shape) == x.shape
+
+    return torch.mean(res_eq), torch.mean(res_constit)

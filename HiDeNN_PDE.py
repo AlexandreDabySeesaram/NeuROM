@@ -34,6 +34,18 @@ class MultiplicationBlock(nn.Module):
         mid = self.Diff(mid)
         return mid
 '''
+class Dataset(torch.utils.data.Dataset):
+
+    def __init__(self, X):
+        self.X = X
+        
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, index):    
+        x = self.X[index]
+
+        return x
 
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
@@ -227,7 +239,7 @@ class MeshNN(nn.Module):
     """This is the main Neural Network building the FE interpolation, the coordinates parameters are trainable are correspond to the coordinates of the nodes in the Mesh which are passed as parameters to the sub NN where they are fixed. 
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them is equivqlent to solving the PDE. """
-    def __init__(self, n_elem, L, order, connectivity_matrix, connectivity_vector, alpha = 0.005):
+    def __init__(self, n_elem, L, order, connectivity_matrix, connectivity_vector, bool_train_boundary, alpha = 0.005):
         super(MeshNN, self).__init__()
         self.alpha = alpha # set the weight for the Mesh regularisation 
 
@@ -241,13 +253,13 @@ class MeshNN(nn.Module):
             self.np = n_elem+1 
             self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,self.np)])          
             self.Functions = nn.ModuleList([ElementBlock(i) for i in range(self.n_elem)])
-            self.CompositionLayer = nn.Linear(3*n_elem + 2*2,self.np)
+            self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np)
 
         if order ==2:
             self.np = 2*n_elem+1 
             self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) for i in torch.linspace(0,L,2*self.n_elem+1)])          
             self.Functions = nn.ModuleList([ElementBlockQuadratic(i) for i in range(self.n_elem)])
-            self.CompositionLayer = nn.Linear(2*(self.n_elem+2),self.np)
+            self.CompositionLayer = nn.Linear(3*n_elem + 2*2,self.np)
 
         self.CompositionLayer.weight.data = self.connectivity_matrix
         self.CompositionLayer.weight.requires_grad=False
@@ -255,13 +267,20 @@ class MeshNN(nn.Module):
         self.CompositionLayer.bias.requires_grad=False
 
         self.InterpoLayer_uu = nn.Linear(self.np-2,1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.np-2), requires_grad=False)
-        self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-
+        #self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.np-2), requires_grad=False)
+        #self.InterpoLayer_uu.weight.data = self.NodalValues_uu
+        self.InterpoLayer_uu.weight.data = 0.0*torch.ones(self.np-2)
+        #self.InterpoLayer_uu.weight.data.uniform_(-0.1, 0.1)
+        self.InterpoLayer_uu.weight.data = self.InterpoLayer_uu.weight.data.squeeze()
+         
         # Phantom elements outside domain = We can always use linear block
-        self.Functions_dd = nn.ModuleList([ElementBlock(-1),ElementBlock(-2)])        
-        self.InterpoLayer_dd = nn.Linear(1,1,bias=False)
-        self.InterpoLayer_dd.weight.requires_grad = False
+        self.Functions_dd = nn.ModuleList([ElementBlock(-1),ElementBlock(-2)])   
+
+        self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
+        #self.InterpoLayer_dd.weight.data.uniform_(-0.1, 0.1)
+        self.InterpoLayer_dd.weight.data.fill_(0.0)
+        self.InterpoLayer_dd.weight.data = self.InterpoLayer_dd.weight.data.squeeze()
+        self.InterpoLayer_dd.weight.requires_grad = bool_train_boundary
 
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
@@ -287,16 +306,19 @@ class MeshNN(nn.Module):
         #recomposed_BC = torch.stack((recomposed_vector[:,0],recomposed_vector[:,-1]),dim=1)
         recomposed_BC = torch.cat(((recomposed_vector[:,0]).expand(1,-1).t(),(recomposed_vector[:,-1]).expand(1,-1).t()), dim=1)
 
-
         # Interior and processed by interpolation layer separately. 
         u_inter = self.InterpoLayer_uu(recomposed)
         u_BC = self.InterpoLayer_dd(recomposed_BC)
 
-        #u = torch.stack((u_inter,u_BC), dim=1)
-        u = torch.cat((u_inter.expand(1,-1).t(),u_BC.expand(1,-1).t()), dim=1)
 
+        #u = torch.cat((u_inter.expand(1,-1).t(),u_BC.expand(1,-1).t()), dim=1)
+        u = torch.cat((u_inter.expand(1,-1).t(),u_BC.expand(1,-1).t()), dim=1)
+        #print("u_out = ", u_out.shape)
+        #print(((u_inter+u_BC).expand(1,-1).t()).shape)
+
+        #print(u.shape)
         return self.SumLayer(u), recomposed_vector
-        #return joined_vector, joined_vector
+        #return (u_inter+u_BC).expand(1,-1).t(), recomposed_vector
         
 
         ######### LEGACY  #############
@@ -340,76 +362,132 @@ class MeshNN(nn.Module):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = False
 
+from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS, FilterTrainingData,\
+                            MixedFormulation_Training_InitialStage, GetConnectivity, MixedFormulation_Training_FinalStageLBFGS
 
 #%% Application of the NN
 # Geometry of the Mesh
 L = 10                           # Length of the Beam
-n_elem = 100                          # Number of Nodes in the Mesh
 A = 1                            # Section of the beam
 E = 175                          # Young's Modulus (should be 175)
 alpha =0.0                   # Weight for the Mesh regularisation 
 
+n_elem_u = 8                         # Number of Elements in the Mesh u
+n_elem_du = 15                         # Number of Elements in the Mesh du
+
+order_u = 2
+order_du = 1
+
+
+connectivity_matrix_u, connectivity_vector_u = GetConnectivity(n_elem_u, order_u)
+MeshBeam_u = MeshNN(n_elem_u,L,order_u,connectivity_matrix_u,connectivity_vector_u,False, alpha)    # Creates the associated model
+
+connectivity_matrix_du, connectivity_vector_du = GetConnectivity(n_elem_du, order_du)
+MeshBeam_du = MeshNN(n_elem_du,L,order_du,connectivity_matrix_du,connectivity_vector_du, True, alpha)    # Creates the associated model
+
+
+# Boundary conditions
+u_0 = 0                     #Left BC
+u_L = 0                     #Right BC
+MeshBeam_u.SetBCs(u_0,u_L)
+
+
+# Set the coordinates as trainable
+#MeshBeam_u.UnFreeze_Mesh()
+##MeshBeam_du.UnFreeze_Mesh()
+# Set the coordinates as untrainable
+#MeshBeam_u.Freeze_Mesh()
+#MeshBeam_du.Freeze_Mesh()
+
+#MeshBeam.Freeze_FEM()
+
+# Set the require output requirements
+BoolPlot = False             # Bool for plots used for gif
+BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
+
+
+MSE = nn.MSELoss()
+
+
+###########################
+
+start = time.time()
+
+error = []              # Stores the loss
+error2 = []             # Stores the L2 error compared to the analytical solution
+Coord_trajectories = [] # Stores the trajectories of the coordinates while training
+
+n_epochs = 500
+MeshBeam_u.Freeze_Mesh()
+MeshBeam_du.Freeze_Mesh()
+
+n_plot_points = 500
+PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,n_plot_points)], dtype=torch.float64, requires_grad=True)
+
+Filtered_PlotCoordTensor = FilterTrainingData(MeshBeam_u, PlotCoordTensor)
+Filtered_PlotCoordTensor = FilterTrainingData(MeshBeam_du, PlotCoordTensor)
+CoordinatesDataset = Dataset(Filtered_PlotCoordTensor)
+CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=500, shuffle=True)
+print("Number of batches per epoch = ", len(CoordinatesBatchSet))
+
+learning_rate = 1.0e-3
+optimizer = torch.optim.Adam(list(MeshBeam_u.parameters()) + list(MeshBeam_du.parameters()), lr=learning_rate)
+
+error, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = MixedFormulation_Training_InitialStage(MeshBeam_u, MeshBeam_du, A, E, L, \
+                                        n_elem_u, n_elem_du, \
+                                        CoordinatesBatchSet, PlotCoordTensor,\
+                                        optimizer, n_epochs, BoolCompareNorms, MSE,
+                                        error, error2, Coord_trajectories)
+###########
+
+n_epochs = 10000
+MeshBeam_u.UnFreeze_Mesh()
+MeshBeam_du.UnFreeze_Mesh()
+
+error, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = MixedFormulation_Training_InitialStage(MeshBeam_u, MeshBeam_du, A, E, L, \
+                                        n_elem_u, n_elem_du, \
+                                        CoordinatesBatchSet, PlotCoordTensor,\
+                                        optimizer, n_epochs, BoolCompareNorms, MSE,
+                                        error, error2, Coord_trajectories)
+
+end = time.time()
+print("Time = ", (end-start))
+
+##############################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 '''
-# Quadragic shape fucntions
-connectivity_vector = (-1)*torch.ones(2*n_elem+1)
-connectivity_matrix = torch.zeros((2*n_elem+1,3*n_elem + 2*2))
-# node 0
-connectivity_matrix[0,0] = 1.0
-connectivity_matrix[0,6] = 1.0
 
-# node n
-connectivity_matrix[2*n_elem,3] = 1.0     
-connectivity_matrix[2*n_elem,-3] = 1.0   
+order_u = 2
+connectivity_matrix_u, connectivity_vector_u = GetConnectivity(n_elem_u, order_u)
 
-for el in range(n_elem):
-    connectivity_matrix[el*2+1,4+el*3+1] = 1
-    connectivity_vector[el*2+1]=0
-
-for node in range(1,n_elem):
-    row = 2*node
-    left = node-1
-    cols = [4+left*3, 4+left*3+5]
-    for col in cols:
-        connectivity_matrix[row,col] = 1
-'''
-
-
-# Linear shape functions
-connectivity_vector = (-1)*torch.ones(n_elem+1)
-connectivity_matrix = torch.zeros((n_elem+1,2*(n_elem+2)))
-# node 0
-connectivity_matrix[0,0] = 1.0
-connectivity_matrix[0,5] = 1.0
-
-# node n
-connectivity_matrix[n_elem,3] = 1.0     
-connectivity_matrix[n_elem,-2] = 1.0     
-
-for node in range(1,n_elem):
-    row = node
-    left = node-1
-
-    cols = [4+left*2, 4+left*2+3]
-    for col in cols:
-        connectivity_matrix[row,col] = 1
-
-
-
-MeshBeam = MeshNN(n_elem,L, 1, connectivity_matrix,connectivity_vector, alpha)    # Creates the associated model
+MeshBeam = MeshNN(n_elem_u,L, order_u, connectivity_matrix_u, connectivity_vector_u, False, alpha)    # Creates the associated model
 # Boundary conditions
 u_0 = 0                     #Left BC
 u_L = 0                     #Right BC
 MeshBeam.SetBCs(u_0,u_L)
 # Import mechanical functions
 
-
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, Training_FinalStageLBFGS, FilterTrainingData
-
 
 # Set the coordinates as trainable
 #MeshBeam.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-MeshBeam.Freeze_Mesh()
+MeshBeam.UnFreeze_Mesh()
 #MeshBeam.Freeze_FEM()
 
 # Set the require output requirements
@@ -418,27 +496,24 @@ BoolCompareNorms = True      # Bool for comparing energy norm to L2 norm
 
 
 #%% Define loss and optimizer
-learning_rate = 5.0e-4
-n_epochs = 1000
+learning_rate = 1.0e-3
+n_epochs = 20000
 optimizer = torch.optim.Adam(MeshBeam.parameters(), lr=learning_rate)
 #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, cooldown=100, factor=0.9)
 
 MSE = nn.MSELoss()
 
-'''
-for param in MeshBeam.parameters():
-    if param.requires_grad==True:
-        print(param)
-'''
 
 TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], dtype=torch.float64, requires_grad=True)
 
-Test_GenerateShapeFunctions(MeshBeam, TrialCoordinates)
+#Test_GenerateShapeFunctions(MeshBeam_u, TrialCoordinates)
 
 start = time.time()
-error, error2, InitialCoordinates, Coord_trajectories = Training_InitialStage(MeshBeam, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
+error, error2, InitialCoordinates, Coord_trajectories = Training_InitialStage(MeshBeam, A, E, L, n_elem_u, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE)
 end = time.time()
-
-print(end-start)
+print("Time = ", (end-start))
 
 #Training_FinalStageLBFGS(MeshBeam, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error, error2, Coord_trajectories)
+#
+
+'''

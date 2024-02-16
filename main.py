@@ -60,7 +60,7 @@ BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                # Boolean leading to Loading pre trained model or retraining from scratch
 
 
 
@@ -116,11 +116,14 @@ if TrainingRequired:
     # Train model
     BeamROM.UnFreeze_Para()
     optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
+    start_time = time.time()
     Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+    stop_time = time.time()
+    print(f'* Duration of training = {stop_time-start_time}s')
     BeamROM.Freeze_Space()
 
     # Save model
-    # torch.save(BeamROM.state_dict(), 'TrainedModels/name_model')
+    # torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
 
 
 #%% Check model

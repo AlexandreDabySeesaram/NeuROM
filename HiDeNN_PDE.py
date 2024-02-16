@@ -13,8 +13,6 @@ torch.set_default_dtype(torch.float32)
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
-# from functorch import vmap, combine_state_for_ensemble
-from torch.func import vmap, combine_state_for_ensemble
 
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
@@ -29,40 +27,41 @@ class LinearBlock(nn.Module):
 
     def forward(self,x, x_a, x_b, y_a, y_b):
         
-        mid = self.relu(-x + x_b)
-        mid = self.relu(1 - mid/(x_b-x_a))
+        mid = self.relu(-x + x_b.T)
+        mid = self.relu(1 - mid/(x_b.T-x_a.T))
         mid = (y_b-y_a)*mid + y_a
         return mid
 
 class ElementBlock_Bar_2(nn.Module):
     """Bar 2 (linear 1D) element block
     Returns the N_i(x)'s for each nodes within the element"""
-    def __init__(self, i , connectivity):
+    def __init__(self, connectivity):
         super(ElementBlock_Bar_2, self).__init__()
-        self.i = i
         self.LinearBlock = LinearBlock()
-        self. connectivity = connectivity
+        self. connectivity = connectivity.astype(int)
 
-    def forward(self, x, coordinates):
-        i = self.i
+
+
+    def forward(self, x, coordinates, i):
+        # i = self.i
         # For the outter Nodes, phantom elements are created 
         # to cancel out shape functions beyond the geometry of the structure in question, 
         # to prevent any form of extrapolation beyond its boundaries 
-        if i ==-1:
-            x_left = coordinates[0]-coordinates[1]/100
-            x_right = coordinates[0]  
-        elif i ==-2:
-            x_left = coordinates[1]
-            x_right = coordinates[1]*(1+1/100) 
+
+        if -1  in i:
+            x_left_0 = coordinates[0]-coordinates[1]/100
+            x_right_0 = coordinates[0]  
+            x_left_2 = coordinates[1]
+            x_right_2 = coordinates[1]*(1+1/100)
+            x_left = [x_left_0,x_left_2]
+            x_right = [x_right_0,x_right_2]
         else:
-            x_left = coordinates[self.connectivity[i,0].astype(int)-1]
-            x_right = coordinates[self.connectivity[i,-1].astype(int)-1]
+            x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
+            x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-        left = self.LinearBlock(x, x_left, x_right, 0, 1)
-        right = self.LinearBlock(x, x_left, x_right, 1, 0)
-        out = torch.cat((left, right),dim=1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
-
-        # out = torch.cat((right, left),dim=1) #  {[N1 N2] [N2 N3] [N3 N4]}
+        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), 0, 1)
+        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), 1, 0)
+        out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
 
         return out
 
@@ -82,13 +81,14 @@ class MeshNN(nn.Module):
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
-        self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,mesh.Connectivity) \
-                                        for i in range(self.NElem)])
+        # self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,mesh.Connectivity) \
+                                        # for i in range(self.NElem)])
+        self.ElementBlock = ElementBlock_Bar_2(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.Functions_dd = nn.ModuleList([ElementBlock_Bar_2(-1,mesh.Connectivity),
-                                           ElementBlock_Bar_2(-2,mesh.Connectivity)])
+        # self.Functions_dd = nn.ModuleList([ElementBlock_Bar_2(-1,mesh.Connectivity),
+        #                                    ElementBlock_Bar_2(-2,mesh.Connectivity)])
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
         # self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
@@ -99,17 +99,14 @@ class MeshNN(nn.Module):
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
+        self.ElemList = torch.arange(self.NElem)
+
 
 
     def forward(self,x):
         # Compute shape functions 
-        fmodel, params, buffers = combine_state_for_ensemble(self.Functions)
-        predictions2_vmap = vmap(fmodel, in_dims=(0, 0, None))(params, buffers, x)
-
-        intermediate_uu = [model(x,self.coordinates) for model in self.Functions]
-        intermediate_dd = [model(x,self.coordinates) for model in self.Functions_dd]
-        out_uu = torch.cat(intermediate_uu, dim=1)
-        out_dd = torch.cat(intermediate_dd, dim=1)
+        out_uu = self.ElementBlock(x,self.coordinates,self.ElemList)
+        out_dd = self.ElementBlock(x,self.coordinates,torch.tensor(-1))
         joined_vector = torch.cat((out_uu,out_dd),dim=1)       
         recomposed_vector_u = self.AssemblyLayer(joined_vector) -1
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
@@ -182,8 +179,9 @@ class InterpPara(nn.Module):
         self.AssemblyLayer.bias[0] = torch.tensor(0)
         self.AssemblyLayer.bias[-1] = torch.tensor(0)
 
+        self.ElementBlock = ElementBlock_Bar_2(self.Connectivity)
 
-        self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
+        # self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
 
         # Interpolation (nodal values) layer
         # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)
@@ -191,25 +189,13 @@ class InterpPara(nn.Module):
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
         self.InterpoLayer.weight.data = self.NodalValues_para
-
+        self.ElemList = torch.arange(self.n_elem)
 
     def forward(self,mu):
-        intermediate = [self.Functions[l](mu,self.coordinates) for l in range(self.n_elem)]
-        out_elements = torch.cat(intermediate, dim=1)
+        # out_elements = [self.ElementBlock(mu,self.coordinates,i) for i in range(self.n_elem)]
+        out_elements = self.ElementBlock(mu,self.coordinates,self.ElemList)        # intermediate = [self.Functions[l](mu,self.coordinates) for l in range(self.n_elem)]
         Assembled_vector = self.AssemblyLayer(out_elements)
-        # plt.plot(mu.data,Assembled_vector.data[:,0], label = '$N_1$')
-        # plt.plot(mu.data,Assembled_vector.data[:,1], label = '$N_2$')
-        # plt.plot(mu.data,Assembled_vector.data[:,2], label = '$N_3$')
-        # plt.plot(mu.data,Assembled_vector.data[:,3], label = '$N_4$')
-        # plt.plot(mu.data,Assembled_vector.data[:,-2], label = '$N_{p-1}$')
-        # plt.plot(mu.data,Assembled_vector.data[:,-1], label = '$N_{p}$')
-        # plt.legend(loc="upper left")
-        # plt.savefig('Results/Assembled_SF_Para.pdf', transparent=True)
-        # plt.clf()
         out_interpolation = self.InterpoLayer(Assembled_vector)
-        # plt.plot(out_interpolation.data)
-        # plt.savefig('Results/Initial_interPara.pdf', transparent=True)
-        # plt.clf()
         return out_interpolation
     
     def Freeze_Mesh(self):

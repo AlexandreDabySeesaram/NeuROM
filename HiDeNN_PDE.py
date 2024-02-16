@@ -13,8 +13,6 @@ torch.set_default_dtype(torch.float32)
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
-# from functorch import vmap, combine_state_for_ensemble
-from torch.func import vmap, combine_state_for_ensemble
 
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
@@ -103,11 +101,8 @@ class MeshNN(nn.Module):
 
     def forward(self,x):
         # Compute shape functions 
-        fmodel, params, buffers = combine_state_for_ensemble(self.Functions)
-        predictions2_vmap = vmap(fmodel, in_dims=(0, 0, None))(params, buffers, x)
-
-        intermediate_uu = [model(x,self.coordinates) for model in self.Functions]
-        intermediate_dd = [model(x,self.coordinates) for model in self.Functions_dd]
+        intermediate_uu = [self.Functions[l](x,self.coordinates) for l in range(self.NElem)]
+        intermediate_dd = [self.Functions_dd[l](x,self.coordinates) for l in range(2)]
         out_uu = torch.cat(intermediate_uu, dim=1)
         out_dd = torch.cat(intermediate_dd, dim=1)
         joined_vector = torch.cat((out_uu,out_dd),dim=1)       

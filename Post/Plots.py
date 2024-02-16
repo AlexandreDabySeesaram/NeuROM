@@ -11,52 +11,30 @@ import numpy as np
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
-    pred = model(TrialCoordinates)[0]
-
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data,pred.data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data,model(TrialCoordinates).data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    #plt.show()
+    plt.show()
     plt.clf()
 
 def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticGradientSolution,model,Derivative,name):
-    pred = model(TrialCoordinates)[0]
     # Plots the gradient & compare to reference
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data,Derivative(model(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    #plt.show()
-    plt.clf()
-
-def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
-    pred = model(TrialCoordinates)[0]
-    
-    # Plots the gradient & compare to reference
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
-    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
-    plt.plot(TrialCoordinates.data, Force.data/(-A*E), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
-    plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
-    plt.legend(loc="upper left")
-    # plt.title('Displacement first derivative')
-    plt.savefig('Results/'+name+'.pdf', transparent=True) 
-
-    #dif = np.array(((Force.data/(-A*E) - Derivative(pred,TrialCoordinates).data)**2)[:,0])
-    #print("mean = ", np.mean(dif))
-    #plt.show()
+    plt.show()
     plt.clf()
 
 def PlotEnergyLoss(error,zoom,name):
@@ -65,9 +43,7 @@ def PlotEnergyLoss(error,zoom,name):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    #plt.show()
-    plt.clf()
-
+    plt.show()
 
 def PlotTrajectories(Coord_trajectories,name):
     """Plots the trajectories of the coordinates during training"""
@@ -75,15 +51,11 @@ def PlotTrajectories(Coord_trajectories,name):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    #plt.show()
-    plt.clf()
+    plt.show()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
-
     error3 = error-np.min(error)
-    #error3 = error
-    #error3 = [-x for x in error]
     plt.semilogy(error2)
     plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()

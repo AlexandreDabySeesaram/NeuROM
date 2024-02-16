@@ -60,7 +60,7 @@ BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                # Boolean leading to Loading pre trained model or retraining from scratch
 
 
 
@@ -74,19 +74,6 @@ n_modes = 1
 mu_min = 100
 mu_max = 200
 N_mu = 10
-
-# # Para Young
-# Eu_min = 100
-# Eu_max = 200
-# N_E = 10
-
-# # Para Area
-# A_min = 0.1
-# A_max = 10
-# N_A = 10
-
-
-# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[A_min,A_max,N_A]])
 
 BCs=[u_0,u_L]
 BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)

@@ -87,19 +87,14 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     plt.semilogy(error2)
     plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3,color='#F39C12', label="Min = "+str(np.format_float_scientific(np.min(error), precision=3))+", final = " +str(np.format_float_scientific(error[-1], precision=3)))
-    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
-    #plt.legend(bbox_to_anchor=[0.7, 0.5], loc='center')
-    plt.legend()
-    plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    plt.clf()
-
-
+    ax2.semilogy(error3,color='#F39C12')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+     
 def Plot_end(error,error2):
     # Lift to be able to use semilogy
     #error3 = error-np.min(error)
-    error3 = error
-    #error3 = [-x for x in error]
+    error3 = [-x for x in error]
     #plt.semilogy(error2[-1000:-1])
     #plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()
@@ -120,14 +115,11 @@ def Plot_LearningRate(Learning_Rate):
     plt.clf()
 
 
-def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight, name):
+def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     shape_function = model(TrialCoordinates)[1]
     
     nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
-    nodal_values_BC = model.InterpoLayer_dd.weight.data.detach()
     nodal_values = np.zeros(shape_function.shape[1])
-    nodal_values[0] = nodal_values_BC[0]
-    nodal_values[-1] = nodal_values_BC[1]
     nodal_values[1:-1] = nodal_values_inter
 
     if ProjectWeight == False:
@@ -139,6 +131,5 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight, name):
     plt.scatter(InitCoord,[coord*0 for coord in InitCoord], s=6, color="pink", alpha=0.5)
 
     #plt.legend()
-    plt.savefig('Results/'+name+'.pdf')
+    plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
-

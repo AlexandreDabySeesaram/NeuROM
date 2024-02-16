@@ -35,6 +35,11 @@ The trainable parameters can be changed on the fly.
 * `model.Freeze_FEM()` Freezes the nodale values so that only the coordinates are trained
 * `model.UnFreeze_FEM()` Unfreezes the nodale so that FEM problem can be solved
 
+## Illustration of the ROM parametric solution
+
+![](Illustrations/NeuROM_1D.gif)
+
+
 ## TODO
  Here is a list of short term ojectives
 

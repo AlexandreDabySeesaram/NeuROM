@@ -67,7 +67,7 @@ TrainingRequired = True                # Boolean leading to Loading pre trained 
 
 #%% Define hyoerparameters
 learning_rate = 0.001
-n_epochs = 14000
+n_epochs = 3000
 MSE = nn.MSELoss()
 
 #%% Parametric definition and initialisation of Reduced-order model
@@ -94,8 +94,6 @@ ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 BCs=[u_0,u_L]
 BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
 
-# BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
-
 
 #%% Training
 BeamROM.Freeze_Mesh()
@@ -106,6 +104,8 @@ TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)],
 TrialPara = torch.linspace(mu_min,mu_max,50, 
                                 dtype=torch.float32, requires_grad=True)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+
+
 
 start_compile = time.time()
 
@@ -129,6 +129,12 @@ if not TrainingRequired:
         print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
 
 if TrainingRequired:
+    if BoolGPU:
+        BeamROM.to(mps_device)
+        TrialCoordinates = TrialCoordinates.to(mps_device)
+        TrialPara = TrialPara.to(mps_device)
+        BeamROM(TrialCoordinates,TrialPara)
+
     # Train model
     # BeamROM.UnFreeze_Mesh()
     # BeamROM.UnFreeze_Para()
@@ -278,15 +284,15 @@ plt.clf()
     # plt.show()
 
 
-# %% Mode pltting Debug
-u_xE = torch.matmul(u_i,lambda_i.view(BeamROM.n_modes,lambda_i.shape[1]))
-u_xE_1 = torch.matmul(u_i[:,0].view(498,1),lambda_i[0,:,0].view(1,lambda_i.shape[1]))
-u_xE_2 = torch.matmul(u_i[:,1].view(498,1),lambda_i[1,:,0].view(1,lambda_i.shape[1]))
-plt.plot(TrialCoordinates.data, u_xE[:,10].data,label = 'Solution')
-plt.plot(TrialCoordinates.data, u_xE_1[:,10].data,label = 'Mode 1')
-plt.plot(TrialCoordinates.data, u_xE_2[:,10].data,'--',label = 'Mode 2')
-plt.plot(TrialCoordinates.data, (u_xE_2[:,10].data+u_xE_1[:,10].data),'--',label = 'First 2 modes')
-plt.legend(loc="upper left")
-plt.savefig('Results/Comp_full_fields'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+# # %% Mode pltting Debug
+# u_xE = torch.matmul(u_i,lambda_i.view(BeamROM.n_modes,lambda_i.shape[1]))
+# u_xE_1 = torch.matmul(u_i[:,0].view(498,1),lambda_i[0,:,0].view(1,lambda_i.shape[1]))
+# u_xE_2 = torch.matmul(u_i[:,1].view(498,1),lambda_i[1,:,0].view(1,lambda_i.shape[1]))
+# plt.plot(TrialCoordinates.data, u_xE[:,10].data,label = 'Solution')
+# plt.plot(TrialCoordinates.data, u_xE_1[:,10].data,label = 'Mode 1')
+# plt.plot(TrialCoordinates.data, u_xE_2[:,10].data,'--',label = 'Mode 2')
+# plt.plot(TrialCoordinates.data, (u_xE_2[:,10].data+u_xE_1[:,10].data),'--',label = 'First 2 modes')
+# plt.legend(loc="upper left")
+# plt.savefig('Results/Comp_full_fields'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
 
 # %%

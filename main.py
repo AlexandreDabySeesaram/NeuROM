@@ -17,11 +17,12 @@ from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
 import Post.Plots as Pplot
 import time
 import os
+import torch._dynamo as dynamo
 
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 30                                     # Number of Nodes in the Mesh
+np = 10                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -60,13 +61,13 @@ BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = False                # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                # Boolean leading to Loading pre trained model or retraining from scratch
 
 
 
 #%% Define hyoerparameters
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 14000
 MSE = nn.MSELoss()
 
 #%% Parametric definition and initialisation of Reduced-order model
@@ -75,21 +76,25 @@ mu_min = 100
 mu_max = 200
 N_mu = 10
 
-# # Para Young
-# Eu_min = 100
-# Eu_max = 200
-# N_E = 10
+# Para Young
+Eu_min = 100
+Eu_max = 200
+N_E = 10
 
-# # Para Area
-# A_min = 0.1
-# A_max = 10
-# N_A = 10
+# Para Area
+A_min = 0.1
+A_max = 10
+N_A = 10
 
 
 # ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[A_min,A_max,N_A]])
+ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
+
 
 BCs=[u_0,u_L]
-BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
+BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
+
+# BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 
 
 #%% Training
@@ -101,6 +106,17 @@ TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)],
 TrialPara = torch.linspace(mu_min,mu_max,50, 
                                 dtype=torch.float32, requires_grad=True)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+
+start_compile = time.time()
+
+# BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs')
+# BeamROM_compiled = torch.jit.script(BeamROM)
+
+u_150 = BeamROM(TrialCoordinates,TrialPara)
+end_compile = time.time()
+print(f'* Compilation took {end_compile-start_compile}s')
+# explanation, out_guards, graphs, ops_per_graph = dynamo.explain(BeamROM,TrialCoordinates, TrialPara)
+# print(explanation)
 
 
 if not TrainingRequired:
@@ -114,13 +130,15 @@ if not TrainingRequired:
 
 if TrainingRequired:
     # Train model
-    BeamROM.UnFreeze_Para()
+    # BeamROM.UnFreeze_Mesh()
+    # BeamROM.UnFreeze_Para()
     optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
+    # optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
     start_time = time.time()
     Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+    # Loss_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
     stop_time = time.time()
     print(f'* Duration of training = {stop_time-start_time}s')
-    BeamROM.Freeze_Space()
 
     # Save model
     # torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
@@ -158,52 +176,10 @@ plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 1
 plt.legend(loc="upper left")
 plt.xlabel('x (mm)')
 plt.ylabel('u (mm)')
-# plt.savefig('Results/Para_displacements_.pdf', transparent=True)  
+plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
 plt.show()
 plt.clf()
 
-#%% Interactive plot using matplotlib 
-# from matplotlib.widgets import Slider
-
-# def update(val):
-#     # Callback function to update the plot when the slider is changed
-#     E_value = slider.val
-#     plt.clf()  # Clear the previous plot
-#     interactive_plot(E_value)
-
-# def interactive_plot(E):
-#     # Calculate the corresponding function values for each x value
-#     u_analytical_E = AnalyticSolution(A, E, TrialCoordinates.data)
-#     E = torch.tensor([E])
-#     E = E[:, None]  # Add axis so that dimensions match
-#     u_E = BeamROM(TrialCoordinates, E)
-
-#     # Plot the function
-#     plt.plot(TrialCoordinates.data, u_analytical_E, color="#A92021", label='Ground truth')
-#     plt.plot(TrialCoordinates.data, u_E.data, label='Discrete solution')
-#     plt.title('Displacement')
-#     plt.xlabel('x (mm)')
-#     plt.ylabel('u(x,E) (mm)')
-#     plt.legend(loc="upper left")
-#     plt.grid(True)
-#     plt.ylim((0, 0.02))
-#     plt.show()
-
-# # Create a figure and axis
-# fig, ax = plt.subplots()
-# plt.subplots_adjust(bottom=0.25)  # Adjust the bottom margin for the slider
-
-# # Create a slider
-# slider_ax = plt.axes([0.25, 0.1, 0.65, 0.03], facecolor='lightgoldenrodyellow')
-# slider = Slider(slider_ax, 'E (MPa)', 100, 200, valinit=150, valstep=0.01)
-
-# # Connect the slider to the update function
-# slider.on_changed(update)
-
-# # Initial plot
-# interactive_plot(slider.val)
-
-# plt.show()
 
 #%% Interactive plot using matplotlib using jupyter ipywidgets
 from ipywidgets import interact, widgets
@@ -257,3 +233,60 @@ interactive_plot_widget = interact(interactive_plot, E=slider)
 #                          TrialCoordinates, n_epochs, BoolCompareNorms, 
 #                          MSE, error, error2, Coord_trajectories)
 
+#%% 3D Plots 
+# %matplotlib qt
+
+# import numpy as np 
+# z = BeamROM(TrialCoordinates,TrialPara).detach().numpy()
+# x, y = np.meshgrid(TrialCoordinates.detach().numpy(), TrialPara.detach().numpy())
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
+# ax.plot_surface(x, y, z.T)
+# plt.show()
+# # %%
+
+
+
+
+#%% Plot Modes
+
+Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+u_i = torch.cat(Space_modes,dim=1)  
+for mode in range(BeamROM.n_modes):
+    Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara)[:,None] for l in range(BeamROM.n_para)]
+    if mode == 0:
+        lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+        # Para_modes = torch.unsqueeze(Para_modes, dim=0)
+    else:
+        New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+        lambda_i = torch.vstack((lambda_i,New_mode))
+
+for mode in range(BeamROM.n_modes):
+    plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
+    plt.xlabel('x (mm)')
+    plt.legend(loc="upper left")
+plt.savefig('Results/Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+plt.clf()
+    # plt.show()
+
+for mode in range(BeamROM.n_modes):
+    plt.plot(TrialPara.data,lambda_i[mode,:,0].data,label='Mode'+str(mode+1))
+    plt.xlabel('E (GPa)')
+    plt.legend(loc="upper left")
+plt.savefig('Results/Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+plt.clf()
+    # plt.show()
+
+
+# %% Mode pltting Debug
+u_xE = torch.matmul(u_i,lambda_i.view(BeamROM.n_modes,lambda_i.shape[1]))
+u_xE_1 = torch.matmul(u_i[:,0].view(498,1),lambda_i[0,:,0].view(1,lambda_i.shape[1]))
+u_xE_2 = torch.matmul(u_i[:,1].view(498,1),lambda_i[1,:,0].view(1,lambda_i.shape[1]))
+plt.plot(TrialCoordinates.data, u_xE[:,10].data,label = 'Solution')
+plt.plot(TrialCoordinates.data, u_xE_1[:,10].data,label = 'Mode 1')
+plt.plot(TrialCoordinates.data, u_xE_2[:,10].data,'--',label = 'Mode 2')
+plt.plot(TrialCoordinates.data, (u_xE_2[:,10].data+u_xE_1[:,10].data),'--',label = 'First 2 modes')
+plt.legend(loc="upper left")
+plt.savefig('Results/Comp_full_fields'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+
+# %%

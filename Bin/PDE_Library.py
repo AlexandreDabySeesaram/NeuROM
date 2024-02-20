@@ -18,15 +18,21 @@ def PotentialEnergy(A,E,u,x,b):
 
 def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
-    u_i = model.Space_modes[0](x)
-    lambda_i = model.Para_modes[0](E)
-    lambda_i = lambda_i[:,None]
-    du_dx = torch.autograd.grad(u_i, x, grad_outputs=torch.ones_like(u_i), create_graph=True)[0]
-    du_dx = torch.matmul(du_dx,lambda_i.T)
+    # u_i = model.Space_modes[0](x)
+    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
+    u_i = torch.cat(Space_modes,dim=1)  
+    for mode in range(model.n_modes):
+        Para_mode_List = [model.Para_modes[mode][l](E)[:,None] for l in range(model.n_para)]
+        if mode == 0:
+            lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+        else:
+            New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+            lambda_i = torch.vstack((lambda_i,New_mode))
+    du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
+    du_dx = torch.cat(du_dx,dim=1)  
+    du_dx = torch.matmul(du_dx,lambda_i.view(model.n_modes,lambda_i.shape[1]))
     # Calculate dx
     dx = x[1:] - x[:-1]
-    # y = 0.5*A * E * du_dx**2 - u*b
-    # integral = torch.trapezoid(y.view(-1),x.view(-1))
 
     # Vectorised calculation of the integral terms
     int_term1_x = 0.25 * A * dx * (du_dx[1:]**2 + du_dx[:-1]**2)

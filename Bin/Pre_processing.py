@@ -132,7 +132,7 @@ class Mesh:
                     self.Connectivity.append(ElemList[-self.node_per_elem:])   
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
-            print(f'\n************ FINISHED READING MESH ************\n\n \
+            print(f'\n************ MESH READING COMPLETE ************\n\n \
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
 * Number of Elements:       {self.Connectivity.shape[0]}\n \

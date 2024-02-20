@@ -11,6 +11,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
+
     # Tests on trained data and compare to reference
     Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,
@@ -23,6 +24,16 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
     # Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, True)
+
+def Collision_Check(MeshBeam, coord_old, proximity_limit):
+    # Chock colission - Revert if needed
+    coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
+    coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
+    if numpy.all(coord_dif > proximity_limit) == False:
+        for j in range(coord_dif.shape[0]):
+            if coord_dif[j] < proximity_limit:
+                MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
+                MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
 
 def FilterTrainingData(BeamModel, TestData):
 
@@ -48,8 +59,9 @@ def Test_GenerateShapeFunctions(BeamModel, TrialCoordinates):
 
     pred, ShapeFunctions = BeamModel(TrialCoordinates)
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, False)
+    
 
-def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE):
+def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE):
 
     # Store the initial coordinates before training (could be merged with Coord_trajectories)
     InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
@@ -84,7 +96,7 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
 
         # predict = forward pass with our model
         start_time = time.time()
-        u_predicted = BeamModel(TrialCoordinates) 
+        u_predicted, _ = BeamModel(TrialCoordinates) 
         evaluation_time += time.time() - start_time
         start_time = time.time()
         # loss 
@@ -98,8 +110,8 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
         # check for new minimal loss - Update the state for revert
         if loss_min > loss_current:
             loss_min = loss_current
-            coord_min_loss = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
-            weights_min_loss = copy.deepcopy(BeamModel.InterpoLayer_uu.weight.data.detach())
+                 
+            torch.save(BeamModel.state_dict(),"Results/Net_u.pt")
 
             loss_counter = 0
         else:
@@ -118,15 +130,7 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
         # zero the gradients after updating
         optimizer.zero_grad()
 
-        # Chock colission - Revert if needed
-        # coord_new = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
-        # coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
-        # if numpy.all(coord_dif > ((L/n_elem)/10)) == False:
-        #     for j in range(coord_dif.shape[0]):
-        #         if coord_dif[j] < (L/n_elem)/10:
-
-        #             BeamModel.coordinates[j].data = torch.Tensor([[coord_old[j]]])
-        #             BeamModel.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
+        Collision_Check(BeamModel, coord_old, 1.0e-6)
 
 
         with torch.no_grad():
@@ -151,8 +155,8 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
             print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
             print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
-            # plot_everything(A,E,InitialCoordinates,Coordinates_i,
-                                            # TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)                           
+            #plot_everything(A,E,InitialCoordinates,Coordinates_i,
+            #                                TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)                           
         
         epoch = epoch+1
     stopt_train_time = time.time()
@@ -168,9 +172,8 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("Revert")
-        for j in range(len(coord_min_loss)):
-            BeamModel.coordinates[j].data = torch.Tensor([[coord_min_loss[j]]])
-        BeamModel.InterpoLayer_uu.weight.data = torch.Tensor(weights_min_loss)
+        BeamModel.load_state_dict(torch.load("Results/Net_u.pt"))
+
         print("minimal loss = ", loss_min)
         u_predicted = BeamModel(TrialCoordinates) 
         l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
@@ -193,7 +196,7 @@ def Training_InitialStage(BeamModel, A, E, L, n_elem, TrialCoordinates, optimize
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
 
 
-def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error=[], error2 =[],Coord_trajectories=[]):
+def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error=[], error2 =[],Coord_trajectories=[]):
     optim = torch.optim.LBFGS(BeamModel.parameters(),
                     #history_size=5, 
                     #max_iter=15, 
@@ -249,6 +252,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, Tri
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
     Loss_vect = []
+    # time_start = time.time()
     for epoch in range(n_epochs):
         # loss_vect = torch.stack([PotentialEnergyVectorised(A,E,model(TrialCoordinates,E),TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])
         # loss = torch.sum(loss_vect)/E_trial.shape[0]
@@ -265,14 +269,18 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
             Loss_vect.append(loss.item())
         if (epoch+1) % 100 == 0:
             print('epoch ', epoch+1, ' loss = ', loss.item())
-            if (epoch+1) % 1000 == 0:
-                import matplotlib.pyplot as plt
-                plt.plot(E_trial.data,model.Para_modes[0](E_trial).data)
-                plt.show()
-                plt.clf()
-                plt.plot(TrialCoordinates.data,model.Space_modes[0](TrialCoordinates).data)
-                plt.show()
-                plt.clf()
+            # if (epoch+1) % 1000 == 0:
+                # time_end = time.time()
+                # duration = time_end - time_start
+                # print(f'* Last 1000 epochs took :{duration}s')
+                # import matplotlib.pyplot as plt
+                # plt.plot(E_trial.data,model.Para_modes[0](E_trial).data)
+                # plt.show()
+                # plt.clf()
+                # plt.plot(TrialCoordinates.data,model.Space_modes[0](TrialCoordinates).data)
+                # plt.show()
+                # plt.clf()
+                # time_start = time.time()
         # # if epoch == 3000:
         #     model.Freeze_Space()
         #     model.UnFreeze_Para()

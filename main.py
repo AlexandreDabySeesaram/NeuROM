@@ -21,21 +21,28 @@ import os
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 30                                     # Number of Nodes in the Mesh
+np = 11                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
-alpha =0.005                                # Weight for the Mesh regularisation 
+alpha =0.0                                 # Weight for the Mesh regularisation 
 name_model = 'ROM_1Para_np_'+str(np)
 # User defines all boundary conditions 
-DirichletDictionryList = [{"Entity": 1, 
-                           "Value": 0, 
-                           "normal":1}, 
+DirichletDictionryList = [  {"Entity": 1, 
+                             "Value": 0, 
+                             "normal":1}, 
                             {"Entity": 2, 
                              "Value": 10, 
                              "normal":1}]
+order = 2
 
-MaxElemSize = L/(np-1)                      # Compute element size
-Beam_mesh = pre.Mesh('Beam',MaxElemSize)    # Create the mesh object
+if order ==1:
+    MaxElemSize = L/(np-1)                      # Compute element size
+elif order ==2:
+    n_elem = 0.5*(np-1)
+    print("nodes = ", np, ", n_elem = ", n_elem)
+    MaxElemSize = L/n_elem                     # Compute element size
+
+Beam_mesh = pre.Mesh('Beam',MaxElemSize, order)    # Create the mesh object
 Volume_element = 100                        # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,
                  DirichletDictionryList)    # Include Boundary physical domains infos (BCs+volume)
@@ -64,17 +71,59 @@ TrainingRequired = False                # Boolean leading to Loading pre trained
 
 
 
-#%% Define hyoerparameters
+#%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 20000
 MSE = nn.MSELoss()
 
+
+
+# Training loop (Non parametric model)
+print("Training loop (Non parametric model)")
+optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
+TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], 
+                                dtype=torch.float32, requires_grad=True)
+# If GPU
+if BoolGPU:
+    BeamModel.to(mps_device)
+    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                dtype=torch.float32, requires_grad=True).to(mps_device)
+# Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
+
+Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
+
+'''
+# Training initial stage
+error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
+                                                                                         TrialCoordinates, optimizer, n_epochs, 
+                                                                                         BoolCompareNorms, MSE)
+
+# Training final stage
+Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
+                         TrialCoordinates, n_epochs, BoolCompareNorms, 
+                         MSE, error, error2, Coord_trajectories)
+'''
+
+
+'''
 #%% Parametric definition and initialisation of Reduced-order model
 n_modes = 1
 mu_min = 100
 mu_max = 200
 N_mu = 10
 
+# # Para Young
+# Eu_min = 100
+# Eu_max = 200
+# N_E = 10
+
+# # Para Area
+# A_min = 0.1
+# A_max = 10
+# N_A = 10
+
+
+# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[A_min,A_max,N_A]])
 BCs=[u_0,u_L]
 BeamROM = NeuROM(Beam_mesh, BCs, n_modes, mu_min, mu_max,N_mu)
 
@@ -103,11 +152,14 @@ if TrainingRequired:
     # Train model
     BeamROM.UnFreeze_Para()
     optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
+    start_time = time.time()
     Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, MSE)
+    stop_time = time.time()
+    print(f'* Duration of training = {stop_time-start_time}s')
     BeamROM.Freeze_Space()
 
     # Save model
-    # torch.save(BeamROM.state_dict(), 'TrainedModels/name_model')
+    # torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
 
 
 #%% Check model
@@ -220,24 +272,6 @@ slider = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='
 
 # Connect the slider to the interactive plot function
 interactive_plot_widget = interact(interactive_plot, E=slider)
+'''
 
-#%% Training loop (Non parametric model)
-# optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
-# TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-#                                 dtype=torch.float32, requires_grad=True)
-# # If GPU
-# if BoolGPU:
-#     BeamModel.to(mps_device)
-#     TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-#                                 dtype=torch.float32, requires_grad=True).to(mps_device)
-# # Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
-# n_elem = 1 # Legacy
-## Training initial stage
-# error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, n_elem, 
-#                                                                                          TrialCoordinates, optimizer, n_epochs, 
-#                                                                                          BoolCompareNorms, MSE)
-## Training final stage
-# Training_FinalStageLBFGS(BeamModel, A, E, L, n_elem, InitialCoordinates, 
-#                          TrialCoordinates, n_epochs, BoolCompareNorms, 
-#                          MSE, error, error2, Coord_trajectories)
 

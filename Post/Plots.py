@@ -11,30 +11,36 @@ import numpy as np
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
-    plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+    pred = model(TrialCoordinates)[0]
+
+    #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data,model(TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data,pred.data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    plt.show()
+    #plt.show()
     plt.clf()
 
 def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticGradientSolution,model,Derivative,name):
     # Plots the gradient & compare to reference
-    plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
+    #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')'
+    pred = model(TrialCoordinates)[0]
+
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data,Derivative(model(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data,Derivative(pred).data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    plt.show()
+    #plt.show()
     plt.clf()
 
 def PlotEnergyLoss(error,zoom,name):
@@ -43,7 +49,8 @@ def PlotEnergyLoss(error,zoom,name):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    plt.show()
+    #plt.show()
+    plt.clf()
 
 def PlotTrajectories(Coord_trajectories,name):
     """Plots the trajectories of the coordinates during training"""
@@ -51,7 +58,8 @@ def PlotTrajectories(Coord_trajectories,name):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    plt.show()
+    #plt.show()
+    plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
@@ -89,15 +97,15 @@ def Plot_LearningRate(Learning_Rate):
 
 def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     shape_function = model(TrialCoordinates)[1]
-    
-    nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
-    nodal_values = np.zeros(shape_function.shape[1])
-    nodal_values[1:-1] = nodal_values_inter
 
     if ProjectWeight == False:
         for i in range(shape_function.shape[1]):
             plt.plot(TrialCoordinates.data, shape_function[:,i].detach(), label="Shape function "+str(i))
     else:
+        nodal_values_inter = model.InterpoLayer_uu.weight.data.detach()
+        nodal_values = np.zeros(shape_function.shape[1])
+        nodal_values[1:-1] = nodal_values_inter
+
         for i in range(shape_function.shape[1]):
             plt.plot(TrialCoordinates.data, nodal_values[i]*shape_function[:,i].detach(), label="Shape function "+str(i))
     plt.scatter(InitCoord,[coord*0 for coord in InitCoord], s=6, color="pink", alpha=0.5)
@@ -105,3 +113,4 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     #plt.legend()
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
+

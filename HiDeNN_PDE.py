@@ -40,7 +40,7 @@ class LinearBlock(nn.Module):
         return mid
 
 class ElementBlock_Bar_Quadr(nn.Module):
-    """Bar 2 (linear 1D) element block
+    """Bar 3 (quadratic 1D) element block
     Returns the N_i(x)'s for each nodes within the element"""
     def __init__(self, connectivity):
         super(ElementBlock_Bar_Quadr, self).__init__()
@@ -85,9 +85,19 @@ class ElementBlock_Bar_Quadr(nn.Module):
 
 
 class ElementBlock_Bar_Lin(nn.Module):
-    """Bar 2 (linear 1D) element block
-    Returns the N_i(x)'s for each nodes within the element"""
+    """This is an implementation of the Bar 2 (linear 1D) element
+    Args:
+        x (Tensor): Cordinate where the function is evaluated
+        coordinates (Parameters List): List of coordinates of nodes of the 1D mesh
+        i (Integer): The indexes of the element for which an output is expected
+
+    Returns:
+         N_i(x)'s for each nodes within each element"""
     def __init__(self, connectivity):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 1D mesh
+        """
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
@@ -235,11 +245,7 @@ class InterpPara(nn.Module):
         self.AssemblyLayer.bias.fill_(-1)
         self.AssemblyLayer.bias[0] = torch.tensor(0)
         self.AssemblyLayer.bias[-1] = torch.tensor(0)
-
         self.ElementBlock = ElementBlock_Bar_Lin(self.Connectivity)
-
-        # self.Functions = nn.ModuleList([ElementBlock_Bar_Lin(i,self.Connectivity) for i in range(self.n_elem)])
-
         # Interpolation (nodal values) layer
         # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
@@ -282,9 +288,6 @@ class NeuROM(nn.Module):
         super(NeuROM, self).__init__()
         self.n_modes = n_modes
         self.n_para = len(ParametersList)
-        # self.mu_min = mu_min
-        # self.mu_max = mu_max
-        # self.N_mu = N_mu
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
         self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
 

@@ -34,8 +34,7 @@ DirichletDictionryList = [  {"Entity": 1,
                             {"Entity": 2, 
                              "Value": 10, 
                              "normal":1}]
-order = 2
-
+order = 1
 if order ==1:
     MaxElemSize = L/(np-1)                      # Compute element size
 elif order ==2:
@@ -76,41 +75,37 @@ SaveModel = False                       # Boolean leading to Loading pre trained
 
 
 #%% Define hyperparameters
-learning_rate = 5.0e-4
-n_epochs = 20000
+learning_rate = 0.001
+n_epochs = 7000
 MSE = nn.MSELoss()
 FilterTrainingData = False
 
 
-# Training loop (Non parametric model)
-print("Training loop (Non parametric model)")
-optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
+# # Training loop (Non parametric model)
+# print("Training loop (Non parametric model)")
+# optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
 
 
-TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
+# TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
 
-# # If GPU
-# if BoolGPU:
-#     BeamModel.to(mps_device)
-#     TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
-#                                 dtype=torch.float32, requires_grad=True).to(mps_device)
-
-
-# Training initial stage
-error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
-                                                                                         TrialCoordinates, optimizer, n_epochs, 
-                                                                                         BoolCompareNorms, MSE, FilterTrainingData)
-
-# Training final stage
-Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
-                         TrialCoordinates, n_epochs, BoolCompareNorms, 
-                         MSE, FilterTrainingData,
-                         error, error2, Coord_trajectories)
+# # # If GPU
+# # if BoolGPU:
+# #     BeamModel.to(mps_device)
+# #     TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
+# #                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 
 
+# # Training initial stage
+# error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
+#                                                                                          TrialCoordinates, optimizer, n_epochs, 
+#                                                                                          BoolCompareNorms, MSE, FilterTrainingData)
 
+# # Training final stage
+# Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
+#                          TrialCoordinates, n_epochs, BoolCompareNorms, 
+#                          MSE, FilterTrainingData,
+#                          error, error2, Coord_trajectories)
 
-'''
 #%% Parametric definition and initialisation of Reduced-order model
 n_modes = 1
 mu_min = 100
@@ -150,10 +145,8 @@ name_model = 'ROM_1Para_np_'+str(np)+'_nmodes_'+str(n_modes)+'_npara_'+str(Param
 
 
 start_compile = time.time()
-
 # BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs')
 # BeamROM_compiled = torch.jit.script(BeamROM)
-
 u_150 = BeamROM(TrialCoordinates,TrialPara)
 end_compile = time.time()
 print(f'* Compilation took {end_compile-start_compile}s')
@@ -327,7 +320,7 @@ plt.clf()
     # plt.show()
 
 
-# # %% Mode pltting Debug
+# # %% Mode plotting Debug
 # u_xE = torch.matmul(u_i,lambda_i.view(BeamROM.n_modes,lambda_i.shape[1]))
 # u_xE_1 = torch.matmul(u_i[:,0].view(498,1),lambda_i[0,:,0].view(1,lambda_i.shape[1]))
 # u_xE_2 = torch.matmul(u_i[:,1].view(498,1),lambda_i[1,:,0].view(1,lambda_i.shape[1]))

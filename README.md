@@ -31,7 +31,6 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 ├── TrainedModels
 │   ├── ROM_1Para_np_10_nmodes_1_npara_1
 │   └── ROM_1Para_np_50_nmodes_1_npara_1
-│   └── ROM_1Para_np_50_nmodes_1_npara_1
 │
 └── main.py
 ``````

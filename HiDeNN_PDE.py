@@ -54,7 +54,7 @@ class ElementBlock_Bar_Lin(nn.Module):
         """
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
-        self. connectivity = connectivity.astype(int)
+        self.connectivity = connectivity.astype(int)
 
 
 

@@ -22,7 +22,7 @@ import torch._dynamo as dynamo
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 200                                     # Number of Nodes in the Mesh
+np = 10                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
@@ -60,8 +60,8 @@ BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = False                # Boolean leading to Loading pre trained model or retraining from scratch
-SaveModel = True                       # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                # Boolean leading to Loading pre trained model or retraining from scratch
+SaveModel = False                       # Boolean leading to Loading pre trained model or retraining from scratch
 
 
 

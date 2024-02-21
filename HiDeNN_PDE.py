@@ -17,10 +17,16 @@ mps_device = torch.device("mps")
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
-     See [Zhang et al. 2021] Linear block. The input parameters are:
-        - the coordinate x where the function is evaluated
-        - If used for left part: x_b = x_i else if used right part x_b = x_ip1
-        - If used for left part: x_a = x_im1 else if used right part x_a = x_i  """
+     See [Zhang et al. 2021] Linear block. 
+     Args:
+        x (Tensor): Cordinate where the function is evaluated
+        x_b (Tensor): If used for left part: x_b = x_i else if used right part x_b = x_ip1
+        x_a (Tensor): If used for left part: x_a = x_im1 else if used right part x_a = x_i  
+        y_a (Tensor): The value of the linear function at x=x_a
+        y_b (Tensor): The value of the linear function at x=x_b
+    Returns: 
+        mid (Tensor): Linear funciton between x_a and x_b from y_a to y_b
+    """
     def __init__(self):
         super(LinearBlock, self).__init__()
         self.relu = nn.ReLU()
@@ -33,9 +39,19 @@ class LinearBlock(nn.Module):
         return mid
 
 class ElementBlock_Bar_Lin(nn.Module):
-    """Bar 2 (linear 1D) element block
-    Returns the N_i(x)'s for each nodes within the element"""
+    """This is an implementation of the Bar 2 (linear 1D) element
+    Args:
+        x (Tensor): Cordinate where the function is evaluated
+        coordinates (Parameters List): List of coordinates of nodes of the 1D mesh
+        i (Integer): The indexes of the element for which an output is expected
+
+    Returns:
+         N_i(x)'s for each nodes within each element"""
     def __init__(self, connectivity):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 1D mesh
+        """
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self. connectivity = connectivity.astype(int)
@@ -43,10 +59,10 @@ class ElementBlock_Bar_Lin(nn.Module):
 
 
     def forward(self, x, coordinates, i):
-        # i = self.i
-        # For the outter Nodes, phantom elements are created 
-        # to cancel out shape functions beyond the geometry of the structure in question, 
-        # to prevent any form of extrapolation beyond its boundaries 
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
 
         if -1  in i:
             x_left_0 = coordinates[0]-coordinates[1]/100
@@ -67,41 +83,31 @@ class ElementBlock_Bar_Lin(nn.Module):
 
 
 class MeshNN(nn.Module):
-    """This is the main Neural Network building the FE interpolation, the coordinates 
-    parameters are trainable are correspond to the coordinates of the nodes in the Mesh 
-    which are passed as parameters to the sub NN where they are fixed. 
+    """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
+    The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them 
     is equivqlent to solving the PDE. """
     def __init__(self, mesh, alpha = 0.005):
         super(MeshNN, self).__init__()
-        self.alpha = alpha # set the weight for the Mesh regularisation 
+        self.alpha = alpha                                      # set the weight for the Mesh regularisation 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
-        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
-        self.NElem = mesh.NElem
-        self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
-        # self.Functions = nn.ModuleList([ElementBlock_Bar_Lin(i,mesh.Connectivity) \
-                                        # for i in range(self.NElem)])
+        self.dofs = mesh.NNodes*mesh.dim                        # Number of Dofs
+        self.NElem = mesh.NElem                                 # Number of Elements
+        self.NBCs = len(mesh.ListOfDirichletsBCsIds)            # Number of prescribed Dofs
         self.ElementBlock = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        # self.Functions_dd = nn.ModuleList([ElementBlock_Bar_Lin(-1,mesh.Connectivity),
-        #                                    ElementBlock_Bar_Lin(-2,mesh.Connectivity)])
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
-        # self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
         self.AssemblyLayer.weight. requires_grad=False
-
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
-        # self.InterpoLayer_dd.weight.requires_grad = False
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
         self.ElemList = torch.arange(self.NElem)
-
-
 
     def forward(self,x):
         # Compute shape functions 
@@ -117,9 +123,9 @@ class MeshNN(nn.Module):
     
     def SetBCs(self,u_0,u_L):
         """Set the two Dirichlet boundary conditions
-            Inputs are:
-                - u_0 the left BC
-                - u_L the right BC """
+        Args:
+            u_0 (Float): The left BC
+            u_L (Float): The right BC """
         self.u_0 = torch.tensor(u_0, dtype=torch.float32)
         self.u_L = torch.tensor(u_L, dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
@@ -147,7 +153,7 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu.weight.requires_grad = False
 
 class InterpPara(nn.Module):
-    """This class act as the 1D mesh in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
+    """This class acts as the 1D interplation in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
     def __init__(self, mu_min, mu_max,N_mu):
         super(InterpPara, self).__init__()
         import numpy as np

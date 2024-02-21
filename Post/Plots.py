@@ -11,13 +11,12 @@ import numpy as np
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
-    pred = model(TrialCoordinates)
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
     plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
-    plt.plot(TrialCoordinates.data,pred.data,'--', label = 'HiDeNN')
+    plt.plot(TrialCoordinates.data,model(TrialCoordinates).data,'--', label = 'HiDeNN')
     plt.xlabel(r'$\underline{x}$ [m]')
     plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
@@ -29,7 +28,6 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
 def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticGradientSolution,model,Derivative,name):
     # Plots the gradient & compare to reference
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')'
-    pred = model(TrialCoordinates)
 
     plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
@@ -70,7 +68,8 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     ax2.semilogy(error3,color='#F39C12')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
-     
+    plt.clf()
+
 def Plot_end(error,error2):
     # Lift to be able to use semilogy
     #error3 = error-np.min(error)

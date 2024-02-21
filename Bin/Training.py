@@ -12,6 +12,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+
     # Tests on trained data and compare to reference
     Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,
@@ -20,10 +22,9 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     Pplot.PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                                 TrialCoordinates,AnalyticGradientSolution,
                                                 BeamModel,Derivative,'Solution_gradients')
-    # Plots trajectories of the coordinates while training
-    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+
     Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
-    # Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, True)
+
 
 def Collision_Check(MeshBeam, coord_old, proximity_limit):
     # Chock colission -> Revert if needed
@@ -42,17 +43,28 @@ def RandomSign():
 def FilterTrainingData(BeamModel, TestData):
     ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
     TestData = numpy.array(TestData.detach())
-    #TestData = numpy.copy(TestDataIn)
 
     NodeCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
-    idx = numpy.where( numpy.isclose(NodeCoordinates,TestData))
+    idx = numpy.where( numpy.isclose(NodeCoordinates,TestData, rtol=0, atol=1.0e-5))
+
+    # if len(idx[0])>0:
+    #     print("nodes = ", [NodeCoordinates[j] for j in idx[1]])
+    #     print("   ", [TestData[i].item() for i in idx[0]])
 
     for i in idx[0]:
-        if i < TestData.shape[0]-1:
-            TestData[i][0] = TestData[i][0] + RandomSign()* min(1.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+
+        if i ==0:
+            TestData[i][0] = TestData[i][0] + min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+        elif i == TestData.shape[0]-1:
+            TestData[i][0] = TestData[i][0] - min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+        else:
+            TestData[i][0] = TestData[i][0] + RandomSign()* min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+    
+    # if len(idx[0])>0:
+    #     print("   ", [TestData[i].item() for i in idx[0]])
+    #     print("________________________")
+
     return torch.tensor(TestData, dtype=torch.float32, requires_grad=True)
-
-
 
 
 
@@ -68,7 +80,7 @@ def Test_GenerateShapeFunctions(BeamModel, TrialCoordinates):
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, False)
 
 
-def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE):
+def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData):
 
     # Store the initial coordinates before training (could be merged with Coord_trajectories)
     InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
@@ -96,7 +108,8 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
 
     while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<1000:
 
-        #TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
+        if FilterTrainingData:
+            TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
 
         coord_old = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
         weights_old = copy.deepcopy(BeamModel.InterpoLayer_uu.weight.data.detach())
@@ -162,9 +175,6 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
             print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
             print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
-            #plot_everything(A,E,InitialCoordinates,Coordinates_i,
-            #                                TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)                           
-        
         epoch = epoch+1
     stopt_train_time = time.time()
     print("*************** END OF TRAINING ***************\n")
@@ -196,10 +206,13 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
                 # Copute and store the L2 error w.r.t. the analytical solution
                 error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
+    plot_everything(A,E,InitialCoordinates,Coordinates_i,
+                                                TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
+
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
 
 
-def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, error=[], error2 =[],Coord_trajectories=[]):
+def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData, error=[], error2 =[],Coord_trajectories=[]):
     optim = torch.optim.LBFGS(BeamModel.parameters(),
                     #history_size=5, 
                     #max_iter=15, 
@@ -212,7 +225,8 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
 
     while epoch<n_epochs and stagnancy_counter < 5:
 
-        #TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
+        if BoolFilterTrainingData:
+                    TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
 
         def closure():
             optim.zero_grad()
@@ -245,7 +259,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
         else:
             stagnancy_counter = 0
 
-        if (epoch+1) % 20 == 0:
+        if (epoch+1) % 5 == 0:
             print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
 
         epoch = epoch+1

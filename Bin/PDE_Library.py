@@ -85,3 +85,16 @@ def AnalyticGradientSolution(A,E,x):
         + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \
             - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out
+
+def MixedFormulation_Loss(A, E, u, du, x, b):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    du_dx_dx = torch.autograd.grad(du, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+
+    res_constit = (du - du_dx)**2
+    res_eq = (du_dx_dx + b/(A*E))**2
+
+    #assert (res_constit.shape) == x.shape
+    #assert (res_eq.shape) == x.shape
+
+    return torch.mean(res_eq), torch.mean(res_constit)

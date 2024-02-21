@@ -35,29 +35,63 @@ class LinearBlock(nn.Module):
         
         mid = self.relu(-x + x_b.T)
         mid = self.relu(1 - mid/(x_b.T-x_a.T))
-        mid = (y_b-y_a)*mid + y_a
+        mid = mid*((y_b-y_a).T)  + y_a.T
+
         return mid
 
-class ElementBlock_Bar_Lin(nn.Module):
-    """This is an implementation of the Bar 2 (linear 1D) element
-    Args:
-        x (Tensor): Cordinate where the function is evaluated
-        coordinates (Parameters List): List of coordinates of nodes of the 1D mesh
-        i (Integer): The indexes of the element for which an output is expected
-
-    Returns:
-         N_i(x)'s for each nodes within each element"""
+class ElementBlock_Bar_Quadr(nn.Module):
+    """Bar 2 (linear 1D) element block
+    Returns the N_i(x)'s for each nodes within the element"""
     def __init__(self, connectivity):
-        """ Initialise the Linear Bar element 
-        Args:
-            connectivity (Interger table): Connectivity matrix of the 1D mesh
-        """
+        super(ElementBlock_Bar_Quadr, self).__init__()
+        self.LinearBlock = LinearBlock()
+        self.connectivity = connectivity.astype(int)
+        
+    def forward(self, x, coordinates, i):
+        # i = self.i
+        # For the outter Nodes, phantom elements are created 
+        # to cancel out shape functions beyond the geometry of the structure in question, 
+        # to prevent any form of extrapolation beyond its boundaries 
+
+        if -1  in i:
+            x_left_0 = coordinates[0]-coordinates[1]/100
+            x_right_0 = coordinates[0]  
+            x_left_2 = coordinates[1]
+            x_right_2 = coordinates[1]*(1+1/100)
+            x_left = torch.cat([x_left_0,x_left_2])
+            x_right = torch.cat([x_right_0,x_right_2])
+        else:
+
+            x_left = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
+            x_right = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
+            x_mid = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
+
+        sh_mid_1 = self.LinearBlock(x, x_left, x_right, torch.tensor([0]), x_right - x_left)
+        sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, torch.tensor([0]))    
+        sh_mid = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right)).T
+
+        sh_R_1 = self.LinearBlock(x, x_left, x_right, x_mid - x_left, x_mid - x_right)
+        sh_R_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left,  torch.tensor([0])) 
+        sh_R = (sh_R_1*sh_R_2)/((x_left-x_mid)*(x_left - x_right)).T
+
+        sh_L_1 = self.LinearBlock(x, x_left, x_right,  torch.tensor([0]), x_right - x_left)
+        sh_L_2 = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
+        sh_L = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid)).T
+
+        out = torch.stack((sh_L, sh_R, sh_mid),dim=2).view(sh_R.shape[0],-1) # Left | Right | Middle
+
+        return out
+
+
+
+class ElementBlock_Bar_Lin(nn.Module):
+    """Bar 2 (linear 1D) element block
+    Returns the N_i(x)'s for each nodes within the element"""
+    def __init__(self, connectivity):
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
-
-
-
+        
     def forward(self, x, coordinates, i):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
@@ -78,7 +112,6 @@ class ElementBlock_Bar_Lin(nn.Module):
         left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([0]), torch.tensor([1]))
         right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([1]), torch.tensor([0]))
         out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
-
         return out
 
 
@@ -93,28 +126,42 @@ class MeshNN(nn.Module):
         self.alpha = alpha                                      # set the weight for the Mesh regularisation 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
-        self.dofs = mesh.NNodes*mesh.dim                        # Number of Dofs
-        self.NElem = mesh.NElem                                 # Number of Elements
-        self.NBCs = len(mesh.ListOfDirichletsBCsIds)            # Number of prescribed Dofs
-        self.ElementBlock = ElementBlock_Bar_Lin(mesh.Connectivity)
+        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem = mesh.NElem
+        self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+
+        if mesh.order =='1':
+            self.ElementBlock = ElementBlock_Bar_Lin(mesh.Connectivity)
+        elif mesh.order =='2':
+            self.ElementBlock = ElementBlock_Bar_Quadr(mesh.Connectivity)
+
+        # Phantom elements always use LinearBlock
+        self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
+ 
+        self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
-        self.AssemblyLayer.weight. requires_grad=False
+        self.AssemblyLayer.weight.requires_grad=False
+        self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).detach()
+        self.AssemblyLayer.bias.requires_grad=False
+
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
         self.ElemList = torch.arange(self.NElem)
 
+
     def forward(self,x):
         # Compute shape functions 
         out_uu = self.ElementBlock(x,self.coordinates,self.ElemList)
-        out_dd = self.ElementBlock(x,self.coordinates,torch.tensor(-1))
-        joined_vector = torch.cat((out_uu,out_dd),dim=1)       
-        recomposed_vector_u = self.AssemblyLayer(joined_vector) -1
+        out_dd = self.ElementBlock_BC(x,self.coordinates,torch.tensor(-1))
+
+        joined_vector = torch.cat((out_uu,out_dd),dim=1)      
+
+        recomposed_vector_u = self.AssemblyLayer(joined_vector) #-1
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
         u = torch.stack((u_u,u_d), dim=1)
@@ -147,7 +194,11 @@ class MeshNN(nn.Module):
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = True
-            
+
+    def UnFreeze_BC(self):
+        """Set the nodale values as trainable parameters """
+        self.InterpoLayer_dd.weight.requires_grad = True
+
     def Freeze_FEM(self):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = False
@@ -254,6 +305,7 @@ class NeuROM(nn.Module):
         """Set the space coordinates as trainable parameters"""
         for i in range(self.n_modes):
             self.Space_modes[i].UnFreeze_Mesh()
+
     def Freeze_Space(self):
         """Set the spatial modes as untrainable """
         for i in range(self.n_modes):

@@ -6,6 +6,7 @@ import Bin.Pre_processing as pre
 # Import torch librairies
 import torch
 import torch.nn as nn
+
 mps_device = torch.device("mps")
 # Import mechanical functions
 from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
@@ -27,15 +28,22 @@ A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
 # User defines all boundary conditions 
-DirichletDictionryList = [{"Entity": 1, 
-                           "Value": 0, 
-                           "normal":1}, 
+DirichletDictionryList = [  {"Entity": 1, 
+                             "Value": 0, 
+                             "normal":1}, 
                             {"Entity": 2, 
                              "Value": 10, 
                              "normal":1}]
+order = 2
 
-MaxElemSize = L/(np-1)                      # Compute element size
-Beam_mesh = pre.Mesh('Beam',MaxElemSize)    # Create the mesh object
+if order ==1:
+    MaxElemSize = L/(np-1)                      # Compute element size
+elif order ==2:
+    n_elem = 0.5*(np-1)
+    print("nodes = ", np, ", n_elem = ", n_elem)
+    MaxElemSize = L/n_elem                     # Compute element size
+
+Beam_mesh = pre.Mesh('Beam',MaxElemSize, order)    # Create the mesh object
 Volume_element = 100                        # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,
                  DirichletDictionryList)    # Include Boundary physical domains infos (BCs+volume)
@@ -51,6 +59,8 @@ u_0 = 0                                 #Left BC
 u_L = 0                                 #Right BC
 BeamModel.SetBCs(u_0,u_L)
 
+# Set the boundary values as trainable
+#BeamModel.UnFreeze_BC()
 # Set the coordinates as trainable
 BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
@@ -65,11 +75,42 @@ SaveModel = False                       # Boolean leading to Loading pre trained
 
 
 
-#%% Define hyoerparameters
-learning_rate = 0.001
-n_epochs = 7000
+#%% Define hyperparameters
+learning_rate = 5.0e-4
+n_epochs = 20000
 MSE = nn.MSELoss()
+FilterTrainingData = False
 
+
+# Training loop (Non parametric model)
+print("Training loop (Non parametric model)")
+optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
+
+
+TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
+
+# # If GPU
+# if BoolGPU:
+#     BeamModel.to(mps_device)
+#     TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
+#                                 dtype=torch.float32, requires_grad=True).to(mps_device)
+
+
+# Training initial stage
+error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
+                                                                                         TrialCoordinates, optimizer, n_epochs, 
+                                                                                         BoolCompareNorms, MSE, FilterTrainingData)
+
+# Training final stage
+Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
+                         TrialCoordinates, n_epochs, BoolCompareNorms, 
+                         MSE, FilterTrainingData,
+                         error, error2, Coord_trajectories)
+
+
+
+
+'''
 #%% Parametric definition and initialisation of Reduced-order model
 n_modes = 1
 mu_min = 100

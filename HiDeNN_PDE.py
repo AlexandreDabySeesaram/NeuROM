@@ -32,11 +32,11 @@ class LinearBlock(nn.Module):
         mid = (y_b-y_a)*mid + y_a
         return mid
 
-class ElementBlock_Bar_2(nn.Module):
+class ElementBlock_Bar_Lin(nn.Module):
     """Bar 2 (linear 1D) element block
     Returns the N_i(x)'s for each nodes within the element"""
     def __init__(self, connectivity):
-        super(ElementBlock_Bar_2, self).__init__()
+        super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self. connectivity = connectivity.astype(int)
 
@@ -59,8 +59,8 @@ class ElementBlock_Bar_2(nn.Module):
             x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
             x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), 0, 1)
-        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), 1, 0)
+        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([0]), torch.tensor([1]))
+        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([1]), torch.tensor([0]))
         out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
 
         return out
@@ -81,14 +81,14 @@ class MeshNN(nn.Module):
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
-        # self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,mesh.Connectivity) \
+        # self.Functions = nn.ModuleList([ElementBlock_Bar_Lin(i,mesh.Connectivity) \
                                         # for i in range(self.NElem)])
-        self.ElementBlock = ElementBlock_Bar_2(mesh.Connectivity)
+        self.ElementBlock = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        # self.Functions_dd = nn.ModuleList([ElementBlock_Bar_2(-1,mesh.Connectivity),
-        #                                    ElementBlock_Bar_2(-2,mesh.Connectivity)])
+        # self.Functions_dd = nn.ModuleList([ElementBlock_Bar_Lin(-1,mesh.Connectivity),
+        #                                    ElementBlock_Bar_Lin(-2,mesh.Connectivity)])
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs,bias=False)
         # self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
@@ -179,9 +179,9 @@ class InterpPara(nn.Module):
         self.AssemblyLayer.bias[0] = torch.tensor(0)
         self.AssemblyLayer.bias[-1] = torch.tensor(0)
 
-        self.ElementBlock = ElementBlock_Bar_2(self.Connectivity)
+        self.ElementBlock = ElementBlock_Bar_Lin(self.Connectivity)
 
-        # self.Functions = nn.ModuleList([ElementBlock_Bar_2(i,self.Connectivity) for i in range(self.n_elem)])
+        # self.Functions = nn.ModuleList([ElementBlock_Bar_Lin(i,self.Connectivity) for i in range(self.n_elem)])
 
         # Interpolation (nodal values) layer
         # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)

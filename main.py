@@ -22,11 +22,10 @@ import torch._dynamo as dynamo
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 10                                     # Number of Nodes in the Mesh
+np = 200                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.005                                # Weight for the Mesh regularisation 
-name_model = 'ROM_1Para_np_'+str(np)
 # User defines all boundary conditions 
 DirichletDictionryList = [{"Entity": 1, 
                            "Value": 0, 
@@ -61,13 +60,14 @@ BoolPlot = False                        # Boolean for plots used for gif
 BoolPlotPost = False                    # Boolean for plots used for Post
 BoolCompareNorms = True                 # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                # Boolean leading to Loading pre trained model or retraining from scratch
+SaveModel = True                       # Boolean leading to Loading pre trained model or retraining from scratch
 
 
 
 #%% Define hyoerparameters
 learning_rate = 0.001
-n_epochs = 3000
+n_epochs = 7000
 MSE = nn.MSELoss()
 
 #%% Parametric definition and initialisation of Reduced-order model
@@ -105,6 +105,7 @@ TrialPara = torch.linspace(mu_min,mu_max,50,
                                 dtype=torch.float32, requires_grad=True)
 TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
+name_model = 'ROM_1Para_np_'+str(np)+'_nmodes_'+str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
 
 
 start_compile = time.time()
@@ -147,7 +148,8 @@ if TrainingRequired:
     print(f'* Duration of training = {stop_time-start_time}s')
 
     # Save model
-    # torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
+    if SaveModel:
+        torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
 
 
 #%% Check model

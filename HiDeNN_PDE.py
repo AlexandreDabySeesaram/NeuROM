@@ -72,7 +72,7 @@ class ElementBlock_Bar_Quadr(nn.Module):
         sh_L_2 = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
         sh_L = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid)).T
 
-        out = torch.stack((sh_L, sh_R, sh_mid),dim=2).view(sh_R.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+        out = torch.stack((sh_L, sh_R, sh_mid),dim=2).view(sh_R.shape[0],-1) # Left | Right | Middle
 
         return out
 
@@ -130,6 +130,7 @@ class MeshNN(nn.Module):
         elif mesh.order =='2':
             self.ElementBlock = ElementBlock_Bar_Quadr(mesh.Connectivity)
 
+        # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
@@ -151,19 +152,16 @@ class MeshNN(nn.Module):
     def forward(self,x):
         # Compute shape functions 
         out_uu = self.ElementBlock(x,self.coordinates,self.ElemList)
-        print("out_uu = ", out_uu.shape)
         out_dd = self.ElementBlock_BC(x,self.coordinates,torch.tensor(-1))
-        print("out_dd = ", out_dd.shape)
 
         joined_vector = torch.cat((out_uu,out_dd),dim=1)      
-        print("joined_vector = ", joined_vector.shape)
 
         recomposed_vector_u = self.AssemblyLayer(joined_vector) #-1
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
         u = torch.stack((u_u,u_d), dim=1)
  
-        return self.SumLayer(u), recomposed_vector_u
+        return self.SumLayer(u)
     
     def SetBCs(self,u_0,u_L):
         """Set the two Dirichlet boundary conditions
@@ -191,7 +189,11 @@ class MeshNN(nn.Module):
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = True
-            
+
+    def UnFreeze_BC(self):
+        """Set the nodale values as trainable parameters """
+        self.InterpoLayer_dd.weight.requires_grad = True
+
     def Freeze_FEM(self):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer_uu.weight.requires_grad = False
@@ -295,6 +297,7 @@ class NeuROM(nn.Module):
         """Set the space coordinates as trainable parameters"""
         for i in range(self.n_modes):
             self.Space_modes[i].UnFreeze_Mesh()
+
     def Freeze_Space(self):
         """Set the spatial modes as untrainable """
         for i in range(self.n_modes):

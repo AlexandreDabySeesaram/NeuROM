@@ -2,7 +2,8 @@ import numpy as numpy
 import torch
 import Post.Plots as Pplot
 import copy
-import time 
+import time
+import random 
 
 from Bin.PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
@@ -11,7 +12,6 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
-
     # Tests on trained data and compare to reference
     Pplot.PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,
@@ -26,7 +26,7 @@ def plot_everything(A,E,InitialCoordinates,Coordinates,
     # Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, True)
 
 def Collision_Check(MeshBeam, coord_old, proximity_limit):
-    # Chock colission - Revert if needed
+    # Chock colission -> Revert if needed
     coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
     coord_dif = numpy.array([x - coord_new[i - 1] for i, x in enumerate(coord_new) if i > 0])
     if numpy.all(coord_dif > proximity_limit) == False:
@@ -35,31 +35,38 @@ def Collision_Check(MeshBeam, coord_old, proximity_limit):
                 MeshBeam.coordinates[j].data = torch.Tensor([[coord_old[j]]])
                 MeshBeam.coordinates[j+1].data = torch.Tensor([[coord_old[j+1]]])
 
-def FilterTrainingData(BeamModel, TestData):
+def RandomSign():
+    return 1 if random.random() < 0.5 else -1
 
+
+def FilterTrainingData(BeamModel, TestData):
+    ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
     TestData = numpy.array(TestData.detach())
+    #TestData = numpy.copy(TestDataIn)
 
     NodeCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
     idx = numpy.where( numpy.isclose(NodeCoordinates,TestData))
-    #print("idx = ", idx)
-
-    #print([NodeCoordinates[i] for i in idx[1]])
-    #print([TestData[i] for i in idx[0]])
 
     for i in idx[0]:
-        TestData[i][0] = TestData[i][0] + (TestData[i+1][0] - TestData[i][0])/10
+        if i < TestData.shape[0]-1:
+            TestData[i][0] = TestData[i][0] + RandomSign()* min(1.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+    return torch.tensor(TestData, dtype=torch.float32, requires_grad=True)
 
-    #print([TestData[i] for i in idx[0]])
 
-    return torch.tensor(TestData, dtype=torch.float64, requires_grad=True)
+
+
+
 
 def Test_GenerateShapeFunctions(BeamModel, TrialCoordinates):
+    ### To be used only in testing phase. 
+    ### In MeshNN(nn.Module), set:
+    ###     return self.SumLayer(u), recomposed_vector_u
     
     InitialCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
 
     pred, ShapeFunctions = BeamModel(TrialCoordinates)
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, False)
-    
+
 
 def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE):
 
@@ -96,7 +103,7 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
 
         # predict = forward pass with our model
         start_time = time.time()
-        u_predicted, _ = BeamModel(TrialCoordinates) 
+        u_predicted = BeamModel(TrialCoordinates) 
         evaluation_time += time.time() - start_time
         start_time = time.time()
         # loss 
@@ -189,10 +196,6 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
                 # Copute and store the L2 error w.r.t. the analytical solution
                 error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
 
-    # plot_everything(A,E,InitialCoordinates,Coordinates_i,
-                                                # TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
-    
-
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
 
 
@@ -208,6 +211,8 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     stagnancy_counter = 0
 
     while epoch<n_epochs and stagnancy_counter < 5:
+
+        #TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
 
         def closure():
             optim.zero_grad()
@@ -233,21 +238,24 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
 
         loss_current = l.item()
         loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
 
-        if loss_decrease >= 0 and loss_decrease < 1.0e-8:
+        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
             stagnancy_counter = stagnancy_counter +1
         else:
             stagnancy_counter = 0
 
-        loss_old = loss_current
-
-        if (epoch+1) % 1 == 0:
+        if (epoch+1) % 20 == 0:
             print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
+
         epoch = epoch+1
 
     plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                                 TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
 
+    print("*************** END OF SECOND STAGE ***************\n")
+    print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
+    print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):

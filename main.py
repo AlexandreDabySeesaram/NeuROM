@@ -6,6 +6,7 @@ import Bin.Pre_processing as pre
 # Import torch librairies
 import torch
 import torch.nn as nn
+
 mps_device = torch.device("mps")
 # Import mechanical functions
 from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
@@ -21,7 +22,7 @@ import os
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 11                                     # Number of Nodes in the Mesh
+np = 21                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.0                                 # Weight for the Mesh regularisation 
@@ -58,6 +59,8 @@ u_0 = 0                                 #Left BC
 u_L = 0                                 #Right BC
 BeamModel.SetBCs(u_0,u_L)
 
+# Set the boundary values as trainable
+BeamModel.UnFreeze_BC()
 # Set the coordinates as trainable
 BeamModel.UnFreeze_Mesh()
 # Set the coordinates as untrainable
@@ -72,7 +75,7 @@ TrainingRequired = False                # Boolean leading to Loading pre trained
 
 
 #%% Define hyperparameters
-learning_rate = 0.001
+learning_rate = 5.0e-4
 n_epochs = 20000
 MSE = nn.MSELoss()
 
@@ -80,9 +83,11 @@ MSE = nn.MSELoss()
 
 # Training loop (Non parametric model)
 print("Training loop (Non parametric model)")
-optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
-TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], 
-                                dtype=torch.float32, requires_grad=True)
+optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
+
+TrialCoordinates = torch.tensor([[i/50] for i in range(-50,550)], requires_grad=True)
+#TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
+
 # If GPU
 if BoolGPU:
     BeamModel.to(mps_device)
@@ -90,19 +95,17 @@ if BoolGPU:
                                 dtype=torch.float32, requires_grad=True).to(mps_device)
 # Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
 
-Test_GenerateShapeFunctions(BeamModel, TrialCoordinates)
 
-'''
 # Training initial stage
 error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
                                                                                          TrialCoordinates, optimizer, n_epochs, 
                                                                                          BoolCompareNorms, MSE)
-
 # Training final stage
 Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
                          TrialCoordinates, n_epochs, BoolCompareNorms, 
                          MSE, error, error2, Coord_trajectories)
-'''
+
+
 
 
 '''

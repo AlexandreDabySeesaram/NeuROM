@@ -53,7 +53,7 @@ def InitializeMesh(order):
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 25                                     # Number of Nodes in the Mesh
+np = 15                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.0                                 # Weight for the Mesh regularisation 
@@ -68,7 +68,7 @@ DirichletDictionryList = [  {"Entity": 1,
 order_u = 2
 order_du = 1
 
-TrainingStrategy = 'Integral'   # 'Integral', 'Mixed'
+TrainingStrategy = 'Mixed'   # 'Integral', 'Mixed'
 
 Beam_mesh_u = InitializeMesh(order_u)
 Beam_mesh_du = InitializeMesh(order_du)
@@ -83,7 +83,7 @@ BeamModel_u.SetBCs(u_0,u_L)
 
 # Set the boundary values as trainable
 # Set the coordinates as trainable
-BeamModel_u.Freeze_Mesh()
+BeamModel_u.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 # BeamModel.Freeze_Mesh()
 # Set the require output requirements
@@ -95,7 +95,7 @@ u_0 = 0                                 #Left BC
 u_L = 0                                 #Right BC
 BeamModel_du.SetBCs(u_0,u_L)
 
-BeamModel_du.Freeze_Mesh()
+BeamModel_du.UnFreeze_Mesh()
 BeamModel_du.UnFreeze_BC()
 
 
@@ -112,7 +112,7 @@ n_plot_points = 500
 learning_rate = 1.0e-3
 n_epochs = 20000
 MSE = nn.MSELoss()
-BoolFilterTrainingData = False
+BoolFilterTrainingData = True
 
 if TrainingStrategy == 'Integral':
 
@@ -142,9 +142,9 @@ if TrainingStrategy == 'Integral':
 if TrainingStrategy == 'Mixed':
 
 
-    PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,750)], dtype=torch.float32, requires_grad=True)
+    PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
     CoordinatesDataset = Dataset(PlotCoordTensor)
-    CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=750, shuffle=True)
+    CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=50, shuffle=True)
     print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
     # Training loop (Non parametric model, Mixed formulation)
@@ -161,6 +161,7 @@ if TrainingStrategy == 'Mixed':
     error, error2, InitialCoordinates, Coord_trajectories, BeamModel_u = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
                                                                                             CoordinatesBatchSet, PlotCoordTensor, optimizer, n_epochs, 
                                                                                             BoolCompareNorms, MSE, BoolFilterTrainingData)
+
     # Training final stage
     # Training_FinalStageLBFGS(BeamModel_u, A, E, L, InitialCoordinates, 
     #                         TrialCoordinates, n_epochs, BoolCompareNorms, 

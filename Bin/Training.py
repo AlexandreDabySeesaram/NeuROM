@@ -66,9 +66,9 @@ def RandomSign():
     return 1 if random.random() < 0.5 else -1
 
 
-def FilterTrainingData(BeamModel, TestData):
+def FilterBatchTrainingData(BeamModel, TestData):
     ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
-    TestData = numpy.array(TestData.detach())
+    TestData = numpy.sort(numpy.array(TestData.detach()), axis =0)
 
     NodeCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
     idx = numpy.where( numpy.isclose(NodeCoordinates,TestData, rtol=0, atol=1.0e-5))
@@ -89,6 +89,33 @@ def FilterTrainingData(BeamModel, TestData):
     # if len(idx[0])>0:
     #     print("   ", [TestData[i].item() for i in idx[0]])
     #     print("________________________")
+
+    return torch.tensor(TestData, dtype=torch.float32, requires_grad=True)
+
+
+def FilterTrainingData(BeamModel, TestData):
+    ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
+    TestData = numpy.array(TestData.detach())
+
+    NodeCoordinates = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
+    idx = numpy.where( numpy.isclose(NodeCoordinates,TestData, rtol=0, atol=1.0e-5))
+
+    if len(idx[0])>0:
+        print("nodes = ", [NodeCoordinates[j] for j in idx[1]])
+        print("   ", [TestData[i].item() for i in idx[0]])
+
+    for i in idx[0]:
+
+        if i ==0:
+            TestData[i][0] = TestData[i][0] + min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+        elif i == TestData.shape[0]-1:
+            TestData[i][0] = TestData[i][0] - min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+        else:
+            TestData[i][0] = TestData[i][0] + RandomSign()* min(5.0e-5, 0.1* numpy.min([TestData[n]-TestData[n-1] for n in range(1,len(TestData))]))
+    
+    if len(idx[0])>0:
+        print("   ", [TestData[i].item() for i in idx[0]])
+        print("________________________")
 
     return torch.tensor(TestData, dtype=torch.float32, requires_grad=True)
 
@@ -357,12 +384,13 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
     optimizer_time = 0
     backward_time = 0
 
-    while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<1000:
+    while epoch<n_epochs:# and stagnancy_counter < 50 and loss_counter<1000:
 
         for TrialCoordinates in CoordinatesBatchSet:
-            if BoolFilterTrainingData:            
-                TrialCoordinates = FilterTrainingData(BeamModel_u, TrialCoordinates)
-                TrialCoordinates = FilterTrainingData(BeamModel_du, TrialCoordinates)
+
+            if BoolFilterTrainingData: 
+                TrialCoordinates = FilterBatchTrainingData(BeamModel_u, TrialCoordinates)
+                TrialCoordinates = FilterBatchTrainingData(BeamModel_du, TrialCoordinates)
 
             coord_old_u = [BeamModel_u.coordinates[i].data.item() for i in range(len(BeamModel_u.coordinates))]
             coord_old_du = [BeamModel_du.coordinates[i].data.item() for i in range(len(BeamModel_du.coordinates))]
@@ -438,9 +466,9 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
                 print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
                 print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
 
-                #plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
-                #                            PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
-                #                            Coord_trajectories, error, error2)    
+                plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
+                                            PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
+                                            Coord_trajectories, error, error2)    
         epoch = epoch+1
 
     stopt_train_time = time.time()

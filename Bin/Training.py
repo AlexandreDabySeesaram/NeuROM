@@ -274,7 +274,8 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
     Loss_vect = []
-    # time_start = time.time()
+    print("**************** START TRAINING ***************\n")
+    time_start = time.time()
     for epoch in range(n_epochs):
         # loss_vect = torch.stack([PotentialEnergyVectorised(A,E,model(TrialCoordinates,E),TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])
         # loss = torch.sum(loss_vect)/E_trial.shape[0]
@@ -306,7 +307,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         # # if epoch == 3000:
         #     model.Freeze_Space()
         #     model.UnFreeze_Para()
-    
+    time_stop = time.time()
+    print("*************** END OF TRAINING ***************\n")
+    print(f'* Training time: {time_stop-time_start}s')
     return Loss_vect
     
 

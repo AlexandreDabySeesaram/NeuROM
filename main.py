@@ -57,7 +57,7 @@ BoolCompareNorms = True                            # Boolean for comparing energ
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
-ParametricStudy = False                             # Boolean to switch between space model and parametric sturdy
+ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
@@ -162,10 +162,7 @@ else:
         # BeamROM.UnFreeze_Mesh()
         # BeamROM.UnFreeze_Para()
         optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-        start_time = time.time()
         Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, nn.MSELoss())
-        stop_time = time.time()
-        print(f'* Duration of training = {stop_time-start_time}s')
 
         # Save model
         if SaveModel:

@@ -8,7 +8,7 @@ import random
 from Bin.PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
-            PotentialEnergyVectorisedParametric
+            PotentialEnergyVectorisedParametric,AnalyticParametricSolution
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -274,6 +274,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
     Loss_vect = []
+    L2_error = []
     print("**************** START TRAINING ***************\n")
     time_start = time.time()
     for epoch in range(n_epochs):
@@ -290,6 +291,8 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         optimizer.zero_grad()
         with torch.no_grad():
             Loss_vect.append(loss.item())
+            numel_E = E_trial.shape[0]
+            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data),dim=1)/numel_E)))
         if (epoch+1) % 100 == 0:
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
             # if (epoch+1) % 1000 == 0:
@@ -310,6 +313,6 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
-    return Loss_vect
+    return Loss_vect, L2_error
     
 

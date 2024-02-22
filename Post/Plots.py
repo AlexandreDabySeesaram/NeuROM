@@ -9,6 +9,10 @@ plt.rcParams.update({
 })
 import numpy as np
 import matplotlib
+import torch
+matplotlib.rcParams["text.usetex"] = True
+matplotlib.rcParams["font.family"] = "serif"
+matplotlib.rcParams["font.size"] = "13"
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
@@ -63,7 +67,9 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
     plt.semilogy(error2)
-    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'$\Xi$')
+    plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
     ax2.semilogy(error3,color='#F39C12')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
@@ -196,7 +202,7 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
         plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
         plt.xlabel('x (mm)')
         plt.legend(loc="upper left")
-    # plt.savefig('Results/Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
@@ -204,6 +210,6 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
         plt.plot(TrialPara.data,lambda_i[mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E (GPa)')
         plt.legend(loc="upper left")
-    # plt.savefig('Results/Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()

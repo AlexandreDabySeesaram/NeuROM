@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 50                                             # Number of Nodes in the Mesh
+np = 60                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -102,8 +102,20 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 500
 FilterTrainingData = False
+
+#%% Load coarser model  
+# torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
+# BeamROM_coarse = torch.load('TrainedModels/FullModel') # To load a full coarse model
+BeamROM_coarse = torch.load('TrainedModels/FullModel_np_20') # To load a full coarse model
+# BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
+# BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
+newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
+newcoordinates = torch.cat(newcoordinates,dim=0)
+NewNodalValues = BeamROM_coarse.Space_modes[0](newcoordinates)
+BeamROM.Space_modes[0].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+BeamROM.Para_modes[0][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[0][0].InterpoLayer.weight.data
 
 #%% Training 
 if not ParametricStudy:
@@ -158,7 +170,7 @@ else:
         # BeamROM.UnFreeze_Mesh()
         # BeamROM.UnFreeze_Para()
         optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-        Loss_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, nn.MSELoss())
+        Loss_vect, L2_error =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, nn.MSELoss())
 
         # Save model
         if SaveModel:

@@ -8,7 +8,7 @@ plt.rcParams.update({
     "font.family": "Helvetica"
 })
 import numpy as np
-
+import matplotlib
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
@@ -113,3 +113,97 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
 
+def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model):
+    import torch
+    matplotlib.rcParams["text.usetex"] = True
+    matplotlib.rcParams["font.family"] = "serif"
+    matplotlib.rcParams["font.size"] = "13"
+
+
+    PaperPara = torch.tensor([150])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    u_150 = BeamROM(TrialCoordinates,PaperPara)
+    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A", label = r'$E = 150~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_150.data,'--', color="#01426A", label = r'$E = 150~$MPa HiDeNN solution')
+
+    PaperPara = torch.tensor([200])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    u_200 = BeamROM(TrialCoordinates,PaperPara)
+    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_200.data,'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
+
+    PaperPara = torch.tensor([100])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    u_100 = BeamROM(TrialCoordinates,PaperPara)
+    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
+    plt.legend(loc="upper left")
+    plt.xlabel('x (mm)')
+    plt.ylabel('u (mm)')
+    # plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    plt.show()
+    plt.clf()
+
+def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model):
+    from ipywidgets import interact, widgets
+    import torch
+    def interactive_plot(E):
+        # Calculate the corresponding function values for each x value
+        u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data)
+        E = torch.tensor([E])
+        E = E[:,None] # Add axis so that dimensions match
+        u_E = BeamROM(TrialCoordinates,E)
+        error_tensor = u_analytical_E - u_E
+        # Reative error in percentage
+        error_norm = 100*torch.sqrt(torch.sum(error_tensor*error_tensor))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
+        error_scientific_notation = f"{error_norm:.2e}"
+        # error_str = str(error_norm.item())
+        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'
+        # Plot the function
+        plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
+        plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')
+        plt.title(title_error)
+        plt.xlabel('x (mm)')
+        plt.ylabel('u(x,E) (mm)')
+        plt.legend(loc="upper left")
+        plt.grid(True)
+        plt.ylim((0,0.02))
+        plt.show()
+
+    # Create an interactive slider
+    slider = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E (GPa)')
+
+    # Connect the slider to the interactive plot function
+    interactive_plot_widget = interact(interactive_plot, E=slider)
+
+def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
+    import torch
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    u_i = torch.cat(Space_modes,dim=1)  
+    for mode in range(BeamROM.n_modes):
+        Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara)[:,None] for l in range(BeamROM.n_para)]
+        if mode == 0:
+            lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+            # Para_modes = torch.unsqueeze(Para_modes, dim=0)
+        else:
+            New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+            lambda_i = torch.vstack((lambda_i,New_mode))
+
+    for mode in range(BeamROM.n_modes):
+        plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
+        plt.xlabel('x (mm)')
+        plt.legend(loc="upper left")
+    # plt.savefig('Results/Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.clf()
+        # plt.show()
+
+    for mode in range(BeamROM.n_modes):
+        plt.plot(TrialPara.data,lambda_i[mode,:,0].data,label='Mode'+str(mode+1))
+        plt.xlabel('E (GPa)')
+        plt.legend(loc="upper left")
+    # plt.savefig('Results/Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.clf()
+        # plt.show()

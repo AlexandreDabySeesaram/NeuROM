@@ -1,5 +1,6 @@
 import numpy as np 
 import os
+import subprocess
 
 """
 Cheat sheet msh format 2.2
@@ -23,7 +24,11 @@ phyical-number "physical-name"
 $EndPhysicalNames
 https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
+def get_git_tag() -> str:
+    return subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+
 def PrintWelcome():
+    version = get_git_tag()
     """Neural network reduced-order modelling for mechanics"""
 #     # Ivrit NeuROMech
 #     print(" \
@@ -43,7 +48,8 @@ def PrintWelcome():
  | \ | | ___ _   _|  _ \ / _ \|  \/  |\n \
  |  \| |/ _ \ | | | |_) | | | | |\/| |\n \
  | |\  |  __/ |_| |  _ <| |_| | |  | |\n \
- |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n ")
+ |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n\n " + \
+"                 "+version)
 
 
                                                                                                                                     

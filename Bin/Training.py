@@ -291,7 +291,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, 
         with torch.no_grad():
             Loss_vect.append(loss.item())
         if (epoch+1) % 100 == 0:
-            print('epoch ', epoch+1, ' loss = ', loss.item())
+            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
             # if (epoch+1) % 1000 == 0:
                 # time_end = time.time()
                 # duration = time_end - time_start

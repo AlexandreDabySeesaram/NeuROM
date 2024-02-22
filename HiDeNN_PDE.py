@@ -14,6 +14,7 @@ import Post.Plots as Pplot
 import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
 
+
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
@@ -29,7 +30,14 @@ class LinearBlock(nn.Module):
         
         mid = self.relu(-x + x_b.T)
         mid = self.relu(1 - mid/(x_b.T-x_a.T))
-        mid = mid*((y_b-y_a).T)  + y_a.T
+        #mid = mid*((y_b-y_a).T)  + y_a.T
+        if y_a.dim() ==2:
+            mid = mid*((y_b-y_a).T)  + y_a.T
+        elif y_b.dim() ==2:
+            mid = mid*((y_b.T)-y_a)  + y_a
+        else:
+            mid = mid*((y_b-y_a))  + y_a
+
 
         return mid
 
@@ -137,9 +145,13 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
-        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
+        #self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
+        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).clone().detach()
+
         self.AssemblyLayer.weight.requires_grad=False
-        self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).detach()
+        #self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).detach()
+        # self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).clone().detach()
+        self.AssemblyLayer.bias.data =  mesh.assembly_vector.clone().detach() # Remove warning, assembly_vector is already a tensor
         self.AssemblyLayer.bias.requires_grad=False
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)

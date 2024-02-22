@@ -113,3 +113,19 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
 
+
+def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
+    pred = model(TrialCoordinates)
+    
+    # Plots the gradient & compare to reference
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
+    plt.plot(TrialCoordinates.data, Force.data/(-A*E), label = 'Ground Truth')
+    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+
+    plt.clf()
+

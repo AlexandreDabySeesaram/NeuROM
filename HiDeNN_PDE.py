@@ -294,9 +294,8 @@ class NeuROM(nn.Module):
         self.n_modes = n_modes
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
-        self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
-
-        self.Para_modes = nn.ModuleList([self.Para_Nets for i in range(self.n_modes)])
+        # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
+        self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
         # First modes get the Boundary conditions
         self.Space_modes[0].SetBCs(BCs[0],BCs[1])

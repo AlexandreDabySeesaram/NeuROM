@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 60                                             # Number of Nodes in the Mesh
+np = 20                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -75,7 +75,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 1
+n_modes = 3
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -113,9 +113,18 @@ BeamROM_coarse = torch.load('TrainedModels/FullModel_np_20') # To load a full co
 # BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
 newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
 newcoordinates = torch.cat(newcoordinates,dim=0)
-NewNodalValues = BeamROM_coarse.Space_modes[0](newcoordinates)
-BeamROM.Space_modes[0].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-BeamROM.Para_modes[0][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[0][0].InterpoLayer.weight.data
+Nb_modes_fine = len(BeamROM.Space_modes)
+Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
+
+for mode in range(Nb_modes_coarse):
+    NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
+    BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+    BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
+if Nb_modes_coarse<Nb_modes_fine:
+    for mode in range(Nb_modes_coarse,Nb_modes_fine):
+        print(mode)
+        BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
+        BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
 
 #%% Training 
 if not ParametricStudy:

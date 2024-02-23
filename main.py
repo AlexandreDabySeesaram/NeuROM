@@ -58,7 +58,7 @@ BoolGPU = False                                    # Boolean enabling GPU comput
 TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
-
+LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -75,7 +75,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 3
+n_modes = 1
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -102,29 +102,30 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 500
+n_epochs = 300
 FilterTrainingData = False
 
 #%% Load coarser model  
-# torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
-# BeamROM_coarse = torch.load('TrainedModels/FullModel') # To load a full coarse model
-BeamROM_coarse = torch.load('TrainedModels/FullModel_np_20') # To load a full coarse model
-# BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
-# BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
-newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
-newcoordinates = torch.cat(newcoordinates,dim=0)
-Nb_modes_fine = len(BeamROM.Space_modes)
-Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
+if LoadPreviousModel:
+    # torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
+    # BeamROM_coarse = torch.load('TrainedModels/FullModel') # To load a full coarse model
+    BeamROM_coarse = torch.load('TrainedModels/FullModel_np_100') # To load a full coarse model
+    # BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
+    # BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
+    newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
+    newcoordinates = torch.cat(newcoordinates,dim=0)
+    Nb_modes_fine = len(BeamROM.Space_modes)
+    Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
 
-for mode in range(Nb_modes_coarse):
-    NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-    BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-    BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
-if Nb_modes_coarse<Nb_modes_fine:
-    for mode in range(Nb_modes_coarse,Nb_modes_fine):
-        print(mode)
-        BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
-        BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
+    for mode in range(Nb_modes_coarse):
+        NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
+        BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+        BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
+    if Nb_modes_coarse<Nb_modes_fine:
+        for mode in range(Nb_modes_coarse,Nb_modes_fine):
+            print(mode)
+            BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
+            BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
 
 #%% Training 
 if not ParametricStudy:

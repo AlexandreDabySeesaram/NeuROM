@@ -74,18 +74,20 @@ def Derivative(u,x):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     return du_dx
 
-def AnalyticSolution(A,E,x):
+def AnalyticSolution(A,E,x,u0=0,uL=0):
+    lin = u0 + ((uL-u0)/10)*x
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
         + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
-    return out
+    return out+lin
 
-def AnalyticParametricSolution(A,E,x):
+def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
+    lin = u0 + ((uL-u0)/10)*x
     E = E.T
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
         + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
-    return out
+    return out+lin
 
 def AnalyticGradientSolution(A,E,x):
     out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) \

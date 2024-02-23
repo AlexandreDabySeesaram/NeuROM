@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 20                                             # Number of Nodes in the Mesh
+np = 50                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0, 
+                             "Value": 0.01, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -55,10 +55,10 @@ BoolPlot = False                                   # Boolean for plots used for 
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
-LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
+LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -96,13 +96,14 @@ ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
 u_L = DirichletDictionryList[1]['Value']           #Right BC
-BeamROM = NeuROM(Beam_mesh, [u_0,u_L], n_modes, ParameterHypercube)
+BCs = [u_0,u_L]
+BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
 name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
             +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 300
+n_epochs = 7000
 FilterTrainingData = False
 
 #%% Load coarser model  
@@ -116,16 +117,21 @@ if LoadPreviousModel:
     newcoordinates = torch.cat(newcoordinates,dim=0)
     Nb_modes_fine = len(BeamROM.Space_modes)
     Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
-
-    for mode in range(Nb_modes_coarse):
-        NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-        BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-        BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
-    if Nb_modes_coarse<Nb_modes_fine:
-        for mode in range(Nb_modes_coarse,Nb_modes_fine):
-            print(mode)
-            BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
-            BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
+    IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
+    if IndexesNon0BCs and BeamROM_coarse.Space_modes[0].u_0 == 0 and BeamROM_coarse.Space_modes[0].u_L == 0:
+        NewNodalValues = BeamROM_coarse.Space_modes[0](newcoordinates) 
+        BeamROM.Space_modes[1].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+        BeamROM.Para_modes[1][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[0][0].InterpoLayer.weight.data.clone().detach()
+    else :
+        for mode in range(Nb_modes_coarse):
+            NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
+            BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+            BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
+        if Nb_modes_coarse<Nb_modes_fine:
+            for mode in range(Nb_modes_coarse,Nb_modes_fine):
+                print(mode)
+                BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
+                BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
 
 #%% Training 
 if not ParametricStudy:
@@ -193,4 +199,8 @@ if BoolPlotPost:
     Pplot.Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     Pplot.PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model)
+    Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'Non0BCs')
 
+if False:
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    u_i = torch.cat(Space_modes,dim=1) 

@@ -119,37 +119,38 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
 
-def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model):
+def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
     import torch
     matplotlib.rcParams["text.usetex"] = True
     matplotlib.rcParams["font.family"] = "serif"
     matplotlib.rcParams["font.size"] = "13"
-
+    u0 = BeamROM.Space_modes[0].u_0
+    uL = BeamROM.Space_modes[0].u_L
 
     PaperPara = torch.tensor([150])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_150 = BeamROM(TrialCoordinates,PaperPara)
-    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A", label = r'$E = 150~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_150.data,'--', color="#01426A", label = r'$E = 150~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([200])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_200 = BeamROM(TrialCoordinates,PaperPara)
-    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_200.data,'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([100])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_100 = BeamROM(TrialCoordinates,PaperPara)
-    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data)
+    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
     plt.legend(loc="upper left")
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')
-    # plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
     plt.show()
     plt.clf()
 
@@ -157,8 +158,10 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
     from ipywidgets import interact, widgets
     import torch
     def interactive_plot(E):
+        u0 = BeamROM.Space_modes[0].u_0
+        uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
-        u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data)
+        u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data,u0,uL)
         E = torch.tensor([E])
         E = E[:,None] # Add axis so that dimensions match
         u_E = BeamROM(TrialCoordinates,E)

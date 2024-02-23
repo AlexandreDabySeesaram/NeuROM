@@ -291,17 +291,27 @@ class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
     def __init__(self, mesh, BCs, n_modes, ParametersList):
         super(NeuROM, self).__init__()
+        IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
+        if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
+            n_modes+=1
         self.n_modes = n_modes
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
         # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
-        # First modes get the Boundary conditions
-        self.Space_modes[0].SetBCs(BCs[0],BCs[1])
-        # Following modes are homogeneous (admissible to 0)
-        for i in range(1,self.n_modes):
-            self.Space_modes[i].SetBCs(0,0)
+        if IndexesNon0BCs:
+            # First modes get the Boundary conditions
+            self.Space_modes[0].SetBCs(BCs[0],BCs[1])
+            for para in range(self.n_para):
+                self.Para_modes[0][para].InterpoLayer.weight.data.fill_(1) # Mode for parameters not trained and set to 1 to get correct space BCs
+                self.Para_modes[0][para].Freeze_FEM()
+            # Following modes are homogeneous (admissible to 0)
+            for i in range(1,self.n_modes):
+                self.Space_modes[i].SetBCs(0,0)
+        else:
+            for i in range(self.n_modes):
+                self.Space_modes[i].SetBCs(0,0)
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""

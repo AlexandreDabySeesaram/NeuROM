@@ -108,10 +108,10 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 
 #%% Load coarser model  
-if LoadPreviousModel:
+PreviousFullModel = 'TrainedModels/FullModel_np_100'
+if LoadPreviousModel and os.path.isfile(PreviousFullModel):
     # torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
-    # BeamROM_coarse = torch.load('TrainedModels/FullModel') # To load a full coarse model
-    BeamROM_coarse = torch.load('TrainedModels/FullModel_np_100') # To load a full coarse model
+    BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
     # BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
     # BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
     newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
@@ -135,6 +135,9 @@ if LoadPreviousModel:
                 print(mode)
                 BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
                 BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
+elif not os.path.isfile(PreviousFullModel):
+    print('******** WARNING LEARNING FROM SCRATCH ********\n')
+
 #%% Training 
 if not ParametricStudy:
     # Training loop (Non parametric model)

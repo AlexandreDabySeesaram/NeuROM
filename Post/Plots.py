@@ -14,6 +14,8 @@ matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "13"
 
+
+
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
@@ -216,3 +218,63 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
+
+
+def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
+    import tkinter as tk
+    from tkinter import ttk  # Import the themed Tkinter module
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+    import torch
+    import numpy as np
+    def interactive_plot(E):
+        u0 = BeamROM.Space_modes[0].u_0
+        uL = BeamROM.Space_modes[0].u_L
+        u_analytical_E = AnalyticSolution(A, E, TrialCoordinates.data, u0, uL)
+        E = torch.tensor([E])
+        E = E[:, None]
+        u_E = BeamROM(TrialCoordinates, E)
+        error_tensor = u_analytical_E - u_E
+        error_norm = 100 * torch.sqrt(torch.sum(error_tensor * error_tensor)) / torch.sqrt(
+            torch.sum(u_analytical_E * u_analytical_E)
+        )
+        error_scientific_notation = f"{error_norm:.2e}"
+        title_error = r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = ' + error_scientific_notation + '$\%$'
+
+        ax.clear()
+        ax.plot(TrialCoordinates.data, u_analytical_E, color="#A92021", label='Ground truth')
+        ax.plot(TrialCoordinates.data, u_E.data, label='Discrete solution')
+        ax.set_title(title_error)
+        ax.set_xlabel('x (mm)')
+        ax.set_ylabel('u(x,E) (mm)')
+        ax.legend(loc="upper left")
+        ax.grid(True)
+        ax.set_ylim((0, 0.02))
+        canvas.draw()
+
+    def on_slider_change(val):
+        E_value = float(val)
+        interactive_plot(E_value)
+        label.config(text=f"E = {float(val):.2f}GPa")
+        canvas.draw()
+        
+
+    root = tk.Tk()
+    root.title("Interactive Plot")
+    root.minsize(400, 400)
+
+    fig, ax = plt.subplots()
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas_widget = canvas.get_tk_widget()
+    canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+    # Use ttk.Scale 
+    slider = ttk.Scale(root, from_=100, to=200, orient=tk.HORIZONTAL, length=300, command=on_slider_change)
+    label = tk.Label(root, text="Value: 50")
+    label.pack()
+    slider.pack()
+    # Set the initial value of the slider
+    slider.set(100)
+    # Call the initial plot
+    interactive_plot(100)
+    tk.mainloop()

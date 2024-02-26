@@ -55,11 +55,11 @@ BoolPlot = False                                   # Boolean for plots used for 
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
-n_epochs = 1200                                    # Maximum number of iterations for the training stage
+n_epochs = 5000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 
@@ -215,4 +215,6 @@ if False:
     Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
     u_i = torch.cat(Space_modes,dim=1) 
 
-Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
+# Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
+
+Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)

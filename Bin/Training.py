@@ -311,7 +311,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
             numel_E = E_trial.shape[0]
             L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 100 == 0:
-            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(L2_error[-1], precision=4)}%')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")
@@ -365,7 +365,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
             numel_E = E_trial.shape[0]
             L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 5 == 0:
-            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(L2_error[-1], precision=4)}%')
 
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")

@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 12                                             # Number of Nodes in the Mesh
+np = 50                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.0, 
+                             "Value": 0.01, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -55,7 +55,7 @@ BoolPlot = False                                   # Boolean for plots used for 
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
@@ -103,7 +103,7 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 1200
 FilterTrainingData = False
 
 #%% Load coarser model  
@@ -205,7 +205,7 @@ if BoolPlotPost:
     Pplot.Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     Pplot.PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model)
-    Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'Non0BCs')
+    Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'2StageTraining')
 
 if False:
     Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]

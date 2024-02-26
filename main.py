@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.01, 
+                             "Value": 0.0, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -55,10 +55,10 @@ BoolPlot = False                                   # Boolean for plots used for 
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
-LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
+LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -103,7 +103,7 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 7000
+n_epochs = 900
 FilterTrainingData = False
 
 #%% Load coarser model  
@@ -122,6 +122,8 @@ if LoadPreviousModel:
         NewNodalValues = BeamROM_coarse.Space_modes[0](newcoordinates) 
         BeamROM.Space_modes[1].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
         BeamROM.Para_modes[1][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[0][0].InterpoLayer.weight.data.clone().detach()
+        BeamROM.Space_modes[1].Freeze_FEM()
+        BeamROM.Para_modes[1][0].Freeze_FEM()
     else :
         for mode in range(Nb_modes_coarse):
             NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
@@ -132,7 +134,6 @@ if LoadPreviousModel:
                 print(mode)
                 BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
                 BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
-
 #%% Training 
 if not ParametricStudy:
     # Training loop (Non parametric model)
@@ -167,6 +168,8 @@ else:
     TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
     if not TrainingRequired:
+        if IndexesNon0BCs:
+            name_model+='_BCs'
         # Load pre trained model
         if os.path.isfile('TrainedModels/'+name_model):
             BeamROM.load_state_dict(torch.load('TrainedModels/'+name_model))
@@ -186,7 +189,7 @@ else:
         # BeamROM.UnFreeze_Mesh()
         # BeamROM.UnFreeze_Para()
         optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-        Loss_vect, L2_error =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, BoolCompareNorms, nn.MSELoss())
+        Loss_vect, L2_error =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
 
         # Save model
         if SaveModel:

@@ -272,7 +272,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, BoolCompareNorms, MSE):
+def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
     Loss_vect = []
     L2_error = []
     u0 = model.Space_modes[0].u_0

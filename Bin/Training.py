@@ -273,48 +273,103 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
 
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
+    # Initialise vector of loss values
     Loss_vect = []
+    # Initialise vector of L2 error
     L2_error = []
+    # BCs used for the analytical comparison 
     u0 = model.Space_modes[0].u_0
     uL = model.Space_modes[0].u_L
     print("**************** START TRAINING ***************\n")
     time_start = time.time()
-    for epoch in range(n_epochs):
-        # loss_vect = torch.stack([PotentialEnergyVectorised(A,E,model(TrialCoordinates,E),TrialCoordinates,RHS(TrialCoordinates)) for E in E_trial])
-        # loss = torch.sum(loss_vect)/E_trial.shape[0]
+    epoch = 0
+    loss_counter = 0
 
+    while epoch<n_epochs and loss_counter<500:
+        # Compute loss
         loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
-        
-        
+        loss_current = loss.item()
+         # check for new minimal loss - Update the state for revert
+        if epoch >1:
+            if loss_min > loss_current:
+                loss_min = loss_current
+                torch.save(model.state_dict(),"Results/Current_best")
+                loss_counter = 0
+            else:
+                loss_counter += 1
+        else:
+            loss_min = loss_current + 1 
+
         loss.backward()
         # update weights
         optimizer.step()
         # zero the gradients after updating
         optimizer.zero_grad()
         with torch.no_grad():
+            epoch+=1
             Loss_vect.append(loss.item())
             numel_E = E_trial.shape[0]
             L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 100 == 0:
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
-            # if (epoch+1) % 1000 == 0:
-                # time_end = time.time()
-                # duration = time_end - time_start
-                # print(f'* Last 1000 epochs took :{duration}s')
-                # import matplotlib.pyplot as plt
-                # plt.plot(E_trial.data,model.Para_modes[0](E_trial).data)
-                # plt.show()
-                # plt.clf()
-                # plt.plot(TrialCoordinates.data,model.Space_modes[0](TrialCoordinates).data)
-                # plt.show()
-                # plt.clf()
-                # time_start = time.time()
-        # # if epoch == 3000:
-        #     model.Freeze_Space()
-        #     model.UnFreeze_Para()
+
+    time_stop = time.time()
+    # print("*************** END OF TRAINING ***************\n")
+    print("*************** END FIRST PHASE ***************\n")
+    print(f'* Training time: {time_stop-time_start}s')
+    # Final loss evaluation - Revert to minimal-loss state if needed
+    if loss_min < loss_current:
+        print("*************** REVERT TO BEST  ***************\n")
+        model.load_state_dict(torch.load("Results/Current_best"))
+        print("* Minimal loss = ", loss_min)
+
+    return Loss_vect, L2_error
+    
+
+def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error):
+    optim = torch.optim.LBFGS(model.parameters(),
+                    #history_size=5, 
+                    #max_iter=15, 
+                    #tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")
+    epoch = 0
+    stagnancy_counter = 0
+    loss_old = Loss_vect[-1]
+    # BCs used for the analytical comparison 
+    u0 = model.Space_modes[0].u_0
+    uL = model.Space_modes[0].u_L
+    print("************** START SECOND PAHSE *************\n")
+    time_start = time.time()
+    while  epoch<n_epochs and stagnancy_counter < 5:
+        # Compute loss
+
+        def closure():
+            optim.zero_grad()
+            loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+            loss.backward()
+            return loss
+        optim.step(closure)
+        loss = closure()
+
+        loss_current  = loss.item()
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
+        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        with torch.no_grad():
+            epoch+=1
+            Loss_vect.append(loss.item())
+            numel_E = E_trial.shape[0]
+            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
+        if (epoch+1) % 5 == 0:
+            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
+
     return Loss_vect, L2_error
-    
 

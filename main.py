@@ -11,7 +11,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
      Derivative, AnalyticGradientSolution, AnalyticSolution
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
-     Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM
+     Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 50                                             # Number of Nodes in the Mesh
+np = 12                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -103,7 +103,7 @@ name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
 
 #%% Define hyperparameters
 learning_rate = 0.001
-n_epochs = 900
+n_epochs = 7000
 FilterTrainingData = False
 
 #%% Load coarser model  
@@ -190,6 +190,8 @@ else:
         # BeamROM.UnFreeze_Para()
         optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
         Loss_vect, L2_error =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
+        Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error)
+
 
         # Save model
         if SaveModel:
@@ -198,6 +200,7 @@ else:
 
 
 #%% Post-processing
+
 if BoolPlotPost:
     Pplot.Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
@@ -207,3 +210,5 @@ if BoolPlotPost:
 if False:
     Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
     u_i = torch.cat(Space_modes,dim=1) 
+
+Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)

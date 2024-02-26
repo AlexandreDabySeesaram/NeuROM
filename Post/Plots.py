@@ -221,6 +221,8 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
 
 
 def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
+    import matplotlib as mpl
+    mpl.rcParams['figure.dpi'] = 50
     import tkinter as tk
     from tkinter import ttk  # Import the themed Tkinter module
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -270,7 +272,7 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
 
     # Use ttk.Scale 
     slider = ttk.Scale(root, from_=100, to=200, orient=tk.HORIZONTAL, length=300, command=on_slider_change)
-    label = tk.Label(root, text="Value: 50")
+    label = tk.Label(root, text="E = 100GPa")
     label.pack()
     slider.pack()
     # Set the initial value of the slider

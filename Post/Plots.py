@@ -262,7 +262,7 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
         
 
     root = tk.Tk()
-    root.title("Interactive Plot")
+    root.title("NeuROM - Interactive plot")
     root.minsize(400, 400)
 
     fig, ax = plt.subplots()

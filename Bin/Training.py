@@ -295,7 +295,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
                 save_start = time.time()
                 loss_min = loss_current
                 # torch.save(model.state_dict(),"Results/Current_best")
-                Current_best = deepcopy(model.state_dict()) # Store in variable instead of writing file
+                Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
                 save_stop = time.time()
                 save_time+=(save_stop-save_start)
                 loss_counter = 0

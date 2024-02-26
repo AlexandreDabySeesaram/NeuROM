@@ -294,7 +294,8 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
             if loss_min > loss_current:
                 save_start = time.time()
                 loss_min = loss_current
-                torch.save(model.state_dict(),"Results/Current_best")
+                # torch.save(model.state_dict(),"Results/Current_best")
+                Current_best = deepcopy(model.state_dict()) # Store in variable instead of writing file
                 save_stop = time.time()
                 save_time+=(save_stop-save_start)
                 loss_counter = 0
@@ -324,7 +325,8 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("*************** REVERT TO BEST  ***************\n")
-        model.load_state_dict(torch.load("Results/Current_best"))
+        # model.load_state_dict(torch.load("Results/Current_best"))
+        model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
 
     return Loss_vect, L2_error

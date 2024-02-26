@@ -222,7 +222,8 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
 
 def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     import matplotlib as mpl
-    mpl.rcParams['figure.dpi'] = 50
+    my_dpi = 50
+    # mpl.rcParams['figure.dpi'] = 50
     import tkinter as tk
     from tkinter import ttk  # Import the themed Tkinter module
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -265,7 +266,7 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     root.title("NeuROM - Interactive plot")
     root.minsize(400, 400)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(20/my_dpi, 20/my_dpi), dpi=my_dpi)
     canvas = FigureCanvasTkAgg(fig, master=root)
     canvas_widget = canvas.get_tk_widget()
     canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=1)

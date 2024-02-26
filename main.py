@@ -50,7 +50,7 @@ Beam_mesh.MeshGeo()                                # Mesh the .geo file if .msh 
 Beam_mesh.ReadMesh()                               # Parse the .msh file
 Beam_mesh.AssemblyMatrix()                         # Build the assembly weight matrix
 
-#%% Options 
+#%% Options & Hyperparameters
 BoolPlot = False                                   # Boolean for plots used for gif
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
@@ -59,6 +59,10 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
+n_epochs = 1200                                    # Maximum number of iterations for the training stage
+learning_rate = 0.001                              # optimizer learning rate
+FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
+
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -101,10 +105,7 @@ BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
 name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
             +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
 
-#%% Define hyperparameters
-learning_rate = 0.001
-n_epochs = 1200
-FilterTrainingData = False
+
 
 #%% Load coarser model  
 if LoadPreviousModel:

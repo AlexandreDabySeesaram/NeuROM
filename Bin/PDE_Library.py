@@ -21,6 +21,7 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
     # u_i = model.Space_modes[0](x)
     Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
     u_i = torch.cat(Space_modes,dim=1)  
+    E = E[0] # From the multi-parametric version to the simple parameter one
     for mode in range(model.n_modes):
         Para_mode_List = [model.Para_modes[mode][l](E)[:,None] for l in range(model.n_para)]
         if mode == 0:
@@ -82,6 +83,7 @@ def AnalyticSolution(A,E,x,u0=0,uL=0):
     return out+lin
 
 def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
+    E = E[0] # to simple parametric solution
     lin = u0 + ((uL-u0)/10)*x
     E = E.T
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \

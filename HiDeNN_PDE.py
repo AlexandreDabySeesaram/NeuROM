@@ -357,18 +357,22 @@ class NeuROM(nn.Module):
     def forward(self,x,mu):
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
         Space_modes = torch.cat(Space_modes,dim=1)
-        dimensions = mu.shape
-        TensorParameters = torch.zeros(self.n_modes,)
         for mode in range(self.n_modes):
-            Para_mode_List = [self.Para_modes[mode][l](mu[:,0].view(-1,1))[:,None] for l in range(self.n_para)]
+            Para_mode_List = [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
             if mode == 0:
-                Para_modes = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
-                # Para_modes = torch.unsqueeze(Para_modes, dim=0)
+                # Para_modes = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+                # Para_modes = [Para_mode_List[l] for l in range(self.n_para)]
+                Para_modes = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(self.n_para)]
             else:
-                New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
-                Para_modes = torch.vstack((Para_modes,New_mode))
-        # Para_modes = torch.cat(Para_modes,dim=1)
-        out = torch.matmul(Space_modes,Para_modes.view(self.n_modes,Para_modes.shape[1]))
+                # New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+                # Para_modes = torch.vstack((Para_modes,New_mode))
+                New_mode = Para_mode_List
+                Para_modes = [torch.vstack((Para_modes[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(self.n_para)]
+        if len(mu)==1:
+            out = torch.matmul(Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
+        elif len(mu)==2:
+            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]),
+                            Para_modes[1].view(self.n_modes,Para_modes[1].shape[1]))
         return out
 
         

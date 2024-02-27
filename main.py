@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.01, 
+                             "Value": 0.0, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -133,7 +133,7 @@ if LoadPreviousModel and os.path.isfile(PreviousFullModel):
             BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
         if Nb_modes_coarse<Nb_modes_fine:
             for mode in range(Nb_modes_coarse,Nb_modes_fine):
-                print(mode)
+                # print(mode)
                 BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
                 BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
 elif not os.path.isfile(PreviousFullModel):
@@ -172,6 +172,13 @@ else:
                                     dtype=torch.float32, requires_grad=True)
     TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
+    TrialPara2 = torch.linspace(mu_min,mu_max,30, 
+                                    dtype=torch.float32, requires_grad=True)
+    TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
+
+    Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+    Para_coord_list = [TrialPara]
+
     if not TrainingRequired:
         if IndexesNon0BCs:
             name_model+='_BCs'
@@ -193,14 +200,14 @@ else:
         if BoolCompile:
             BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
             optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
-            u_copm = BeamROM_compiled(TrialCoordinates,TrialPara)
+            u_copm = BeamROM_compiled(TrialCoordinates,Para_coord_list)
             Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
             # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
 
         else:
             optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
-            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs)
+            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
 
         # Train model
         # BeamROM.UnFreeze_Mesh()

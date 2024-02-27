@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.01, 
+                             "Value": 0.005, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -236,4 +236,4 @@ if False:
     u_i = torch.cat(Space_modes,dim=1) 
 
 # Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-# Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
+Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)

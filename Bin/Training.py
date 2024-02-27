@@ -293,12 +293,13 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
         if epoch >1:
             if loss_min > loss_current:
                 save_start = time.time()
-                loss_min = loss_current
-                # torch.save(model.state_dict(),"Results/Current_best")
-                Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
-                save_stop = time.time()
-                save_time+=(save_stop-save_start)
-                loss_counter = 0
+                with torch.no_grad():
+                    loss_min = loss_current
+                    # torch.save(model.state_dict(),"Results/Current_best")
+                    Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
+                    save_stop = time.time()
+                    save_time+=(save_stop-save_start)
+                    loss_counter = 0
             else:
                 loss_counter += 1
         else:
@@ -329,10 +330,10 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
         model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
 
-    return Loss_vect, L2_error
+    return Loss_vect, L2_error, (time_stop-time_start)
     
 
-def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error):
+def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time):
     optim = torch.optim.LBFGS(model.parameters(),
                     #history_size=5, 
                     #max_iter=15, 
@@ -375,7 +376,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
 
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {time_stop-time_start}s')
+    print(f'* Training time: {training_time+time_stop-time_start}s')
 
     return Loss_vect, L2_error
 

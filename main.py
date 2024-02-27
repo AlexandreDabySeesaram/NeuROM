@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.0, 
+                             "Value": 0.01, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -55,13 +55,14 @@ BoolPlot = False                                   # Boolean for plots used for 
 BoolPlotPost = False                               # Boolean for plots used for Post
 BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = False                           # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
 n_epochs = 5000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
+BoolCompile = False                                 # Enable compilation of the model
 
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
@@ -189,12 +190,24 @@ else:
             TrialPara = TrialPara.to(mps_device)
             BeamROM(TrialCoordinates,TrialPara)
 
+        if BoolCompile:
+            BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
+            optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
+            u_copm = BeamROM_compiled(TrialCoordinates,TrialPara)
+            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
+            # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+
+        else:
+            optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
+            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
+            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+
         # Train model
         # BeamROM.UnFreeze_Mesh()
         # BeamROM.UnFreeze_Para()
-        optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-        Loss_vect, L2_error =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
-        Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error)
+        # optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
+        # Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
+        # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
 
 
         # Save model
@@ -216,4 +229,4 @@ if False:
     u_i = torch.cat(Space_modes,dim=1) 
 
 # Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
+# Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)

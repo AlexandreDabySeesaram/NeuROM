@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 # Import mechanical functions
 from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
-     Derivative, AnalyticGradientSolution, AnalyticSolution
+     Derivative, AnalyticGradientSolution, AnalyticSolution, AnalyticBiParametricSolution
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS
@@ -59,7 +59,7 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 500                                    # Maximum number of iterations for the training stage
+n_epochs = 1                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -245,5 +245,8 @@ if False:
 u_eval = BeamROM(TrialCoordinates,Para_coord_list)
 import matplotlib.pyplot as plt
 # Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
+BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+
+Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
 
 # %%

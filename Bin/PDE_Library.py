@@ -129,6 +129,15 @@ def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out+lin
 
+
+def AnalyticBiParametricSolution(A,E,x,u0=0,uL=0):
+    E1 = E[0] 
+    E2 = E[1]
+    out = (1/(A*E1)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
+        + (2/(A*E2)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
+            - (x/(10*A*E1))*(np.exp(-6.25*np.pi)) + (x/(10*A*E2))*(np.exp(-56.25*np.pi))
+    return out
+
 def AnalyticGradientSolution(A,E,x):
     out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) \
         + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \

@@ -227,6 +227,45 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
     # Connect the slider to the interactive plot function
     interactive_plot_widget = interact(interactive_plot, E=slider)
 
+def Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model):
+    from ipywidgets import interact, widgets
+    import torch
+    def interactive_plot(E1,E2):
+        u0 = BeamROM.Space_modes[0].u_0
+        uL = BeamROM.Space_modes[0].u_L
+        # Calculate the corresponding function values for each x value
+        u_analytical_E = AnalyticBiParametricSolution(A,[E2,E1],TrialCoordinates.data,u0,uL).view(-1)
+        E1 = torch.tensor([E1])
+        E1 = E1[:,None] # Add axis so that dimensions match
+        E2 = torch.tensor([E2])
+        E2 = E2[:,None] # Add axis so that dimensions match        
+        E = [E1,E2]
+        u_E = BeamROM(TrialCoordinates,E).view(-1)
+        error_tensor = u_analytical_E - u_E
+        # Reative error in percentage
+        error_norm = 100*torch.sqrt(torch.sum(error_tensor*error_tensor))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
+        error_scientific_notation = f"{error_norm:.2e}"
+        # error_str = str(error_norm.item())
+        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'
+        # Plot the function
+        plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
+        plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')
+        plt.title(title_error)
+        plt.xlabel('x (mm)')
+        plt.ylabel('u(x,E) (mm)')
+        plt.legend(loc="upper left")
+        plt.grid(True)
+        plt.ylim((0,0.02))
+        plt.show()
+
+    # Create an interactive slider
+    slider_E1 = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E1 (GPa)')
+    slider_E2 = widgets.FloatSlider(value=0, min=100, max=200, step=0.01, description='E2 (GPa)')
+    
+
+    # Connect the slider to the interactive plot function
+    interactive_plot_widget = interact(interactive_plot, E1=slider_E1, E2=slider_E2)
+
 def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     import torch
     Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]

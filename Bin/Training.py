@@ -273,7 +273,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
+def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,BiPara):
     # Initialise vector of loss values
     Loss_vect = []
     # Initialise vector of L2 error
@@ -288,8 +288,10 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
     save_time = 0
     while epoch<n_epochs and loss_counter<500:
         # Compute loss
-        # loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
-        loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+        if not BiPara:
+            loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+        else:
+            loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
@@ -316,10 +318,13 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
             epoch+=1
             Loss_vect.append(loss.item())
             numel_E = E_trial[0].shape[0]
-            # L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
+            if not BiPara:
+                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 100 == 0:
-            # print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
-            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+            if not BiPara:
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
+            else:
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")
@@ -336,7 +341,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs):
     return Loss_vect, L2_error, (time_stop-time_start)
     
 
-def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time):
+def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):
     optim = torch.optim.LBFGS(model.parameters(),
                     #history_size=5, 
                     #max_iter=15, 
@@ -355,7 +360,10 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
 
         def closure():
             optim.zero_grad()
-            loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+            if not BiPara:
+                loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+            else:
+                loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
             loss.backward()
             return loss
         optim.step(closure)
@@ -373,10 +381,13 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
             epoch+=1
             Loss_vect.append(loss.item())
             numel_E = E_trial[0].shape[0]
-            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
+            if not BiPara:
+                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 5 == 0:
-            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
-            
+            if not BiPara:
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
+            else:
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")

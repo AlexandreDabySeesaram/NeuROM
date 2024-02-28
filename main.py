@@ -59,11 +59,11 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 5000                                    # Maximum number of iterations for the training stage
+n_epochs = 500                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
-
+BiPara = True                                       # Enable 2 Young modulus
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -95,8 +95,10 @@ A_min = 0.1
 A_max = 10
 N_A = 10
 
-ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_A]])
-# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
+if BiPara:
+    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_A]])
+else:
+    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
@@ -176,8 +178,11 @@ else:
                                     dtype=torch.float32, requires_grad=True)
     TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
 
-    Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
-    # Para_coord_list = [TrialPara]
+    if BiPara:
+        Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+    else:
+        Para_coord_list = [TrialPara]
+
     if not TrainingRequired:
         if IndexesNon0BCs:
             name_model+='_BCs'
@@ -200,13 +205,13 @@ else:
             BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
             optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
             u_copm = BeamROM_compiled(TrialCoordinates,Para_coord_list)
-            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
-            # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
         else:
             optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs)
-            # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+            Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
         # Train model
         # BeamROM.UnFreeze_Mesh()
@@ -239,6 +244,6 @@ if False:
 
 u_eval = BeamROM(TrialCoordinates,Para_coord_list)
 import matplotlib.pyplot as plt
-Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
+# Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
 
 # %%

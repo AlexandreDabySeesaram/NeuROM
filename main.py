@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 50                                             # Number of Nodes in the Mesh
+np = 10                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.005, 
+                             "Value": 0.0, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -58,8 +58,8 @@ BoolGPU = False                                    # Boolean enabling GPU comput
 TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
-LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
-n_epochs = 500                                    # Maximum number of iterations for the training stage
+LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
+n_epochs = 5000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -80,7 +80,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 1
+n_modes = 3
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -95,8 +95,8 @@ A_min = 0.1
 A_max = 10
 N_A = 10
 
-# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[A_min,A_max,N_A]])
-ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
+ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_A]])
+# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
@@ -172,13 +172,12 @@ else:
                                     dtype=torch.float32, requires_grad=True)
     TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
-    TrialPara2 = torch.linspace(mu_min,mu_max,30, 
+    TrialPara2 = torch.linspace(mu_min,mu_max,50, 
                                     dtype=torch.float32, requires_grad=True)
     TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
 
     Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
-    Para_coord_list = [TrialPara]
-
+    # Para_coord_list = [TrialPara]
     if not TrainingRequired:
         if IndexesNon0BCs:
             name_model+='_BCs'
@@ -207,7 +206,7 @@ else:
         else:
             optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
             Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs)
-            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
+            # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
 
         # Train model
         # BeamROM.UnFreeze_Mesh()
@@ -236,4 +235,10 @@ if False:
     u_i = torch.cat(Space_modes,dim=1) 
 
 # Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
+# Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
+
+u_eval = BeamROM(TrialCoordinates,Para_coord_list)
+import matplotlib.pyplot as plt
+Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
+
+# %%

@@ -156,6 +156,43 @@ def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model
     plt.show()
     plt.clf()
 
+def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
+    import torch
+    matplotlib.rcParams["text.usetex"] = True
+    matplotlib.rcParams["font.family"] = "serif"
+    matplotlib.rcParams["font.size"] = "13"
+    u0 = BeamROM.Space_modes[0].u_0
+    uL = BeamROM.Space_modes[0].u_L
+
+    PaperPara = torch.tensor([150])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    Paper150 = torch.tensor([150])
+    Paper150 = Paper150[:,None] # Add axis so that dimensions match
+    u_150 = BeamROM(TrialCoordinates,[PaperPara,PaperPara])
+    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A", label = r'$E = 150~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_150.data.view(-1),'--', color="#01426A", label = r'$E = 150~$MPa HiDeNN solution')
+
+    PaperPara = torch.tensor([200])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    u_200 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
+    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_200.data.view(-1),'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
+
+    PaperPara = torch.tensor([100])
+    PaperPara = PaperPara[:,None] # Add axis so that dimensions match
+    u_100 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
+    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
+    plt.plot(TrialCoordinates.data,u_100.data.view(-1),'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
+    plt.legend(loc="upper left")
+    plt.xlabel('x (mm)')
+    plt.ylabel('u (mm)')
+    plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    plt.show()
+    plt.clf()
+
 def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model):
     from ipywidgets import interact, widgets
     import torch
@@ -219,6 +256,40 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     plt.clf()
         # plt.show()
 
+def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
+    import torch
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    u_i = torch.cat(Space_modes,dim=1)  
+    for mode in range(BeamROM.n_modes):
+        Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara[l][:,0].view(-1,1))[:,None] for l in range(BeamROM.n_para)]
+        if mode == 0:
+            lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(BeamROM.n_para)]
+        else:
+            New_mode = Para_mode_List
+            lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(BeamROM.n_para)]
+
+    for mode in range(BeamROM.n_modes):
+        plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
+        plt.xlabel('x (mm)')
+        plt.legend(loc="upper left")
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.clf()
+        # plt.show()
+
+    for mode in range(BeamROM.n_modes):
+        plt.plot(TrialPara[0].data,lambda_i[0][mode,:,0].data,label='Mode'+str(mode+1))
+        plt.xlabel('E1 (GPa)')
+        plt.legend(loc="upper left")
+    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.clf()
+
+    for mode in range(BeamROM.n_modes):
+        plt.plot(TrialPara[1].data,lambda_i[1][mode,:,0].data,label='Mode'+str(mode+1))
+        plt.xlabel('E2 (GPa)')
+        plt.legend(loc="upper left")
+        plt.savefig('Results/Pre_trained_Para_modes_E2'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.clf()
+        # plt.show()
 
 def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     import matplotlib as mpl

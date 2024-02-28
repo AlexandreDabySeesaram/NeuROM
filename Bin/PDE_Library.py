@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-
+import matplotlib.pyplot as plt
 def RHS(x):
     """Defines the right hand side (RHS) of the equation (the body force)"""
     b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) \
@@ -42,6 +42,44 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
 
     # Vectorised calculation of the integral using the trapezoidal rule
     integral = torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E.shape[0])
+
+    return integral
+
+def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+    with torch.no_grad(): #No derivatino of heavy side, check if that still works
+        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+    f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
+    f_2_E_2 = torch.einsum('ik,jk->ij',f_2,E[1])
+    E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
+    # plt.plot(E_tensor[:,10,0].data.view(-1))
+    # plt.savefig('Results/E_tensor.pdf')
+    # plt.clf()
+    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
+    u_i = torch.cat(Space_modes,dim=1)  
+    for mode in range(model.n_modes):
+        Para_mode_List = [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        if mode == 0:
+            lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(model.n_para)]
+        else:
+            New_mode = Para_mode_List
+            lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(model.n_para)]
+    du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
+    du_dx = torch.cat(du_dx,dim=1)  
+    du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes,lambda_i[0].shape[1]),
+                            lambda_i[1].view(model.n_modes,lambda_i[1].shape[1]))
+    # Calculate dx
+    dx = x[1:] - x[:-1]
+
+    du_dx_E_tensor = (du_dx**2)*E_tensor
+
+    # Vectorised calculation of the integral terms
+    int_term1 = 0.25 * A * dx[:,None] * (du_dx_E_tensor[1:] + du_dx_E_tensor[:-1])
+    int_term2 = 0.5 * dx[:,None] * (u[1:] * b[1:,None] + u[:-1] * b[:-1,None])
+
+    # Vectorised calculation of the integral using the trapezoidal rule
+    integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
 
     return integral
 

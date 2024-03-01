@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 10                                             # Number of Nodes in the Mesh
+np = 30                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -59,7 +59,7 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 1                                    # Maximum number of iterations for the training stage
+n_epochs = 3000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -245,8 +245,28 @@ if False:
 u_eval = BeamROM(TrialCoordinates,Para_coord_list)
 import matplotlib.pyplot as plt
 # Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
-BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+# BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
 
-Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
+
+if False:
+    #%%
+    Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
+
+# %% Test evaluation speed
+import numpy
+NumberOfeval = 1000
+
+E1 = torch.tensor([150])
+E1 = E1[:,None] # Add axis so that dimensions match
+E2 = torch.tensor([200])
+E2 = E2[:,None] # Add axis so that dimensions match        
+E = [E1,E2]
+time_start_eval = time.time()
+for eval in range(NumberOfeval):
+    u_E = BeamROM(TrialCoordinates[::10],E).view(-1)
+time_stop_eval = time.time()
+
+print(f'* Average evaluation time {numpy.format_float_scientific(((time_stop_eval-time_start_eval)/NumberOfeval), precision=4)}s')
+
 
 # %%

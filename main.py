@@ -32,14 +32,14 @@ class Dataset(torch.utils.data.Dataset):
 
         return x
 
-def InitializeMesh(order):
+def InitializeMesh(order,dimension):
     if order ==1:
         MaxElemSize = L/(np-1)                      # Compute element size
     elif order ==2:
         n_elem = 0.5*(np-1)
         MaxElemSize = L/n_elem                     # Compute element size
 
-    Beam_mesh = pre.Mesh('Beam',MaxElemSize, order)    # Create the mesh object
+    Beam_mesh = pre.Mesh('Rectange',MaxElemSize, order)    # Create the mesh object
     Volume_element = 100                        # Volume element correspond to the 1D elem in 1D
     Beam_mesh.AddBCs(Volume_element,
                     DirichletDictionryList)    # Include Boundary physical domains infos (BCs+volume)
@@ -53,7 +53,7 @@ def InitializeMesh(order):
 #%% Pre-processing (could be put in config file later)
 # Geometry of the Mesh
 L = 10                                      # Length of the Beam
-np = 15                                     # Number of Nodes in the Mesh
+np = 5                                     # Number of Nodes in the Mesh
 A = 1                                       # Section of the beam
 E = 175                                     # Young's Modulus (should be 175)
 alpha =0.0                                 # Weight for the Mesh regularisation 
@@ -65,8 +65,10 @@ DirichletDictionryList = [  {"Entity": 1,
                             {"Entity": 2, 
                              "Value": 10, 
                              "normal":1}]
-order_u = 2
-order_du = 1
+
+    
+order_u = 1
+order_du = 2
 
 TrainingStrategy = 'Mixed'   # 'Integral', 'Mixed'
 
@@ -144,7 +146,7 @@ if TrainingStrategy == 'Mixed':
 
     PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
     CoordinatesDataset = Dataset(PlotCoordTensor)
-    CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=50, shuffle=True)
+    CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=25, shuffle=True)
     print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
     # Training loop (Non parametric model, Mixed formulation)

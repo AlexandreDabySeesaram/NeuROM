@@ -18,10 +18,16 @@ mps_device = torch.device("mps")
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
-     See [Zhang et al. 2021] Linear block. The input parameters are:
-        - the coordinate x where the function is evaluated
-        - If used for left part: x_b = x_i else if used right part x_b = x_ip1
-        - If used for left part: x_a = x_im1 else if used right part x_a = x_i  """
+     See [Zhang et al. 2021] Linear block. 
+     Args:
+        x (Tensor): Cordinate where the function is evaluated
+        x_b (Tensor): If used for left part: x_b = x_i else if used right part x_b = x_ip1
+        x_a (Tensor): If used for left part: x_a = x_im1 else if used right part x_a = x_i  
+        y_a (Tensor): The value of the linear function at x=x_a
+        y_b (Tensor): The value of the linear function at x=x_b
+    Returns: 
+        mid (Tensor): Linear funciton between x_a and x_b from y_a to y_b
+    """
     def __init__(self):
         super(LinearBlock, self).__init__()
         self.relu = nn.ReLU()
@@ -30,19 +36,16 @@ class LinearBlock(nn.Module):
         
         mid = self.relu(-x + x_b.T)
         mid = self.relu(1 - mid/(x_b.T-x_a.T))
-        #mid = mid*((y_b-y_a).T)  + y_a.T
         if y_a.dim() ==2:
             mid = mid*((y_b-y_a).T)  + y_a.T
         elif y_b.dim() ==2:
             mid = mid*((y_b.T)-y_a)  + y_a
         else:
             mid = mid*((y_b-y_a))  + y_a
-
-
         return mid
 
 class ElementBlock_Bar_Quadr(nn.Module):
-    """Bar 2 (linear 1D) element block
+    """Bar 3 (quadratic 1D) element block
     Returns the N_i(x)'s for each nodes within the element"""
     def __init__(self, connectivity):
         super(ElementBlock_Bar_Quadr, self).__init__()
@@ -87,18 +90,28 @@ class ElementBlock_Bar_Quadr(nn.Module):
 
 
 class ElementBlock_Bar_Lin(nn.Module):
-    """Bar 2 (linear 1D) element block
-    Returns the N_i(x)'s for each nodes within the element"""
+    """This is an implementation of the Bar 2 (linear 1D) element
+    Args:
+        x (Tensor): Cordinate where the function is evaluated
+        coordinates (Parameters List): List of coordinates of nodes of the 1D mesh
+        i (Integer): The indexes of the element for which an output is expected
+
+    Returns:
+         N_i(x)'s for each nodes within each element"""
     def __init__(self, connectivity):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 1D mesh
+        """
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
         
     def forward(self, x, coordinates, i):
-        # i = self.i
-        # For the outter Nodes, phantom elements are created 
-        # to cancel out shape functions beyond the geometry of the structure in question, 
-        # to prevent any form of extrapolation beyond its boundaries 
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
 
         if -1  in i:
             x_left_0 = coordinates[0]-coordinates[1]/100
@@ -118,15 +131,14 @@ class ElementBlock_Bar_Lin(nn.Module):
 
 
 class MeshNN(nn.Module):
-    """This is the main Neural Network building the FE interpolation, the coordinates 
-    parameters are trainable are correspond to the coordinates of the nodes in the Mesh 
-    which are passed as parameters to the sub NN where they are fixed. 
+    """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
+    The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them 
     is equivqlent to solving the PDE. """
     def __init__(self, mesh, alpha = 0.005):
         super(MeshNN, self).__init__()
-        self.alpha = alpha # set the weight for the Mesh regularisation 
+        self.alpha = alpha                                      # set the weight for the Mesh regularisation 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
@@ -145,11 +157,8 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
-        #self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).detach()
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).clone().detach()
-
         self.AssemblyLayer.weight.requires_grad=False
-        #self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).detach()
         # self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).clone().detach()
         self.AssemblyLayer.bias.data =  mesh.assembly_vector.clone().detach() # Remove warning, assembly_vector is already a tensor
         self.AssemblyLayer.bias.requires_grad=False
@@ -177,9 +186,9 @@ class MeshNN(nn.Module):
     
     def SetBCs(self,u_0,u_L):
         """Set the two Dirichlet boundary conditions
-            Inputs are:
-                - u_0 the left BC
-                - u_L the right BC """
+        Args:
+            u_0 (Float): The left BC
+            u_L (Float): The right BC """
         self.u_0 = torch.tensor(u_0, dtype=torch.float32)
         self.u_L = torch.tensor(u_L, dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
@@ -211,14 +220,14 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu.weight.requires_grad = False
 
 class InterpPara(nn.Module):
-    """This class act as the 1D mesh in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
+    """This class acts as the 1D interplation in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
     def __init__(self, mu_min, mu_max,N_mu):
         super(InterpPara, self).__init__()
         import numpy as np
         super(InterpPara, self).__init__()
         self.mu_min = mu_min
         self.mu_max = mu_max
-        self.N_mu = N_mu
+        self.N_mu = N_mu.int()
         self.n_elem = self.N_mu-1 # linear 1D discretisation of the parametric field
         # Parametric mesh coordinates
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
@@ -242,17 +251,13 @@ class InterpPara(nn.Module):
         self.AssemblyLayer.bias.fill_(-1)
         self.AssemblyLayer.bias[0] = torch.tensor(0)
         self.AssemblyLayer.bias[-1] = torch.tensor(0)
-
         self.ElementBlock = ElementBlock_Bar_Lin(self.Connectivity)
-
-        # self.Functions = nn.ModuleList([ElementBlock_Bar_Lin(i,self.Connectivity) for i in range(self.n_elem)])
-
         # Interpolation (nodal values) layer
         # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
-        self.InterpoLayer.weight.data = self.NodalValues_para
+        # self.InterpoLayer.weight.data = self.NodalValues_para
         self.ElemList = torch.arange(self.n_elem)
 
     def forward(self,mu):
@@ -285,20 +290,29 @@ class InterpPara(nn.Module):
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
-    def __init__(self, mesh, BCs, n_modes, mu_min, mu_max,N_mu):
+    def __init__(self, mesh, BCs, n_modes, ParametersList):
         super(NeuROM, self).__init__()
+        IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
+        if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
+            n_modes+=1
         self.n_modes = n_modes
-        self.mu_min = mu_min
-        self.mu_max = mu_max
-        self.N_mu = N_mu
+        self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
-        self.Para_modes = nn.ModuleList([InterpPara(self.mu_min, self.mu_max, self.N_mu) for i in range(self.n_modes)])
+        # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
+        self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
-        # First modes get the Boundary conditions
-        self.Space_modes[0].SetBCs(BCs[0],BCs[1])
-        # Following modes are homogeneous (admissible to 0)
-        for i in range(1,self.n_modes):
-            self.Space_modes[i].SetBCs(0,0)
+        if IndexesNon0BCs:
+            # First modes get the Boundary conditions
+            self.Space_modes[0].SetBCs(BCs[0],BCs[1])
+            for para in range(self.n_para):
+                self.Para_modes[0][para].InterpoLayer.weight.data.fill_(1) # Mode for parameters not trained and set to 1 to get correct space BCs
+                self.Para_modes[0][para].Freeze_FEM()
+            # Following modes are homogeneous (admissible to 0)
+            for i in range(1,self.n_modes):
+                self.Space_modes[i].SetBCs(0,0)
+        else:
+            for i in range(self.n_modes):
+                self.Space_modes[i].SetBCs(0,0)
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""
@@ -323,7 +337,8 @@ class NeuROM(nn.Module):
     def Freeze_MeshPara(self):
         """Set the para coordinates as untrainable parameters"""
         for i in range(self.n_modes):
-            self.Para_modes[i].Freeze_Mesh()
+            for j in range(self.n_para):
+                self.Para_modes[i][j].Freeze_Mesh()
 
     def UnFreeze_MeshPara(self):
         """Set the para coordinates as trainable parameters"""
@@ -342,10 +357,24 @@ class NeuROM(nn.Module):
 
     def forward(self,x,mu):
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
-        Para_modes = [self.Para_modes[l](mu)[:,None] for l in range(self.n_modes)]
         Space_modes = torch.cat(Space_modes,dim=1)
-        Para_modes = torch.cat(Para_modes,dim=1)
-        out = torch.matmul(Space_modes,Para_modes.T)
+        for mode in range(self.n_modes):
+            Para_mode_List = [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
+            if mode == 0:
+                # Para_modes = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+                # Para_modes = [Para_mode_List[l] for l in range(self.n_para)]
+                Para_modes = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(self.n_para)]
+            else:
+                # New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+                # Para_modes = torch.vstack((Para_modes,New_mode))
+                New_mode = Para_mode_List
+                Para_modes = [torch.vstack((Para_modes[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(self.n_para)]
+        if len(mu)==1:
+            # out = torch.matmul(Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
+            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
+        elif len(mu)==2:
+            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]),
+                            Para_modes[1].view(self.n_modes,Para_modes[1].shape[1]))
         return out
 
         

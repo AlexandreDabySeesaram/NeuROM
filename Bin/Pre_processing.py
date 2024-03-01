@@ -1,5 +1,6 @@
 import numpy as np 
 import os
+import subprocess
 
 """
 Cheat sheet msh format 2.2
@@ -23,7 +24,11 @@ phyical-number "physical-name"
 $EndPhysicalNames
 https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
+def get_git_tag() -> str:
+    return subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+
 def PrintWelcome():
+    version = get_git_tag()
     """Neural network reduced-order modelling for mechanics"""
 #     # Ivrit NeuROMech
 #     print(" \
@@ -43,7 +48,8 @@ def PrintWelcome():
  | \ | | ___ _   _|  _ \ / _ \|  \/  |\n \
  |  \| |/ _ \ | | | |_) | | | | |\/| |\n \
  | |\  |  __/ |_| |  _ <| |_| | |  | |\n \
- |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n ")
+ |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n\n " + \
+"                 "+version)
 
 
                                                                                                                                     
@@ -134,7 +140,7 @@ class Mesh:
                     self.Connectivity.append(ElemList[-self.node_per_elem:])   
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
-            print(f'\n************ FINISHED READING MESH ************\n\n \
+            print(f'\n************ MESH READING COMPLETE ************\n\n \
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
 * Number of Elements:       {self.Connectivity.shape[0]}\n \
@@ -147,20 +153,12 @@ class Mesh:
         if self.order =='1':
             weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
             self.assembly_vector = torch.zeros(self.dim*self.NNodes)
-
             elem_range = np.arange(self.Connectivity.shape[0])
             ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
-
             ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
-
             i_values = self.Connectivity[:, ne_values]-1 
             j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
-
-            # print("i_values.flatten().astype(int) = ", i_values.flatten().astype(int))
-            # print("j_values.flatten().astype(int) = ", j_values.flatten().astype(int))
-
             weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
-
             self.weights_assembly = weights_assembly
             #For 1D elements, add phantom elements assembly:
             weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
@@ -178,18 +176,12 @@ class Mesh:
 
             elem_range = np.arange(self.Connectivity.shape[0])
             ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
-
             ne_values_j = np.array([1,0,2]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
-
             i_values = self.Connectivity[:, ne_values]-1 
-            #print("i_values.flatten().astype(int) = ", i_values.flatten().astype(int))
             j_values = self.node_per_elem * (elem_range[:, np.newaxis])   + ne_values_j 
-            #print("j_values.flatten().astype(int) = ", j_values.flatten().astype(int))
-
             weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
             self.weights_assembly = weights_assembly
             #For 1D elements, add phantom elements assembly:
-
             weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
             weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
             weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}

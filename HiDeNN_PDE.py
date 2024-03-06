@@ -66,7 +66,6 @@ class ElementBlock_Bar_Quadr(nn.Module):
             x_left = torch.cat([x_left_0,x_left_2])
             x_right = torch.cat([x_right_0,x_right_2])
         else:
-
             x_left = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
             x_right = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
             x_mid = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
@@ -153,8 +152,10 @@ class MeshNN(nn.Module):
         # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
-        self.InterpoLayer_uu.weight.data = self.NodalValues_uu
+        #self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        #self.InterpoLayer_uu.weight.data = self.NodalValues_uu
+        self.InterpoLayer_uu.weight.data = 0.0001*torch.randint(low=-100, high=100, size=(self.dofs-self.NBCs,))
+
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).clone().detach()
@@ -164,6 +165,9 @@ class MeshNN(nn.Module):
         self.AssemblyLayer.bias.requires_grad=False
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
+        #self.InterpoLayer_dd.weight.data = 0.1*torch.ones(2)
+        self.InterpoLayer_dd.weight.data = 0.0001*torch.randint(low=-100, high=100, size=(2,))
+
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
@@ -178,8 +182,10 @@ class MeshNN(nn.Module):
         joined_vector = torch.cat((out_uu,out_dd),dim=1)      
 
         recomposed_vector_u = self.AssemblyLayer(joined_vector) #-1
+
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
+
         u = torch.stack((u_u,u_d), dim=1)
  
         return self.SumLayer(u)

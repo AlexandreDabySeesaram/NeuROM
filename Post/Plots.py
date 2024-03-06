@@ -69,13 +69,32 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
     plt.semilogy(error2)
-    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
-    plt.ylabel(r'$\Xi$')
-    plt.ylim((0.01,20))
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    #plt.ylabel(r'$\Xi$')
+    #plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
     ax2.semilogy(error3,color='#F39C12')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.clf()
+
+
+def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
+    # Lift to be able to use semilogy
+    #error_pde = error_pde-np.min(error_pde)
+    #error_constit = error_constit-np.min(error_constit)
+
+    plt.semilogy(error2)
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    #plt.ylabel(r'$\Xi$')
+    #plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
+    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
+
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.legend()
     plt.clf()
 
 def Plot_end(error,error2):
@@ -391,3 +410,19 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     # Call the initial plot
     interactive_plot(100)
     tk.mainloop()
+
+
+def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
+    pred = model(TrialCoordinates)
+    
+    # Plots the gradient & compare to reference
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
+    plt.plot(TrialCoordinates.data, Force.data/(-A*E), label = 'Ground Truth')
+    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+
+    plt.clf()

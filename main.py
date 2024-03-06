@@ -11,7 +11,8 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
      Derivative, AnalyticGradientSolution, AnalyticSolution, AnalyticBiParametricSolution
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
-     Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS
+     Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
+     Mixed_Training_InitialStage_Altern, Training_FinalStageLBFGS_Mixed
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -19,10 +20,24 @@ import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
 
+class Dataset(torch.utils.data.Dataset):
+
+    def __init__(self, X):
+        self.X = X
+        
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, index):    
+        x = self.X[index]
+
+        return x
+
+
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 10                                             # Number of Nodes in the Mesh
+np = 13                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -35,14 +50,20 @@ DirichletDictionryList = [  {"Entity": 1,
 
 # Definition of the space discretisation
 alpha =0.005                                       # Weight for the Mesh regularisation 
-order = 1                                          # Order of the shape functions
+order = 2                                          # Order of the shape functions
+dimension = 1
+
 if order ==1:
     MaxElemSize = L/(np-1)                         # Compute element size
 elif order ==2:
     n_elem = 0.5*(np-1)
     MaxElemSize = L/n_elem                         # Compute element size
 
-Beam_mesh = pre.Mesh('Beam',MaxElemSize, order)    # Create the mesh object
+if dimension ==1:
+    Beam_mesh = pre.Mesh('Beam',MaxElemSize, order, dimension)    # Create the mesh object
+if dimension ==2:
+    Beam_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
+
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 Beam_mesh.AddBCs(Volume_element,
                  DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
@@ -58,11 +79,11 @@ BoolGPU = False                                    # Boolean enabling GPU comput
 TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = False                             # Boolean to switch between space model and parametric sturdy
-TrainingStrategy = 'Integral'                       # 'Integral' or 'Mixed'
+TrainingStrategy = 'Mixed'                         # 'Integral' or 'Mixed'
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 1                                    # Maximum number of iterations for the training stage
+n_epochs = 10000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
-FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
+BoolFilterTrainingData = True                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
 BiPara = True                                       # Enable 2 Young modulus
 #%% Application of the Space HiDeNN
@@ -74,7 +95,7 @@ BeamModel.SetBCs(u_0,u_L)
 
 # Set the boundary values as trainable
 # Set the coordinates as trainable
-BeamModel.UnFreeze_Mesh()
+BeamModel.Freeze_Mesh()
 # Set the coordinates as untrainable
 # BeamModel.Freeze_Mesh()
 # Set the require output requirements
@@ -102,7 +123,7 @@ else:
 
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
-u_L = DirichletDictionryList[1]['Value']           #Right BC
+u_L = DirichletDictionryList[1]['Value']           #Right BCF
 BCs = [u_0,u_L]
 BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
 name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
@@ -147,9 +168,11 @@ if not ParametricStudy:
     if TrainingStrategy == 'Integral':
         # Training loop (Non parametric model, Integral loss)
         print("Training loop (Non parametric model, Integral loss)")
-        optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
+        optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
         TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
         
+        BeamModel.UnFreeze_Mesh()
+
         # If GPU
         if BoolGPU:
             BeamModel.to(mps_device)
@@ -159,34 +182,82 @@ if not ParametricStudy:
         # Training initial stage
         error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
                                                                                                 TrialCoordinates, optimizer, n_epochs, 
-                                                                                                BoolCompareNorms, nn.MSELoss(), FilterTrainingData)
-
+                                                                                                BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData)
+        '''
         # Training final stage
         Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
                                 TrialCoordinates, n_epochs, BoolCompareNorms, 
                                 nn.MSELoss(), FilterTrainingData,
                                 error, error2, Coord_trajectories)
+        '''
     if TrainingStrategy == 'Mixed':
+
+        BeamModel_u = BeamModel
+
+        #np = 15
+        order_du = 1
+        if order_du ==1:
+            MaxElemSize_du = L/(np-1)                         # Compute element size
+        elif order ==2:
+            n_elem = 0.5*(np-1)
+            MaxElemSize_du = L/n_elem  
+
+        if dimension ==1:
+            Beam_mesh_du = pre.Mesh('Beam',MaxElemSize_du, order_du, dimension)    # Create the mesh object
+        if dimension ==2:
+            Beam_mesh_du = pre.Mesh('Rectangle',MaxElemSize_du, order_du, dimension)    # Create the mesh object
+
+        Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
+        Beam_mesh_du.AddBCs(Volume_element,
+                        DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
+        Beam_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist
+        Beam_mesh_du.ReadMesh()                               # Parse the .msh file
+        Beam_mesh_du.AssemblyMatrix()                         # Build the assembly weight matrix
+        BeamModel_du = MeshNN(Beam_mesh_du,alpha)     # Create the associated model
+        #BeamModel_du.SetBCs(u_0,u_L)
+        BeamModel_du.Freeze_Mesh()
+        BeamModel_du.UnFreeze_BC()
 
         # Training loop (Non parametric model, Mixed formulation)
         print("Training loop (Non parametric model, Mixed formulation)")
-        optimizer = torch.optim.Adam(list(BeamModel_u.parameters()) + list(BeamModel_du.parameters()), lr=learning_rate)
+        optimizer_u = torch.optim.Adam(BeamModel_u.parameters(), lr=learning_rate)
+        optimizer_du = torch.optim.Adam(BeamModel_du.parameters(), lr=learning_rate)
 
-        PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
+
+        PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,1000)], dtype=torch.float32, requires_grad=True)
+
+        PlotCoordTensor = FilterTrainingData(BeamModel_u, PlotCoordTensor)
+        PlotCoordTensor = FilterTrainingData(BeamModel_du, PlotCoordTensor)
+                
         CoordinatesDataset = Dataset(PlotCoordTensor)
-        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=25, shuffle=True)
+        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=250, shuffle=True)
         print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
         # # If GPU
-        # if BoolGPU:
-        #     BeamModel.to(mps_device)
-        #     TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
-        #                                 dtype=torch.float32, requires_grad=True).to(mps_device)
+        if BoolGPU:
+            BeamModel.to(mps_device)
+            TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
+                                        dtype=torch.float32, requires_grad=True).to(mps_device)
 
         # Training initial stage
-        error, error2, InitialCoordinates, Coord_trajectories, BeamModel_u = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
-                                                                                                CoordinatesBatchSet, PlotCoordTensor, optimizer, n_epochs, 
-                                                                                                BoolCompareNorms, MSE, BoolFilterTrainingData)
+
+        BeamModel_u.UnFreeze_Mesh()
+        BeamModel_du.UnFreeze_Mesh()
+
+
+        error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, 
+                                                                                        CoordinatesBatchSet, PlotCoordTensor, 
+                                                                                        optimizer_u, optimizer_du, n_epochs, 
+                                                                                        BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData, 
+                                                                                        L,1)
+
+        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
+        Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,
+                                PlotCoordTensor, n_epochs, BoolCompareNorms, 
+                                nn.MSELoss(), BoolFilterTrainingData,
+                                error_pde, error_constit, error2, Coord_trajectories,
+                                L,1) 
+
 
 else:
     BeamROM.Freeze_Mesh()

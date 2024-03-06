@@ -54,11 +54,12 @@ def PrintWelcome():
 
                                                                                                                                     
 class Mesh:
-    def __init__(self,name,h_max, order):
+    def __init__(self,name,h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
         PrintWelcome()
         self.h_str = str(h_max)
         self.order = str(order)
+        self.dimension = str(dimension)
         self.name = name
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_str+'.msh'
         self.name_geo = self.name+'.geo'
@@ -80,7 +81,7 @@ class Mesh:
             print('*************** Mesh Geometry  ****************\n' )
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
-            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+' -2 -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
+            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
             os.system(mesh_command)
             
     
@@ -150,42 +151,65 @@ class Mesh:
     def AssemblyMatrix(self):
         import torch
 
-        if self.order =='1':
-            weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
-            self.assembly_vector = torch.zeros(self.dim*self.NNodes)
-            elem_range = np.arange(self.Connectivity.shape[0])
-            ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
-            ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
-            i_values = self.Connectivity[:, ne_values]-1 
-            j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
-            weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
-            self.weights_assembly = weights_assembly
-            #For 1D elements, add phantom elements assembly:
-            weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
-            # weights_assembly_phantom[0,1] = 1  #  {[N1 N2] [N2 N3] [N3 N4]}
-            # weights_assembly_phantom[1,-2] = 1 # {[N1 N2] [N2 N3] [N3 N4]}
-            weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
-            weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
-            self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
-            idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
-            self.assembly_vector[idx]=-1
+        if self.dimension =='1':
+            if self.order =='1':
+                weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
+                self.assembly_vector = torch.zeros(self.dim*self.NNodes)
+                elem_range = np.arange(self.Connectivity.shape[0])
+                ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
+                ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
+                i_values = self.Connectivity[:, ne_values]-1 
+                j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
+                weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
+                self.weights_assembly = weights_assembly
+                #For 1D elements, add phantom elements assembly:
+                weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
+                # weights_assembly_phantom[0,1] = 1  #  {[N1 N2] [N2 N3] [N3 N4]}
+                # weights_assembly_phantom[1,-2] = 1 # {[N1 N2] [N2 N3] [N3 N4]}
+                weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
+                idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
+                self.assembly_vector[idx]=-1
 
-        if self.order =='2':
-            weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
-            self.assembly_vector = torch.zeros(self.dim*self.NNodes)
+            elif self.order =='2':
+                weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
+                self.assembly_vector = torch.zeros(self.dim*self.NNodes)
 
-            elem_range = np.arange(self.Connectivity.shape[0])
-            ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
-            ne_values_j = np.array([1,0,2]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
-            i_values = self.Connectivity[:, ne_values]-1 
-            j_values = self.node_per_elem * (elem_range[:, np.newaxis])   + ne_values_j 
-            weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
-            self.weights_assembly = weights_assembly
-            #For 1D elements, add phantom elements assembly:
-            weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
-            weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
-            weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                elem_range = np.arange(self.Connectivity.shape[0])
+                ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
+                ne_values_j = np.array([1,0,2]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
+                i_values = self.Connectivity[:, ne_values]-1 
+                j_values = self.node_per_elem * (elem_range[:, np.newaxis])   + ne_values_j 
+                weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
+                self.weights_assembly = weights_assembly
+                #For 1D elements, add phantom elements assembly:
+                weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
+                weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
 
-            self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
-            idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
-            self.assembly_vector[idx]=-1
+                self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
+                idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
+                self.assembly_vector[idx]=-1
+        if self.dimension =='2':
+            if self.order =='1':
+                weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
+                self.assembly_vector = torch.zeros(self.dim*self.NNodes)
+                elem_range = np.arange(self.Connectivity.shape[0])
+                ne_values = np.arange(self.node_per_elem) # {[N1 N2] [N2 N3] [N3 N4]}
+                ne_values_j = np.array([1,0]) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]} otherwise same as ne_value
+                i_values = self.Connectivity[:, ne_values]-1 
+                print(i_values)
+
+                j_values = 2 * (elem_range[:, np.newaxis])+ ne_values_j 
+                weights_assembly[i_values.flatten().astype(int), j_values.flatten().astype(int)] = 1
+                self.weights_assembly = weights_assembly
+                #For 1D elements, add phantom elements assembly:
+                weights_assembly_phantom = np.zeros((weights_assembly.shape[0],4))
+                # weights_assembly_phantom[0,1] = 1  #  {[N1 N2] [N2 N3] [N3 N4]}
+                # weights_assembly_phantom[1,-2] = 1 # {[N1 N2] [N2 N3] [N3 N4]}
+                weights_assembly_phantom[0,0] = 1  # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                weights_assembly_phantom[1,-1] = 1 # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+                self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
+                idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
+                self.assembly_vector[idx]=-1

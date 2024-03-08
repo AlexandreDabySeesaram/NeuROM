@@ -250,6 +250,23 @@ import matplotlib.pyplot as plt
 
 if False:
     #%%
+    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                    dtype=torch.float32, requires_grad=True)
+    TrialPara = torch.linspace(mu_min,mu_max,50, 
+                                    dtype=torch.float32, requires_grad=True)
+    TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+
+    TrialPara2 = torch.linspace(mu_min,mu_max,50, 
+                                    dtype=torch.float32, requires_grad=True)
+    TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
+
+    if BiPara:
+        Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+    else:
+        Para_coord_list = [TrialPara]
+    BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+    BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np30')
+
     Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
 
 # %% Test evaluation speed
@@ -263,10 +280,14 @@ E2 = E2[:,None] # Add axis so that dimensions match
 E = [E1,E2]
 time_start_eval = time.time()
 for eval in range(NumberOfeval):
-    u_E = BeamROM(TrialCoordinates[::10],E).view(-1)
+    with torch.no_grad():
+        u_E = BeamROM(TrialCoordinates[0,0],E).view(-1)
 time_stop_eval = time.time()
 
 print(f'* Average evaluation time {numpy.format_float_scientific(((time_stop_eval-time_start_eval)/NumberOfeval), precision=4)}s')
+print(f'* Average frequency {1/((time_stop_eval-time_start_eval)/NumberOfeval)}Hz')
 
+from torchsummary import summary
+summary(BeamROM, (498,1),[(498,1),(498,1)])
 
 # %%

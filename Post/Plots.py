@@ -426,3 +426,17 @@ def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialC
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
 
     plt.clf()
+
+
+def Plot2Dresults(values):
+
+    img = torch.reshape(values, (500, 500))
+    plt.imshow(img)
+
+
+    #plt.xlabel(r'$\underline{x}$ [m]')
+    #plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    #plt.legend(loc="upper left")
+
+    plt.savefig('Results/2D_val.pdf', transparent=True)  
+    plt.clf()

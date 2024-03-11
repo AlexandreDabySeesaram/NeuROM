@@ -1,5 +1,6 @@
 L=10;
 dh = L; // Minimum size is the length of the beam
+Mesh.Algorithm = 8;
 
 // Define the square geometry
 Point(1) = {0, 0, 0, dh};

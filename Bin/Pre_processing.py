@@ -1,6 +1,8 @@
 import numpy as np 
 import os
 import subprocess
+import meshio
+import vtk
 
 """
 Cheat sheet msh format 2.2
@@ -81,7 +83,9 @@ class Mesh:
             print('*************** Mesh Geometry  ****************\n' )
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
-            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
+            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
+                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
+                    #'- algo delquad'
             os.system(mesh_command)
             
     
@@ -147,6 +151,19 @@ class Mesh:
 * Number of Elements:       {self.Connectivity.shape[0]}\n \
 * Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
     
+    def ReadMeshVtk(self):
+        msh_name = 'Geometries/'+self.name_mesh
+        meshBeam = meshio.read(msh_name)
+        # crete meshio mesh based on points and cells from .msh file
+        mesh = meshio.Mesh(meshBeam.points, meshBeam.cells)
+        # write to VTK
+        meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+
+        # Load the VTK mesh
+        reader = vtk.vtkUnstructuredGridReader()
+        reader.SetFileName(msh_name[0:-4]+".vtk",)  
+        reader.Update()
+        self.vtk_mesh = reader.GetOutput()
 
     def AssemblyMatrix(self):
         import torch
@@ -213,3 +230,17 @@ class Mesh:
                 self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
                 idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
                 self.assembly_vector[idx]=-1
+
+
+    def GetCellIds(self, TrialCoordinates):
+        locator = vtk.vtkCellLocator()
+        locator.SetDataSet(self.vtk_mesh)
+        locator.Update()
+
+        ids = []
+
+        for coord in TrialCoordinates:
+            point = [coord[0], coord[1], 0]
+            ids.append(locator.FindCell(point))
+
+        return ids

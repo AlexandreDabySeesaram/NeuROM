@@ -3,6 +3,7 @@ import torch
 import Post.Plots as Pplot
 import copy
 import time
+import torch
 import random 
 
 from Bin.PDE_Library import RHS, PotentialEnergy, \
@@ -158,6 +159,8 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
     optimizer_time = 0
     backward_time = 0
 
+    analytical_norm = torch.norm(AnalyticSolution(A,E,TrialCoordinates.data)).data
+
     while epoch<n_epochs and stagnancy_counter < 50 and loss_counter<1000:
 
         if BoolFilterTrainingData:
@@ -215,7 +218,7 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
 
             if BoolCompareNorms:
                 # Copute and store the L2 error w.r.t. the analytical solution
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+                error2.append(torch.norm(AnalyticSolution(A,E,TrialCoordinates.data) - u_predicted)/analytical_norm)
 
         if loss_decrease >= 0 and loss_decrease < 1.0e-7:
             stagnancy_counter = stagnancy_counter +1
@@ -256,7 +259,7 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
             Coord_trajectories.append(Coordinates_i)
             if BoolCompareNorms:
                 # Copute and store the L2 error w.r.t. the analytical solution
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+                error2.append(torch.norm(AnalyticSolution(A,E,TrialCoordinates.data)-u_predicted)/analytical_norm)
 
     plot_everything(A,E,InitialCoordinates,Coordinates_i,
                                                 TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories,error, error2)
@@ -278,6 +281,8 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     loss_old = error[-1]
     epoch = 0
     stagnancy_counter = 0
+
+    analytical_norm = torch.norm(AnalyticSolution(A,E,TrialCoordinates.data)).data
 
     while epoch<n_epochs and stagnancy_counter < 5:
 
@@ -304,7 +309,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
             if BoolCompareNorms:
                 # Copute and store the L2 error w.r.t. the analytical solution
                 u_predicted = BeamModel(TrialCoordinates) 
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+                error2.append(torch.norm(AnalyticSolution(A,E,TrialCoordinates.data)-u_predicted).data/analytical_norm)
 
         loss_current = l.item()
         loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
@@ -450,7 +455,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
 
     return Loss_vect, L2_error
 
-def Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 
+def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 
                                 optimizer_u, optimizer_du, n_epochs,
                                  BoolCompareNorms, MSE, BoolFilterTrainingData, w_pde, w_constit):
 
@@ -469,6 +474,8 @@ def Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, Coord
     loss_min = 1.0e3
     loss_counter = 0
 
+    analytical_norm = torch.norm(AnalyticSolution(A,E,PlotData.data))
+
     print("**************** START TRAINING ***************\n")
     start_train_time = time.time()
 
@@ -479,12 +486,12 @@ def Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, Coord
 
     while epoch<n_epochs and loss_counter<1000: #  stagnancy_counter < 50 and 
 
-        #for TrialCoordinates in CoordinatesBatchSet:
-        for i in range(1):
+        for TrialCoordinates in CoordinatesBatchSet:
+        #for i in range(1):
 
-            n_train_points = torch.randint(100,1000,(1,))[0]
+            #n_train_points = torch.randint(100,500,(1,))[0]
             #n_train_points = 500
-            TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_train_points)], dtype=torch.float64, requires_grad=True)
+            #TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_train_points)], dtype=torch.float64, requires_grad=True)
 
             if BoolFilterTrainingData: 
                 TrialCoordinates = FilterBatchTrainingData(BeamModel_u, TrialCoordinates)
@@ -551,7 +558,7 @@ def Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, Coord
 
                 if BoolCompareNorms:
                     # Copute and store the L2 error w.r.t. the analytical solution
-                    error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+                    error2.append(torch.norm(AnalyticSolution(A,E,TrialCoordinates.data) - u_predicted).data/analytical_norm)
 
             if loss_decrease < 1.0e-7:
                 stagnancy_counter = stagnancy_counter +1
@@ -595,7 +602,8 @@ def Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, Coord
 
         if BoolCompareNorms:
             # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,PlotData.data),u_predicted_1).data)
+            analytical_norm = torch.norm(AnalyticSolution(A,E,PlotData.data))
+            error2.append(torch.norm(AnalyticSolution(A,E,PlotData.data) - u_predicted_1).data/analytical_norm)
 
     plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
                                             PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
@@ -627,6 +635,8 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     epoch = 0
     stagnancy_counter = 0
 
+    analytical_norm = torch.norm(AnalyticSolution(A,E,TrialCoordinates.data)).data
+
     while epoch<n_epochs and stagnancy_counter < 5:
 
         if BoolFilterTrainingData:
@@ -657,7 +667,7 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
 
             if BoolCompareNorms:
                 # Copute and store the L2 error w.r.t. the analytical solution
-                error2.append(MSE(AnalyticSolution(A,E,TrialCoordinates.data),u_predicted).data)
+                error2.append(torch.norm(AnalyticSolution(A,E,TrialCoordinates.data) - u_predicted).data/analytical_norm)
 
         loss_current = l.item()
         loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
@@ -682,168 +692,4 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-    
-def Mixed_Training_InitialStage_1(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, optimizer, n_epochs,
-
-                                 BoolCompareNorms, MSE, BoolFilterTrainingData, w_pde, w_constit):
-    # Original version. Should not be used.
-    ######################################
-    # Store the initial coordinates before training (could be merged with Coord_trajectories)
-    InitialCoordinates_u = [BeamModel_u.coordinates[i].data.item() for i in range(len(BeamModel_u.coordinates))]
-    InitialCoordinates_du = [BeamModel_du.coordinates[i].data.item() for i in range(len(BeamModel_du.coordinates))]
-
-    error_pde = []              # Stores the loss
-    error_constit = []
-    error2 = []             # Stores the L2 error compared to the analytical solution
-    Coord_trajectories = [] # Stores the trajectories of the coordinates while training
-
-    stagnancy_counter = 0
-    epoch = 0
-    loss_old = 1.0e3
-    loss_min = 1.0e3
-    loss_counter = 0
-
-    print("**************** START TRAINING ***************\n")
-    start_train_time = time.time()
-
-    evaluation_time = 0
-    loss_time = 0
-    optimizer_time = 0
-    backward_time = 0
-
-    while epoch<n_epochs and loss_counter<1000: #  stagnancy_counter < 50 and 
-
-        for TrialCoordinates in CoordinatesBatchSet:
-
-            if BoolFilterTrainingData: 
-                TrialCoordinates = FilterBatchTrainingData(BeamModel_u, TrialCoordinates)
-                TrialCoordinates = FilterBatchTrainingData(BeamModel_du, TrialCoordinates)
-
-            coord_old_u = [BeamModel_u.coordinates[i].data.item() for i in range(len(BeamModel_u.coordinates))]
-            coord_old_du = [BeamModel_du.coordinates[i].data.item() for i in range(len(BeamModel_du.coordinates))]
-
-            # predict = forward pass 
-            start_time = time.time()
-            u_predicted = BeamModel_u(TrialCoordinates) 
-            du_predicted = BeamModel_du(TrialCoordinates) 
-            evaluation_time += time.time() - start_time
-            
-            start_time = time.time()
-            # loss for weights update
-            l_pde, l_constit  = MixedFormulation_Loss(A, E, u_predicted, du_predicted, TrialCoordinates, RHS(TrialCoordinates))
-            l =  w_pde*l_pde + w_constit*l_constit
-            loss_time += time.time() - start_time
-
-
-            #### loss for progress tracking only #############
-            #### evaluated on full dataset
-            u_predicted_1 = BeamModel_u(PlotData) 
-            du_predicted_1 = BeamModel_du(PlotData) 
-            l_pde_1, l_constit_1  = MixedFormulation_Loss(A, E, u_predicted_1, du_predicted_1, PlotData, RHS(PlotData))
-            l1 =  l_pde_1 + l_constit_1
-            loss_current = l1.item()
-            loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
-            loss_old = loss_current
-            #################################################
-
-            # check for new minimal loss - Update the state for revert
-            if loss_min > loss_current:
-                loss_min = loss_current
-
-                torch.save(BeamModel_u.state_dict(),"Results/Net_u.pt")
-                torch.save(BeamModel_du.state_dict(),"Results/Net_du.pt")
-
-                loss_counter = 0
-            else:
-                loss_counter = loss_counter + 1
-
-            # calculate gradients = backward pass, using loss on one batch
-            start_time = time.time()
-            l.backward()
-            backward_time += time.time() - start_time
-            # update weights
-            start_time = time.time()
-            optimizer.step()
-
-            optimizer_time += time.time() - start_time
-
-            # zero the gradients after updating
-            optimizer.zero_grad()
-
-            Collision_Check(BeamModel_u, coord_old_u, 1.0e-6)
-            Collision_Check(BeamModel_du, coord_old_du, 1.0e-6)
-
-            with torch.no_grad():
-                # Stores the loss
-                error_pde.append(l_pde_1.item())
-                error_constit.append(l_constit_1.item())
-
-                # Stores the coordinates trajectories
-                Coordinates_u_i = [BeamModel_u.coordinates[i].data.item() for i in range(len(BeamModel_u.coordinates))]
-                Coordinates_du_i = [BeamModel_du.coordinates[i].data.item() for i in range(len(BeamModel_du.coordinates))]
-                Coord_trajectories.append(Coordinates_du_i)
-
-                if BoolCompareNorms:
-                    # Copute and store the L2 error w.r.t. the analytical solution
-                    error2.append(MSE(AnalyticSolution(A,E,PlotData.data),u_predicted_1).data)
-
-            if loss_decrease < 1.0e-7:
-                stagnancy_counter = stagnancy_counter +1
-            else:
-                stagnancy_counter = 0
-                    
-        if (epoch+1) % 200 == 0:
-                print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-                print('* loss PDE = ', numpy.format_float_scientific( l_pde_1.item(), precision=4))
-                print('* loss constit = ', numpy.format_float_scientific( l_constit_1.item(), precision=4))
-
-                #print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
-
-                plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
-                                            PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
-                                            Coord_trajectories, error_pde, error_constit, error2)    
-        epoch = epoch+1
-
-    stopt_train_time = time.time()
-    print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {stopt_train_time-start_train_time}s\n\
-        * Evaluation time: {evaluation_time}s\n\
-        * Loss time: {loss_time}s\n\
-        * Backward time: {backward_time}s\n\
-        * Training time per epochs: {(stopt_train_time-start_train_time)/n_epochs}s\n\
-        * Optimiser time: {optimizer_time}s\n')
-
-    if loss_min < loss_current:
-        print("Revert")
-
-        BeamModel_u.load_state_dict(torch.load("Results/Net_u.pt"))
-        BeamModel_du.load_state_dict(torch.load("Results/Net_du.pt"))
-
-        print("  Minimal loss = ", loss_min)
-        u_predicted_1 = BeamModel_u(PlotData) 
-        du_predicted_1 = BeamModel_du(PlotData) 
-        l_pde_1, l_constit_1  = MixedFormulation_Loss(A, E, u_predicted_1, du_predicted_1, PlotData, RHS(PlotData))
-        l1 =  l_pde_1 + l_constit_1
-        print("  Loss after revert = ", l1.item())
-
-    with torch.no_grad():
-        # Stores the loss
-        error_pde.append(l_pde_1.item())
-        error_constit.append(l_constit_1.item())        # Stores the coordinates trajectories
-        Coordinates_u_i = [BeamModel_u.coordinates[i].data.item() for i in range(len(BeamModel_u.coordinates))]
-        Coordinates_du_i = [BeamModel_du.coordinates[i].data.item() for i in range(len(BeamModel_du.coordinates))]
-
-        Coord_trajectories.append(Coordinates_du_i)
-
-        if BoolCompareNorms:
-            # Copute and store the L2 error w.r.t. the analytical solution
-            error2.append(MSE(AnalyticSolution(A,E,PlotData.data),u_predicted_1).data)
-
-    plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
-                                            PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
-                                            Coord_trajectories,  error_pde, error_constit, error2)  
-
-    print(f'* Final training loss: {numpy.format_float_scientific( error_pde[-1] + error_constit[-1], precision=4)}')
-    print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
-
-    return error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories
+  

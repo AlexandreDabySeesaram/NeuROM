@@ -135,9 +135,8 @@ class MeshNN(nn.Module):
     Updating those parameters correspond to r-adaptativity
     The Interpolation layer weights correspond to the nodal values. Updating them 
     is equivqlent to solving the PDE. """
-    def __init__(self, mesh, alpha = 0.005):
+    def __init__(self, mesh):
         super(MeshNN, self).__init__()
-        self.alpha = alpha                                      # set the weight for the Mesh regularisation 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs

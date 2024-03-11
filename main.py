@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage_Altern, Training_FinalStageLBFGS_Mixed
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -37,7 +37,7 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 13                                             # Number of Nodes in the Mesh
+np = 11                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -49,7 +49,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "normal":1}]
 
 # Definition of the space discretisation
-alpha =0.005                                       # Weight for the Mesh regularisation 
+alpha = 0.0                                       # Weight for the Mesh regularisation 
 order = 2                                          # Order of the shape functions
 dimension = 1
 
@@ -87,7 +87,7 @@ BoolFilterTrainingData = True                         # Slightly move training s
 BoolCompile = False                                 # Enable compilation of the model
 BiPara = True                                       # Enable 2 Young modulus
 #%% Application of the Space HiDeNN
-BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
+BeamModel = MeshNN(Beam_mesh)                # Create the associated model
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
 u_L = DirichletDictionryList[1]['Value']           #Right BC
@@ -183,13 +183,13 @@ if not ParametricStudy:
         error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
                                                                                                 TrialCoordinates, optimizer, n_epochs, 
                                                                                                 BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData)
-        '''
+
         # Training final stage
         Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
                                 TrialCoordinates, n_epochs, BoolCompareNorms, 
                                 nn.MSELoss(), FilterTrainingData,
                                 error, error2, Coord_trajectories)
-        '''
+
     if TrainingStrategy == 'Mixed':
 
         BeamModel_u = BeamModel
@@ -213,7 +213,7 @@ if not ParametricStudy:
         Beam_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist
         Beam_mesh_du.ReadMesh()                               # Parse the .msh file
         Beam_mesh_du.AssemblyMatrix()                         # Build the assembly weight matrix
-        BeamModel_du = MeshNN(Beam_mesh_du,alpha)     # Create the associated model
+        BeamModel_du = MeshNN(Beam_mesh_du)     # Create the associated model
         #BeamModel_du.SetBCs(u_0,u_L)
         BeamModel_du.Freeze_Mesh()
         BeamModel_du.UnFreeze_BC()
@@ -230,7 +230,7 @@ if not ParametricStudy:
         PlotCoordTensor = FilterTrainingData(BeamModel_du, PlotCoordTensor)
                 
         CoordinatesDataset = Dataset(PlotCoordTensor)
-        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=250, shuffle=True)
+        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=200, shuffle=True)
         print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
         # # If GPU
@@ -242,18 +242,18 @@ if not ParametricStudy:
         # Training initial stage
 
         BeamModel_u.UnFreeze_Mesh()
-        BeamModel_du.UnFreeze_Mesh()
+        BeamModel_du.Freeze_Mesh()
 
-
-        error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage_Altern(BeamModel_u, BeamModel_du, A, E, L, 
+        error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
                                                                                         CoordinatesBatchSet, PlotCoordTensor, 
                                                                                         optimizer_u, optimizer_du, n_epochs, 
                                                                                         BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData, 
                                                                                         L,1)
 
         TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
+        # Second stage on 500 points only.
         Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,
-                                PlotCoordTensor, n_epochs, BoolCompareNorms, 
+                                TrialCoordinates, n_epochs, BoolCompareNorms, 
                                 nn.MSELoss(), BoolFilterTrainingData,
                                 error_pde, error_constit, error2, Coord_trajectories,
                                 L,1) 

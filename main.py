@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 30                                             # Number of Nodes in the Mesh
+np = 100                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -64,6 +64,7 @@ learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
 BiPara = True                                       # Enable 2 Young modulus
+Visualisatoin_only = False
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
 # Boundary conditions
@@ -213,13 +214,6 @@ else:
             Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
-        # Train model
-        # BeamROM.UnFreeze_Mesh()
-        # BeamROM.UnFreeze_Para()
-        # optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-        # Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs)
-        # Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time)
-
 
         # Save model
         if SaveModel:
@@ -235,7 +229,7 @@ if BoolPlotPost:
     Pplot.PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model)
     Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'2StageTraining')
 
-if False:
+if Visualisatoin_only:
     Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
     u_i = torch.cat(Space_modes,dim=1) 
 
@@ -248,8 +242,7 @@ import matplotlib.pyplot as plt
 # BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
 
 
-if False:
-    #%%
+if Visualisatoin_only:
     TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                     dtype=torch.float32, requires_grad=True)
     TrialPara = torch.linspace(mu_min,mu_max,50, 
@@ -265,29 +258,8 @@ if False:
     else:
         Para_coord_list = [TrialPara]
     BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
-    BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np30')
+    BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np100')
 
     Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
 
-# %% Test evaluation speed
-import numpy
-NumberOfeval = 1000
 
-E1 = torch.tensor([150])
-E1 = E1[:,None] # Add axis so that dimensions match
-E2 = torch.tensor([200])
-E2 = E2[:,None] # Add axis so that dimensions match        
-E = [E1,E2]
-time_start_eval = time.time()
-for eval in range(NumberOfeval):
-    with torch.no_grad():
-        u_E = BeamROM(TrialCoordinates[0,0],E).view(-1)
-time_stop_eval = time.time()
-
-print(f'* Average evaluation time {numpy.format_float_scientific(((time_stop_eval-time_start_eval)/NumberOfeval), precision=4)}s')
-print(f'* Average frequency {1/((time_stop_eval-time_start_eval)/NumberOfeval)}Hz')
-
-from torchsummary import summary
-summary(BeamROM, (498,1),[(498,1),(498,1)])
-
-# %%

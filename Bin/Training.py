@@ -286,7 +286,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     epoch = 0
     loss_counter = 0
     save_time = 0
-    while epoch<n_epochs and loss_counter<500:
+    loss_decrease_c = 1e-4 # Criterion of stagnation for the loss
+    stagnancy_counter = 0
+    while epoch<n_epochs and loss_counter<500 and stagnancy_counter<100:
         # Compute loss
         if not BiPara:
             loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
@@ -295,6 +297,14 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
+
+            loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+            loss_old = loss_current
+            if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
+                stagnancy_counter = stagnancy_counter +1
+            else:
+                stagnancy_counter = 0
+
             if loss_min > loss_current:
                 save_start = time.time()
                 with torch.no_grad():
@@ -306,8 +316,10 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
                     loss_counter = 0
             else:
                 loss_counter += 1
+                
         else:
             loss_min = loss_current + 1 
+            loss_old = loss_current
 
         loss.backward()
         # update weights

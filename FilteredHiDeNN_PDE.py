@@ -15,6 +15,30 @@ import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
 import numpy
 
+def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
+
+    inverse_matrix = torch.ones([int(y.shape[0]), 3, 3], dtype=torch.float64)
+
+    inverse_matrix[:,0,0] = (y3 - y2)/(x1*(y3 - y2) + x2*(y1 - y3) + x3*(y2 - y1)) 
+    inverse_matrix[:,1,0] = (x2 - x3)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
+    inverse_matrix[:,2,0] = (x3*y2 - x2*y3)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
+
+    inverse_matrix[:,0,1] = (y1 - y3)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
+    inverse_matrix[:,1,1] = (x1 - x3)/(x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2))
+    inverse_matrix[:,2,1]= (x3*y1 - x1*y3)/(x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2))
+
+    inverse_matrix[:,0,2] = (y1 - y2)/(x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2))
+    inverse_matrix[:,1,2] = (x1 - x2)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
+    inverse_matrix[:,2,2] = (x2*y1 - x1*y2)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
+
+    x_extended = torch.stack((x,y, torch.ones_like(y)),dim=1)
+    x_extended = x_extended.unsqueeze(1)
+
+    return torch.matmul(x_extended, inverse_matrix).squeeze(1)
+
+
+
+
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
      See [Zhang et al. 2021] Linear block. 
@@ -43,6 +67,28 @@ class LinearBlock(nn.Module):
             mid = mid*((y_b-y_a))  + y_a
         return mid
 
+class InterpolationBlock(nn.Module):
+    
+    def __init__(self, connectivity):
+       
+        super(InterpolationBlock, self).__init__()
+        self.LinearBlock = LinearBlock()
+        self.connectivity = connectivity.astype(int)
+
+    def forward(self, x, cell_id, nodal_values, shape_functions):
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
+
+        cell_nodes_IDs = self.connectivity[cell_id,:]
+
+        node1_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,0]])
+        node2_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,1]])
+        node3_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,2]])
+
+        return shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+
 class ElementBlock2D_Lin(nn.Module):
     """This is an implementation of the Bar 2 (linear 1D) element
     Args:
@@ -61,7 +107,8 @@ class ElementBlock2D_Lin(nn.Module):
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
 
-    def LinSH(self, x, node1, node2, node3, node4):
+    '''
+    def LinSHQuad(self, x, node1, node2, node3, node4):
         pom11 = (node3[:,0]-node2[:,0])*(x[:,1]     -node2[:,1]) - (node3[:,1]-node2[:,1])*(x[:,0]      -node2[:,0])
         pom12 = (node3[:,0]-node2[:,0])*(node1[:,1] -node2[:,1]) - (node3[:,1]-node2[:,1])*(node1[:,0]  -node2[:,0])
 
@@ -70,12 +117,7 @@ class ElementBlock2D_Lin(nn.Module):
 
         return (pom11/pom12)*(pom21/pom22)
 
-
-
-
-
-
-    def forward(self, x, cell_id, coordinates, nodal_values):
+    def forward_QUAD(self, x, cell_id, coordinates, nodal_values):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
@@ -113,13 +155,6 @@ class ElementBlock2D_Lin(nn.Module):
         sf_node3 = self.LinSH(x, node3_coord, node4_coord, node1_coord, node2_coord)
         sf_node4 = self.LinSH(x, node4_coord, node1_coord, node2_coord, node3_coord)
 
-        '''
-        sf_node1 = self.LinSH(x, node1_coord, node3_coord, node2_coord, node4_coord)
-        sf_node2 = self.LinSH(x, node2_coord, node4_coord, node3_coord, node1_coord)
-        sf_node3 = self.LinSH(x, node3_coord, node1_coord, node4_coord, node2_coord)
-        sf_node4 = self.LinSH(x, node4_coord, node2_coord, node1_coord, node3_coord)
-        '''
-
         print(min(sf_node1).item(), max(sf_node1).item())
         print(min(sf_node2).item(), max(sf_node2).item())
         print(min(sf_node3).item(), max(sf_node3).item())
@@ -146,17 +181,42 @@ class ElementBlock2D_Lin(nn.Module):
 
         print("sum max = ", max(sf_node1 + sf_node2 + sf_node3 + sf_node4).item())
         print("sum min = ", min(sf_node1 + sf_node2 + sf_node3 + sf_node4).item())
-        
-        '''
-        print()
-        print("nodal values = ", len(nodal_values))
-        print("nodal values = ", nodal_values[0])
-        '''
 
         interpol = sf_node1*node1_value + sf_node2*node2_value + sf_node3*node3_value + sf_node4*node4_value
         #interpol =  sf_node3
 
         return interpol
+    '''
+
+    def forward(self, x, cell_id, coordinates, nodal_values):
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
+
+        cell_nodes_IDs = self.connectivity[cell_id,:]
+        node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
+        node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
+        node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
+
+        node1_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,0]])
+        node2_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,1]])
+        node3_value =  torch.cat([nodal_values[row-1] for row in cell_nodes_IDs[:,2]])
+
+        refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+        
+        print("x = ", x[2])
+        print("cell id = ", cell_id[2])
+        print("nodes = ", cell_nodes_IDs[2])
+        print("node1_coord = ", node1_coord[2])
+        print("node2_coord = ", node2_coord[2])
+        print("node3_coord = ", node3_coord[2])
+        print()
+        print("refCoord = ", refCoord[2])
+        
+        out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+
+        return out
 
 
 class MeshNN(nn.Module):
@@ -175,25 +235,27 @@ class MeshNN(nn.Module):
 
         #self.values = 0.0001*torch.randint(low=-100, high=100, size=(mesh.NNodes,))
         self.values =torch.ones((mesh.NNodes,))
+        self.values[8]=5
         self.nodal_values = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in self.values])
-
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
-
+        self.Interpolation = InterpolationBlock(mesh.Connectivity)
 
         # Maybe we don't need this anymore
         #self.ElemList = torch.arange(self.NElem)
                 
     def forward(self,x, el_id):
             
-        output = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values)
+        shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values)
+        print("shape_functions = ", shape_functions.shape)
 
-        print(output.shape)
+        interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
+        print("interpol = ", interpol.shape )
 
-        return output
+        return interpol
 
 
 
@@ -238,24 +300,26 @@ Domain_mesh.MeshGeo()                                # Mesh the .geo file if .ms
 Domain_mesh.ReadMesh()                               # Parse the .msh file
 Domain_mesh.ReadMeshVtk()
 
-TrailCoord_1d = torch.tensor([i for i in torch.linspace(0,L,11)],dtype=torch.float64)
+n_train = 100
+
+TrailCoord_1d = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64)
 TrialCoordinates = torch.cartesian_prod(TrailCoord_1d,TrailCoord_1d)
-print(TrialCoordinates.shape) 
-print(TrialCoordinates) 
+print("TrialCoordinates = ", TrialCoordinates.shape) 
+#print(TrialCoordinates) 
 
 TrialIDs = torch.tensor(Domain_mesh.GetCellIds(TrialCoordinates),dtype=torch.int)
-print(TrialIDs.shape)
-print(TrialIDs)
+print("TrialIDs = ", TrialIDs.shape)
+#print(TrialIDs)
 
 DomainModel = MeshNN(Domain_mesh,alpha)                # Create the associated model
 
-
 u_predicted = DomainModel(TrialCoordinates, TrialIDs) 
 
-print("u_predicted = ", u_predicted.shape)
 
-img = numpy.reshape(u_predicted.detach(), (11, 11), order='F')    
-plt.imshow(img)
+print("u_predicted min : max ", min(u_predicted), " : ", max(u_predicted))
+
+img = numpy.reshape(u_predicted.detach(), (n_train, n_train), order='C') 
+plt.imshow(img) #, vmin = 1-1.0e-7, vmax = 1+1.0e-7)
 plt.colorbar()
 plt.savefig('Results/2D_val.pdf', transparent=True)  
 plt.clf()

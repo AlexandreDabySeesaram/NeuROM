@@ -456,7 +456,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
     return Loss_vect, L2_error
 
 def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 
-                                optimizer_u, optimizer_du, n_epochs,
+                                optimizer, n_epochs,
                                  BoolCompareNorms, MSE, BoolFilterTrainingData, w_pde, w_constit):
 
    # Store the initial coordinates before training (could be merged with Coord_trajectories)
@@ -532,16 +532,12 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
             # update weights
             start_time = time.time()
 
-            if w_constit>0:
-                optimizer_u.step()
-            if w_pde>0:
-                optimizer_du.step()
+            optimizer.step()
 
             optimizer_time += time.time() - start_time
 
             # zero the gradients after updating
-            optimizer_u.zero_grad()
-            optimizer_du.zero_grad()
+            optimizer.zero_grad()
 
             Collision_Check(BeamModel_u, coord_old_u, 1.0e-6)
             Collision_Check(BeamModel_du, coord_old_du, 1.0e-6)

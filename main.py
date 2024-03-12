@@ -37,7 +37,7 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 11                                             # Number of Nodes in the Mesh
+np = 19                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -220,18 +220,14 @@ if not ParametricStudy:
 
         # Training loop (Non parametric model, Mixed formulation)
         print("Training loop (Non parametric model, Mixed formulation)")
-        optimizer_u = torch.optim.Adam(BeamModel_u.parameters(), lr=learning_rate)
-        optimizer_du = torch.optim.Adam(BeamModel_du.parameters(), lr=learning_rate)
+        
+        optimizer = torch.optim.Adam(list(BeamModel_u.parameters())+list(BeamModel_du.parameters()), lr=0.001)
 
 
-        PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,1000)], dtype=torch.float32, requires_grad=True)
+        PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,5000)], dtype=torch.float32, requires_grad=True)
 
         PlotCoordTensor = FilterTrainingData(BeamModel_u, PlotCoordTensor)
         PlotCoordTensor = FilterTrainingData(BeamModel_du, PlotCoordTensor)
-                
-        CoordinatesDataset = Dataset(PlotCoordTensor)
-        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=200, shuffle=True)
-        print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
         # # If GPU
         if BoolGPU:
@@ -242,14 +238,21 @@ if not ParametricStudy:
         # Training initial stage
 
         BeamModel_u.UnFreeze_Mesh()
-        BeamModel_du.Freeze_Mesh()
+        BeamModel_du.UnFreeze_Mesh()
+
+        CoordinatesDataset = Dataset(PlotCoordTensor)
+        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=200, shuffle=True)
+        print("Number of batches per epoch = ", len(CoordinatesBatchSet))
+
 
         error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
                                                                                         CoordinatesBatchSet, PlotCoordTensor, 
-                                                                                        optimizer_u, optimizer_du, n_epochs, 
+                                                                                        optimizer, n_epochs, 
                                                                                         BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData, 
                                                                                         L,1)
 
+
+        '''
         TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,500)], dtype=torch.float32, requires_grad=True)
         # Second stage on 500 points only.
         Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,
@@ -257,7 +260,7 @@ if not ParametricStudy:
                                 nn.MSELoss(), BoolFilterTrainingData,
                                 error_pde, error_constit, error2, Coord_trajectories,
                                 L,1) 
-
+        '''
 
 else:
     BeamROM.Freeze_Mesh()

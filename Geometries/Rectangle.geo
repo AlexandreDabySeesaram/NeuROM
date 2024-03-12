@@ -19,7 +19,7 @@ Line Loop(1) = {1, 2, 3, 4};
 
 // Define the surface
 Plane Surface(1) = {1};
-Recombine Surface{1};
+// Recombine Surface{1};
 
 Physical Surface(100) = {1};
 

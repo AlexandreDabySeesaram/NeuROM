@@ -71,7 +71,10 @@ class Mesh:
         NumberOfBCs = len(Dirichlets)
         for i in range(NumberOfBCs):
             ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
+
             self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
+            self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
             # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
         
@@ -86,8 +89,8 @@ class Mesh:
             mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
                     ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
                     #'- algo delquad'
-            os.system(mesh_command)
-            
+            os.system(mesh_command)        
+         
     
     def ReadMesh(self):
         with open('Geometries/'+self.name_mesh) as mshfile:
@@ -109,6 +112,7 @@ class Mesh:
             line = mshfile.readline()
             self.NElem = int(line)
             self.Connectivity = []
+            self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
             flagType = True
             for elem in range(self.NElem):
                 line = mshfile.readline()
@@ -142,7 +146,20 @@ class Mesh:
                                 self.dim = 2
                                 self.node_per_elem = 6
                         flagType = False  
-                    self.Connectivity.append(ElemList[-self.node_per_elem:])   
+                    self.Connectivity.append(ElemList[-self.node_per_elem:])  
+
+                for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
+                    if ElemList[3] == self.ListOfDirichletsBCsIds[ID_idx]: 
+                        match ElemList[1]:
+                            case 1:
+                                self.type = "2-node bar"
+                                self.dim = 1
+                                self.node_per_elem = 2
+                            case 2:
+                                self.type = "t3: 3-node triangle"
+                                self.dim = 2
+                                self.node_per_elem = 3
+                        self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
             print(f'\n************ MESH READING COMPLETE ************\n\n \
@@ -155,7 +172,9 @@ class Mesh:
         msh_name = 'Geometries/'+self.name_mesh
         meshBeam = meshio.read(msh_name)
         # crete meshio mesh based on points and cells from .msh file
-        mesh = meshio.Mesh(meshBeam.points, meshBeam.cells)
+
+        mesh = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]})
+
         # write to VTK
         meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
 

@@ -205,14 +205,14 @@ class ElementBlock2D_Lin(nn.Module):
 
         refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
         
-        print("x = ", x[2])
-        print("cell id = ", cell_id[2])
-        print("nodes = ", cell_nodes_IDs[2])
-        print("node1_coord = ", node1_coord[2])
-        print("node2_coord = ", node2_coord[2])
-        print("node3_coord = ", node3_coord[2])
-        print()
-        print("refCoord = ", refCoord[2])
+        # print("x = ", x[2])
+        # print("cell id = ", cell_id[2])
+        # print("nodes = ", cell_nodes_IDs[2])
+        # print("node1_coord = ", node1_coord[2])
+        # print("node2_coord = ", node2_coord[2])
+        # print("node3_coord = ", node3_coord[2])
+        # print()
+        # print("refCoord = ", refCoord[2])
         
         out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
 
@@ -235,8 +235,20 @@ class MeshNN(nn.Module):
 
         #self.values = 0.0001*torch.randint(low=-100, high=100, size=(mesh.NNodes,))
         self.values =torch.ones((mesh.NNodes,))
-        self.values[8]=5
+
+        for i in range(len(mesh.ListOfDirichletsBCsValues)):
+            print(mesh.DirichletBoundaryNodes[i])
+            print(mesh.ListOfDirichletsBCsValues[i])
+
+
+            IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+            IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+            print(IDs)
+            print()
+            self.values[IDs] = mesh.ListOfDirichletsBCsValues[i]
         self.nodal_values = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in self.values])
+
+        
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
@@ -244,16 +256,16 @@ class MeshNN(nn.Module):
         self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
         self.Interpolation = InterpolationBlock(mesh.Connectivity)
 
+        print(mesh.Connectivity)
         # Maybe we don't need this anymore
         #self.ElemList = torch.arange(self.NElem)
                 
     def forward(self,x, el_id):
             
         shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values)
-        print("shape_functions = ", shape_functions.shape)
-
+        #print("shape_functions = ", shape_functions.shape)
         interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
-        print("interpol = ", interpol.shape )
+        #print("interpol = ", interpol.shape )
 
         return interpol
 
@@ -261,22 +273,21 @@ class MeshNN(nn.Module):
 
 
 
-
-
 L = 10                                              # Length of the Beam
-np = 3                                             # Number of Nodes in the Mesh
+np = 5                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
-DirichletDictionryList = [  {"Entity": 1, 
-                             "Value": 0, 
-                             "normal":1}, 
-                            {"Entity": 2, 
-                             "Value": 0.0, 
-                             "normal":1}]
+DirichletDictionryList = [  {"Entity": 111, 
+                             "Value": 0},
+                            {"Entity": 112, 
+                             "Value": 2},
+                             {"Entity": 113, 
+                             "Value": 3},
+                             {"Entity": 114, 
+                             "Value": 4}]
 
 # Definition of the space discretisation
-alpha =0.005                                       # Weight for the Mesh regularisation 
 order = 1                                          # Order of the shape functions
 dimension = 2
 
@@ -311,7 +322,7 @@ TrialIDs = torch.tensor(Domain_mesh.GetCellIds(TrialCoordinates),dtype=torch.int
 print("TrialIDs = ", TrialIDs.shape)
 #print(TrialIDs)
 
-DomainModel = MeshNN(Domain_mesh,alpha)                # Create the associated model
+DomainModel = MeshNN(Domain_mesh)                # Create the associated model
 
 u_predicted = DomainModel(TrialCoordinates, TrialIDs) 
 

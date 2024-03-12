@@ -23,6 +23,16 @@ Plane Surface(1) = {1};
 
 Physical Surface(100) = {1};
 
+Physical Line (111) = {1} ;
+Physical Line (112) = {2} ;
+Physical Line (113) = {3} ;
+Physical Line (114) = {4} ;
+
+// Physical Line (112) = {2} ;
+// Physical Line (113) = {3} ;
+// Physical Line (114) = {4} ;
+
+
 
 Mesh.MshFileVersion = 2.2;
 

@@ -22,7 +22,7 @@ mps_device = torch.device("mps")
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 100                                             # Number of Nodes in the Mesh
+np = 10                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -195,7 +195,14 @@ else:
             TrainingRequired = True
             print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
 
+
+
     if TrainingRequired:
+        # prof = torch.profiler.profile(
+        # on_trace_ready=torch.profiler.tensorboard_trace_handler('.logs/NeuROM'),
+        # record_shapes=True)
+        
+        # prof.start()
         if BoolGPU:
             BeamROM.to(mps_device)
             TrialCoordinates = TrialCoordinates.to(mps_device)
@@ -214,11 +221,12 @@ else:
             Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
-
+    
         # Save model
         if SaveModel:
             torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
 
+# prof.stop()
 
 
 #%% Post-processing

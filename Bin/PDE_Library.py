@@ -53,18 +53,31 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
     f_2_E_2 = torch.einsum('ik,jk->ij',f_2,E[1])
     E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
-    # plt.plot(E_tensor[:,10,0].data.view(-1))
-    # plt.savefig('Results/E_tensor.pdf')
-    # plt.clf()
     Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
     u_i = torch.cat(Space_modes,dim=1)  
-    for mode in range(model.n_modes):
-        Para_mode_List = [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
-        if mode == 0:
-            lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(model.n_para)]
-        else:
-            New_mode = Para_mode_List
-            lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(model.n_para)]
+
+
+    # Old for loop
+    # for mode in range(model.n_modes):
+    #     Para_mode_List = [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+    #     if mode == 0:
+    #         lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(model.n_para)]
+    #     else:
+    #         New_mode = Para_mode_List
+    #         lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(model.n_para)]
+ 
+ 
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes)
+        ]
+
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes)], dim=0)
+            for l in range(model.n_para)
+        ]
+
+
     du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
     du_dx = torch.cat(du_dx,dim=1)  
     du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes,lambda_i[0].shape[1]),

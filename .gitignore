@@ -1,4 +1,5 @@
 ToSort/
+.logs/
 __pycache__/
 Drafts/
 .DS_Store

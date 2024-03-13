@@ -14,6 +14,10 @@ import Post.Plots as Pplot
 import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
 
+
+
+import torch.jit as jit
+
 #%% Define the model for a 1D linear Beam mesh
 class LinearBlock(nn.Module):
     """This is the new implementation of the linear block 
@@ -357,19 +361,29 @@ class NeuROM(nn.Module):
     def forward(self,x,mu):
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
         Space_modes = torch.cat(Space_modes,dim=1)
-        for mode in range(self.n_modes):
-            Para_mode_List = [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
-            if mode == 0:
-                # Para_modes = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
-                # Para_modes = [Para_mode_List[l] for l in range(self.n_para)]
-                Para_modes = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(self.n_para)]
-            else:
-                # New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
-                # Para_modes = torch.vstack((Para_modes,New_mode))
-                New_mode = Para_mode_List
-                Para_modes = [torch.vstack((Para_modes[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(self.n_para)]
+        
+
+        # Use list comprehension to create Para_modes
+        Para_mode_Lists = [
+        [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
+        for mode in range(self.n_modes)
+        ]
+
+        Para_modes = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(self.n_modes)], dim=0)
+            for l in range(self.n_para)
+        ]
+ 
+    # Old for loop
+        # for mode in range(self.n_modes):
+        #     Para_mode_List = [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
+        #     if mode == 0:
+        #         Para_modes = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(self.n_para)]
+        #     else:
+        #         New_mode = Para_mode_List
+        #         Para_modes = [torch.vstack((Para_modes[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(self.n_para)]
+
         if len(mu)==1:
-            # out = torch.matmul(Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
             out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
         elif len(mu)==2:
             out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]),

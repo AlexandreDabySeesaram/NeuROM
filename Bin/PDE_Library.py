@@ -29,25 +29,40 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
         else:
             New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
             lambda_i = torch.vstack((lambda_i,New_mode))
+    
+    # u_i = GramSchmidt(u_i)
+    u_i,coef = GramSchmidt_test(u_i)
+
     du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
-    du_dx = torch.cat(du_dx,dim=1)  
+    # du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in u_i.t()]
+    du_dx = torch.cat(du_dx,dim=1) 
+    du_dx = du_dx/coef
     du_dx = torch.matmul(du_dx,lambda_i.view(model.n_modes,lambda_i.shape[1]))
     # Calculate dx
     dx = x[1:] - x[:-1]
 
+    u_debug = torch.matmul(u_i,lambda_i.view(model.n_modes,lambda_i.shape[1]))
     # Vectorised calculation of the integral terms
     int_term1_x = 0.25 * A * dx * (du_dx[1:]**2 + du_dx[:-1]**2)
     int_term1 = torch.einsum('ik,kj->ik',int_term1_x,E)
-    int_term2 = 0.5 * dx * (u[1:] * b[1:] + u[:-1] * b[:-1])
+    # int_term2 = 0.5 * dx * (u[1:] * b[1:] + u[:-1] * b[:-1])
+    int_term2 = 0.5 * dx * (u_debug[1:] * b[1:] + u_debug[:-1] * b[:-1])
 
     # Vectorised calculation of the integral using the trapezoidal rule
     integral = torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E.shape[0])
+    # integral = torch.abs(torch.norm(u_i)-1)+torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E.shape[0])
 
     return integral
 
 def EnhanceGramSchmidt(B,L,L2):
-
-
+    """This is a modified version of the Gram-Schmidt algorithm that allows to output the orth(no)gonal basis while modifiying the parameter modes so that the full field remains unchanged
+     Args:
+        B basis to orthonormalize
+        L First parameter modes
+        L2 Second parameter modes
+    Returns: 
+        orth_basis, L_updated, L2_updated
+    """
     def projection(u, v):
         if u.norm() > 1e-6:
             return ((v * u).sum() / (u * u).sum()), ((v * u).sum() / (u * u).sum()) * u
@@ -80,6 +95,12 @@ def EnhanceGramSchmidt(B,L,L2):
     return orth_basis, L_updated, L2_updated
 
 def GramSchmidt(B):
+    """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
+     Args:
+        B basis to orthonormalize
+    Returns: 
+        orth_basis
+    """    
     def projection(u, v):
         if u.norm() > 1e-6:
             return ((v * u).sum() / (u * u).sum()) * u
@@ -95,8 +116,63 @@ def GramSchmidt(B):
             uj = orth_basis[:, j].clone()
             un = un + projection(uj, vn)
         orth_basis[:, n] = vn - un
+    # If we want the basis to be orthonormal
+    # for n in range(n_mode):
+    #     un = orth_basis[:, n].clone()
+    #     if un.norm()>1e-6:
+    #         orth_basis[:, n] = un / un.norm()
+    #     else:
+    #         orth_basis[:, n] = un * 0
+
+    ##########Debug
+    # orth_basis = orth_basis/100
+    # print(torch.norm(orth_basis))
+    orth_basis = orth_basis/(torch.norm(orth_basis))
+
+    ###############
     return orth_basis
 
+
+def GramSchmidt_test(B):
+    """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
+     Args:
+        B basis to orthonormalize
+    Returns: 
+        orth_basis
+    """    
+    def projection(u, v):
+        if u.norm() > 1e-6:
+            return ((v * u).sum() / (u * u).sum()) * u
+        else:
+            return 0 * u
+    n_mode = B.shape[1]
+    orth_basis = torch.zeros_like(B, device=B.device)
+    orth_basis[:, 0] = B[:, 0].clone()
+    for n in range(1, n_mode):
+        vn = B[:,n].clone()
+        un = 0
+        for j in range(0, n):
+            uj = orth_basis[:, j].clone()
+            un = un + projection(uj, vn)
+        orth_basis[:, n] = vn - un
+    # If we want the basis to be orthonormal
+    # for n in range(n_mode):
+    #     un = orth_basis[:, n].clone()
+    #     if un.norm()>1e-6:
+    #         orth_basis[:, n] = un / un.norm()
+    #     else:
+    #         orth_basis[:, n] = un * 0
+
+    ##########Debug
+    # orth_basis = orth_basis/1000
+    # print(torch.norm(orth_basis))
+    coef = (torch.norm(orth_basis))
+    # coef = 100
+
+    orth_basis = orth_basis/coef
+
+    ###############
+    return orth_basis, coef
 
 
 
@@ -146,10 +222,11 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
         #### Without 3rd order /!\ Only if orthogonal u_i !!!
         # Gram-Schmidt
         # u_i, lambda_i[0],lambda_i[1] = EnhanceGramSchmidt(u_i,lambda_i[0],lambda_i[1])
-
+        u_i = GramSchmidt(u_i)
 
         # Computed after the orthogonalisaton of the u_is
-        du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
+        # du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
+        du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in u_i.t()]
         du_dx = torch.cat(du_dx,dim=1) 
 
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])

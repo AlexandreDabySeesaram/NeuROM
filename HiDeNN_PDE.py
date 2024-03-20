@@ -158,6 +158,7 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
+        # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
         self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).clone().detach()
@@ -374,15 +375,6 @@ class NeuROM(nn.Module):
             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(self.n_modes)], dim=0)
             for l in range(self.n_para)
         ]
- 
-    # Old for loop
-        # for mode in range(self.n_modes):
-        #     Para_mode_List = [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
-        #     if mode == 0:
-        #         Para_modes = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(self.n_para)]
-        #     else:
-        #         New_mode = Para_mode_List
-        #         Para_modes = [torch.vstack((Para_modes[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(self.n_para)]
 
         if len(mu)==1:
             out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))

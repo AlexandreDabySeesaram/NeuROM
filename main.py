@@ -59,11 +59,11 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 250                                    # Maximum number of iterations for the training stage
+n_epochs = 3000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
-BiPara = True                                       # Enable 2 Young modulus
+BiPara = False                                       # Enable 2 Young modulus
 Visualisatoin_only = False
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
@@ -81,7 +81,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 3
+n_modes = 1
 mu_min = 100
 mu_max = 200
 N_mu = 10

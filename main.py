@@ -59,7 +59,7 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 3000                                    # Maximum number of iterations for the training stage
+n_epochs = 250                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -196,7 +196,6 @@ else:
             print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
 
 
-
     if TrainingRequired:
         # prof = torch.profiler.profile(
         # on_trace_ready=torch.profiler.tensorboard_trace_handler('.logs/NeuROM'),
@@ -251,7 +250,7 @@ import matplotlib.pyplot as plt
 
 
 if Visualisatoin_only:
-    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+    TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], 
                                     dtype=torch.float32, requires_grad=True)
     TrialPara = torch.linspace(mu_min,mu_max,50, 
                                     dtype=torch.float32, requires_grad=True)

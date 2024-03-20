@@ -45,50 +45,7 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
 
     return integral
 
-def EnhanceGramSchmidt(B,L):
-
-    import copy
-    lambda_2 = copy.deepcopy(L.data)
-
-    # orth_basis = torch.zeros(B.shape)
-    # norm = torch.norm(B[:,0])
-    # orth_basis[:,0] = (B[:,0])/norm
-
-    # lambda_updated = torch.zeros(L[:,:,0,0].shape)
-    # lambda_updated[0,:] = L[0,:,0,0].clone()*norm
-
-    # for m in range(1,B.shape[1]):
-    #     v = B[:,m]    
-    #     lambda_m = L[m,:,0,0]
-    #     proj = torch.einsum('k,ki,li->l',v,orth_basis,orth_basis)
-    #     norm = torch.norm(v - proj)
-    #     if norm <1e-6: # to remove the normalisation of noise
-    #         orth_basis[:,m] = 0*(v - proj)
-    #         norm = 0
-    #     else:
-    #         orth_basis[:,m] = (v - proj)/norm
-    #     proj_coef = torch.einsum('k,ki->i',v,orth_basis)
-    #     lambda_updated = lambda_updated + proj_coef.unsqueeze(dim=1)*lambda_m
-    #     lambda_m = lambda_m*norm
-    #     lambda_updated[m,:] = lambda_m
-
-# # Debug without vectorisation (for some reason the impact of normalising noise is not important here)
-
-    orth_basis2 = torch.zeros(B.shape)
-    norm = torch.norm(B[:,0])
-    orth_basis2[:,0] = (B[:,0])/norm
-    lambda_2[0,:,0,0] = lambda_2[0,:,0,0]*norm
-    for m in range(1,B.shape[1]):
-        v = B[:,m]    
-        proj = 0
-        for i in range(m):
-            proj += (orth_basis2[:,i]@v)*orth_basis2[:,i]
-            proj_coef = (orth_basis2[:,i]@v)
-            lambda_2[i,:,0,0] += proj_coef*lambda_2[m,:,0,0]
-
-        norm = torch.norm(v - proj)
-        orth_basis2[:,m] = (v - proj)/norm
-        lambda_2[m,:,0,0] = lambda_2[m,:,0,0]*norm
+def EnhanceGramSchmidt(B,L,L2):
 
 
     def projection(u, v):
@@ -100,32 +57,45 @@ def EnhanceGramSchmidt(B,L):
     orth_basis = torch.zeros_like(B, device=B.device)
     orth_basis[:, 0] = B[:, 0].clone()
     L_correction_List = []
+    L2_correction_List = []
     for n in range(1, n_mode):
         vn = B[:,n].clone()
         un = 0
         L_correction = torch.zeros_like(L, device=B.device)
+        L2_correction = torch.zeros_like(L, device=B.device)
         L_n = L[n,:,0,0].clone()
+        L2_n = L[n,:,0,0].clone()
         for j in range(0, n):
             uj = orth_basis[:, j].clone()
             coef, proj = projection(uj, vn)
             un = un + proj
             L_correction[j,:,0,0] = coef*L_n
+            L2_correction[j,:,0,0] = coef*L2_n
         L_correction_List.append(L_correction) 
+        L2_correction_List.append(L2_correction) 
         orth_basis[:, n] = vn - un
     L_updated = L.clone()+sum(L_correction_List)
+    L2_updated = L2.clone()+sum(L2_correction_List)
 
+    return orth_basis, L_updated, L2_updated
 
-    # If we want the basis to be orthonormal
-    # for n in range(n_mode):
-    #     un = orth_basis[:, n].clone()
-    #     if un.norm()>1e-6:
-    #         orth_basis[:, n] = un / un.norm()
-    #     else:
-    #         orth_basis[:, n] = un * 0
-    return orth_basis, L_updated
-    # return orth_basis,lambda_updated
-
-
+def GramSchmidt(B):
+    def projection(u, v):
+        if u.norm() > 1e-6:
+            return ((v * u).sum() / (u * u).sum()) * u
+        else:
+            return 0 * u
+    n_mode = B.shape[1]
+    orth_basis = torch.zeros_like(B, device=B.device)
+    orth_basis[:, 0] = B[:, 0].clone()
+    for n in range(1, n_mode):
+        vn = B[:,n].clone()
+        un = 0
+        for j in range(0, n):
+            uj = orth_basis[:, j].clone()
+            un = un + projection(uj, vn)
+        orth_basis[:, n] = vn - un
+    return orth_basis
 
 
 
@@ -152,7 +122,10 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
     du_dx = torch.cat(du_dx,dim=1)  
 
-    TensorDecomposition = False                 # Enables using tensor decomposition as oppose to computing the full-order tensors
+    # Calculate dx
+    dx = x[1:] - x[:-1]
+
+    TensorDecomposition = True                 # Enables using tensor decomposition as oppose to computing the full-order tensors
     if not TensorDecomposition:
         # # Intermediate 3rd order
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
@@ -160,8 +133,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
         E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
         du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes,lambda_i[0].shape[1]),
                                 lambda_i[1].view(model.n_modes,lambda_i[1].shape[1]))
-        # Calculate dx
-        dx = x[1:] - x[:-1]
+
         du_dx_E_tensor = (du_dx**2)*E_tensor
 
         # Vectorised calculation of the integral terms
@@ -173,9 +145,13 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     else:
         #### Without 3rd order /!\ Only if orthogonal u_i !!!
         # Gram-Schmidt
-        u_i, lambda_i[0] = EnhanceGramSchmidt(u_i,lambda_i[0])
-        # Calculate dx
-        dx = x[1:] - x[:-1]
+        # u_i, lambda_i[0],lambda_i[1] = EnhanceGramSchmidt(u_i,lambda_i[0],lambda_i[1])
+
+
+        # Computed after the orthogonalisaton of the u_is
+        du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
+        du_dx = torch.cat(du_dx,dim=1) 
+
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
         f_2_E_2 = torch.einsum('ik,jk->ij',f_2,E[1])
         term1_contributions = 0.25 * A *(

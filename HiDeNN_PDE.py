@@ -4,7 +4,7 @@ import time
 import Bin.Pre_processing as pre
 # Import mechanical functions
 from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
-        Derivative, AnalyticGradientSolution, AnalyticSolution
+        Derivative, AnalyticGradientSolution, AnalyticSolution, GramSchmidt
 # Import torch librairies
 import torch
 import torch.nn as nn
@@ -362,6 +362,7 @@ class NeuROM(nn.Module):
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
         Space_modes = torch.cat(Space_modes,dim=1)
         
+        Space_modes = GramSchmidt(Space_modes)
 
         # Use list comprehension to create Para_modes
         Para_mode_Lists = [

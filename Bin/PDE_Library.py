@@ -156,3 +156,30 @@ def MixedFormulation_Loss(A, E, u, du, x, b):
     #assert (res_eq.shape) == x.shape
 
     return torch.mean(res_eq), torch.mean(res_constit)
+
+
+def Stress(ep_11, ep_22, ep_12, lmbda, mu):
+    tr_epsilon = ep_11 + ep_22
+    return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
+
+def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
+
+    du = torch.autograd.grad(u_pred, x, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
+    dv = torch.autograd.grad(v_pred, x, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
+    
+    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+
+    d_s11 = torch.autograd.grad(s11_pred, x, grad_outputs=torch.ones_like(s11_pred), create_graph=True)[0]
+    d_s22 = torch.autograd.grad(s22_pred, x, grad_outputs=torch.ones_like(s22_pred), create_graph=True)[0]
+    d_s12 = torch.autograd.grad(s12_pred, x, grad_outputs=torch.ones_like(s12_pred), create_graph=True)[0]
+
+    
+    res_eq = (d_s11[:,0] + d_s12[:,1])**2 + (d_s12[:,0] + d_s22[:,1])**2
+    res_constit = (s_11 - s11_pred)**2 + (s_22 - s22_pred)**2 + (s_12 - s12_pred)**2
+
+
+    assert sum(res_constit.shape) == x.shape[0]
+    assert sum(res_eq.shape) == x.shape[0]
+
+    return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
+    

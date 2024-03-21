@@ -10,10 +10,13 @@ plt.rcParams.update({
 import numpy as np
 import matplotlib
 import torch
+from scipy import ndimage
+
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "13"
 
+from Bin.PDE_Library import Stress
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
@@ -428,15 +431,133 @@ def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialC
     plt.clf()
 
 
-def Plot2Dresults(values):
-
-    img = torch.reshape(values, (500, 500))
-    plt.imshow(img)
+def Plot2Dresults(u_predicted, n_train_x, n_train_y, name):
 
 
-    #plt.xlabel(r'$\underline{x}$ [m]')
-    #plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-    #plt.legend(loc="upper left")
+    fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (10,10), dpi=50)
 
-    plt.savefig('Results/2D_val.pdf', transparent=True)  
+    img = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb1 = fig.colorbar(img0, ax = ax[0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[1], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+
+    plt.set_cmap("coolwarm") 
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+
+    plt.close()
+
+'''
+def Plot2Dresults_Stress(e11, e22, e12, lmbda, mu, n_train_x, n_train_y, name):
+    s_11, s_22, s_12 = Stress(e11, e22, e12, lmbda, mu)
+
+
+    fig, ax = plt.subplots(1, 3, layout="constrained", figsize = (14,10), dpi=50)
+
+    img = np.reshape(s_11.detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(s_22.detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(s_12.detach(), (n_train_x, n_train_y), order='C') 
+    img2 = ax[2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    fig.colorbar(img0, ax = ax[0], location="right", pad=0.2, shrink=0.8)
+    fig.colorbar(img1, ax = ax[1], location="right", pad=0.2, shrink=0.8)
+    fig.colorbar(img2, ax = ax[2], location="right", pad=0.2, shrink=0.8)
+
+    fig.savefig('Results/2D_val_'+name+'.pdf', transparent=True) 
+
+    plt.close()
+'''
+def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, n_train_x, n_train_y, name):
+
+    fig, ax = plt.subplots(2, 3, layout="constrained", figsize = (14,20), dpi=50)
+
+
+    img = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0,0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[0,1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[2,:].detach(), (n_train_x, n_train_y), order='C') 
+    img2 = ax[0,2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb1 = fig.colorbar(img0, ax = ax[0,0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[0,1], location="right", pad=0.2, shrink=0.8)
+    cb3 = fig.colorbar(img2, ax = ax[0,2], location="right", pad=0.2, shrink=0.8)
+
+
+    img = np.reshape(e11.detach(), (n_train_x, n_train_y), order='C') 
+    img3 = ax[1,0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(e22.detach(), (n_train_x, n_train_y), order='C') 
+    img4 = ax[1,1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(e12.detach(), (n_train_x, n_train_y), order='C') 
+    img5 = ax[1,2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb4 = fig.colorbar(img3, ax = ax[1,0], location="right", pad=0.2, shrink=0.8)
+    cb5 = fig.colorbar(img4, ax = ax[1,1], location="right", pad=0.2, shrink=0.8)
+    cb6 = fig.colorbar(img5, ax = ax[1,2], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+    cb3.ax.tick_params(labelsize=tick_font_size)
+    cb4.ax.tick_params(labelsize=tick_font_size)
+    cb5.ax.tick_params(labelsize=tick_font_size)
+    cb6.ax.tick_params(labelsize=tick_font_size)
+
+    plt.set_cmap("coolwarm") 
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+    plt.close()
+
+
+def Plot2DLoss(loss):
+
+    plt.plot(loss[0],color='#F39C12', label = "$\mathrm{Loss_{PDE}}$")
+    plt.plot(loss[1],color='#741B47', label = "$\mathrm{Loss_{Constitutive}}$")
+
+    plt.yscale('log')
+    plt.legend()
+    plt.savefig('Results/2D_loss.pdf', transparent=True) 
+    plt.clf()
+
+def Plot1DSection(u_predicted, n_train_x, n_train_y, name):
+
+    u = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    u = ndimage.rotate(u, 90)
+
+    v = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    v = ndimage.rotate(v, 90)
+
+    rows = u.shape[0]
+    cols = u.shape[1]
+
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(cols/4)], label = "Section: x = 1/4Lx")
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(cols/2)], label = "Section: x = 1/2Lx")
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(3*cols/4)], label = "Section: x = 3/4Lx")
+
+    plt.legend()
+    plt.savefig('Results/1D_Section_x_'+name+'.pdf', transparent=True) 
+    plt.clf()
+
+    plt.plot(np.linspace(0,10,cols), u[int(rows/4),:], label = "Section: y = 3/4Ly")
+    plt.plot(np.linspace(0,10,cols), u[int(rows/2),:], label = "Section: y = 1/2Ly")
+    plt.plot(np.linspace(0,10,cols), u[int(3*rows/4),:], label = "Section: y = 1/4Ly")
+
+    plt.legend()
+    plt.savefig('Results/1D_Section_y_'+name+'.pdf', transparent=True) 
     plt.clf()

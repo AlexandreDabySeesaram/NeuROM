@@ -5,32 +5,33 @@ Mesh.Algorithm = 8;
 // Define the square geometry
 Point(1) = {0, 0, 0, dh};
 Point(2) = {L, 0, 0, dh};
-Point(3) = {L, L, 0, dh};
-Point(4) = {0, L, 0, dh};
+Point(3) = {L, 5*L, 0, dh};
+Point(4) = {0, 5*L, 0, dh};
 
 // Define lines connecting the points to form the square
-Line(1) = {1, 2};
-Line(2) = {2, 3};
-Line(3) = {3, 4};
-Line(4) = {4, 1};
+Line(6) = {1, 2};
+Line(7) = {2, 3};
+Line(8) = {3, 4};
+Line(9) = {4, 1};
 
 // Define the surface by creating a loop from the lines
-Line Loop(1) = {1, 2, 3, 4};
+Line Loop(10) = {6,7,8,9};
 
 // Define the surface
-Plane Surface(1) = {1};
+Plane Surface(11) = {10};
 // Recombine Surface{1};
 
-Physical Surface(100) = {1};
+Physical Surface(100) = {11};
 
-Physical Line (111) = {1} ;
-Physical Line (112) = {2} ;
-Physical Line (113) = {3} ;
-Physical Line (114) = {4} ;
+Physical Line (111) = {6} ;
+Physical Line (112) = {7} ;
+Physical Line (113) = {8} ;
+Physical Line (114) = {9} ;
 
-// Physical Line (112) = {2} ;
-// Physical Line (113) = {3} ;
-// Physical Line (114) = {4} ;
+//Physical Point (150) = {1}
+//Physical Point (151) = {2}
+//Physical Point (152) = {3}
+//Physical Point (153) = {4}
 
 
 

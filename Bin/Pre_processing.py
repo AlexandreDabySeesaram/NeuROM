@@ -72,9 +72,12 @@ class Mesh:
         for i in range(NumberOfBCs):
             ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
             ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
 
             self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
             self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
+            self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
+
             # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
         
@@ -174,9 +177,14 @@ class Mesh:
         # crete meshio mesh based on points and cells from .msh file
 
         mesh = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]})
-
         # write to VTK
         meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+
+        mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
+        meshio.write(msh_name[0:-4]+".xml", mesh)
+
+
+
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()

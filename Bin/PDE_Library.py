@@ -193,7 +193,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     # Calculate dx
     dx = x[1:] - x[:-1]
 
-    TensorDecomposition = False                 # Enables using tensor decomposition as oppose to computing the full-order tensors
+    TensorDecomposition = True                 # Enables using tensor decomposition as oppose to computing the full-order tensors
     if not TensorDecomposition:
         # # Intermediate 3rd order
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
@@ -221,14 +221,20 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
         du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in u_i.t()]
         du_dx = torch.cat(du_dx,dim=1) 
 
-        f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
-        f_2_E_2 = torch.einsum('ik,jk->ij',f_2,E[1])
+        F = torch.cat((f_1,f_2),dim = 1)
+        E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
+        E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
+        # E_tensor2 = torch.einsum('ie,je,le->ijl',F,E1,E2)        
+
+        # QuadSum2 = torch.einsum('ik,jk,lk,iq,jq,lq->',A,B,C,A,B,C)
+
+
         term1_contributions = 0.25 * A *(
-            torch.einsum('ip,i...,...im,mp...,mq...->',f_1_E_1[1:],dx, du_dx[1:]**2, lambda_i[0][:]**2, lambda_i[1][:]**2) +
-            torch.einsum('iq,i...,...im,mp...,mq...->',f_2_E_2[1:],dx, du_dx[1:]**2, lambda_i[0][:]**2, lambda_i[1][:]**2) +
-                    torch.einsum('ip,i...,...im,mp...,mq...->',f_1_E_1[:-1],dx, du_dx[:-1]**2, lambda_i[0][:]**2, lambda_i[1][:]**2) +
-            torch.einsum('iq,i...,...im,mp...,mq...->',f_2_E_2[:-1],dx, du_dx[:-1]**2, lambda_i[0][:]**2, lambda_i[1][:]**2) 
-        )
+            torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
+            torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
+    )
+
+
         term2_contributions = 0.5 * (torch.einsum('im...,mj...,mk...,i...,i...->',u_i[1:],lambda_i[0][:],lambda_i[1][:],dx,b[1:]) +
            torch.einsum('im...,mj...,mk...,i...,i...->',u_i[:-1],lambda_i[0][:],lambda_i[1][:],dx,b[:-1]) )
         integral = (term1_contributions-term2_contributions)/(E[0].shape[0]*E[1].shape[0])

@@ -201,15 +201,23 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
         uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data,u0,uL)
+        Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]
+        Nodal_coordinates = torch.cat(Nodal_coordinates)
+        u_analytical_E_discrete = AnalyticSolution(A,E,Nodal_coordinates.data,u0,uL)
         E = torch.tensor([E])
         E = E[:,None] # Add axis so that dimensions match
         u_E = BeamROM(TrialCoordinates,[E])
+        u_NN_discrete = BeamROM(Nodal_coordinates,[E])
         error_tensor = u_analytical_E - u_E
+        error_tensor_discrete = u_analytical_E_discrete - u_NN_discrete
         # Reative error in percentage
         error_norm = 100*torch.sqrt(torch.sum(error_tensor*error_tensor))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
         error_scientific_notation = f"{error_norm:.2e}"
+
+        error_norm_discrete = 100*torch.sqrt(torch.sum(error_tensor_discrete*error_tensor_discrete))/torch.sqrt(torch.sum(u_analytical_E_discrete*u_analytical_E_discrete))
+        error_scientific_notation_discrete = f"{error_norm_discrete:.2e}"
         # error_str = str(error_norm.item())
-        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'
+        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'+' Discrete: '+error_scientific_notation_discrete+ '$\%$'
         # Plot the function
         plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
         plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')

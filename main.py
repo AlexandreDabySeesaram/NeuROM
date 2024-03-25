@@ -63,7 +63,7 @@ n_epochs = 3000                                    # Maximum number of iteration
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
-BiPara = False                                       # Enable 2 Young modulus
+BiPara = True                                       # Enable 2 Young modulus
 Visualisatoin_only = False
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
@@ -81,7 +81,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 1
+n_modes = 2
 mu_min = 100
 mu_max = 200
 N_mu = 10

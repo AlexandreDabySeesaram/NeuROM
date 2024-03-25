@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+
 def RHS(x):
     """Defines the right hand side (RHS) of the equation (the body force)"""
     b = -(4*np.pi**2*(x-2.5)**2-2*np.pi)/(torch.exp(np.pi*(x-2.5)**2)) \
@@ -30,13 +31,15 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
             New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
             lambda_i = torch.vstack((lambda_i,New_mode))
     
-    # u_i = GramSchmidt(u_i)
-    u_i,coef = GramSchmidt_test(u_i)
+    # u_i,coef = GramSchmidt_test(u_i)
 
     du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
     # du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in u_i.t()]
     du_dx = torch.cat(du_dx,dim=1) 
-    du_dx = du_dx/coef
+
+    # u_i,du_dx = ModifiedGramSchmidt(u_i,du_dx)
+
+    # du_dx = du_dx/coef
     du_dx = torch.matmul(du_dx,lambda_i.view(model.n_modes,lambda_i.shape[1]))
     # Calculate dx
     dx = x[1:] - x[:-1]
@@ -54,14 +57,15 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
 
     return integral
 
-def EnhanceGramSchmidt(B,L,L2):
+def EnhanceGramSchmidt(B,L):
     """This is a modified version of the Gram-Schmidt algorithm that allows to output the orth(no)gonal basis while modifiying the parameter modes so that the full field remains unchanged
+     WARNING: Works only for a single parameter as extra-coordinates
+     
      Args:
         B basis to orthonormalize
         L First parameter modes
-        L2 Second parameter modes
     Returns: 
-        orth_basis, L_updated, L2_updated
+        orth_basis, L_updated
     """
     def projection(u, v):
         if u.norm() > 1e-6:
@@ -72,27 +76,22 @@ def EnhanceGramSchmidt(B,L,L2):
     orth_basis = torch.zeros_like(B, device=B.device)
     orth_basis[:, 0] = B[:, 0].clone()
     L_correction_List = []
-    L2_correction_List = []
     for n in range(1, n_mode):
         vn = B[:,n].clone()
         un = 0
         L_correction = torch.zeros_like(L, device=B.device)
-        L2_correction = torch.zeros_like(L, device=B.device)
         L_n = L[n,:,0,0].clone()
-        L2_n = L[n,:,0,0].clone()
         for j in range(0, n):
             uj = orth_basis[:, j].clone()
             coef, proj = projection(uj, vn)
             un = un + proj
             L_correction[j,:,0,0] = coef*L_n
-            L2_correction[j,:,0,0] = coef*L2_n
         L_correction_List.append(L_correction) 
-        L2_correction_List.append(L2_correction) 
         orth_basis[:, n] = vn - un
     L_updated = L.clone()+sum(L_correction_List)
-    L2_updated = L2.clone()+sum(L2_correction_List)
+    return orth_basis, L_updated
 
-    return orth_basis, L_updated, L2_updated
+
 
 def GramSchmidt(B):
     """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
@@ -117,19 +116,13 @@ def GramSchmidt(B):
             un = un + projection(uj, vn)
         orth_basis[:, n] = vn - un
     # If we want the basis to be orthonormal
-    # for n in range(n_mode):
-    #     un = orth_basis[:, n].clone()
-    #     if un.norm()>1e-6:
-    #         orth_basis[:, n] = un / un.norm()
-    #     else:
-    #         orth_basis[:, n] = un * 0
+    for n in range(n_mode):
+        un = orth_basis[:, n].clone()
+        if un.norm()>1e-6:
+            orth_basis[:, n] = un / un.norm()
+        else:
+            orth_basis[:, n] = un * 0
 
-    ##########Debug
-    # orth_basis = orth_basis/100
-    # print(torch.norm(orth_basis))
-    orth_basis = orth_basis/(torch.norm(orth_basis))
-
-    ###############
     return orth_basis
 
 
@@ -175,7 +168,6 @@ def GramSchmidt_test(B):
     return orth_basis, coef
 
 
-
 def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     with torch.no_grad(): #No derivatino of heavy side
@@ -201,7 +193,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
     # Calculate dx
     dx = x[1:] - x[:-1]
 
-    TensorDecomposition = True                 # Enables using tensor decomposition as oppose to computing the full-order tensors
+    TensorDecomposition = False                 # Enables using tensor decomposition as oppose to computing the full-order tensors
     if not TensorDecomposition:
         # # Intermediate 3rd order
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
@@ -222,7 +214,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
         #### Without 3rd order /!\ Only if orthogonal u_i !!!
         # Gram-Schmidt
         # u_i, lambda_i[0],lambda_i[1] = EnhanceGramSchmidt(u_i,lambda_i[0],lambda_i[1])
-        u_i = GramSchmidt(u_i)
+        # u_i = GramSchmidt(u_i)
 
         # Computed after the orthogonalisaton of the u_is
         # du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
@@ -288,7 +280,6 @@ def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
         + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out+lin
-
 
 def AnalyticBiParametricSolution(A,E,x,u0=0,uL=0):
     E1 = E[0] 

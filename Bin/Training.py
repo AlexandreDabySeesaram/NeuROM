@@ -758,7 +758,7 @@ def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n
     return Model_u, Model_du
 
 
-def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train):
+def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train, loss):
 
     evaluation_time = 0
     loss_time = 0
@@ -773,8 +773,6 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
     loss_current = 1
     loss_min = 1
     epoch = 0
-
-    loss = [[],[]]
 
     while epoch<n_epochs: #and (loss_counter<1 or loss_current > 1.0e-3): #and stagnancy_counter < 50 :
 
@@ -836,11 +834,11 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             print()
             print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
             print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
-            print("__________________________________________")
+            print("     ...............................")
 
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 200 == 0:
             l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
-
+            print("     _______________________________")
 
         epoch = epoch+1
 

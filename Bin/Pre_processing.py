@@ -158,31 +158,40 @@ class Mesh:
                                 self.type = "2-node bar"
                                 self.dim = 1
                                 self.node_per_elem = 2
-                            case 2:
-                                self.type = "t3: 3-node triangle"
-                                self.dim = 2
+                            case 8:
+                                self.type = "3-node quadratic bar"
+                                self.dim = 1
                                 self.node_per_elem = 3
                         self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
+
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
+            np.save( 'Geometries/'+ self.name_mesh[:-4]+"_all_nodes.npy", np.array(self.Nodes))
+
             print(f'\n************ MESH READING COMPLETE ************\n\n \
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
 * Number of Elements:       {self.Connectivity.shape[0]}\n \
 * Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
+
     
-    def ReadMeshVtk(self):
+    def ExportMeshVtk(self):
         msh_name = 'Geometries/'+self.name_mesh
         meshBeam = meshio.read(msh_name)
         # crete meshio mesh based on points and cells from .msh file
 
-        mesh = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]})
-        # write to VTK
-        meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+        if self.order =='1':
+            mesh = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]})
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+            mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
+            meshio.write(msh_name[0:-4]+".xml", mesh)
 
-        mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
-        meshio.write(msh_name[0:-4]+".xml", mesh)
+        elif self.order =='2':
+            mesh = meshio.Mesh(meshBeam.points, {"triangle6":meshBeam.cells_dict["triangle6"]})
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
 
+            mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
+            meshio.write(msh_name[0:-4]+".xml", mesh)
 
 
 

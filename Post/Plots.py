@@ -524,6 +524,33 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, n_train_x, n_train_y, n
     fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
     plt.close()
 
+def Plot2Dresults_Derivative_Short(u_predicted, n_train_x, n_train_y, name):
+
+    fig, ax = plt.subplots(1, 3, layout="constrained", figsize = (10,10), dpi=50)
+
+
+    img = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[2,:].detach(), (n_train_x, n_train_y), order='C') 
+    img2 = ax[2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb1 = fig.colorbar(img0, ax = ax[0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[1], location="right", pad=0.2, shrink=0.8)
+    cb3 = fig.colorbar(img2, ax = ax[2], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+    cb3.ax.tick_params(labelsize=tick_font_size)
+
+    plt.set_cmap("coolwarm") 
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+    plt.close()
 
 def Plot2DLoss(loss):
 

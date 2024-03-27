@@ -211,30 +211,15 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
         # Vectorised calculation of the integral using the trapezoidal rule
         integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
     else:
-        #### Without 3rd order /!\ Only if orthogonal u_i !!!
-        # Gram-Schmidt
-        # u_i, lambda_i[0],lambda_i[1] = EnhanceGramSchmidt(u_i,lambda_i[0],lambda_i[1])
-        # u_i = GramSchmidt(u_i)
-
-        # Computed after the orthogonalisaton of the u_is
-        # du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
-        du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in u_i.t()]
-        du_dx = torch.cat(du_dx,dim=1) 
 
         F = torch.cat((f_1,f_2),dim = 1)
         E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
         E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
-        # E_tensor2 = torch.einsum('ie,je,le->ijl',F,E1,E2)        
-
-        # QuadSum2 = torch.einsum('ik,jk,lk,iq,jq,lq->',A,B,C,A,B,C)
-
 
         term1_contributions = 0.25 * A *(
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
     )
-
-
         term2_contributions = 0.5 * (torch.einsum('im...,mj...,mk...,i...,i...->',u_i[1:],lambda_i[0][:],lambda_i[1][:],dx,b[1:]) +
            torch.einsum('im...,mj...,mk...,i...,i...->',u_i[:-1],lambda_i[0][:],lambda_i[1][:],dx,b[:-1]) )
         integral = (term1_contributions-term2_contributions)/(E[0].shape[0]*E[1].shape[0])

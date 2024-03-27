@@ -81,7 +81,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 2
+n_modes = 4
 mu_min = 100
 mu_max = 200
 N_mu = 10

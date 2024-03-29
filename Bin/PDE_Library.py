@@ -168,9 +168,9 @@ def GramSchmidt_test(B):
     return orth_basis, coef
 
 
-def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
+def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
-    with torch.no_grad(): #No derivatino of heavy side
+    with torch.no_grad(): #No derivatino of the heavyside function
         f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
         f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
 
@@ -187,6 +187,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, u, x, b):
             for l in range(model.n_para)
         ]
 
+    # Compute the gradient space modes from the primal field space modes
     du_dx = [torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True)[0] for u_x in Space_modes]
     du_dx = torch.cat(du_dx,dim=1)  
 

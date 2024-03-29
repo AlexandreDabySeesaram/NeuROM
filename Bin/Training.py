@@ -293,7 +293,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         if not BiPara:
             loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
         else:
-            loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+            loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,TrialCoordinates,RHS(TrialCoordinates))
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
@@ -377,7 +377,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
             if not BiPara:
                 loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
             else:
-                loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+                loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,TrialCoordinates,RHS(TrialCoordinates))
             loss.backward()
             return loss
         optim.step(closure)

@@ -174,6 +174,17 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
         f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
 
+    ###### Enables orthogonalisation process #######
+    Orthgonality = False                                    # Enable othogonality constraint of the space modes
+    if Orthgonality and model.training:
+        Space_modes_nodal = [torch.unsqueeze(model.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(model.n_modes)]
+        Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
+        Space_modes_nodal = GramSchmidt(Space_modes_nodal)
+        for mode in range(model.n_modes):
+            model.Space_modes[mode].InterpoLayer_uu.weight.data = Space_modes_nodal[:,mode]
+
+      
+
     Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
     u_i = torch.cat(Space_modes,dim=1)  
 

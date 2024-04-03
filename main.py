@@ -59,7 +59,7 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 3000                                    # Maximum number of iterations for the training stage
+n_epochs = 10000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -81,7 +81,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 4
+n_modes = 5
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -202,6 +202,7 @@ else:
         # record_shapes=True)
         
         # prof.start()
+        BeamROM.train()
         if BoolGPU:
             BeamROM.to(mps_device)
             TrialCoordinates = TrialCoordinates.to(mps_device)
@@ -219,7 +220,7 @@ else:
             optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
             Loss_vect, L2_error, training_time =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
-
+        BeamROM.eval()
     
         # Save model
         if SaveModel:

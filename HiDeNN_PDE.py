@@ -360,8 +360,8 @@ class NeuROM(nn.Module):
             self.Para_modes[i].UnFreeze_FEM()  
 
     def forward(self,x,mu):
-        Orthgonality = False                                    # Enable othogonality constraint of the space modes
-        if Orthgonality:
+        Orthgonality = True                                    # Enable othogonality constraint of the space modes
+        if Orthgonality and self.training:
             Space_modes_nodal = [torch.unsqueeze(self.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(self.n_modes)]
             Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
             Space_modes_nodal = GramSchmidt(Space_modes_nodal)

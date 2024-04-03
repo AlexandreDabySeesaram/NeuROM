@@ -286,7 +286,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     epoch = 0
     loss_counter = 0
     save_time = 0
-    loss_decrease_c = 1e-7 # Criterion of stagnation for the loss
+    loss_decrease_c = 1e-6 # Criterion of stagnation for the loss
     stagnancy_counter = 0
     while epoch<n_epochs and loss_counter<500 and stagnancy_counter<100:
         # Compute loss

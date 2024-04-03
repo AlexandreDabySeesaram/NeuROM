@@ -363,6 +363,7 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
                     line_search_fn="strong_wolfe")
     epoch = 0
     stagnancy_counter = 0
+    # model.UnFreeze_Mesh()
     loss_old = Loss_vect[-1]
     # BCs used for the analytical comparison 
     u0 = model.Space_modes[0].u_0

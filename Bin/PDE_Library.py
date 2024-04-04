@@ -20,10 +20,10 @@ def PotentialEnergy(A,E,u,x,b):
 def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     # u_i = model.Space_modes[0](x)
-    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
+    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
     E = E[0] # From the multi-parametric version to the simple parameter one
-    for mode in range(model.n_modes):
+    for mode in range(model.n_modes_truncated):
         Para_mode_List = [model.Para_modes[mode][l](E)[:,None] for l in range(model.n_para)]
         if mode == 0:
             lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
@@ -40,11 +40,11 @@ def PotentialEnergyVectorisedParametric(model,A, E, u, x, b):
     # u_i,du_dx = ModifiedGramSchmidt(u_i,du_dx)
 
     # du_dx = du_dx/coef
-    du_dx = torch.matmul(du_dx,lambda_i.view(model.n_modes,lambda_i.shape[1]))
+    du_dx = torch.matmul(du_dx,lambda_i.view(model.n_modes_truncated,lambda_i.shape[1]))
     # Calculate dx
     dx = x[1:] - x[:-1]
 
-    u_debug = torch.matmul(u_i,lambda_i.view(model.n_modes,lambda_i.shape[1]))
+    u_debug = torch.matmul(u_i,lambda_i.view(model.n_modes_truncated,lambda_i.shape[1]))
     # Vectorised calculation of the integral terms
     int_term1_x = 0.25 * A * dx * (du_dx[1:]**2 + du_dx[:-1]**2)
     int_term1 = torch.einsum('ik,kj->ik',int_term1_x,E)

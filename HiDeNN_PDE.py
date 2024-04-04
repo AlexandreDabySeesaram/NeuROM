@@ -300,7 +300,7 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
         self.n_modes = n_modes
-        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(0))
+        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(1))
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
         # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
@@ -319,7 +319,7 @@ class NeuROM(nn.Module):
             for i in range(self.n_modes):
                 self.Space_modes[i].SetBCs(0,0)
         self.FreezeAll()
-        self.AddMode()
+        self.UnfreezeTruncated()
     def FreezeAll(self):
         """This method allows to freeze all sub neural networks"""
         self.Freeze_Mesh()
@@ -388,33 +388,33 @@ class NeuROM(nn.Module):
                 self.Para_modes[i][j].UnFreeze_FEM()  
 
     def forward(self,x,mu):
-        Orthgonality = True                                    # Enable othogonality constraint of the space modes
+        Orthgonality = False                                    # Enable othogonality constraint of the space modes
         if Orthgonality and self.training:
-            Space_modes_nodal = [torch.unsqueeze(self.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(self.n_modes)]
+            Space_modes_nodal = [torch.unsqueeze(self.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(self.n_modes_truncated)]
             Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
             Space_modes_nodal = GramSchmidt(Space_modes_nodal)
-            for mode in range(self.n_modes):
+            for mode in range(self.n_modes_truncated):
                 self.Space_modes[mode].InterpoLayer_uu.weight.data = Space_modes_nodal[:,mode]
 
-        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes)]
+        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
         Space_modes = torch.cat(Space_modes,dim=1)
 
         # Use list comprehension to create Para_modes
         Para_mode_Lists = [
         [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
-        for mode in range(self.n_modes)
+        for mode in range(self.n_modes_truncated)
         ]
 
         Para_modes = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(self.n_modes)], dim=0)
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(self.n_modes_truncated)], dim=0)
             for l in range(self.n_para)
         ]
 
         if len(mu)==1:
-            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]))
+            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
         elif len(mu)==2:
-            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes,Para_modes[0].shape[1]),
-                            Para_modes[1].view(self.n_modes,Para_modes[1].shape[1]))
+            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
+                            Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
         return out
 
         

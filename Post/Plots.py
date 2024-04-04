@@ -65,6 +65,19 @@ def PlotTrajectories(Coord_trajectories,name):
     #plt.show()
     plt.clf()
 
+def Plot_Loss_Modes(Modes_flag,error,name):
+    # Lift to be able to use semilogy
+    error3 = error-np.min(error)
+    plt.plot(Modes_flag)
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'Modes')
+    # plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error3,color='#F39C12')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.clf()
+
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)

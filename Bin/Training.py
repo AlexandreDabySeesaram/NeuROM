@@ -286,12 +286,13 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     epoch = 0
     loss_counter = 0
     save_time = 0
-    loss_decrease_c = 1e-6 # Criterion of stagnation for the loss
+    loss_decrease_c = 1e-5 # Criterion of stagnation for the loss
     Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
     stagnancy_counter = 0
     local_stagnancy_counter = 0 # Stagnancy since last additoin of a mode
     FlagAddedMode = False # Flag activated whn a mode has been added
-    while epoch<n_epochs and loss_counter<500 and stagnancy_counter<100:
+    Modes_vect = []
+    while epoch<n_epochs and loss_counter<100 and stagnancy_counter<100:
         # Compute loss
         if not BiPara:
             loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
@@ -335,13 +336,16 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         optimizer.step()
         # zero the gradients after updating
         optimizer.zero_grad()
+        Modes_vect.append(model.n_modes_truncated.detach().clone())
         if local_stagnancy_counter>50 and model.n_modes_truncated < model.n_modes:
             model.AddMode()
             Addition_epoch_index = epoch
             FlagAddedMode = True
+            local_stagnancy_counter = 0
         if FlagAddedMode:
-            if epoch == Addition_epoch_index+50:
+            if epoch == Addition_epoch_index+25:
                 model.UnfreezeTruncated()
+                local_stagnancy_counter = 0
 
         with torch.no_grad():
             epoch+=1
@@ -369,7 +373,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
 
-    return Loss_vect, L2_error, (time_stop-time_start)
+    return Loss_vect, L2_error, (time_stop-time_start), Modes_vect
     
 
 def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):

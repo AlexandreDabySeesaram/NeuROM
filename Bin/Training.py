@@ -11,7 +11,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
-                Mixed_2D_loss
+                Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -68,9 +68,9 @@ def Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train
     print("     loss compatibility = ", l_compat.item())
 
     #Model_u.CheckBCValues()
-    Pplot.Plot2Dresults(u_predicted, n_train, 5*n_train, "_u"+stage)
-    Pplot.Plot1DSection(u_predicted, n_train, 5*n_train, stage)
-    Pplot.Plot2Dresults_Derivative(du_predicted, s11, s22, s12, n_train, 5*n_train, "_Stress" + stage)
+    Pplot.Plot2Dresults(u_predicted, PlotCoordinates, "_u"+stage)
+    #Pplot.Plot1DSection(u_predicted, n_train, 5*n_train, stage)
+    Pplot.Plot2Dresults_Derivative(du_predicted, s11, s22, s12, PlotCoordinates, "_Stress" + stage)
 
     if len(loss)>0:
         Pplot.Plot2DLoss(loss)
@@ -190,7 +190,7 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
             TrialCoordinates = FilterTrainingData(BeamModel, TrialCoordinates)
 
         coord_old = [BeamModel.coordinates[i].data.item() for i in range(len(BeamModel.coordinates))]
-        weights_old = copy.deepcopy(BeamModel.InterpoLayer_uu.weight.data.detach())
+        # weights_old = copy.deepcopy(BeamModel.InterpoLayer_uu.weight.data.detach())
 
         # predict = forward pass with our model
         start_time = time.time()
@@ -711,7 +711,7 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train):
+def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs):
 
     stagnancy_counter = 0
     loss_old = 1
@@ -723,8 +723,13 @@ def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n
                     tolerance_grad = 1.0e-9,
                     line_search_fn="strong_wolfe")
 
-    while stagnancy_counter < 5:
+    epoch = 0
+
+    while stagnancy_counter < 5 and epoch<n_epochs:
         counter = counter+1
+
+        Neumann_BC_rel(Model_du)
+
         def closure():
             optim.zero_grad()
 
@@ -753,12 +758,15 @@ def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n
         else:
             stagnancy_counter = 0
 
+        epoch = epoch+1
+
     Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, [], n_train, "_Final")
 
     return Model_u, Model_du
 
 
-def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train, loss):
+def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train, 
+                            loss, constit_point_coord, constit_cell_IDs_u, lmbda, mu ):
 
     evaluation_time = 0
     loss_time = 0
@@ -782,6 +790,11 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             TrialIDs_u = DataSet[1]
             TrialIDs_du = DataSet[2]
 
+            Neumann_BC_rel(Model_du)
+
+            if len(constit_cell_IDs_u)>0:
+                Constitutive_BC(Model_u, Model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu )
+
             start_time = time.time()
             u_predicted = Model_u(TrialCoordinates, TrialIDs_u) 
             du_predicted = Model_du(TrialCoordinates, TrialIDs_du) 
@@ -790,7 +803,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             start_time = time.time()
             l_pde, l_compat, _, _, _ =  Mixed_2D_loss(u_predicted[0,:], u_predicted[1,:],
                                                         du_predicted[0,:], du_predicted[1,:], du_predicted[2,:], 
-                                                        TrialCoordinates, lmbda = 1.25, mu = 1.0)
+                                                        TrialCoordinates, lmbda, mu )
             l =  w0*l_pde +w1*l_compat
             loss_time += time.time() - start_time
 
@@ -798,15 +811,15 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             loss[1].append(l_compat.item())
 
             loss_current = l_pde.item()+l_compat.item()
-            if loss_min > loss_current:
-                loss_min = loss_current
-                loss_counter = 0
+            
+            # if loss_min > loss_current:
+            #     loss_min = loss_current
+            #     loss_counter = 0
 
-                torch.save(Model_u.state_dict(),"Results/Model_u.pt")
-                torch.save(Model_du.state_dict(),"Results/Model_du.pt")
-
-            else:
-                loss_counter += 1
+            #     torch.save(Model_u.state_dict(),"Results/Model_u.pt")
+            #     torch.save(Model_du.state_dict(),"Results/Model_du.pt")
+            # else:
+            #     loss_counter += 1
 
             start_time = time.time()
             l.backward()
@@ -831,9 +844,9 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             print("     loss_counter = ", loss_counter)
             print("     mean loss PDE = ", numpy.mean(loss[0][-10:-1]))
             print("     mean loss compatibility = ", numpy.mean(loss[1][-10:-1]))
-            print()
-            print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
-            print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
+            #print()
+            #print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
+            #print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
             print("     ...............................")
 
         if (epoch+1) % 200 == 0:
@@ -849,12 +862,12 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
 
     l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
 
-    if loss_min < l:
-        print("     ****** REVERT ******")
-        Model_u.load_state_dict(torch.load("Results/Model_u.pt"))
-        Model_du.load_state_dict(torch.load("Results/Model_du.pt"))
+    # if loss_min < l:
+    #     print("     ****** REVERT ******")
+    #     Model_u.load_state_dict(torch.load("Results/Model_u.pt"))
+    #     Model_du.load_state_dict(torch.load("Results/Model_du.pt"))
 
-        l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates,loss, n_train, "_Stage1")
+    #     l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates,loss, n_train, "_Stage1")
         
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {stopt_train_time-start_train_time}s\n\

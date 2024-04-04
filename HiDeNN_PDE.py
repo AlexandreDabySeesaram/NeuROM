@@ -141,7 +141,11 @@ class MeshNN(nn.Module):
                                              for i in range(len(mesh.Nodes))])
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
-        self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+
+        if mesh.NoBC==False:
+            self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+        else:
+            self.NBCs = 0
 
         if mesh.order =='1':
             self.ElementBlock = ElementBlock_Bar_Lin(mesh.Connectivity)
@@ -153,7 +157,7 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         #self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         #self.InterpoLayer_uu.weight.data = self.NodalValues_uu
-        self.InterpoLayer_uu.weight.data = 0.0001*torch.randint(low=-100, high=100, size=(self.dofs-self.NBCs,))
+        self.InterpoLayer_uu.weight.data = 0.001*torch.randint(low=-100, high=100, size=(self.dofs-self.NBCs,))
 
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
@@ -483,9 +487,10 @@ class ElementBlock2D_Quad(nn.Module):
         node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
         node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
 
-        node4_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,3]])
-        node4_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,4]])
-        node6_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,5]])
+        # We dont need this.
+        # node4_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,3]])
+        # node4_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,4]])
+        # node6_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,5]])
 
         refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
         
@@ -523,30 +528,42 @@ class MeshNN_2D(nn.Module):
 
         self.values = 0.001*torch.randint(low=-100, high=100, size=(mesh.NNodes,n_components))
         #self.values =0.5*torch.ones((mesh.NNodes,n_components))
-        self.frozen_BC_values_IDs = []
+        self.frozen_BC_node_IDs = []
         self.frozen_BC_component_IDs = []
+        self.relation_BC_node_IDs = []
+        self.relation_BC_values = []
+        self.relation_BC_normals = []
+        self.constit_BC_node_IDs = []
 
-        for i in range(len(mesh.ListOfDirichletsBCsValues)):
+        self.ExcludeFromDirichlet = mesh.ExcludedPoints
 
-            IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-            IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-            self.frozen_BC_values_IDs.append(IDs)
-            self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
-            self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
-
-        #self.nodal_values = [ nn.ParameterList([nn.Parameter(torch.tensor([i[j]])) for i in self.values]) for j in range(n_components)]
-        #print("self.nodal_values = ", len(self.nodal_values), len(self.nodal_values[0]))
-
-        #self.nodal_values = []
-        #for dim in range(n_components):
-        #    self.nodal_values.append(nn.ParameterList([nn.Parameter(torch.tensor([i[dim]])) for i in self.values]))
-
-
+        if mesh.NoBC==False:
+            for i in range(len(mesh.ListOfDirichletsBCsValues)):
+                if mesh.ListOfDirichletsBCsRelation[i] == False:
+                    if mesh.ListOfDirichletsBCsConstit[i] == False:
+                        IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                        self.frozen_BC_node_IDs.append(IDs)
+                        self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
+                        self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
+                    else:
+                        IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                        self.constit_BC_node_IDs.append(IDs)
+                else:
+                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                    self.relation_BC_node_IDs.append(IDs)
+                    self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
+                    self.relation_BC_normals.append(mesh.normals[IDs])
+\
         if n_components ==2:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
             self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
             self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+
+
         elif n_components ==3:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
             self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
@@ -554,11 +571,16 @@ class MeshNN_2D(nn.Module):
             self.nodal_values_xy = nn.ParameterList([nn.Parameter(torch.tensor([i[2]])) for i in self.values])
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
 
+
         print("self.nodal_values = ", len(self.nodal_values), (len(self.nodal_values[0])))
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
-        self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+    
+        if mesh.NoBC==False:
+            self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+        else:
+            self.NBCs = 0
 
         if mesh.order =='1':
             self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
@@ -582,13 +604,15 @@ class MeshNN_2D(nn.Module):
             for val in dim:
                 val.requires_grad = True
  
-        for j in range(len(self.frozen_BC_values_IDs)):
-            print(j, self.frozen_BC_component_IDs[j], self.frozen_BC_values_IDs[j])
+        for j in range(len(self.frozen_BC_node_IDs)):
+            print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
-            frozen = self.frozen_BC_values_IDs[j]
+            frozen = self.frozen_BC_node_IDs[j]
             for idf in frozen:
-                values[idf].requires_grad = False
+                if idf+1 not in self.ExcludeFromDirichlet:
+                    values[idf].requires_grad = False
 
+        
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
         for param in self.coordinates:
@@ -598,13 +622,36 @@ class MeshNN_2D(nn.Module):
         """Set the coordinates as trainable parameters """
         print("Unfreeze values")
 
-        for j in range(len(self.frozen_BC_values_IDs)):
-            print(j, self.frozen_BC_component_IDs[j], self.frozen_BC_values_IDs[j])
+        for j in range(len(self.frozen_BC_node_IDs)):
+            print(j, self.frozen_BC_component_IDs[j], self.frozen_BC_node_IDs[j])
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
-            frozen = self.frozen_BC_values_IDs[j]
+            frozen = self.frozen_BC_node_IDs[j]
             for idf in frozen:
                 print(values[idf])
 
+
+    def Update_Middle_Nodes(self, mesh):
+        
+        print("     * Export current nodal coordinates")
+
+        cell_nodes_IDs = mesh.Connectivity
+
+        node1_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,0]])
+        node2_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,1]])
+        node3_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,2]])
+
+        # node4_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,3]])
+        # node5_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,4]])
+        # node6_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,5]])
+
+        T6_Coord1 = node1_coord*0.5 + node2_coord*0.5 
+        T6_Coord2 = node2_coord*0.5 + node3_coord*0.5
+        T6_Coord3 = node1_coord*0.5 + node3_coord*0.5
+
+        for j in range(len(cell_nodes_IDs)):
+            self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j]
+            self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j]
+            self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j]
 
 def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
 

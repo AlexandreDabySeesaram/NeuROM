@@ -28,10 +28,7 @@ Physical Line (112) = {7} ;
 Physical Line (113) = {8} ;
 Physical Line (114) = {9} ;
 
-//Physical Point (150) = {1}
-//Physical Point (151) = {2}
-//Physical Point (152) = {3}
-//Physical Point (153) = {4}
+Physical Point (200) = {1,2,3,4};
 
 
 

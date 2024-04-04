@@ -59,28 +59,42 @@ class Mesh:
     def __init__(self,name,h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
         PrintWelcome()
-        self.h_str = str(h_max)
+        self.h_str = str(np.around(h_max, decimals=3))
         self.order = str(order)
         self.dimension = str(dimension)
         self.name = name
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_str+'.msh'
         self.name_geo = self.name+'.geo'
     
-    def AddBCs(self,Volume,Dirichlets):
+    def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
+        self.ExcludeId = Exclude
         NumberOfBCs = len(Dirichlets)
-        for i in range(NumberOfBCs):
-            ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
-            ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
-            ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
 
-            self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
-            self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
-            self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
-
+        ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
+        ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
+        ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
+        ListOfDirichletsBCsRelation = [Dirichlets[i]["Relation"] for i in range(NumberOfBCs)]
+        ListOfDirichletsBCsConstit = [Dirichlets[i]["Constitutive"] for i in range(NumberOfBCs)]
+        
+        self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
+        self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
+        self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
+        self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
+        self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
+        
             # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
-        
+        if NumberOfBCs == 0:
+            self.NoBC = True
+        else:
+            self.NoBC = False
+
+        if len(self.ExcludeId)==0:
+            self.NoExcl = True
+        else:
+            self.NoExcl = False
+
     def MeshGeo(self):
         path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):
@@ -115,7 +129,12 @@ class Mesh:
             line = mshfile.readline()
             self.NElem = int(line)
             self.Connectivity = []
-            self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
+
+            if self.NoBC == False:
+                self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
+
+            self.ExcludedPoints = []
+
             flagType = True
             for elem in range(self.NElem):
                 line = mshfile.readline()
@@ -151,18 +170,25 @@ class Mesh:
                         flagType = False  
                     self.Connectivity.append(ElemList[-self.node_per_elem:])  
 
-                for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
-                    if ElemList[3] == self.ListOfDirichletsBCsIds[ID_idx]: 
-                        match ElemList[1]:
-                            case 1:
-                                self.type = "2-node bar"
-                                self.dim = 1
-                                self.node_per_elem = 2
-                            case 8:
-                                self.type = "3-node quadratic bar"
-                                self.dim = 1
-                                self.node_per_elem = 3
-                        self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
+                if self.NoBC == False:
+                    for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
+                        if ElemList[3] == self.ListOfDirichletsBCsIds[ID_idx]: 
+                            match ElemList[1]:
+                                case 1:
+                                    self.type = "2-node bar"
+                                    self.dim = 1
+                                    self.node_per_elem = 2
+                                case 8:
+                                    self.type = "3-node quadratic bar"
+                                    self.dim = 1
+                                    self.node_per_elem = 3
+                            self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
+
+                if self.NoExcl == False:
+                    for ID_idx in range(len(self.ExcludeId)):
+                        if ElemList[3] == self.ExcludeId[ID_idx]: 
+                            self.ExcludedPoints.append(ElemList[-1:][0])
+
 
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
@@ -172,9 +198,10 @@ class Mesh:
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
 * Number of Elements:       {self.Connectivity.shape[0]}\n \
-* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
+* No excluded points:          {self.NoExcl}')
+#* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
 
-    
+
     def ExportMeshVtk(self):
         msh_name = 'Geometries/'+self.name_mesh
         meshBeam = meshio.read(msh_name)
@@ -200,6 +227,13 @@ class Mesh:
         reader.SetFileName(msh_name[0:-4]+".vtk",)  
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
+
+
+    def ReadNormalVectors(self):
+        print(" * Read normal vectors")
+        normals = np.load('Geometries/'+self.name_mesh[0:-4]+"_normals.npy")
+        norm = np.linalg.norm(normals, axis=1)
+        self.normals = normals/norm[:,None]
 
     def AssemblyMatrix(self):
         import torch

@@ -164,6 +164,9 @@ def Stress(ep_11, ep_22, ep_12, lmbda, mu):
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 
+    #print("u_pred = ", u_pred.shape)
+    #print("x = ", x.shape)
+
     du = torch.autograd.grad(u_pred, x, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
     dv = torch.autograd.grad(v_pred, x, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
     
@@ -183,3 +186,72 @@ def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 
     return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
     
+
+def Neumann_BC_rel(Model):
+
+    for i in range(len(Model.relation_BC_node_IDs)):
+
+        nodes = Model.relation_BC_node_IDs[i]
+        normals = Model.relation_BC_normals[i]
+        value = Model.relation_BC_values[i]
+
+        s_11 = Model.nodal_values[0]
+        s_22 = Model.nodal_values[1]
+        s_12 = Model.nodal_values[2]
+
+        if len(value)>1:
+            for j in range(nodes.shape[0]):
+
+                ID = nodes[j]
+                normal = normals[j]
+
+                if np.isclose(normal[0],0.0):
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
+                    s_22[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
+                elif np.isclose(normal[1],0.0):
+                    s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
+                else:
+                    s_11[ID] = value[0] - s_12[ID]*(normal[1]/normal[0])
+                    s_22[ID] = value[1] - s_12[ID]*(normal[0]/normal[1])
+
+        elif len(value)==1:
+            for j in range(nodes.shape[0]):
+
+                ID = nodes[j]
+                normal = normals[j]
+
+                if np.isclose(normal[0],0.0):
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]*normal[0]/normal[1]]))
+                    s_22[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+                elif np.isclose(normal[1],0.0):
+                    s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]*normal[1]/normal[0]]))
+                else:
+                    s_11[ID] = value[0]*normal[0] - s_12[ID]*(normal[1]/normal[0])
+                    s_22[ID] = value[0]*normal[1] - s_12[ID]*(normal[0]/normal[1])
+
+def Constitutive_BC(model_u, model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu):
+
+
+    NN_s_11 = model_du.nodal_values[0]
+    NN_s_22 = model_du.nodal_values[1]
+    NN_s_12 = model_du.nodal_values[2]
+
+    u_pred = model_u(constit_point_coord, constit_cell_IDs_u)
+
+    node_IDs = model_du.constit_BC_node_IDs[0]
+
+    du = torch.autograd.grad(u_pred[0,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[0,:]), create_graph=True)[0]
+    dv = torch.autograd.grad(u_pred[1,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[1,:]), create_graph=True)[0]
+    
+    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+
+    for j in range(len(node_IDs)):
+
+            ID = node_IDs[j]
+
+            NN_s_11[ID] = torch.nn.Parameter(torch.tensor([s_11[j]]))
+            NN_s_22[ID] = torch.nn.Parameter(torch.tensor([s_22[j]]))
+            NN_s_12[ID] = torch.nn.Parameter(torch.tensor([s_12[j]]))
+

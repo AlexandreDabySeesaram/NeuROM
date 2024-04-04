@@ -287,7 +287,10 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     loss_counter = 0
     save_time = 0
     loss_decrease_c = 1e-6 # Criterion of stagnation for the loss
+    Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
     stagnancy_counter = 0
+    local_stagnancy_counter = 0 # Stagnancy since last additoin of a mode
+    FlagAddedMode = False # Flag activated whn a mode has been added
     while epoch<n_epochs and loss_counter<500 and stagnancy_counter<100:
         # Compute loss
         if not BiPara:
@@ -304,6 +307,12 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
                 stagnancy_counter = stagnancy_counter +1
             else:
                 stagnancy_counter = 0
+            
+            if loss_decrease >= 0 and loss_decrease < Add_mode_c:
+                local_stagnancy_counter = local_stagnancy_counter +1
+            else:
+                local_stagnancy_counter = 0
+
 
             if loss_min > loss_current:
                 save_start = time.time()
@@ -326,6 +335,14 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         optimizer.step()
         # zero the gradients after updating
         optimizer.zero_grad()
+        if local_stagnancy_counter>50 and model.n_modes_truncated < model.n_modes:
+            model.AddMode()
+            Addition_epoch_index = epoch
+            FlagAddedMode = True
+        if FlagAddedMode:
+            if epoch == Addition_epoch_index+50:
+                model.UnfreezeTruncated()
+
         with torch.no_grad():
             epoch+=1
             Loss_vect.append(loss.item())
@@ -336,7 +353,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")

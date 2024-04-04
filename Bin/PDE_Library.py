@@ -177,24 +177,24 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
     ###### Enables orthogonalisation process #######
     Orthgonality = False                                    # Enable othogonality constraint of the space modes
     if Orthgonality and model.training:
-        Space_modes_nodal = [torch.unsqueeze(model.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(model.n_modes)]
+        Space_modes_nodal = [torch.unsqueeze(model.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(model.n_modes_truncated)]
         Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
         Space_modes_nodal = GramSchmidt(Space_modes_nodal)
-        for mode in range(model.n_modes):
+        for mode in range(model.n_modes_truncated):
             model.Space_modes[mode].InterpoLayer_uu.weight.data = Space_modes_nodal[:,mode]
 
       
 
-    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes)]
+    Space_modes = [model.Space_modes[l](x) for l in range(model.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
 
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
-        for mode in range(model.n_modes)
+        for mode in range(model.n_modes_truncated)
         ]
 
     lambda_i = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes)], dim=0)
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
             for l in range(model.n_para)
         ]
 
@@ -211,8 +211,8 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         f_1_E_1 = torch.einsum('ik,jk->ij',f_1,E[0])
         f_2_E_2 = torch.einsum('ik,jk->ij',f_2,E[1])
         E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
-        du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes,lambda_i[0].shape[1]),
-                                lambda_i[1].view(model.n_modes,lambda_i[1].shape[1]))
+        du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes_truncated,lambda_i[0].shape[1]),
+                                lambda_i[1].view(model.n_modes_truncated,lambda_i[1].shape[1]))
 
         du_dx_E_tensor = (du_dx**2)*E_tensor
 

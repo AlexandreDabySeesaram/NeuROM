@@ -300,6 +300,7 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
         self.n_modes = n_modes
+        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(0))
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
         # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
@@ -317,6 +318,30 @@ class NeuROM(nn.Module):
         else:
             for i in range(self.n_modes):
                 self.Space_modes[i].SetBCs(0,0)
+        self.FreezeAll()
+        self.AddMode()
+    def FreezeAll(self):
+        """This method allows to freeze all sub neural networks"""
+        self.Freeze_Mesh()
+        self.Freeze_Space()
+        self.Freeze_MeshPara()
+        self.Freeze_Para()
+    
+    def AddMode(self):
+        """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""
+        self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
+        self.FreezeAll()
+        self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
+        self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
+
+        for j in range(self.n_para):
+            self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
+
+    def UnfreezeTruncated(self):
+        for i in range(self.n_modes_truncated):
+            self.Space_modes[i].UnFreeze_FEM()  
+            for j in range(self.n_para):
+                self.Para_modes[i][j].UnFreeze_FEM()
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""
@@ -347,17 +372,20 @@ class NeuROM(nn.Module):
     def UnFreeze_MeshPara(self):
         """Set the para coordinates as trainable parameters"""
         for i in range(self.n_modes):
-            self.Para_modes[i].UnFreeze_Mesh()
+            for j in range(self.n_para):
+                self.Para_modes[i][j].UnFreeze_Mesh()
 
     def Freeze_Para(self):
         """Set the para modes as untrainable """
         for i in range(self.n_modes):
-            self.Para_modes[i].Freeze_FEM()  
+            for j in range(self.n_para):
+                self.Para_modes[i][j].Freeze_FEM()  
 
     def UnFreeze_Para(self):
         """Set the para modes as trainable """
         for i in range(self.n_modes):
-            self.Para_modes[i].UnFreeze_FEM()  
+            for j in range(self.n_para):
+                self.Para_modes[i][j].UnFreeze_FEM()  
 
     def forward(self,x,mu):
         Orthgonality = True                                    # Enable othogonality constraint of the space modes

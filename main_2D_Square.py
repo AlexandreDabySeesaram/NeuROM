@@ -79,10 +79,23 @@ Excluded_elements_u = []
 
 ####################################################################
 # User defines all boundary conditions
+
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False , "Constitutive": False},
-                            {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False}]
-                            #{"Entity": 113, "Value": 0, "Normal": 0, "Relation": False},
-                            #{"Entity": 113, "Value": 0.5, "Normal": 1, "Relation": False}]
+                            {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            ]
+
+
+'''
+DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False , "Constitutive": False},
+                            {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 112, "Value": 0, "Normal": 0, "Relation": False , "Constitutive": False},
+                            {"Entity": 112, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False , "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 114, "Value": 0, "Normal": 0, "Relation": False , "Constitutive": False},
+                            {"Entity": 114, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                        ]
+'''
 
 Domain_mesh_u.AddBCs(Volume_element, Excluded_elements_u, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
 Domain_mesh_u.MeshGeo()                                # Mesh the .geo file if .msh does not exist
@@ -101,6 +114,7 @@ Domain_mesh_u.ExportMeshVtk()
 # "Constitutive": On boundaries where displacement is prescribed by Dirichlet BC.
 #                 Stress = compted stress(displacement) 
 
+
 DirichletDictionryList = [  {"Entity": 112, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": False},
                             {"Entity": 112, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                             {"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": False},
@@ -110,7 +124,17 @@ DirichletDictionryList = [  {"Entity": 112, "Value": 0.0, "Normal": 0, "Relation
                             {"Entity": 115, "Value": [0.0], "Normal": 0, "Relation": True, "Constitutive": False},
                             {"Entity": 111, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True}
                         ]
-                            
+
+
+'''
+DirichletDictionryList = [  {"Entity": 112, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
+                            {"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
+                            {"Entity": 113, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
+                            {"Entity": 111, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
+                            {"Entity": 115, "Value": [1.0], "Normal": 0, "Relation": True, "Constitutive": False}
+                        ]
+'''
+
 Excluded_elements_du = [200]
 Domain_mesh_du.AddBCs(Volume_element, Excluded_elements_du, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
 Domain_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist
@@ -132,7 +156,7 @@ Model_du.Freeze_Mesh()
 
 ####################################################################
 
-n_train = 30
+n_train = 50
 
 TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64, requires_grad=True)
 TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64,  requires_grad=True)
@@ -168,15 +192,15 @@ Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_Initial")
 
 optimizer = torch.optim.Adam(list(Model_u.parameters())+list(Model_du.parameters()), lr=1.0e-3)
 
-w0 = L
+w0 = 1
 w1 = 1
 
 
 print("**************** START TRAINING 1st stage ***************\n")
 loss = [[],[]]
 
-current_BS = 100
-n_epochs = 5000
+current_BS = 200
+n_epochs = 1000
 CoordinatesBatchSet = torch.utils.data.DataLoader([[PlotCoordinates[i], IDs_u[i], IDs_du[i]] for i in range((IDs_u.shape)[0])], batch_size=current_BS, shuffle=True)
 print("Number of training points = ", PlotCoordinates.shape[0])
 print("Batch size = ", CoordinatesBatchSet.batch_size)
@@ -187,8 +211,8 @@ Model_u, Model_du, loss = GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du
                                 n_train, loss, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
 
 print("*************** 2nd stage LBFGS ***************\n")
-n_epochs = 50
-Model_u, Model_du = LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs)
+n_epochs = 30
+Model_u, Model_du = LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
 
 
 

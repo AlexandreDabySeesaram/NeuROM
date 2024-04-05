@@ -212,8 +212,9 @@ def Neumann_BC_rel(Model):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
                     s_12[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
                 else:
-                    s_11[ID] = value[0] - s_12[ID]*(normal[1]/normal[0])
-                    s_22[ID] = value[1] - s_12[ID]*(normal[0]/normal[1])
+                    #s_11[ID] = (value[0] - s_12[ID]*normal[1])/normal[0]
+                    s_22[ID] = (value[1] - s_12[ID]*normal[0])/normal[1]
+                    s_12[ID] = (value[0] - s_11[ID]*normal[0])/normal[1]
 
         elif len(value)==1:
             for j in range(nodes.shape[0]):
@@ -221,15 +222,18 @@ def Neumann_BC_rel(Model):
                 ID = nodes[j]
                 normal = normals[j]
 
-                if np.isclose(normal[0],0.0):
-                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]*normal[0]/normal[1]]))
+                #print(ID.item())
+                #print(normal)
+
+                if np.isclose(normal[0],0.0, atol=1e-06):
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
                     s_22[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
-                elif np.isclose(normal[1],0.0):
+                elif np.isclose(normal[1],0.0, atol=1e-06):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
-                    s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]*normal[1]/normal[0]]))
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
                 else:
-                    s_11[ID] = value[0]*normal[0] - s_12[ID]*(normal[1]/normal[0])
-                    s_22[ID] = value[0]*normal[1] - s_12[ID]*(normal[0]/normal[1])
+                    s_11[ID] = (value[0]*normal[0] - s_12[ID]*normal[1])/normal[0]
+                    s_22[ID] = (value[0]*normal[1] - s_12[ID]*normal[0])/normal[1]
 
 def Constitutive_BC(model_u, model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu):
 

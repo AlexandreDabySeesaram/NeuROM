@@ -711,7 +711,7 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs):
+def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu):
 
     stagnancy_counter = 0
     loss_old = 1
@@ -729,6 +729,10 @@ def LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n
         counter = counter+1
 
         Neumann_BC_rel(Model_du)
+
+        if len(constit_cell_IDs_u)>0:
+            Constitutive_BC(Model_u, Model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu )
+
 
         def closure():
             optim.zero_grad()
@@ -782,7 +786,13 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
     loss_min = 1
     epoch = 0
 
+    #total = w0+w1
+
+
     while epoch<n_epochs: #and (loss_counter<1 or loss_current > 1.0e-3): #and stagnancy_counter < 50 :
+
+        #w0 = torch.randint(0, total,[1])
+        #w1 = total-w0
 
         for DataSet in CoordinatesBatchSet:
 
@@ -844,12 +854,13 @@ def GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, Coo
             print("     loss_counter = ", loss_counter)
             print("     mean loss PDE = ", numpy.mean(loss[0][-10:-1]))
             print("     mean loss compatibility = ", numpy.mean(loss[1][-10:-1]))
+            print("     w0, w1 : ", w0, w1)
             #print()
             #print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
             #print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
             print("     ...............................")
 
-        if (epoch+1) % 200 == 0:
+        if (epoch+1) % 50 == 0:
             l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
             print("     _______________________________")
 

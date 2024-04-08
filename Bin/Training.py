@@ -286,6 +286,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     epoch = 0
     loss_counter = 0
     save_time = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
     loss_decrease_c = 1e-5 # Criterion of stagnation for the loss
     Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
     stagnancy_counter = 0
@@ -295,10 +298,12 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     Loss_decrease_vect = []
     while epoch<n_epochs and loss_counter<100 and stagnancy_counter<100:
         # Compute loss
+        loss_time_start = time.time()
         if not BiPara:
             loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
         else:
             loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,TrialCoordinates,RHS(TrialCoordinates))
+        eval_time += time.time() - loss_time_start
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
@@ -322,13 +327,14 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
 
 
             if loss_min > loss_current:
-                save_start = time.time()
                 with torch.no_grad():
-                    loss_min = loss_current
-                    # torch.save(model.state_dict(),"Results/Current_best")
-                    Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
-                    save_stop = time.time()
-                    save_time+=(save_stop-save_start)
+                    if (epoch+1) % 300 == 0:
+                        save_start = time.time()
+                        loss_min = loss_current
+                        # torch.save(model.state_dict(),"Results/Current_best")
+                        Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
+                        save_stop = time.time()
+                        save_time+=(save_stop-save_start)
                     loss_counter = 0
             else:
                 loss_counter += 1
@@ -337,9 +343,13 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
             loss_min = loss_current + 1 
             loss_old = loss_current
 
+        backward_time_start = time.time()
         loss.backward()
+        back_time += time.time() - backward_time_start
         # update weights
+        update_time_start = time.time()
         optimizer.step()
+        update_time += time.time() - update_time_start
         # zero the gradients after updating
         optimizer.zero_grad()
         Modes_vect.append(model.n_modes_truncated.detach().clone())
@@ -370,6 +380,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     print("*************** END FIRST PHASE ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
     print(f'* Saving time: {save_time}s')
+    print(f'* Evaluation time: {eval_time}s')
+    print(f'* Backward time: {back_time}s')
+    print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
     # Final loss evaluation - Revert to minimal-loss state if needed

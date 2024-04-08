@@ -12,7 +12,7 @@ import matplotlib
 import torch
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
-matplotlib.rcParams["font.size"] = "13"
+matplotlib.rcParams["font.size"] = "14"
 from matplotlib.ticker import MaxNLocator
 
 
@@ -81,7 +81,7 @@ def Plot_Loss_Modes(Modes_flag,error,name):
     ax2.semilogy(error3,color='#d95319ff')
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
-    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
 def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
@@ -101,7 +101,7 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
     plt.axhline(threshold,color = 'k')
-    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
@@ -117,7 +117,7 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     ax2.semilogy(error3,color='#d95319ff')
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
-    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
 def Plot_end(error,error2):

@@ -318,9 +318,9 @@ def Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiPar
 
 def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     import torch
-    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara)[:,None] for l in range(BeamROM.n_para)]
         if mode == 0:
             lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
@@ -329,27 +329,27 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
             New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
             lambda_i = torch.vstack((lambda_i,New_mode))
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
         plt.xlabel('x (mm)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara.data,lambda_i[mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E (GPa)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
 def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     import torch
-    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara[l][:,0].view(-1,1))[:,None] for l in range(BeamROM.n_para)]
         if mode == 0:
             lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(BeamROM.n_para)]
@@ -357,26 +357,26 @@ def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model
             New_mode = Para_mode_List
             lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(BeamROM.n_para)]
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
         plt.xlabel('x (mm)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara[0].data,lambda_i[0][mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E1 (GPa)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara[1].data,lambda_i[1][mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E2 (GPa)')
         plt.legend(loc="upper left")
-        plt.savefig('Results/Pre_trained_Para_modes_E2'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+        plt.savefig('Results/Pre_trained_Para_modes_E2'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 

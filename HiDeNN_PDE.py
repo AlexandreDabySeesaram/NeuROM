@@ -299,8 +299,11 @@ class NeuROM(nn.Module):
         IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
+        self.IndexesNon0BCs = IndexesNon0BCs
         self.n_modes = n_modes
         self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(1))
+        if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
+            self.n_modes_truncated+=1
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
         # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
@@ -348,8 +351,16 @@ class NeuROM(nn.Module):
     def UnfreezeTruncated(self):
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_FEM()  
-            for j in range(self.n_para):
-                self.Para_modes[i][j].UnFreeze_FEM()
+        
+        if self.IndexesNon0BCs:
+            "Keep first modes frozen so that BCs are well accounted for if non-homogeneous"
+            for i in range(1,self.n_modes_truncated):
+                for j in range(self.n_para):
+                    self.Para_modes[i][j].UnFreeze_FEM()
+        else:
+            for i in range(1,self.n_modes_truncated):
+                for j in range(self.n_para):
+                    self.Para_modes[i][j].UnFreeze_FEM()
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""

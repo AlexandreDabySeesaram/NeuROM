@@ -30,7 +30,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Value": 0, 
                              "normal":1}, 
                             {"Entity": 2, 
-                             "Value": 0.0, 
+                             "Value": 0.01, 
                              "normal":1}]
 
 # Definition of the space discretisation
@@ -59,7 +59,7 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 1000                                    # Maximum number of iterations for the training stage
+n_epochs = 3000                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
@@ -81,7 +81,7 @@ BeamModel.UnFreeze_Mesh()
 # Set the require output requirements
 
 #%% Application of NeuROM
-n_modes = 500
+n_modes = 100
 mu_min = 100
 mu_max = 200
 N_mu = 10

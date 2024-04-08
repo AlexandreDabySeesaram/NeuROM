@@ -13,6 +13,7 @@ import torch
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "13"
+from matplotlib.ticker import MaxNLocator
 
 
 
@@ -68,26 +69,54 @@ def PlotTrajectories(Coord_trajectories,name):
 def Plot_Loss_Modes(Modes_flag,error,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
-    plt.plot(Modes_flag)
+    plt.plot(Modes_flag,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
     # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
-    plt.ylabel(r'Modes')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
     # plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3,color='#F39C12')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    ax2.semilogy(error3,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.clf()
+
+def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
+    # Lift to be able to use semilogy
+    plt.plot(Modes_flag,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.xlabel(r'Epochs')
+
+    # plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(decay,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
+    plt.axhline(threshold,color = 'k')
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
-    plt.semilogy(error2)
+    plt.semilogy(error2,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
     # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
-    plt.ylabel(r'$\Xi$')
+    plt.ylabel(r'$\Xi$',color='#247ab5ff')
     plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3,color='#F39C12')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    ax2.semilogy(error3,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
     plt.clf()
 
@@ -98,7 +127,7 @@ def Plot_end(error,error2):
     #plt.semilogy(error2[-1000:-1])
     #plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3[1000:],color='#F39C12', label="Min = "+str(np.format_float_scientific(np.min(error), precision=3))+", final = " +str(np.format_float_scientific(error[-1], precision=3)))
+    ax2.semilogy(error3[1000:],color='#d95319ff', label="Min = "+str(np.format_float_scientific(np.min(error), precision=3))+", final = " +str(np.format_float_scientific(error[-1], precision=3)))
     ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
     #plt.legend(bbox_to_anchor=[0.7, 0.5], loc='center')
     plt.legend()

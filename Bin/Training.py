@@ -292,6 +292,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     local_stagnancy_counter = 0 # Stagnancy since last additoin of a mode
     FlagAddedMode = False # Flag activated whn a mode has been added
     Modes_vect = []
+    Loss_decrease_vect = []
     while epoch<n_epochs and loss_counter<100 and stagnancy_counter<100:
         # Compute loss
         if not BiPara:
@@ -302,7 +303,12 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
          # check for new minimal loss - Update the state for revert
         if epoch >1:
 
-            loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+            # loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+            # loss_decrease = (loss_old - loss_current)
+            loss_decrease = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
+            # loss_decrease = (numpy.log(loss_current) - numpy.log(loss_current))
+
+            Loss_decrease_vect.append(loss_decrease)
             loss_old = loss_current
             if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
                 stagnancy_counter = stagnancy_counter +1
@@ -343,7 +349,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
             FlagAddedMode = True
             local_stagnancy_counter = 0
         if FlagAddedMode:
-            if epoch == Addition_epoch_index+25:
+            if epoch == Addition_epoch_index+5:
                 model.UnfreezeTruncated()
                 local_stagnancy_counter = 0
 
@@ -373,7 +379,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
 
-    return Loss_vect, L2_error, (time_stop-time_start), Modes_vect
+    return Loss_vect, L2_error, (time_stop-time_start), Modes_vect, Loss_decrease_vect
     
 
 def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):

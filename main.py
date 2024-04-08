@@ -59,11 +59,11 @@ TrainingRequired = True                           # Boolean leading to Loading p
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
 ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 3000                                    # Maximum number of iterations for the training stage
+n_epochs = 800                                    # Maximum number of iterations for the training stage
 learning_rate = 0.001                              # optimizer learning rate
 FilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
 BoolCompile = False                                 # Enable compilation of the model
-BiPara = False                                       # Enable 2 Young modulus
+BiPara = True                                       # Enable 2 Young modulus
 Visualisatoin_only = False
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN(Beam_mesh,alpha)                # Create the associated model
@@ -213,12 +213,12 @@ else:
             BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
             optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
             u_copm = BeamROM_compiled(TrialCoordinates,Para_coord_list)
-            Loss_vect, L2_error, training_time, Mode_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error, training_time, Mode_vect, Loss_decrease_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
         else:
             optimizer = torch.optim.Adam(BeamROM.parameters(), lr=learning_rate)
-            Loss_vect, L2_error, training_time, Mode_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
         BeamROM.eval()
     
@@ -269,5 +269,5 @@ if Visualisatoin_only:
     BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np100')
 
     Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
-    Pplot.Plot_Loss_Modes(Loss_vect,Mode_vect,'Loss_Modes')
+    Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
 

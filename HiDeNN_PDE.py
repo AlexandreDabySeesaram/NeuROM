@@ -337,6 +337,14 @@ class NeuROM(nn.Module):
         for j in range(self.n_para):
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
 
+    def AddMode2Optimizer(self,optim):
+        "This method adds the newly freed parameters to the optimizer"
+        New_mode_index = self.n_modes_truncated-1
+        Space = self.Space_modes[self.n_modes_truncated-1].parameters()
+        Para = self.Para_modes[self.n_modes_truncated-1][:].parameters()
+        optim.add_param_group({'params': Space})
+        optim.add_param_group({'params': Para})
+
     def UnfreezeTruncated(self):
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_FEM()  

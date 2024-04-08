@@ -355,6 +355,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         Modes_vect.append(model.n_modes_truncated.detach().clone())
         if local_stagnancy_counter>50 and model.n_modes_truncated < model.n_modes:
             model.AddMode()
+            model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
             FlagAddedMode = True
             local_stagnancy_counter = 0
@@ -396,7 +397,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     
 
 def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):
-    optim = torch.optim.LBFGS(model.parameters(),
+    optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 
                     #tolerance_grad = 1.0e-9,

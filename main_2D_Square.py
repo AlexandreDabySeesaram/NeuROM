@@ -119,8 +119,8 @@ DirichletDictionryList = [  {"Entity": 112, "Value": 0.0, "Normal": 0, "Relation
                             {"Entity": 112, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                             {"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": False},
                             {"Entity": 114, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0.05, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                             {"Entity": 115, "Value": [0.0], "Normal": 0, "Relation": True, "Constitutive": False},
                             {"Entity": 111, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True}
                         ]
@@ -156,22 +156,31 @@ Model_du.Freeze_Mesh()
 
 ####################################################################
 
+
+def GenerateData(n_train):
+    TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64, requires_grad=True)
+    TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64,  requires_grad=True)
+
+    PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
+    IDs_u = torch.tensor(Domain_mesh_du.GetCellIds(PlotCoordinates),dtype=torch.int)
+    IDs_du = torch.tensor(Domain_mesh_du.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+    inside_domain = torch.where(IDs_u > -1)
+    #PlotCoordinates = torch.tensor(PlotCoordinates[inside_domain], dtype=torch.float64, requires_grad=True)
+    PlotCoordinates = PlotCoordinates[inside_domain]
+    PlotCoordinates = PlotCoordinates.clone().detach().requires_grad_(True)
+
+    IDs_u = IDs_u[inside_domain]
+    IDs_du = IDs_du[inside_domain]
+    return PlotCoordinates, IDs_u, IDs_du
+
 n_train = 50
+TrainCoordinates, TrainIDs_u, TrainIDs_du = GenerateData(n_train)
 
-TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64, requires_grad=True)
-TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,L,n_train)],dtype=torch.float64,  requires_grad=True)
+n_train = 70
+PlotCoordinates, IDs_u, IDs_du = GenerateData(n_train)
 
-PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-IDs_u = torch.tensor(Domain_mesh_du.GetCellIds(PlotCoordinates),dtype=torch.int)
-IDs_du = torch.tensor(Domain_mesh_du.GetCellIds(PlotCoordinates),dtype=torch.int)
 
-inside_domain = torch.where(IDs_u > -1)
-#PlotCoordinates = torch.tensor(PlotCoordinates[inside_domain], dtype=torch.float64, requires_grad=True)
-PlotCoordinates = PlotCoordinates[inside_domain]
-PlotCoordinates = PlotCoordinates.clone().detach().requires_grad_(True)
-
-IDs_u = IDs_u[inside_domain]
-IDs_du = IDs_du[inside_domain]
 
 
 if len(Model_du.constit_BC_node_IDs)>0:
@@ -190,19 +199,19 @@ du_predicted = Model_du(PlotCoordinates, IDs_du)
 Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_Initial")
 #Pplot.Plot2Dresults_Derivative(du_predicted, s11, s22, s12, n_train, 5*n_train, "_Stress_Initial")
 
-optimizer = torch.optim.Adam(list(Model_u.parameters())+list(Model_du.parameters()), lr=1.0e-3)
+optimizer = torch.optim.Adam(list(Model_u.parameters())+list(Model_du.parameters()))
 
-w0 = 1
+w0 = L
 w1 = 1
 
 
 print("**************** START TRAINING 1st stage ***************\n")
 loss = [[],[]]
 
-current_BS = 200
-n_epochs = 1000
-CoordinatesBatchSet = torch.utils.data.DataLoader([[PlotCoordinates[i], IDs_u[i], IDs_du[i]] for i in range((IDs_u.shape)[0])], batch_size=current_BS, shuffle=True)
-print("Number of training points = ", PlotCoordinates.shape[0])
+current_BS = 500
+n_epochs = 400
+CoordinatesBatchSet = torch.utils.data.DataLoader([[TrainCoordinates[i], TrainIDs_u[i], TrainIDs_du[i]] for i in range((TrainIDs_u.shape)[0])], 
+                                                        batch_size=current_BS, shuffle=True)print("Number of training points = ", PlotCoordinates.shape[0])
 print("Batch size = ", CoordinatesBatchSet.batch_size)
 print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 print()
@@ -210,10 +219,13 @@ print()
 Model_u, Model_du, loss = GradDescend_Stage1_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, CoordinatesBatchSet, w0, w1, n_epochs, optimizer, 
                                 n_train, loss, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
 
+
+
 print("*************** 2nd stage LBFGS ***************\n")
 n_epochs = 30
-Model_u, Model_du = LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
-
+Model_u, Model_du = LBFGS_Stage2_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, 
+                            TrainCoordinates, TrainIDs_u, TrainIDs_du,
+                            w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
 
 
 num_sol_name = "Rectangle_order_1_2.5_order2_displacement.npy"

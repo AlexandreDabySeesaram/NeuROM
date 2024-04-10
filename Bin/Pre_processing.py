@@ -82,7 +82,7 @@ class Mesh:
         self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
         self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
         self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
-        
+
             # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
             # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
         if NumberOfBCs == 0:
@@ -187,7 +187,7 @@ class Mesh:
                 if self.NoExcl == False:
                     for ID_idx in range(len(self.ExcludeId)):
                         if ElemList[3] == self.ExcludeId[ID_idx]: 
-                            self.ExcludedPoints.append(ElemList[-1:][0])
+                            self.ExcludedPoints.append(ElemList[-1:][0]-1)
 
 
             self.Connectivity = np.array(self.Connectivity)

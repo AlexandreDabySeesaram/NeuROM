@@ -186,6 +186,28 @@ def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 
     return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
     
+def Mixed_2D_loss_Displacement_based(model_u, model_du, x, lmbda, mu):
+
+    du = torch.autograd.grad(u_pred, x, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
+    dv = torch.autograd.grad(v_pred, x, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
+    
+    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+
+    d_s11 = torch.autograd.grad(s11_pred, x, grad_outputs=torch.ones_like(s11_pred), create_graph=True)[0]
+    d_s22 = torch.autograd.grad(s22_pred, x, grad_outputs=torch.ones_like(s22_pred), create_graph=True)[0]
+    d_s12 = torch.autograd.grad(s12_pred, x, grad_outputs=torch.ones_like(s12_pred), create_graph=True)[0]
+
+    
+    res_eq = (d_s11[:,0] + d_s12[:,1])**2 + (d_s12[:,0] + d_s22[:,1])**2
+    res_constit = (s_11 - s11_pred)**2 + (s_22 - s22_pred)**2 + (s_12 - s12_pred)**2
+
+
+    assert sum(res_constit.shape) == x.shape[0]
+    assert sum(res_eq.shape) == x.shape[0]
+
+    return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
+    
+
 
 def Neumann_BC_rel(Model):
 
@@ -205,16 +227,16 @@ def Neumann_BC_rel(Model):
                 ID = nodes[j]
                 normal = normals[j]
 
-                if np.isclose(normal[0],0.0):
+                if np.isclose(normal[0],0.0, atol=1e-06):
                     s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
                     s_22[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
-                elif np.isclose(normal[1],0.0):
+                elif np.isclose(normal[1],0.0, atol=1e-06):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
                     s_12[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
                 else:
-                    #s_11[ID] = (value[0] - s_12[ID]*normal[1])/normal[0]
+                    s_11[ID] = (value[0] - s_12[ID]*normal[1])/normal[0]
                     s_22[ID] = (value[1] - s_12[ID]*normal[0])/normal[1]
-                    s_12[ID] = (value[0] - s_11[ID]*normal[0])/normal[1]
+                    #s_12[ID] = (value[0] - s_11[ID]*normal[0])/normal[1]
 
         elif len(value)==1:
             for j in range(nodes.shape[0]):
@@ -232,30 +254,65 @@ def Neumann_BC_rel(Model):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
                     s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
                 else:
+                    #s_12[ID] = (value[0]*normal[0] - s_11[ID]*normal[0])/normal[1]
                     s_11[ID] = (value[0]*normal[0] - s_12[ID]*normal[1])/normal[0]
                     s_22[ID] = (value[0]*normal[1] - s_12[ID]*normal[0])/normal[1]
 
-def Constitutive_BC(model_u, model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu):
+def Constitutive_BC(model_u, model_du, constit_point_coord_all, constit_cell_IDs_u_all, lmbda, mu):
 
+    #print(" * Constit BC")
 
     NN_s_11 = model_du.nodal_values[0]
     NN_s_22 = model_du.nodal_values[1]
     NN_s_12 = model_du.nodal_values[2]
 
-    u_pred = model_u(constit_point_coord, constit_cell_IDs_u)
+    all_node_IDs = model_du.constit_BC_node_IDs
 
-    node_IDs = model_du.constit_BC_node_IDs[0]
+    for i in range(len(all_node_IDs)):
 
-    du = torch.autograd.grad(u_pred[0,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[0,:]), create_graph=True)[0]
-    dv = torch.autograd.grad(u_pred[1,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[1,:]), create_graph=True)[0]
-    
-    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+        constit_point_coord = constit_point_coord_all[i]
+        constit_cell_IDs_u = constit_cell_IDs_u_all[i]
 
-    for j in range(len(node_IDs)):
+        #print("     constit_cell_IDs_u = ", constit_cell_IDs_u )
+        #print("     constit_point_coord = ", constit_point_coord)
+        #print()
 
-            ID = node_IDs[j]
+        u_pred = model_u(constit_point_coord, constit_cell_IDs_u)
 
-            NN_s_11[ID] = torch.nn.Parameter(torch.tensor([s_11[j]]))
-            NN_s_22[ID] = torch.nn.Parameter(torch.tensor([s_22[j]]))
-            NN_s_12[ID] = torch.nn.Parameter(torch.tensor([s_12[j]]))
+        du = torch.autograd.grad(u_pred[0,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[0,:]), create_graph=True)[0]
+        dv = torch.autograd.grad(u_pred[1,:], constit_point_coord, grad_outputs=torch.ones_like(u_pred[1,:]), create_graph=True)[0]
+        
+        s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
 
+        node_IDs = all_node_IDs[i]
+        #print("         node_IDs : ", node_IDs)
+
+        for j in range(len(node_IDs)):
+
+                ID = node_IDs[j]
+                NN_s_11[ID] = torch.nn.Parameter(torch.tensor([s_11[j]]))
+                NN_s_22[ID] = torch.nn.Parameter(torch.tensor([s_22[j]]))
+                NN_s_12[ID] = torch.nn.Parameter(torch.tensor([s_12[j]]))
+
+
+def GetRealCoord(model, mesh, cell_ids, ref_coord):
+
+    #for c in cell_ids:
+    node_ids = mesh.Connectivity[cell_ids,:]
+
+    node1_coord =  torch.cat([model.coordinates[int(row)-1] for row in node_ids[:,0]])
+    node2_coord =  torch.cat([model.coordinates[int(row)-1] for row in node_ids[:,1]])
+    node3_coord =  torch.cat([model.coordinates[int(row)-1] for row in node_ids[:,2]])
+
+    coord = ref_coord[:,0].view(-1, 1)*node1_coord + ref_coord[:,1].view(-1, 1)*node2_coord + ref_coord[:,2].view(-1, 1)*node3_coord
+
+    # print("cell ids : ", cell_ids[0])
+    # print("node ids : ", node_ids[0,:])
+
+    # print("n1 : ", node1_coord[0])
+    # print("n2 : ", node2_coord[0])
+    # print("n3 : ", node3_coord[0])
+    # print("x : ", coord[0])
+    # print("check cell ID : ", mesh.GetCellIds(coord)[0])
+    # print()
+    return coord.clone().detach().requires_grad_(True), cell_ids, cell_ids

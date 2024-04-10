@@ -36,8 +36,8 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name, L):
     L2_diff_ux = torch.norm(u_predicted_x.detach() - num_u_x)
     L2_diff_uy = torch.norm(u_predicted_y.detach() - num_u_y)
 
-    print("ux: |NN - Num|/|Num| = " , (L2_diff_ux/norm_num_ux).item())
-    print("uy: |NN - Num|/|Num| = " , (L2_diff_uy/norm_num_uy).item())
+    print("ux: |NN - Num|/|Num| = " , numpy.format_float_scientific((L2_diff_ux/norm_num_ux).item(),precision=4))
+    print("uy: |NN - Num|/|Num| = " , numpy.format_float_scientific((L2_diff_uy/norm_num_uy).item(),precision=4))
     print()
 
     MSE_ux = torch.mean((u_predicted_x.detach() - num_u_x)**2)
@@ -95,9 +95,9 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name, L):
     MSE_s22 = torch.mean((num_s22 - s22))
     MSE_s12 = torch.mean((num_s12 - s12))
 
-    print("s11: mean(|NN - Num|) = " , numpy.abs(MSE_s11.item()))
-    print("s22: mean(|NN - Num|) = " , numpy.abs(MSE_s22.item()))
-    print("s12: mean(|NN - Num|) = " , numpy.abs(MSE_s12.item()))
+    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s11.item()),precision=4))
+    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s22.item()),precision=4))
+    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s12.item()),precision=4))
 
     print()
 

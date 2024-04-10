@@ -571,15 +571,15 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
 
     fig, ax = plt.subplots(2, 3, layout="constrained", figsize = (18, 10), dpi=50)
 
-    size = 10*50/ (np.sqrt(x.shape[0])/3)
+    size = 0.2*10*50/ (np.sqrt(x.shape[0])/3)
 
-    img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
 
-    # img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    # img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(),  marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    # img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(),   marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(),  marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(),   marker="s", s=size, alpha =1.0, cmap = "coolwarm")
     
     cb1 = fig.colorbar(img0, ax = ax[0,0], location="right", pad=0.2, shrink=0.8)
     cb2 = fig.colorbar(img1, ax = ax[0,1], location="right", pad=0.2, shrink=0.8)
@@ -588,13 +588,13 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
     ax[0,1].set_aspect('equal', adjustable='box')
     ax[0,2].set_aspect('equal', adjustable='box')
 
-    img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
 
-    # img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    # img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
-    # img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
 
     cb4 = fig.colorbar(img3, ax = ax[1,0], location="right", pad=0.2, shrink=0.8)
     cb5 = fig.colorbar(img4, ax = ax[1,1], location="right", pad=0.2, shrink=0.8)

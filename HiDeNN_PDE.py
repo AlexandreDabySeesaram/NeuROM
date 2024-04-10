@@ -526,7 +526,7 @@ class MeshNN_2D(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
 
-        self.values = 0.001*torch.randint(low=-100, high=100, size=(mesh.NNodes,n_components))
+        self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
         #self.values =0.5*torch.ones((mesh.NNodes,n_components))
         self.frozen_BC_node_IDs = []
         self.frozen_BC_component_IDs = []
@@ -537,6 +537,7 @@ class MeshNN_2D(nn.Module):
 
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
 
+
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
                 if mesh.ListOfDirichletsBCsRelation[i] == False:
@@ -546,17 +547,49 @@ class MeshNN_2D(nn.Module):
                         self.frozen_BC_node_IDs.append(IDs)
                         self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
                         self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
-                    else:
-                        IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                        self.constit_BC_node_IDs.append(IDs)
+                        print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                        print("    Simple BC ")
+                        print("      IDs : ", IDs)
+                        print("      component : ", mesh.ListOfDirichletsBCsNormals[i])
+                        print("      values : ", mesh.ListOfDirichletsBCsValues[i])
+                        print()
                 else:
                     IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
                     IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
                     self.relation_BC_node_IDs.append(IDs)
                     self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
                     self.relation_BC_normals.append(mesh.normals[IDs])
-\
+                    print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                    print("    Relation BC ")
+                    print("      IDs : ", IDs)
+                    print("      values : ", self.relation_BC_values)
+                    print()
+
+            for i in range(len(mesh.ListOfDirichletsBCsValues)):
+                if mesh.ListOfDirichletsBCsConstit[i] == True:
+                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+
+                    if len(self.relation_BC_node_IDs)>0:
+                        delete_relation = torch.cat(self.relation_BC_node_IDs)
+
+                        for elem in IDs:
+                            if elem in delete_relation:
+                                IDs = IDs[IDs!=elem]
+                    if len(self.frozen_BC_node_IDs)>0:
+                        delete_simple = torch.cat(self.frozen_BC_node_IDs)
+                        for elem in IDs:
+                            if elem in delete_simple:
+                                IDs = IDs[IDs!=elem]
+
+                    self.constit_BC_node_IDs.append(IDs)
+
+                    print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                    print("    Constitutive BC ")
+                    print("      IDs : ", IDs)
+                    print()
+
+
         if n_components ==2:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
             self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
@@ -589,6 +622,15 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock = ElementBlock2D_Quad(mesh.Connectivity)
             self.Interpolation = InterpolationBlock2D_Quad(mesh.Connectivity)
 
+
+
+        print("----------------------------------------------")
+
+
+        print("----------------------------------------------")
+        print()
+
+
     def forward(self,x, el_id):
             
         shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values)
@@ -606,12 +648,14 @@ class MeshNN_2D(nn.Module):
  
         for j in range(len(self.frozen_BC_node_IDs)):
             print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
+            print("excluded : ", self.ExcludeFromDirichlet)
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
             frozen = self.frozen_BC_node_IDs[j]
             for idf in frozen:
-                if idf+1 not in self.ExcludeFromDirichlet:
+                if idf not in self.ExcludeFromDirichlet:
                     values[idf].requires_grad = False
-
+                else:
+                    values[idf].requires_grad = True
         
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
@@ -652,6 +696,8 @@ class MeshNN_2D(nn.Module):
             self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j]
             self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j]
             self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j]
+
+
 
 def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
 

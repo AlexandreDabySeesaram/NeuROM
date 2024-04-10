@@ -1,6 +1,6 @@
 L=10;
 dh = L; // Minimum size is the length of the beam
-Mesh.Algorithm = 8;
+Mesh.Algorithm = 5;
 
 // Define the square geometry
 Point(1) = {0, 0, 0, dh};
@@ -28,7 +28,7 @@ Physical Line (112) = {7} ;
 Physical Line (113) = {8} ;
 Physical Line (114) = {9} ;
 
-Physical Point (200) = {1,2,3,4};
+//Physical Point (200) = {1,2};
 
 
 

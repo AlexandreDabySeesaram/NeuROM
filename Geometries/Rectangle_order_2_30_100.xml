@@ -1,0 +1,27 @@
+<dolfin nsmap="{'dolfin': 'https://fenicsproject.org/'}">
+  <mesh celltype="triangle" dim="2">
+    <vertices size="15">
+      <vertex index="0" x="0.0" y="0.0" />
+      <vertex index="1" x="10.0" y="0.0" />
+      <vertex index="2" x="10.0" y="50.0" />
+      <vertex index="3" x="0.0" y="50.0" />
+      <vertex index="4" x="4.9999999999858" y="0.0" />
+      <vertex index="5" x="10.0" y="24.99999999991185" />
+      <vertex index="6" x="10.0" y="12.49999999995639" />
+      <vertex index="7" x="10.0" y="37.49999999995936" />
+      <vertex index="8" x="5.000000000012507" y="50.0" />
+      <vertex index="9" x="0.0" y="25.00000000012906" />
+      <vertex index="10" x="0.0" y="37.50000000004841" />
+      <vertex index="11" x="0.0" y="12.50000000006327" />
+      <vertex index="12" x="5.0" y="12.49999999995593" />
+      <vertex index="13" x="5.0" y="25.00000000002046" />
+      <vertex index="14" x="5.0" y="37.50000000006453" />
+    </vertices>
+    <cells size="4">
+      <triangle index="0" v0="1" v1="5" v2="0" />
+      <triangle index="1" v0="5" v1="9" v2="0" />
+      <triangle index="2" v0="3" v1="9" v2="2" />
+      <triangle index="3" v0="9" v1="5" v2="2" />
+    </cells>
+  </mesh>
+</dolfin>

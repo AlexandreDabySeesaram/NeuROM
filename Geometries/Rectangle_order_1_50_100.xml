@@ -1,0 +1,14 @@
+<dolfin nsmap="{'dolfin': 'https://fenicsproject.org/'}">
+  <mesh celltype="triangle" dim="2">
+    <vertices size="4">
+      <vertex index="0" x="0.0" y="0.0" />
+      <vertex index="1" x="10.0" y="0.0" />
+      <vertex index="2" x="10.0" y="50.0" />
+      <vertex index="3" x="0.0" y="50.0" />
+    </vertices>
+    <cells size="2">
+      <triangle index="0" v0="1" v1="3" v2="0" />
+      <triangle index="1" v0="2" v1="3" v2="1" />
+    </cells>
+  </mesh>
+</dolfin>

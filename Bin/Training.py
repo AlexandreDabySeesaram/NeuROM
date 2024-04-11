@@ -755,7 +755,7 @@ def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
         optim.step(closure)
         l = closure()
         loss_current = l.item()
-        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_decrease = (loss_old - loss_current)/(0.5*(numpy.abs(loss_old) + numpy.abs(loss_current)))
         loss_old = loss_current
 
         print("     Iter = ",counter," : Loss = ", numpy.format_float_scientific(l.item(), precision=4))
@@ -790,11 +790,14 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
     loss_current = 1
     loss_min = 1
     epoch = 0
-
+    loss_decrease = []
+    variance_u = []
+    first_iteration = True
+    stop = False
     total = 20
 
 
-    while epoch<n_epochs: #and (loss_counter<1 or loss_current > 1.0e-3): #and stagnancy_counter < 50 :
+    while epoch<n_epochs and stop == False:
 
         # w0 = torch.randint(0, total,[1])
         # w1 = total-w0
@@ -839,6 +842,17 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
             loss[1].append(l_compat.item())
 
             loss_current = l_pde.item()+l_compat.item()
+
+
+            if first_iteration == True:
+                variance_u.append(torch.mean((u_predicted - torch.zeros_like(u_predicted))**2).detach())
+                first_iteration == False
+            else:
+                variance_u.append(torch.mean((u_predicted - u_pred_old)**2).detach()/torch.mean((u_predicted)**2).detach())
+            u_pred_old = u_predicted
+
+            loss_decrease.append((loss_old - loss_current)/(0.5*numpy.abs(loss_old)))# + numpy.abs(loss_current))))
+            loss_old = loss_current
             
             # if loss_min > loss_current:
             #     loss_min = loss_current
@@ -872,12 +886,16 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
             print("     loss_counter = ", loss_counter)
             print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-10:-1]), precision=4))
             print("     mean loss compatibility = ", numpy.format_float_scientific(numpy.mean(loss[1][-10:-1]), precision=4))
+            print("     mean loss decrease = ", numpy.format_float_scientific(numpy.mean(loss_decrease[-10:-1]), precision=4))
+            print("     displacement variance = ", numpy.format_float_scientific(numpy.mean((variance_u[-10:-1])), precision=4))
             print("     w0, w1 : ", w0, w1)
             #print("     ", (Model_du.nodal_values[0][0]).item(),(Model_du.nodal_values[0][1]).item())
             #print()
             #print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
             #print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
             print("     ...............................")
+            if numpy.mean(loss_decrease[-10:-1]) < 1.0e-4:
+                stop = True
 
         if (epoch+1) % 200 == 0:
             l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")

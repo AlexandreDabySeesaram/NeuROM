@@ -56,14 +56,16 @@ def PrintWelcome():
 
                                                                                                                                     
 class Mesh:
-    def __init__(self,name,h_max, order, dimension):
+    def __init__(self,name,h_max, h_min, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
         PrintWelcome()
-        self.h_str = str(np.around(h_max, decimals=3))
+        self.h_max_str = str(np.around(h_max, decimals=3))
+        self.h_min_str = str(np.around(h_min, decimals=3))
+
         self.order = str(order)
         self.dimension = str(dimension)
         self.name = name
-        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_str+'.msh'
+        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_min_str+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
     
     def AddBCs(self,Volume,Exclude,Dirichlets):
@@ -104,7 +106,9 @@ class Mesh:
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
             mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
-                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
+                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                    ' -clmin '+self.h_min_str + \
+                    ' -clmax '+self.h_max_str  
                     #'- algo delquad'
             os.system(mesh_command)        
          

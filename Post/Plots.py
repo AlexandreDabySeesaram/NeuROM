@@ -10,11 +10,14 @@ plt.rcParams.update({
 import numpy as np
 import matplotlib
 import torch
+from scipy import ndimage
+
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "14"
 from matplotlib.ticker import MaxNLocator
 
+from Bin.PDE_Library import Stress
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
@@ -118,6 +121,44 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    plt.clf()
+
+
+def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
+    # Lift to be able to use semilogy
+    #error_pde = error_pde-np.min(error_pde)
+    #error_constit = error_constit-np.min(error_constit)
+
+    plt.semilogy(error2)
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    #plt.ylabel(r'$\Xi$')
+    #plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
+    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
+
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.legend()
+    plt.clf()
+
+
+def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
+    # Lift to be able to use semilogy
+    #error_pde = error_pde-np.min(error_pde)
+    #error_constit = error_constit-np.min(error_constit)
+
+    plt.semilogy(error2)
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    #plt.ylabel(r'$\Xi$')
+    #plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
+    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
+
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.legend()
     plt.clf()
 
 def Plot_end(error,error2):
@@ -441,3 +482,203 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     # Call the initial plot
     interactive_plot(100)
     tk.mainloop()
+
+
+def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
+    pred = model(TrialCoordinates)
+    
+    # Plots the gradient & compare to reference
+    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5)
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
+    plt.plot(TrialCoordinates.data, Force.data/(-A*E), label = 'Ground Truth')
+    plt.plot(TrialCoordinates.data, Derivative(pred,TrialCoordinates).data,'--', label = 'HiDeNN')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+
+    plt.clf()
+
+
+def Plot_Rectangle_2Dresults(u_predicted, n_train_x, n_train_y, name):
+
+
+    fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (10,10), dpi=50)
+
+    img = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb1 = fig.colorbar(img0, ax = ax[0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[1], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+
+    plt.set_cmap("coolwarm") 
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+
+    plt.close()
+
+
+def Plot_Rectangle_2Dresults_Derivative(u_predicted, e11, e22, e12, n_train_x, n_train_y, name):
+
+    fig, ax = plt.subplots(2, 3, layout="constrained", figsize = (14,20), dpi=50)
+
+
+    img = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    img0 = ax[0,0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    img1 = ax[0,1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(u_predicted[2,:].detach(), (n_train_x, n_train_y), order='C') 
+    img2 = ax[0,2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb1 = fig.colorbar(img0, ax = ax[0,0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[0,1], location="right", pad=0.2, shrink=0.8)
+    cb3 = fig.colorbar(img2, ax = ax[0,2], location="right", pad=0.2, shrink=0.8)
+
+
+    img = np.reshape(e11.detach(), (n_train_x, n_train_y), order='C') 
+    img3 = ax[1,0].imshow(ndimage.rotate(img, 90)) #, vmin = 0, vmax = 1)
+
+    img = np.reshape(e22.detach(), (n_train_x, n_train_y), order='C') 
+    img4 = ax[1,1].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    img = np.reshape(e12.detach(), (n_train_x, n_train_y), order='C') 
+    img5 = ax[1,2].imshow(ndimage.rotate(img, 90)) # , vmin = 0, vmax = 1)
+
+    cb4 = fig.colorbar(img3, ax = ax[1,0], location="right", pad=0.2, shrink=0.8)
+    cb5 = fig.colorbar(img4, ax = ax[1,1], location="right", pad=0.2, shrink=0.8)
+    cb6 = fig.colorbar(img5, ax = ax[1,2], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+    cb3.ax.tick_params(labelsize=tick_font_size)
+    cb4.ax.tick_params(labelsize=tick_font_size)
+    cb5.ax.tick_params(labelsize=tick_font_size)
+    cb6.ax.tick_params(labelsize=tick_font_size)
+
+    plt.set_cmap("coolwarm") 
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+    plt.close()
+
+
+def Plot2DLoss(loss):
+
+    plt.plot(loss[0],color='#F39C12', label = "$\mathrm{Loss_{PDE}}$")
+    plt.plot(loss[1],color='#741B47', label = "$\mathrm{Loss_{Constitutive}}$")
+
+    plt.yscale('log')
+    plt.legend()
+    plt.savefig('Results/2D_loss.pdf', transparent=True) 
+    plt.clf()
+
+def Plot1DSection(u_predicted, n_train_x, n_train_y, name):
+
+    u = np.reshape(u_predicted[0,:].detach(), (n_train_x, n_train_y), order='C') 
+    u = ndimage.rotate(u, 90)
+
+    v = np.reshape(u_predicted[1,:].detach(), (n_train_x, n_train_y), order='C') 
+    v = ndimage.rotate(v, 90)
+
+    rows = u.shape[0]
+    cols = u.shape[1]
+
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(cols/4)], label = "Section: x = 1/4Lx")
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(cols/2)], label = "Section: x = 1/2Lx")
+    plt.plot(np.linspace(0,50,rows), v[::-1,int(3*cols/4)], label = "Section: x = 3/4Lx")
+
+    plt.legend()
+    plt.savefig('Results/1D_Section_x_'+name+'.pdf', transparent=True) 
+    plt.clf()
+
+    plt.plot(np.linspace(0,10,cols), u[int(rows/4),:], label = "Section: y = 3/4Ly")
+    plt.plot(np.linspace(0,10,cols), u[int(rows/2),:], label = "Section: y = 1/2Ly")
+    plt.plot(np.linspace(0,10,cols), u[int(3*rows/4),:], label = "Section: y = 1/4Ly")
+
+    plt.legend()
+    plt.savefig('Results/1D_Section_y_'+name+'.pdf', transparent=True) 
+    plt.clf()
+
+
+
+def Plot2Dresults(u_predicted, x, name):
+
+    fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (18,8), dpi=50)
+
+    size =  8*50/ (np.sqrt(x.shape[0])/3)
+
+    # img0 = ax[0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.55, vmax=0.55, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img1 = ax[1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=0, vmax=1.7, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    
+    img0 = ax[0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img1 = ax[1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    
+    ax[0].set_aspect('equal', adjustable='box')
+    ax[1].set_aspect('equal', adjustable='box')
+
+    cb1 = fig.colorbar(img0, ax = ax[0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[1], location="right", pad=0.2, shrink=0.8)
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+
+    plt.close()
+
+def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
+
+    fig, ax = plt.subplots(2, 3, layout="constrained", figsize = (18, 10), dpi=50)
+
+    size = 0.2*10*50/ (np.sqrt(x.shape[0])/3)
+
+    # img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+
+    img0 = ax[0,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img1 = ax[0,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(),  marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img2 = ax[0,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[2,:].detach(),   marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    
+    cb1 = fig.colorbar(img0, ax = ax[0,0], location="right", pad=0.2, shrink=0.8)
+    cb2 = fig.colorbar(img1, ax = ax[0,1], location="right", pad=0.2, shrink=0.8)
+    cb3 = fig.colorbar(img2, ax = ax[0,2], location="right", pad=0.2, shrink=0.8)
+    ax[0,0].set_aspect('equal', adjustable='box')
+    ax[0,1].set_aspect('equal', adjustable='box')
+    ax[0,2].set_aspect('equal', adjustable='box')
+
+    # img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), vmin=-0.1, vmax=0.1, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), vmin=-0.25, vmax=0.25, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    # img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), vmin=-0.055, vmax=0.055, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+
+    img3 = ax[1,0].scatter( x[:,0].detach(),  x[:,1].detach(), c = e11.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img4 = ax[1,1].scatter( x[:,0].detach(),  x[:,1].detach(), c = e22.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+    img5 = ax[1,2].scatter( x[:,0].detach(),  x[:,1].detach(), c = e12.detach(), marker="s", s=size, alpha =1.0, cmap = "coolwarm")
+
+    cb4 = fig.colorbar(img3, ax = ax[1,0], location="right", pad=0.2, shrink=0.8)
+    cb5 = fig.colorbar(img4, ax = ax[1,1], location="right", pad=0.2, shrink=0.8)
+    cb6 = fig.colorbar(img5, ax = ax[1,2], location="right", pad=0.2, shrink=0.8)
+    ax[1,0].set_aspect('equal', adjustable='box')
+    ax[1,1].set_aspect('equal', adjustable='box')
+    ax[1,2].set_aspect('equal', adjustable='box')
+
+    tick_font_size = 28
+    cb1.ax.tick_params(labelsize=tick_font_size)
+    cb2.ax.tick_params(labelsize=tick_font_size)
+    cb3.ax.tick_params(labelsize=tick_font_size)
+    cb4.ax.tick_params(labelsize=tick_font_size)
+    cb5.ax.tick_params(labelsize=tick_font_size)
+    cb6.ax.tick_params(labelsize=tick_font_size)
+
+    fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
+    plt.close()

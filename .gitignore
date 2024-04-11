@@ -1,4 +1,7 @@
 ToSort/
+*.vtk
+*.xml
+*.npy
 .logs/
 __pycache__/
 Drafts/

@@ -37,20 +37,20 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 19                                             # Number of Nodes in the Mesh
+np = 10                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
 DirichletDictionryList = [  {"Entity": 1, 
                              "Value": 0, 
-                             "normal":1}, 
+                             "Normal":1, "Relation": False, "Constitutive": False}, 
                             {"Entity": 2, 
-                             "Value": 0.01, 
-                             "normal":1}]
+                             "Value": 0.0, 
+                             "Normal":1, "Relation": False, "Constitutive": False}]
 
 # Definition of the space discretisation
 alpha = 0.0                                       # Weight for the Mesh regularisation 
-order = 2                                          # Order of the shape functions
+order = 1                                          # Order of the shape functions
 dimension = 1
 
 if order ==1:
@@ -58,6 +58,7 @@ if order ==1:
 elif order ==2:
     n_elem = 0.5*(np-1)
     MaxElemSize = L/n_elem                         # Compute element size
+Excluded = []
 
 if dimension ==1:
     Beam_mesh = pre.Mesh('Beam',MaxElemSize, order, dimension)    # Create the mesh object
@@ -65,7 +66,7 @@ if dimension ==2:
     Beam_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
 
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
-Beam_mesh.AddBCs(Volume_element,
+Beam_mesh.AddBCs(Volume_element,Excluded,
                  DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
 Beam_mesh.MeshGeo()                                # Mesh the .geo file if .msh does not exist
 Beam_mesh.ReadMesh()                               # Parse the .msh file
@@ -78,7 +79,7 @@ BoolCompareNorms = True                            # Boolean for comparing energ
 BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
 SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
-ParametricStudy = False                             # Boolean to switch between space model and parametric sturdy
+ParametricStudy = True                             # Boolean to switch between space model and parametric sturdy
 TrainingStrategy = 'Mixed'                         # 'Integral' or 'Mixed'
 LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
 n_epochs = 3000                                    # Maximum number of iterations for the training stage
@@ -337,37 +338,39 @@ else:
     if False:
         Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
         u_i = torch.cat(Space_modes,dim=1) 
-if Visualisatoin_only:
-    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
-    u_i = torch.cat(Space_modes,dim=1) 
+    if Visualisatoin_only:
+        Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+        u_i = torch.cat(Space_modes,dim=1) 
 
     # Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
     # Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
 
-u_eval = BeamROM(TrialCoordinates,Para_coord_list)
-import matplotlib.pyplot as plt
-# Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
-# BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+    u_eval = BeamROM(TrialCoordinates,Para_coord_list)
+    import matplotlib.pyplot as plt
+    # Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
+    # BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
 
 
-if Visualisatoin_only:
-    TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara = torch.linspace(mu_min,mu_max,50, 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara = TrialPara[:,None] # Add axis so that dimensions match
+    if Visualisatoin_only:
+        TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], 
+                                        dtype=torch.float32, requires_grad=True)
+        TrialPara = torch.linspace(mu_min,mu_max,50, 
+                                        dtype=torch.float32, requires_grad=True)
+        TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
-    TrialPara2 = torch.linspace(mu_min,mu_max,50, 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
+        TrialPara2 = torch.linspace(mu_min,mu_max,50, 
+                                        dtype=torch.float32, requires_grad=True)
+        TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
 
-    if BiPara:
-        Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
-    else:
-        Para_coord_list = [TrialPara]
-    BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
-    BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np100')
+        if BiPara:
+            Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+        else:
+            Para_coord_list = [TrialPara]
+        BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+        BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np100')
 
-    Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
-    Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
+        Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
+        Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
 
+
+# %%

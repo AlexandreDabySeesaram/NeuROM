@@ -291,12 +291,17 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     update_time = 0
     loss_decrease_c = 1e-5 # Criterion of stagnation for the loss
     Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
+    FlagAddedMode_usefull = True    # Flag stating that the new mode did help speeding-up the convergence
     stagnancy_counter = 0
     local_stagnancy_counter = 0 # Stagnancy since last additoin of a mode
     FlagAddedMode = False # Flag activated whn a mode has been added
     Modes_vect = []
     Loss_decrease_vect = []
-    while epoch<n_epochs and loss_counter<100 and stagnancy_counter<100:
+    Usefullness = 0
+    while epoch<n_epochs and loss_counter<100:
+        # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+        if stagnancy_counter>5 and not FlagAddedMode_usefull:
+            break 
         # Compute loss
         loss_time_start = time.time()
         if not BiPara:
@@ -307,23 +312,18 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
-
-            # loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
-            # loss_decrease = (loss_old - loss_current)
             loss_decrease = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
-            # loss_decrease = (numpy.log(loss_current) - numpy.log(loss_current))
-
             Loss_decrease_vect.append(loss_decrease)
             loss_old = loss_current
-            if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
+            # if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
+            if numpy.abs(loss_decrease) < loss_decrease_c:
                 stagnancy_counter = stagnancy_counter +1
             else:
                 stagnancy_counter = 0
-            
-            if loss_decrease >= 0 and loss_decrease < Add_mode_c:
-                local_stagnancy_counter = local_stagnancy_counter +1
-            else:
-                local_stagnancy_counter = 0
+                if loss_decrease >= 0:
+                    Usefullness+=1
+                    if Usefullness>=15:
+                        FlagAddedMode_usefull = True    # Flag stating that the new mode did help speeding-up the convergence
 
 
             if loss_min > loss_current:
@@ -353,16 +353,18 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         # zero the gradients after updating
         optimizer.zero_grad()
         Modes_vect.append(model.n_modes_truncated.detach().clone())
-        if local_stagnancy_counter>50 and model.n_modes_truncated < model.n_modes:
+        if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
             FlagAddedMode = True
-            local_stagnancy_counter = 0
+            FlagAddedMode_usefull = False    # Flag stating that the new mode did help speeding-up the convergence
+            stagnancy_counter = 0
+            Usefullness = 0
         if FlagAddedMode:
-            if epoch == Addition_epoch_index+5:
+            if epoch == Addition_epoch_index+2:
                 model.UnfreezeTruncated()
-                local_stagnancy_counter = 0
+                stagnancy_counter = 0
 
         with torch.no_grad():
             epoch+=1

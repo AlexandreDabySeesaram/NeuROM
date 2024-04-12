@@ -311,10 +311,19 @@ def MixedFormulation_Loss(A, E, u, du, x, b):
 
     return torch.mean(res_eq), torch.mean(res_constit)
 
+def InternalEnergy_2D(u,x,lmbda, mu):
+    eps =  Strain(u,x)
+    sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
+    W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
+    return W_e
 
 def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
+def Strain(u,x):
+    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+    return torch.stack([du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0])],dim=1)
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 
@@ -470,3 +479,4 @@ def GetRealCoord(model, mesh, cell_ids, ref_coord):
     # print("check cell ID : ", mesh.GetCellIds(coord)[0])
     # print()
     return coord.clone().detach().requires_grad_(True), cell_ids, cell_ids
+

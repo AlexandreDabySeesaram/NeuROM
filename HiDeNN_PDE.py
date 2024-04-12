@@ -450,7 +450,7 @@ class InterpolationBlock2D_Lin(nn.Module):
         super(InterpolationBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
 
-    def forward(self, x, cell_id, nodal_values, shape_functions):
+    def forward(self, x, cell_id, nodal_values, shape_functions,flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
@@ -462,8 +462,13 @@ class InterpolationBlock2D_Lin(nn.Module):
         node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
 
         #out = torch.cat(shape_functions[:,0]*node1_value[:,0] + shape_functions[:,1]*node2_value[:,0] + shape_functions[:,2]*node3_value[:,0], shape_functions[:,0]*node1_value[:,1] + shape_functions[:,1]*node2_value[:,1] + shape_functions[:,2]*node3_value[:,1])
+        if flag_training:
 
-        return shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+            u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+
+            return u
+        else:
+            return shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
 
 class InterpolationBlock2D_Quad(nn.Module):
     
@@ -503,7 +508,10 @@ class ElementBlock2D_Lin(nn.Module):
         super(ElementBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
 
-    def forward(self, x, cell_id, coordinates, nodal_values):
+    def GP(self):
+        return torch.tensor([[1/3,1/3, 1/3]],dtype=torch.float64, requires_grad=True) # a1, a2, a3 the 3 area coordinates
+
+    def forward(self, x, cell_id, coordinates, nodal_values,flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
@@ -514,11 +522,18 @@ class ElementBlock2D_Lin(nn.Module):
         node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
         node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
 
-        refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-        
-        out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+        if flag_training:
+            refCoord = self.GP().repeat(cell_id.shape[0],1)
+            w_g = 0.5                           # Gauss weight
+            N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            x_g = torch.stack([N[:,0]*node1_coord[:,0] + N[:,1]*node2_coord[:,0] + N[:,2]*node3_coord[:,0],N[:,0]*node1_coord[:,1] + N[:,1]*node2_coord[:,1] + N[:,2]*node3_coord[:,1]],dim=1)
+            detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
+            return N,x_g, detJ*w_g
 
-        return out
+        else:
+            refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+            out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            return out
 
 class ElementBlock2D_Quad(nn.Module):
     """
@@ -531,8 +546,11 @@ class ElementBlock2D_Quad(nn.Module):
         """
         super(ElementBlock2D_Quad, self).__init__()
         self.connectivity = connectivity.astype(int)
+    
+    def GP(self):
+        return torch.tensor([[1/6,1/6],[2/3,1/6],[1/6,2/3]])
 
-    def forward(self, x, cell_id, coordinates, nodal_values):
+    def forward(self, x, cell_id, coordinates, nodal_values,flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
@@ -549,7 +567,10 @@ class ElementBlock2D_Quad(nn.Module):
         # node4_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,4]])
         # node6_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,5]])
 
-        refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+        if flag_training:
+            refCoord = self.GP()
+        else:
+            refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
         
         N1 = refCoord[:,0]*(2*refCoord[:,0]-1)
         N2  = refCoord[:,1]*(2*refCoord[:,1]-1)
@@ -584,7 +605,7 @@ class MeshNN_2D(nn.Module):
                                              for i in range(len(mesh.Nodes))])
 
         self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
-        #self.values =0.5*torch.ones((mesh.NNodes,n_components))
+        # self.values =0.5*torch.ones((mesh.NNodes,n_components))
         self.frozen_BC_node_IDs = []
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []
@@ -689,11 +710,14 @@ class MeshNN_2D(nn.Module):
 
 
     def forward(self,x, el_id):
-            
-        shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values)
-        interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
-
-        return interpol
+        if self.training:
+            shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
+            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.training)
+            return interpol,x_g, detJ
+        else:
+            shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
+            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.training)
+            return interpol
 
     def UnFreeze_Values(self):
         """Set the coordinates as trainable parameters """

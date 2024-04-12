@@ -11,7 +11,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
-                Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based
+                Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
+                    InternalEnergy_2D
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -966,3 +967,70 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
         * Optimiser time: {optimizer_time}s\n')
 
     return Model_u, Model_du, loss
+
+
+
+
+
+def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
+    # Initialise vector of loss values
+    Loss_vect = []
+    print("**************** START TRAINING ***************\n")
+    time_start = time.time()
+    epoch = 0
+    save_time = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
+    model.train()
+    TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
+    TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
+    PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
+    u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
+    model.eval()
+    U_interm = []
+    while epoch<n_epochs:
+        # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+
+        # Compute loss
+        loss_time_start = time.time()
+
+        u_predicted = model(xg, List_elems)
+        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*detJ)
+
+        eval_time += time.time() - loss_time_start
+        loss_current = loss.item()
+
+
+        backward_time_start = time.time()
+        loss.backward()
+        back_time += time.time() - backward_time_start
+        # update weights
+        update_time_start = time.time()
+        optimizer.step()
+        update_time += time.time() - update_time_start
+        # zero the gradients after updating
+        optimizer.zero_grad()
+        with torch.no_grad():
+            epoch+=1
+            Loss_vect.append(loss.item())
+        if (epoch+1) % 50 == 0 or epoch ==0:
+            u_x = [u for u in model.nodal_values_x]
+            u_y = [u for u in model.nodal_values_y]
+            u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+            U_interm.append(u.data)
+
+            print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+
+    time_stop = time.time()
+    # print("*************** END OF TRAINING ***************\n")
+    print("*************** END FIRST PHASE ***************\n")
+    print(f'* Training time: {time_stop-time_start}s')
+    print(f'* Saving time: {save_time}s')
+    print(f'* Evaluation time: {eval_time}s')
+    print(f'* Backward time: {back_time}s')
+    print(f'* Update time: {update_time}s')
+    print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
+
+    return Loss_vect, (time_stop-time_start), U_interm
+    

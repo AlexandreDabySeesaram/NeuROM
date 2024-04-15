@@ -523,10 +523,12 @@ class ElementBlock2D_Lin(nn.Module):
         node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
 
         if flag_training:
-            refCoord = self.GP().repeat(cell_id.shape[0],1)
+            refCoordg = self.GP().repeat(cell_id.shape[0],1)
             w_g = 0.5                           # Gauss weight
+            Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
+            refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
             N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-            x_g = torch.stack([N[:,0]*node1_coord[:,0] + N[:,1]*node2_coord[:,0] + N[:,2]*node3_coord[:,0],N[:,0]*node1_coord[:,1] + N[:,1]*node2_coord[:,1] + N[:,2]*node3_coord[:,1]],dim=1)
             detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
             return N,x_g, detJ*w_g
 
@@ -712,7 +714,7 @@ class MeshNN_2D(nn.Module):
     def forward(self,x, el_id):
         if self.training:
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
-            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.training)
+            interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.training)
             return interpol,x_g, detJ
         else:
             shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)

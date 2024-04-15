@@ -99,7 +99,7 @@ Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epoc
 
 # Second stage
 # Initialisation of the refined model
-MaxElemSize = MaxElemSize/10
+MaxElemSize = MaxElemSize/5
 
 Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
@@ -111,6 +111,7 @@ Domain_mesh_2.ExportMeshVtk()
 Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2)                # Create the associated model (with 2 components)
 
 # Would be nice to get a flag for only non dircihlet BC new coordinates
+Model_2D.eval()
 newcoordinates = [coord for coord in Model_2D_2.coordinates]
 newcoordinates = torch.cat(newcoordinates,dim=0)
 IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
@@ -140,7 +141,7 @@ Loss_vect_2, Duration_2, U_interm_2 = Training_2D_Integral(Model_2D_2, optimizer
 
 # Third stage
 # Initialisation of the refined model
-MaxElemSize = MaxElemSize/2
+MaxElemSize = MaxElemSize/4
 
 Domain_mesh_3 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
@@ -155,6 +156,8 @@ Model_2D_3 = MeshNN_2D(Domain_mesh_3, 2)                # Create the associated 
 newcoordinates = [coord for coord in Model_2D_3.coordinates]
 newcoordinates = torch.cat(newcoordinates,dim=0)
 IDs_newcoord = torch.tensor(Domain_mesh_2.GetCellIds(newcoordinates),dtype=torch.int)
+Model_2D_2.eval()
+
 NewNodalValues = Model_2D_2(newcoordinates,IDs_newcoord) 
 
 new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
@@ -206,6 +209,8 @@ sol.write(
 
 #%% Export intermediate convergence steps
 # First stage
+meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
+
 U_interm = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm]
 
 for timestep in range(len(U_interm)):
@@ -262,7 +267,7 @@ sol.write(
 
 #%% Get nodal values from the trained model
 meshBeam = meshio.read('geometries/'+Domain_mesh_3.name_mesh)
-
+Model_2D_3.eval()
 u_x = [u for u in Model_2D_3.nodal_values_x]
 u_y = [u for u in Model_2D_3.nodal_values_y]
 #%% Compute the strain 

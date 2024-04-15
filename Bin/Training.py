@@ -986,16 +986,16 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
     TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
     PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
-    model.eval()
+    # u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
+    # model.eval()
     U_interm = []
     while epoch<n_epochs:
         # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
 
         # Compute loss
         loss_time_start = time.time()
-
-        u_predicted = model(xg, List_elems)
+        u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
+        # u_predicted = model(xg, List_elems)
         # loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*detJ)
         loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*torch.abs(detJ))
 

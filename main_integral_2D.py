@@ -5,6 +5,7 @@ from HiDeNN_PDE import MeshNN_2D
 import Bin.Pre_processing as pre
 # Import torch librairies
 import torch
+import torch.nn as nn
 
 from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D
 from Bin.Training import Training_2D_Integral
@@ -32,15 +33,15 @@ else:
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
 
-MaxElemSize = 5
+MaxElemSize = 20
 
 Domain_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 111, "Value": -1, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": -1, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 1, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -84,9 +85,52 @@ learning_rate = 0.001                              # optimizer learning rate
 
 
 #%% Training 
+# Fisrt stage
 optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-n_epochs = 10000
+n_epochs = 3000
 Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+
+
+# Second stage
+# Initialisation of the refined model
+MaxElemSize = MaxElemSize/16
+
+Domain_mesh_2 = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
+
+Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
+Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
+Domain_mesh_2.ReadMesh()                               # Parse the .msh file
+Domain_mesh_2.ExportMeshVtk()
+
+Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2)                # Create the associated model (with 2 components)
+
+# Would be nice to get a flag for only non dircihlet BC new coordinates
+newcoordinates = [coord for coord in Model_2D_2.coordinates]
+newcoordinates = torch.cat(newcoordinates,dim=0)
+IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
+NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 
+
+new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
+new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
+new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+Model_2D_2.nodal_values_x = new_nodal_values_x
+Model_2D_2.nodal_values_y = new_nodal_values_y
+Model_2D_2.nodal_values = new_nodal_values
+
+Model_2D_2.UnFreeze_Values()
+Model_2D_2.Freeze_Mesh()
+Model_2D_2.train()
+
+List_elems_2 = torch.range(0,Domain_mesh_2.NElem-1,dtype=torch.int)
+u_predicted_2,xg_2,detJ_2 = Model_2D_2(PlotCoordinates, List_elems_2)
+
+Model_2D_2.eval()
+u_predicted_eval_2 = Model_2D_2(xg_2, List_elems_2)
+Pplot.Plot2Dresults(u_predicted_eval_2, xg_2 , "_u_init_integral_Gauss_second_stage")
+optimizer = torch.optim.Adam(Model_2D_2.parameters(), lr=learning_rate)
+n_epochs = 500
+Loss_vect_2, Duration_2, U_interm_2 = Training_2D_Integral(Model_2D_2, optimizer, n_epochs,List_elems_2,lmbda, mu)
+
 
 #%% Evaluate trained model
 u_predicted = Model_2D(PlotCoordinates, IDs_plot)
@@ -112,10 +156,22 @@ sol.write(
 )
 
 #%% Export intermediate convergence steps
+# First stage
 for timestep in range(len(U_interm)):
     sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm[timestep]})
 
     sol.write(
-        f"Results/Video/TimeSeries/sol_u_{timestep}.vtk",  
+        f"Results/Video/TimeSeries/sol_u_multiscale{timestep}.vtk",  
+    )
+
+# Second stage
+meshBeam = meshio.read('geometries/'+Domain_mesh_2.name_mesh)
+for step in range(len(U_interm_2)):
+    timestep_2 = timestep + step
+    sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+    point_data={"U":U_interm_2[step]})
+
+    sol.write(
+        f"Results/Video/TimeSeries/sol_u_multiscale{timestep_2}.vtk",  
     )

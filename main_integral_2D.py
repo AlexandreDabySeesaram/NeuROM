@@ -16,6 +16,9 @@ import time
 import os
 import numpy as numpy
 
+
+Name = 'Square'
+
 Lame_coeff = False
 
 if Lame_coeff:
@@ -35,14 +38,14 @@ dimension = 2                                                   # Dimension of t
 
 MaxElemSize = 20
 
-Domain_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
+Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": -1, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 0, "Relation": False, "Constitutive": False}
+                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
 Excluded_elements = []
@@ -75,6 +78,8 @@ Model_2D.train()
 List_elems = torch.range(0,Domain_mesh.NElem-1,dtype=torch.int)
 u_predicted,xg,detJ = Model_2D(PlotCoordinates, List_elems)
 
+# detJ = torch.abs(detJ)
+
 Model_2D.eval()
 u_predicted_eval = Model_2D(xg, List_elems)
 Pplot.Plot2Dresults(u_predicted_eval, xg , "_u_init_integral_Gauss")
@@ -87,7 +92,7 @@ learning_rate = 0.001                              # optimizer learning rate
 #%% Training 
 # Fisrt stage
 optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-n_epochs = 3000
+n_epochs = 1500
 Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
 
 
@@ -95,7 +100,7 @@ Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epoc
 # Initialisation of the refined model
 MaxElemSize = MaxElemSize/16
 
-Domain_mesh_2 = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
+Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
 Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
 Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
@@ -128,35 +133,40 @@ Model_2D_2.eval()
 u_predicted_eval_2 = Model_2D_2(xg_2, List_elems_2)
 Pplot.Plot2Dresults(u_predicted_eval_2, xg_2 , "_u_init_integral_Gauss_second_stage")
 optimizer = torch.optim.Adam(Model_2D_2.parameters(), lr=learning_rate)
-n_epochs = 500
+n_epochs = 600
 Loss_vect_2, Duration_2, U_interm_2 = Training_2D_Integral(Model_2D_2, optimizer, n_epochs,List_elems_2,lmbda, mu)
 
 
-#%% Evaluate trained model
-u_predicted = Model_2D(PlotCoordinates, IDs_plot)
-Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_final_fine")
+# #%% Evaluate trained model
+# u_predicted = Model_2D(PlotCoordinates, IDs_plot)
+# Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_final_fine")
 
+
+
+#%% Export the results to vtk 
+import meshio
+#%% Read mesh
 #%% Get nodal values from the trained model
 u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
 eps =  Strain(Model_2D(xg, List_elems),xg)
-
-#%% Export the results to vtk 
-import meshio
-#%% Read mesh
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
-u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+# u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
+
 sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data]}, )
 sol.write(
-    "Results/sol_u.vtk", 
+    "Results/sol_u_FirstStage.vtk", 
 )
 
 #%% Export intermediate convergence steps
 # First stage
+U_interm = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm]
+
 for timestep in range(len(U_interm)):
     sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm[timestep]})
@@ -164,6 +174,8 @@ for timestep in range(len(U_interm)):
     sol.write(
         f"Results/Video/TimeSeries/sol_u_multiscale{timestep}.vtk",  
     )
+
+U_interm_2 = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_2]
 
 # Second stage
 meshBeam = meshio.read('geometries/'+Domain_mesh_2.name_mesh)
@@ -175,3 +187,20 @@ for step in range(len(U_interm_2)):
     sol.write(
         f"Results/Video/TimeSeries/sol_u_multiscale{timestep_2}.vtk",  
     )
+
+#%% Read mesh
+#%% Get nodal values from the trained model
+u_x = [u for u in Model_2D_2.nodal_values_x]
+u_y = [u for u in Model_2D_2.nodal_values_y]
+#%% Compute the strain 
+eps =  Strain(Model_2D_2(xg_2, List_elems_2),xg_2)
+# u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
+
+sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+point_data={"U":u.data}, 
+cell_data={"eps": [eps.data]}, )
+sol.write(
+    "Results/sol_u_SecondStage.vtk", 
+)
+# %%

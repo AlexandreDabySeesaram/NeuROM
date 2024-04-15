@@ -32,14 +32,14 @@ else:
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
 
-MaxElemSize = 2
+MaxElemSize = 5
 
 Domain_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
+                            {"Entity": 111, "Value": -1, "Normal": 0, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 1, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
@@ -82,47 +82,40 @@ We = torch.sum(InternalEnergy_2D(u_predicted_eval,xg,lmbda, mu)*detJ)
 print(We)
 learning_rate = 0.001                              # optimizer learning rate
 
+
+#%% Training 
 optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-n_epochs = 5000
+n_epochs = 10000
 Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+
+#%% Evaluate trained model
 u_predicted = Model_2D(PlotCoordinates, IDs_plot)
 Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_final_fine")
 
-
+#%% Get nodal values from the trained model
 u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
+#%% Compute the strain 
 eps =  Strain(Model_2D(xg, List_elems),xg)
+
+#%% Export the results to vtk 
 import meshio
-meshBeam = meshio.read('geometries/Rectangle_order_1_2.msh')
+#%% Read mesh
+meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data]}, )
-
 sol.write(
-    "sol_u.vtk",  # str, os.PathLike, or buffer/open file
-    # file_format="vtk",  # optional if first argument is a path; inferred from extension
+    "Results/sol_u.vtk", 
 )
 
-
-
-
-# Assuming you have a dictionary (u_dict) with time steps as keys and data tensors as values
-point_data = {}
-for timestep in range(5):
-  point_data[f"U_{timestep}"] = u.data
-
-sol2 = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
-                  point_data=point_data)
-
-sol2.write("sol_u_timeseries.vtk")
-
+#%% Export intermediate convergence steps
 for timestep in range(len(U_interm)):
     sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm[timestep]})
 
     sol.write(
-        f"Results/TimeSeries/sol_u_{timestep}.vtk",  # str, os.PathLike, or buffer/open file
-        # file_format="vtk",  # optional if first argument is a path; inferred from extension
+        f"Results/Video/TimeSeries/sol_u_{timestep}.vtk",  
     )

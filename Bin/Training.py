@@ -996,7 +996,8 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
         loss_time_start = time.time()
 
         u_predicted = model(xg, List_elems)
-        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*detJ)
+        # loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*detJ)
+        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*torch.abs(detJ))
 
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()

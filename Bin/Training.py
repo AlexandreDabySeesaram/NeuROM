@@ -989,6 +989,8 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     # u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
     # model.eval()
     U_interm = []
+    X_interm = []
+
     while epoch<n_epochs:
         # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
 
@@ -1020,7 +1022,9 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
             u_y = [u for u in model.nodal_values_y]
             u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
             U_interm.append(u.data)
-
+            new_coord = [coord for coord in model.coordinates]
+            new_coord = torch.cat(new_coord,dim=0)
+            X_interm.append(new_coord)
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
@@ -1033,5 +1037,5 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
-    return Loss_vect, (time_stop-time_start), U_interm
+    return Loss_vect, (time_stop-time_start), U_interm, X_interm
     

@@ -27,6 +27,8 @@ Physical Line (111) = {3} ;
 Physical Line (112) = {4} ;
 Physical Line (113) = {1} ;
 Physical Line (114) = {2} ;
+Physical Line (115) = {5,6,7,8} ;
+
 
 
 Mesh.MshFileVersion = 2.2;

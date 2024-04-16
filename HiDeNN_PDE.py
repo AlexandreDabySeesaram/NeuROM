@@ -616,7 +616,7 @@ class MeshNN_2D(nn.Module):
         self.constit_BC_node_IDs = []
 
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
-
+        self.borders_nodes = mesh.borders_nodes
 
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
@@ -744,6 +744,14 @@ class MeshNN_2D(nn.Module):
         """Set the coordinates as untrainable parameters"""
         for param in self.coordinates:
             param.requires_grad = False
+    
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = True
+        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+        for node in border_nodes:
+            self.coordinates[node].requires_grad = False
 
     def CheckBCValues(self):
         """Set the coordinates as trainable parameters """

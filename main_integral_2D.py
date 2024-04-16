@@ -46,9 +46,11 @@ Volume_element = 100                               # Volume element correspond t
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 0, "Relation": False, "Constitutive": False}
+                            {"Entity": 113, "Value": 0.5, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
+Borders = [111,112,113,114,115]
+Domain_mesh.AddBorders(Borders)
 Excluded_elements = []
 Domain_mesh.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
 Domain_mesh.MeshGeo()                                # Mesh the .geo file if .msh does not exist
@@ -60,6 +62,7 @@ Domain_mesh.ExportMeshVtk()
 Model_2D = MeshNN_2D(Domain_mesh, 2)                # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
 Model_2D.Freeze_Mesh()
+Model_2D.UnFreeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -94,7 +97,7 @@ learning_rate = 0.001                              # optimizer learning rate
 # Fisrt stage
 optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
 n_epochs = 1500
-Loss_vect, Duration, U_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+Loss_vect, Duration, U_interm, X_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
 
 
 # Second stage
@@ -104,6 +107,7 @@ MaxElemSize = MaxElemSize/5
 Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
 Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
+Domain_mesh_2.AddBorders(Borders)
 Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
 Domain_mesh_2.ReadMesh()                               # Parse the .msh file
 Domain_mesh_2.ExportMeshVtk()
@@ -126,6 +130,8 @@ Model_2D_2.nodal_values = new_nodal_values
 
 Model_2D_2.UnFreeze_Values()
 Model_2D_2.Freeze_Mesh()
+Model_2D_2.UnFreeze_Mesh()
+
 Model_2D_2.train()
 
 List_elems_2 = torch.range(0,Domain_mesh_2.NElem-1,dtype=torch.int)
@@ -136,8 +142,8 @@ Model_2D_2.eval()
 u_predicted_eval_2 = Model_2D_2(xg_2, List_elems_2)
 Pplot.Plot2Dresults(u_predicted_eval_2, xg_2 , "_u_init_integral_Gauss_second_stage")
 optimizer = torch.optim.Adam(Model_2D_2.parameters(), lr=learning_rate)
-n_epochs = 600
-Loss_vect_2, Duration_2, U_interm_2 = Training_2D_Integral(Model_2D_2, optimizer, n_epochs,List_elems_2,lmbda, mu)
+n_epochs = 1000
+Loss_vect_2, Duration_2, U_interm_2, X_interm_2 = Training_2D_Integral(Model_2D_2, optimizer, n_epochs,List_elems_2,lmbda, mu)
 
 # Third stage
 # Initialisation of the refined model
@@ -146,6 +152,7 @@ MaxElemSize = MaxElemSize/4
 Domain_mesh_3 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
 Domain_mesh_3.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
+Domain_mesh_3.AddBorders(Borders)
 Domain_mesh_3.MeshGeo()                                # Mesh the .geo file if .msh does not exist
 Domain_mesh_3.ReadMesh()                               # Parse the .msh file
 Domain_mesh_3.ExportMeshVtk()
@@ -169,6 +176,8 @@ Model_2D_3.nodal_values = new_nodal_values
 
 Model_2D_3.UnFreeze_Values()
 Model_2D_3.Freeze_Mesh()
+Model_2D_3.UnFreeze_Mesh()
+
 Model_2D_3.train()
 
 List_elems_3 = torch.range(0,Domain_mesh_3.NElem-1,dtype=torch.int)
@@ -178,8 +187,8 @@ Model_2D_3.eval()
 u_predicted_eval_3 = Model_2D_3(xg_3, List_elems_3)
 Pplot.Plot2Dresults(u_predicted_eval_3, xg_3 , "_u_init_integral_Gauss_second_stage")
 optimizer = torch.optim.Adam(Model_2D_3.parameters(), lr=learning_rate)
-n_epochs = 150
-Loss_vect_3, Duration_3, U_interm_3 = Training_2D_Integral(Model_2D_3, optimizer, n_epochs,List_elems_3,lmbda, mu)
+n_epochs = 600
+Loss_vect_3, Duration_3, U_interm_3, X_interm_3 = Training_2D_Integral(Model_2D_3, optimizer, n_epochs,List_elems_3,lmbda, mu)
 
 # #%% Evaluate trained model
 # u_predicted = Model_2D(PlotCoordinates, IDs_plot)
@@ -212,9 +221,10 @@ sol.write(
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 
 U_interm = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm]
+X_interm = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm]
 
 for timestep in range(len(U_interm)):
-    sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+    sol = meshio.Mesh(X_interm[timestep].data, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm[timestep]})
 
     sol.write(
@@ -222,12 +232,13 @@ for timestep in range(len(U_interm)):
     )
 
 U_interm_2 = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_2]
+X_interm_2 = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_2]
 
 # Second stage
 meshBeam = meshio.read('geometries/'+Domain_mesh_2.name_mesh)
 for step in range(len(U_interm_2)):
     timestep_2 = timestep + step
-    sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+    sol = meshio.Mesh(X_interm_2[step].data, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm_2[step]})
 
     sol.write(
@@ -235,12 +246,13 @@ for step in range(len(U_interm_2)):
     )
 
 U_interm_3 = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_3]
+X_interm_3 = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_3]
 
 # Third stage
 meshBeam = meshio.read('geometries/'+Domain_mesh_3.name_mesh)
 for pas in range(len(U_interm_3)):
     timestep_3 = timestep + step + pas
-    sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+    sol = meshio.Mesh(X_interm_3[pas].data, {"triangle":meshBeam.cells_dict["triangle"]},
     point_data={"U":U_interm_3[pas]})
 
     sol.write(

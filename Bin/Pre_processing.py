@@ -66,6 +66,10 @@ class Mesh:
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_str+'.msh'
         self.name_geo = self.name+'.geo'
     
+    def AddBorders(self,borders):
+        self.borders = borders
+        self.borders_nodes = []
+
     def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
         self.ExcludeId = Exclude
@@ -169,6 +173,14 @@ class Mesh:
                                 self.node_per_elem = 6
                         flagType = False  
                     self.Connectivity.append(ElemList[-self.node_per_elem:])  
+
+                if ElemList[3] in self.borders: 
+                    match ElemList[1]:
+                        case 1:
+                            node_per_elem = 2
+                        case 8:
+                            node_per_elem = 3
+                    self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:
                     for ID_idx in range(len(self.ListOfDirichletsBCsIds)):

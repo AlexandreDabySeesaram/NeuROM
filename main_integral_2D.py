@@ -102,7 +102,7 @@ Loss_vect, Duration, U_interm, X_interm = Training_2D_Integral(Model_2D, optimiz
 
 # Second stage
 # Initialisation of the refined model
-MaxElemSize = MaxElemSize/5
+MaxElemSize = MaxElemSize/7
 
 Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
@@ -147,7 +147,7 @@ Loss_vect_2, Duration_2, U_interm_2, X_interm_2 = Training_2D_Integral(Model_2D_
 
 # Third stage
 # Initialisation of the refined model
-MaxElemSize = MaxElemSize/4
+MaxElemSize = MaxElemSize/2
 
 Domain_mesh_3 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 
@@ -205,11 +205,13 @@ u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
 eps =  Strain(Model_2D(xg, List_elems),xg)
+X_interm = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm]
+
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+sol = meshio.Mesh(X_interm[-1].data, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data]}, )
 sol.write(
@@ -221,7 +223,6 @@ sol.write(
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 
 U_interm = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm]
-X_interm = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm]
 
 for timestep in range(len(U_interm)):
     sol = meshio.Mesh(X_interm[timestep].data, {"triangle":meshBeam.cells_dict["triangle"]},
@@ -270,7 +271,7 @@ eps =  Strain(Model_2D_2(xg_2, List_elems_2),xg_2)
 # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+sol = meshio.Mesh(X_interm_2[-1].data, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data]}, )
 sol.write(
@@ -287,7 +288,7 @@ eps =  Strain(Model_2D_3(xg_3, List_elems_3),xg_3)
 # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]},
+sol = meshio.Mesh(X_interm_3[-1].data, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data]}, )
 sol.write(

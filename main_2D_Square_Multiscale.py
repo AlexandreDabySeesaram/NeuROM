@@ -76,25 +76,15 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     if dimension ==2:
         # Domain_mesh_u = pre.Mesh('Rectangle',MaxElemSize, order_u, dimension)    # Create the mesh object
         # Domain_mesh_du = pre.Mesh('Rectangle',MaxElemSize, order_du, dimension)    # Create the mesh object
-        Domain_mesh_u = pre.Mesh('Rectangle_type2', MaxElemSize, MinElemSize, order_u, dimension)    # Create the mesh object
-        Domain_mesh_du = pre.Mesh('Rectangle_type2', MaxElemSize, MinElemSize, order_du, dimension)    # Create the mesh object
+        Domain_mesh_u = pre.Mesh('Square', MaxElemSize, MinElemSize, order_u, dimension)    # Create the mesh object
+        Domain_mesh_du = pre.Mesh('Square', MaxElemSize, MinElemSize, order_du, dimension)    # Create the mesh object
 
     Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 
     ####################################################################
     # User defines all boundary conditions
 
-    '''
-    DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
-                                #{"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                #{"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False}
-                                ]
 
-    DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False}
-                                ]
-    '''
     DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
                                 {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                                 {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
@@ -113,31 +103,14 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     # Normal: 1     component: y, dv_dy
     # Normal: 2     component: x, du_dy = dv_dx
 
-  
     DirichletDictionryList = [  {"Entity": 112, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                {"Entity": 112, "Value": 0, "Normal":  2, "Relation": False, "Constitutive": False},
+                                {"Entity": 112, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                                 {"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                {"Entity": 114, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False}
-                                ]
-
-    '''
-    DirichletDictionryList = [  {"Entity": 112, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                                {"Entity": 112, "Value": 0, "Normal":  2, "Relation": False, "Constitutive": False},
-                                {"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
-                                {"Entity": 113, "Value": 0.05, "Normal": 1, "Relation": False, "Constitutive": False},
-                                #{"Entity": 111, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
-                                #{"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True}
-                                ]
-    '''
-    '''
-    DirichletDictionryList = [  {"Entity": 112, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 112, "Value": 0, "Normal":  2, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0.05, "Normal": 1, "Relation": False, "Constitutive": False},
-                            #{"Entity": 111, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True},
-                            #{"Entity": 114, "Value": 0.0, "Normal": 0, "Relation": False, "Constitutive": True}
+                                {"Entity": 114, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
+                                #{"Entity": 113, "Value": 0.05, "Normal": 1, "Relation": False, "Constitutive": False},
+                                #{"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
+                                {"Entity": 115, "Value": [0.0], "Normal": 0, "Relation": True, "Constitutive": False}
                             ]
-    '''
 
     Excluded_elements_du = [200]
 
@@ -152,19 +125,14 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     Model_u = MeshNN_2D(Domain_mesh_u, 2)                # Create the associated model
     Model_u.UnFreeze_Values()
     Model_u.Freeze_Mesh()
+    Model_u.ComputeNormalVectors()
 
     print()
     print("Model du")
     Model_du = MeshNN_2D(Domain_mesh_du, 3)                # Create the associated model
     Model_du.UnFreeze_Values()
     Model_du.Freeze_Mesh()
-
-    #print("Model du param")
-    #for param in Model_du.parameters():
-    #    if param.requires_grad == True:
-    #        print(param)
-
-    ####################################################################
+    Model_du.ComputeNormalVectors()
 
     return Model_u, Model_du, Domain_mesh_u, Domain_mesh_du
 
@@ -208,10 +176,10 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
                 ref_coords[i,:] = ref_coords[i,[2,1,0]]
         return cell_ids, ref_coords
 
-    n_train = 15
+    n_train = 40
     PlotCoordinates, IDs_u, IDs_du = GenerateData(n_train)
 
-    points_per_elem = int(1000/Domain_mesh_du.NElem) #200
+    points_per_elem = int(3000/Domain_mesh_du.NElem) #200
 
     cell_ids, ref_coords = Generate_Training_IDs(points_per_elem)
 
@@ -240,7 +208,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
 
     optimizer = torch.optim.Adam(list(Model_u.parameters())+list(Model_du.parameters()))
 
-    w0 = numpy.sqrt(10*50)*E
+    w0 = 10*E
     w1 = 1
 
     print("**************** START TRAINING 1st stage ***************\n")
@@ -248,7 +216,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
 
 
     current_BS = int(cell_ids.shape[0]/4)
-    n_epochs = 3000
+    n_epochs = 100
     CoordinatesBatchSet = torch.utils.data.DataLoader([[cell_ids[i], ref_coords[i]] for i in range((cell_ids.shape)[0])], 
                                                             batch_size=current_BS, shuffle=True)
 
@@ -263,12 +231,13 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
                                 CoordinatesBatchSet, w0, w1, n_epochs, optimizer, len(CoordinatesBatchSet),
                                 n_train, loss, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
 
-
+    '''
     print("*************** 2nd stage LBFGS ***************\n")
     n_epochs = 100
     Model_u, Model_du = LBFGS_Stage2_2D(Model_u, Model_du, Domain_mesh_u, Domain_mesh_du, IDs_u, IDs_du, PlotCoordinates, 
                                 cell_ids, ref_coords, 
                                 w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu)
+    '''
 
     return Model_u, Model_du
 
@@ -311,6 +280,8 @@ def InitializeWeights(NewModel_u, NewModel_du, Model_u, Model_du, Domain_mesh_u,
 
     displ_all_coord = [(NewModel_u.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(NewModel_u.coordinates))]
     displ_all_cell_IDs = torch.tensor([torch.tensor(Domain_mesh_u.GetCellIds(i),dtype=torch.int)[0] for i in displ_all_coord])
+
+    
     displ_all_coord = (torch.cat(displ_all_coord)).clone().detach().requires_grad_(True)
 
     # # # # # # # # # # # # # # # 
@@ -319,17 +290,34 @@ def InitializeWeights(NewModel_u, NewModel_du, Model_u, Model_du, Domain_mesh_u,
     old_displ = Model_u(displ_all_coord, displ_all_cell_IDs)
 
     for i in node_IDs_s11:
-        NewModel_du.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([old_stress[0,i]]))
+        if stress_all_cell_IDs[i] > -1:
+            NewModel_du.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([old_stress[0,i]]))
+        else:
+            NewModel_du.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([0.0]))
     for i in node_IDs_s22:
-        NewModel_du.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([old_stress[1,i]]))
+        if stress_all_cell_IDs[i] > -1:
+            NewModel_du.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([old_stress[1,i]]))
+        else:
+            NewModel_du.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([0.0]))
+
     for i in node_IDs_s12:
-        NewModel_du.nodal_values[2][i] = torch.nn.Parameter(torch.tensor([old_stress[2,i]]))
+        if stress_all_cell_IDs[i] > -1:
+            NewModel_du.nodal_values[2][i] = torch.nn.Parameter(torch.tensor([old_stress[2,i]]))
+        else:
+            NewModel_du.nodal_values[2][i] = torch.nn.Parameter(torch.tensor([0.0]))
 
 
     for i in node_IDs_u0:
-        NewModel_u.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([old_displ[0,i]]))
+        if displ_all_cell_IDs[i] > -1:
+            NewModel_u.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([old_displ[0,i]]))
+        else:
+            NewModel_u.nodal_values[0][i] = torch.nn.Parameter(torch.tensor([0.0]))
     for i in node_IDs_u1:
-        NewModel_u.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([old_displ[1,i]]))
+        if displ_all_cell_IDs[i] > -1:
+            NewModel_u.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([old_displ[1,i]]))
+        else:
+            NewModel_u.nodal_values[1][i] = torch.nn.Parameter(torch.tensor([0.0]))
+
 
     return NewModel_u, NewModel_du
 
@@ -337,7 +325,7 @@ def OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimens
 
     NewModel_u, NewModel_du, NewDomain_mesh_u, NewDomain_mesh_du = DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize)
     NewModel_u, NewModel_du = InitializeWeights(NewModel_u, NewModel_du, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du)
-    NewModel_u, NewModel_du = DoTheRest( NewModel_u, NewModel_du, NewDomain_mesh_u, NewDomain_mesh_du,  E, mu, lmbda, L)
+    NewModel_u, NewModel_du = DoTheRest(NewModel_u, NewModel_du, NewDomain_mesh_u, NewDomain_mesh_du,  E, mu, lmbda, L)
 
     return NewModel_u, NewModel_u, NewModel_du, NewDomain_mesh_u, NewDomain_mesh_du
 
@@ -347,24 +335,20 @@ def OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimens
 
 start_train_time = time.time()
 
-MaxElemSize = 20
-MinElemSize = 20
+MaxElemSize = 10
+MinElemSize = 10
 
 Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize)
 Model_u, Model_du = DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, L)
 
-MaxElemSize = 10
-MinElemSize = 10
-
-Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u, order_du )
-
-MaxElemSize = 4
+MaxElemSize = 2
 MinElemSize = 2
 
 Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u, order_du )
 
-num_sol_name_displ = "Rectangle_type2_case3/Nodes_order2_displacement.npy"
-num_sol_name_stress = "Rectangle_type2_case3/Nodes_order1_stress.npy"
+'''
+num_sol_name_displ = "Square_case_1/Nodes_order2_displacement.npy"
+num_sol_name_stress = "Square_case_1/Nodes_order1_stress.npy"
 
 
 print("Total time : ", time.time() - start_train_time) 
@@ -372,3 +356,4 @@ print("Total time : ", time.time() - start_train_time)
 #Model_u.Update_Middle_Nodes(NewDomain_mesh_u)
 NumSol_eval(Domain_mesh_u, Domain_mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L)
 
+'''

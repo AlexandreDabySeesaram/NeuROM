@@ -711,7 +711,7 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 
-def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates, 
+def LBFGS_Stage2_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, PlotCoordinates, 
                         #TrainCoordinates, TrainIDs_u, TrainIDs_du,
                         Cell_ids, Ref_Coord,
                         w0, w1, n_train, n_epochs, constit_point_coord, constit_cell_IDs_u, lmbda, mu):
@@ -728,7 +728,7 @@ def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
 
     epoch = 0
 
-    TrainCoordinates, TrainIDs_u, TrainIDs_du = GetRealCoord(Model_du, Mesh, Cell_ids, Ref_Coord)
+    TrainCoordinates, TrainIDs_u, TrainIDs_du = GetRealCoord(Model_du, Mesh_du, Cell_ids, Ref_Coord)
 
     while stagnancy_counter < 5 and epoch<n_epochs:
         counter = counter+1
@@ -769,12 +769,14 @@ def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
         epoch = epoch+1
 
     Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, [], n_train, "_Final")
+    Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, "final")
+
 
     return Model_u, Model_du
 
 
-def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
-                            CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train, 
+def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, PlotCoordinates,
+                            CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_batches_per_epoch, n_train, 
                             loss, constit_point_coord, constit_cell_IDs_u, lmbda, mu ):
 
     evaluation_time = 0
@@ -794,10 +796,14 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
     variance_u = []
     first_iteration = True
     stop = False
+
     total = 20
+    min_loss = 100
+    no_improvement = 0
+    loss_decrease_c = 1.0e-3
 
 
-    while epoch<n_epochs and stop == False:
+    while epoch<n_epochs and stop == False :
 
         # w0 = torch.randint(0, total,[1])
         # w1 = total-w0
@@ -814,7 +820,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
             Cell_ids = DataSet[0]
             Ref_Coord = DataSet[1]
 
-            TrialCoordinates, TrialIDs_u, TrialIDs_du = GetRealCoord(Model_du, Mesh, Cell_ids, Ref_Coord)
+            TrialCoordinates, TrialIDs_u, TrialIDs_du = GetRealCoord(Model_du, Mesh_du, Cell_ids, Ref_Coord)
 
             ##### Should we move this to the loss function??? Maybe it's ok
             Neumann_BC_rel(Model_du)
@@ -841,27 +847,18 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
             loss[0].append(l_pde.item())
             loss[1].append(l_compat.item())
 
-            loss_current = l_pde.item()+l_compat.item()
+            loss_current = l_pde.item() + l_compat.item()
 
-
-            if first_iteration == True:
-                variance_u.append(torch.mean((u_predicted - torch.zeros_like(u_predicted))**2).detach())
-                first_iteration == False
-            else:
-                variance_u.append(torch.mean((u_predicted - u_pred_old)**2).detach()/torch.mean((u_predicted)**2).detach())
-            u_pred_old = u_predicted
-
-            loss_decrease.append((loss_old - loss_current)/(0.5*numpy.abs(loss_old)))# + numpy.abs(loss_current))))
+            loss_decrease.append((loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current)))
             loss_old = loss_current
-            
-            # if loss_min > loss_current:
-            #     loss_min = loss_current
-            #     loss_counter = 0
 
-            #     torch.save(Model_u.state_dict(),"Results/Model_u.pt")
-            #     torch.save(Model_du.state_dict(),"Results/Model_du.pt")
-            # else:
-            #     loss_counter += 1
+            loss_current = l_pde.item()
+
+            if loss_current < min_loss:
+                min_loss = loss_current
+                no_improvement = 0
+            else:
+                no_improvement = no_improvement +1
 
             start_time = time.time()
             l.backward()
@@ -873,32 +870,27 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
 
             optimizer.zero_grad()
 
-            # loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
-            # loss_old = loss_current
-
-            # if loss_decrease >= 0 and loss_decrease < 1.0e-7:
-            #     stagnancy_counter = stagnancy_counter +1
-            # else:
-            #     stagnancy_counter = 0
-
-        if (epoch+1)%50 == 0:
+        if (epoch+1)%100 == 0:
             print("     epoch = ", epoch +1)
             print("     loss_counter = ", loss_counter)
-            print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-10:-1]), precision=4))
-            print("     mean loss compatibility = ", numpy.format_float_scientific(numpy.mean(loss[1][-10:-1]), precision=4))
-            print("     mean loss decrease = ", numpy.format_float_scientific(numpy.mean(loss_decrease[-10:-1]), precision=4))
-            print("     displacement variance = ", numpy.format_float_scientific(numpy.mean((variance_u[-10:-1])), precision=4))
+            print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-100*n_batches_per_epoch:-1]), precision=4))
+            print("     mean loss compatibility = ", numpy.format_float_scientific(numpy.mean(loss[1][-100*n_batches_per_epoch:-1]), precision=4))
+            print("     mean loss decrease = ", numpy.format_float_scientific(numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]), precision=4))
+            # print("     displacement variance = ", numpy.format_float_scientific(numpy.mean((variance_u[-100*n_batches_per_epoch:-1])), precision=4))
             print("     w0, w1 : ", w0, w1)
-            #print("     ", (Model_du.nodal_values[0][0]).item(),(Model_du.nodal_values[0][1]).item())
-            #print()
-            #print("     var loss PDE = ", numpy.sqrt(numpy.var(loss[0][-10:-1])))
-            #print("     var loss compatibility = ", numpy.sqrt(numpy.var(loss[1][-10:-1])))      
+            print()
+            # print("     stagnancy_counter = ", stagnancy_counter)   
+            print("     no_improvement = ", no_improvement)   
             print("     ...............................")
-            if numpy.mean(loss_decrease[-10:-1]) < 1.0e-4:
-                stop = True
 
-        if (epoch+1) % 200 == 0:
+            if numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) < 1.0e-3 \
+                    and no_improvement > 20*n_batches_per_epoch:
+                    stop = True
+
+
+        if (epoch+1) % 100 == 0:
             l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
+            Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, epoch+1)
             print("     _______________________________")
 
         epoch = epoch+1
@@ -908,7 +900,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
     #print("loss_current = ", loss_current)
     #print("loss_counter = ", loss_counter)
 
-    l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
+    l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Final")
 
     # if loss_min < l:
     #     print("     ****** REVERT ******")

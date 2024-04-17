@@ -534,6 +534,7 @@ class MeshNN_2D(nn.Module):
         self.relation_BC_values = []
         self.relation_BC_normals = []
         self.constit_BC_node_IDs = []
+        self.relation_BC_lines = []
 
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
 
@@ -555,10 +556,11 @@ class MeshNN_2D(nn.Module):
                         print()
                 else:
                     IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                    self.relation_BC_lines.append(IDs)
                     IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
                     self.relation_BC_node_IDs.append(IDs)
                     self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
-                    self.relation_BC_normals.append(mesh.normals[IDs])
+                    #self.relation_BC_normals.append(mesh.normals[IDs])
                     print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
                     print("    Relation BC ")
                     print("      IDs : ", IDs)
@@ -583,7 +585,6 @@ class MeshNN_2D(nn.Module):
                                 IDs = IDs[IDs!=elem]
 
                     self.constit_BC_node_IDs.append(IDs)
-
                     print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
                     print("    Constitutive BC ")
                     print("      IDs : ", IDs)
@@ -647,16 +648,27 @@ class MeshNN_2D(nn.Module):
                 val.requires_grad = True
  
         for j in range(len(self.frozen_BC_node_IDs)):
-            print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
-            print("excluded : ", self.ExcludeFromDirichlet)
+            print("Component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
+            print("To be excluded : ", self.ExcludeFromDirichlet)
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
             frozen = self.frozen_BC_node_IDs[j]
-            for idf in frozen:
-                if idf not in self.ExcludeFromDirichlet:
+            
+            all_excluded =  [f in self.ExcludeFromDirichlet for f in frozen]
+
+            if all(all_excluded) == False:
+                print("Excluded")
+
+                for idf in frozen:
+                    if idf not in self.ExcludeFromDirichlet:
+                        values[idf].requires_grad = False
+                    else:
+                        values[idf].requires_grad = True
+            else:
+                print("Not excluded")
+                for idf in frozen:
                     values[idf].requires_grad = False
-                else:
-                    values[idf].requires_grad = True
-        
+
+
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
         for param in self.coordinates:
@@ -696,6 +708,45 @@ class MeshNN_2D(nn.Module):
             self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j]
             self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j]
             self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j]
+
+    def ComputeNormalVectors(self):
+        print()
+        print(" * ComputeNormalVectors")
+        print("Nodes : ", self.relation_BC_node_IDs)
+        line_normals = []
+
+
+        if len(self.relation_BC_node_IDs)==0:
+            return []
+        else:
+            print(self.relation_BC_lines[0])
+
+            for line in self.relation_BC_lines[0]:
+                point_a = line[0]
+                point_b = line[1]
+                coord_a = self.coordinates[point_a-1]
+                coord_b = self.coordinates[point_b-1]
+                vect = coord_b - coord_a
+                vect = vect[0,[1,0]]
+                vect[0] = -vect[0]
+                vect = vect/torch.norm(vect)
+                line_normals.append(vect)
+
+            normals = [[] for i in range(len(self.relation_BC_node_IDs[0])) ]
+
+            for i in range(len(self.relation_BC_node_IDs[0])):
+                node_id = self.relation_BC_node_IDs[0][i]
+
+                for j in range(len(self.relation_BC_lines[0])): 
+                    if node_id+1 in self.relation_BC_lines[0][j]:
+                        normals[i].append(line_normals[j])
+
+            normals = [(x[0]+x[1])/2 for x in normals]
+            print()
+            print("normals = ", normals)
+
+            self.relation_BC_normals.append(normals)
+
 
 
 

@@ -41,7 +41,7 @@ Physical Line (114) = {4} ;
 
 Physical Curve (115) = {5,6,7,8} ;
 
-Physical Point (200) = {1,2};
+Physical Point (200) = {1,2,3,4};
 
 
 

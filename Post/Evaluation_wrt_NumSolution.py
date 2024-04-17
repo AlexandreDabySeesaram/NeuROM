@@ -17,18 +17,30 @@ def Read_NumSol(mesh, num_sol_name):
     return mesh_coord, mesh_IDs_u, nodal_values
 
 
-def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name, L):
+def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L):
 
     print()
     print("*************** Evaluation wrt. Numerical solution ***************\n")
 
-    mesh_coord, mesh_IDs_u, nodal_values = Read_NumSol(mesh_u, num_sol_name)
+    _, _, nodal_values_displ = Read_NumSol(mesh_u, num_sol_name_displ)
+    _, _, nodal_values_stress = Read_NumSol(mesh_u, num_sol_name_stress)
 
-    num_u_x = nodal_values[:,0]
-    num_u_y = nodal_values[:,1]
+    num_u_x = nodal_values_displ[:,0]
+    num_u_y = nodal_values_displ[:,1]
+
+    numerical_s11 = nodal_values_stress[:,0]
+    numerical_s12 = nodal_values_stress[:,1]
+    numerical_s22 = nodal_values_stress[:,3]
+
+    print("nodal_values_stress : ", nodal_values_stress.shape)
 
     u_predicted_x = torch.tensor(Model_u.nodal_values[0])
     u_predicted_y = torch.tensor(Model_u.nodal_values[1])
+
+    s11_predicted = torch.tensor(Model_du.nodal_values[0])
+    s22_predicted = torch.tensor(Model_du.nodal_values[1])
+    s12_predicted = torch.tensor(Model_du.nodal_values[2])
+
 
     norm_num_ux = torch.norm(num_u_x)
     norm_num_uy = torch.norm(num_u_y)
@@ -95,9 +107,21 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name, L):
     MSE_s22 = torch.mean((num_s22 - s22))
     MSE_s12 = torch.mean((num_s12 - s12))
 
+    print("stress(NN; u_num) vs stress(NN; u_NN)")
     print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s11.item()),precision=4))
     print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s22.item()),precision=4))
     print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s12.item()),precision=4))
-
     print()
 
+
+    ######################################################################################################
+
+    MSE_s11 = torch.mean((numerical_s11 - s11_predicted))
+    MSE_s22 = torch.mean((numerical_s22 - s22_predicted))
+    MSE_s12 = torch.mean((numerical_s12 - s12_predicted))
+
+    print("Num. solution stress vs NN stress")
+    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s11.item()),precision=4))
+    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s22.item()),precision=4))
+    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s12.item()),precision=4))
+    print()

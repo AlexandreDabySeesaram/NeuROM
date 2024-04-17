@@ -210,6 +210,7 @@ def Mixed_2D_loss_Displacement_based(model_u, model_du, x, lmbda, mu):
 
 
 def Neumann_BC_rel(Model):
+    #print(" * Neumann_BC_rel")
 
     for i in range(len(Model.relation_BC_node_IDs)):
 
@@ -243,9 +244,6 @@ def Neumann_BC_rel(Model):
 
                 ID = nodes[j]
                 normal = normals[j]
-
-                #print(ID.item())
-                #print(normal)
 
                 if np.isclose(normal[0],0.0, atol=1e-06):
                     s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))

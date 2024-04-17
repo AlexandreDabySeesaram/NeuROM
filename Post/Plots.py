@@ -10,6 +10,7 @@ plt.rcParams.update({
 import numpy as np
 import matplotlib
 import torch
+import meshio
 from scipy import ndimage
 
 matplotlib.rcParams["text.usetex"] = True
@@ -613,3 +614,16 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
 
     fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
     plt.close()
+
+
+def Export_Displacement_to_vtk(mesh_name, Model_u, ep ):
+
+    u_x = [u for u in Model_u.nodal_values_x]
+    u_y = [u for u in Model_u.nodal_values_y]
+
+    meshBeam = meshio.read('geometries/'+mesh_name)
+    u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+    sol = meshio.Mesh(meshBeam.points, {"triangle6":meshBeam.cells_dict["triangle6"]},
+                        point_data={"U":u.data})
+
+    sol.write('Results/Anim/'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')

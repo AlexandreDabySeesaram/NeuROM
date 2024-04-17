@@ -627,23 +627,23 @@ class MeshNN_2D(nn.Module):
                         self.frozen_BC_node_IDs.append(IDs)
                         self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
                         self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
-                        print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                        print("    Simple BC ")
-                        print("      IDs : ", IDs)
-                        print("      component : ", mesh.ListOfDirichletsBCsNormals[i])
-                        print("      values : ", mesh.ListOfDirichletsBCsValues[i])
-                        print()
+                        # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                        # print("    Simple BC ")
+                        # print("      IDs : ", IDs)
+                        # print("      component : ", mesh.ListOfDirichletsBCsNormals[i])
+                        # print("      values : ", mesh.ListOfDirichletsBCsValues[i])
+                        # print()
                 else:
                     IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
                     IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
                     self.relation_BC_node_IDs.append(IDs)
                     self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
                     self.relation_BC_normals.append(mesh.normals[IDs])
-                    print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    print("    Relation BC ")
-                    print("      IDs : ", IDs)
-                    print("      values : ", self.relation_BC_values)
-                    print()
+                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                    # print("    Relation BC ")
+                    # print("      IDs : ", IDs)
+                    # print("      values : ", self.relation_BC_values)
+                    # print()
 
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
                 if mesh.ListOfDirichletsBCsConstit[i] == True:
@@ -664,10 +664,10 @@ class MeshNN_2D(nn.Module):
 
                     self.constit_BC_node_IDs.append(IDs)
 
-                    print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    print("    Constitutive BC ")
-                    print("      IDs : ", IDs)
-                    print()
+                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
+                    # print("    Constitutive BC ")
+                    # print("      IDs : ", IDs)
+                    # print()
 
 
         if n_components ==2:
@@ -723,15 +723,15 @@ class MeshNN_2D(nn.Module):
 
     def UnFreeze_Values(self):
         """Set the coordinates as trainable parameters """
-        print("Unfreeze values")
+        # print("Unfreeze values")
 
         for dim in self.nodal_values:
             for val in dim:
                 val.requires_grad = True
  
         for j in range(len(self.frozen_BC_node_IDs)):
-            print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
-            print("excluded : ", self.ExcludeFromDirichlet)
+            # print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
+            # print("excluded : ", self.ExcludeFromDirichlet)
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
             frozen = self.frozen_BC_node_IDs[j]
             for idf in frozen:
@@ -758,11 +758,11 @@ class MeshNN_2D(nn.Module):
         print("Unfreeze values")
 
         for j in range(len(self.frozen_BC_node_IDs)):
-            print(j, self.frozen_BC_component_IDs[j], self.frozen_BC_node_IDs[j])
+            # print(j, self.frozen_BC_component_IDs[j], self.frozen_BC_node_IDs[j])
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
             frozen = self.frozen_BC_node_IDs[j]
-            for idf in frozen:
-                print(values[idf])
+            # for idf in frozen:
+                # print(values[idf])
 
 
     def Update_Middle_Nodes(self, mesh):

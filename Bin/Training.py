@@ -986,19 +986,15 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
     TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
     PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    # u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
-    # model.eval()
+    stag_threshold = 1e-6
     U_interm = []
     X_interm = []
-
-    while epoch<n_epochs:
-        # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-
+    stagnation = False
+    while epoch<n_epochs and not stagnation:
         # Compute loss
         loss_time_start = time.time()
         u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
-        # u_predicted = model(xg, List_elems)
-        # loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*detJ)
+ 
         loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*torch.abs(detJ))
 
         eval_time += time.time() - loss_time_start
@@ -1016,8 +1012,15 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
         optimizer.zero_grad()
         with torch.no_grad():
             epoch+=1
+            if epoch >1:
+                d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
+                loss_old = loss.data
+                if d_loss < stag_threshold:
+                    stagnation = True
+            else:
+                loss_old = loss.item()
             Loss_vect.append(loss.item())
-        if (epoch+1) % 50 == 0 or epoch ==0:
+        if (epoch+1) % 50 == 0 or epoch ==1:
             u_x = [u for u in model.nodal_values_x]
             u_y = [u for u in model.nodal_values_y]
             u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)

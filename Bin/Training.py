@@ -797,16 +797,17 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
     first_iteration = True
     stop = False
 
-    total = 20
     min_loss = 100
     no_improvement = 0
     loss_decrease_c = 1.0e-3
 
+    total = w0+w1
+
 
     while epoch<n_epochs and stop == False :
 
-        # w0 = torch.randint(0, total,[1])
-        # w1 = total-w0
+        w1 = torch.randint(0, int(total/2) ,[1])
+        w0 = total - w1
 
         for DataSet in CoordinatesBatchSet:
 
@@ -870,7 +871,9 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
             optimizer.zero_grad()
 
-        if (epoch+1)%100 == 0:
+            Model_u.Update_Middle_Nodes(Mesh_u)
+
+        if (epoch+1)%10 == 0:
             print("     epoch = ", epoch +1)
             print("     loss_counter = ", loss_counter)
             print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-100*n_batches_per_epoch:-1]), precision=4))
@@ -883,32 +886,26 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
             print("     no_improvement = ", no_improvement)   
             print("     ...............................")
 
-            if numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) < 1.0e-3 \
+            if numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) < 5.0e-4 \
                     and no_improvement > 20*n_batches_per_epoch:
                     stop = True
 
 
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 10 == 0:
             l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
             Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, epoch+1)
+            Pplot.Export_Stress_to_vtk(Mesh_du.name_mesh, Model_du, epoch+1)
+
             print("     _______________________________")
 
         epoch = epoch+1
 
     stopt_train_time = time.time()
 
-    #print("loss_current = ", loss_current)
-    #print("loss_counter = ", loss_counter)
-
     l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Final")
+    Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, epoch+1)
+    Pplot.Export_Stress_to_vtk(Mesh_du.name_mesh, Model_du, epoch+1)
 
-    # if loss_min < l:
-    #     print("     ****** REVERT ******")
-    #     Model_u.load_state_dict(torch.load("Results/Model_u.pt"))
-    #     Model_du.load_state_dict(torch.load("Results/Model_du.pt"))
-
-    #     l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates,loss, n_train, "_Stage1")
-        
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {stopt_train_time-start_train_time}s\n\
         * Evaluation time: {evaluation_time}s\n\

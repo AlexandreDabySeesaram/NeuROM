@@ -7,23 +7,32 @@ import matplotlib.pyplot as plt
 import numpy
 import torch.nn as nn
 
-from Bin.PDE_Library import Mixed_2D_loss
+from Bin.PDE_Library import Mixed_2D_loss, Stress
 
 
 def Read_NumSol(mesh, num_sol_name):
-    mesh_coord = torch.tensor(mesh.Nodes, requires_grad = True)
+    mesh_coord = torch.tensor(mesh.Nodes, dtype=torch.float64, requires_grad = True)
     nodal_values = torch.tensor(numpy.load("/Users/skardova/Dropbox/Lungs/HiDeNN_1D/Fenics_solution_2D/"+num_sol_name))
     mesh_IDs_u = torch.tensor(mesh.GetCellIds(mesh_coord),dtype=torch.int)
     return mesh_coord, mesh_IDs_u, nodal_values
 
 
-def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L):
+def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L, lmbda, mu):
 
     print()
     print("*************** Evaluation wrt. Numerical solution ***************\n")
 
     _, _, nodal_values_displ = Read_NumSol(mesh_u, num_sol_name_displ)
     _, _, nodal_values_stress = Read_NumSol(mesh_u, num_sol_name_stress)
+
+
+    mesh_coord_stress = [(Model_du.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model_du.coordinates))]
+    mesh_coord_stress = (torch.cat(mesh_coord_stress)).clone().detach().requires_grad_(True)
+
+    cell_ID_stress = torch.tensor(mesh_du.GetCellIds(mesh_coord_stress),dtype=torch.int)
+
+    print(mesh_coord_stress[0])
+    print(cell_ID_stress[0])
 
     num_u_x = nodal_values_displ[:,0]
     num_u_y = nodal_values_displ[:,1]
@@ -60,68 +69,49 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_
     # print()
 
     ######################################################################################################
-    n_train = 20
-    TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(int(L/4),int(3*L/4),n_train)],dtype=torch.float64,  requires_grad=True)
-    TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(int(5*L/4),int(3*5*L/4),int(5*n_train/2))],dtype=torch.float64,  requires_grad=True)
+    
+    u_predicted = Model_u(mesh_coord_stress, cell_ID_stress) 
 
-    PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    IDs_u = torch.tensor(mesh_u.GetCellIds(PlotCoordinates),dtype=torch.int)
-    IDs_du = torch.tensor(mesh_du.GetCellIds(PlotCoordinates),dtype=torch.int)
+    u_pred = u_predicted[0,:]
+    v_pred = u_predicted[1,:]
 
 
-    u_predicted = Model_u(PlotCoordinates, IDs_u) 
-    du_predicted = Model_du(PlotCoordinates, IDs_du) 
-
-    l_pde, l_compat, s11, s22, s12 =  Mixed_2D_loss(u_predicted[0,:], u_predicted[1,:],
-                                                    du_predicted[0,:], du_predicted[1,:], du_predicted[2,:],
-                                                    PlotCoordinates, lmbda = 1.25, mu = 1.0)
+    du = torch.autograd.grad(u_pred, mesh_coord_stress, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
+    dv = torch.autograd.grad(v_pred, mesh_coord_stress, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
+    
+    s11, s22, s12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
 
 
-    num_nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in num_u_x])
-    num_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in num_u_y])
+    MAE_s11 = torch.mean(numpy.abs((numerical_s11 - s11).detach()))
+    MAE_s22 = torch.mean(numpy.abs((numerical_s22 - s22).detach()))
+    MAE_s12 = torch.mean(numpy.abs((numerical_s12 - s12).detach()))
 
-    Model_u.nodal_values = [num_nodal_values_x, num_nodal_values_y]
-
-    u_predicted = Model_u(PlotCoordinates, IDs_u) 
-    du_predicted = Model_du(PlotCoordinates, IDs_du) 
-
-    l_pde, l_compat, num_s11, num_s22, num_s12 =  Mixed_2D_loss(u_predicted[0,:], u_predicted[1,:],
-                                                    du_predicted[0,:], du_predicted[1,:], du_predicted[2,:],
-                                                    PlotCoordinates, lmbda = 1.25, mu = 1.0)
-
-    norm_num_s11 = torch.norm(num_s11)
-    norm_num_s22 = torch.norm(num_s22)
-    norm_num_s12 = torch.norm(num_s12)
-
-    L2_diff_s11 = torch.norm(num_s11 - s11)
-    L2_diff_s22 = torch.norm(num_s22 - s22)
-    L2_diff_s12 = torch.norm(num_s12 - s12)
-
-    # print("s11: |NN - Num| = " , L2_diff_s11.item())
-    # print("s22: |NN - Num| = " , L2_diff_s22.item())
-    # print("s12: |NN - Num| = " , L2_diff_s12.item())
-
-    # print()
-
-    MSE_s11 = torch.mean((num_s11 - s11))
-    MSE_s22 = torch.mean((num_s22 - s22))
-    MSE_s12 = torch.mean((num_s12 - s12))
-
-    print("stress(NN; u_num) vs stress(NN; u_NN)")
-    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s11.item()),precision=4))
-    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s22.item()),precision=4))
-    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s12.item()),precision=4))
+    print("Num. solution stress vs stress(u_NN)")
+    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s11.item()),precision=4))
+    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s22.item()),precision=4))
+    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s12.item()),precision=4))
     print()
-
+    print("s11: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s11/torch.mean(numpy.abs(numerical_s11).detach())).item(),precision=4))
+    print("s22: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s22/torch.mean(numpy.abs(numerical_s22).detach())).item(),precision=4))
+    print("s12: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s12/torch.mean(numpy.abs(numerical_s12).detach())).item(),precision=4))
+    print()
 
     ######################################################################################################
 
-    MSE_s11 = torch.mean((numerical_s11 - s11_predicted))
-    MSE_s22 = torch.mean((numerical_s22 - s22_predicted))
-    MSE_s12 = torch.mean((numerical_s12 - s12_predicted))
+    MAE_s11 = torch.mean(numpy.abs((numerical_s11 - s11_predicted).detach()))
+    MAE_s22 = torch.mean(numpy.abs((numerical_s22 - s22_predicted).detach()))
+    MAE_s12 = torch.mean(numpy.abs((numerical_s12 - s12_predicted).detach()))
 
     print("Num. solution stress vs NN stress")
-    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s11.item()),precision=4))
-    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s22.item()),precision=4))
-    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific(numpy.abs(MSE_s12.item()),precision=4))
+    print("s11: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s11.item()),precision=4))
+    print("s22: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s22.item()),precision=4))
+    print("s12: mean(|NN - Num|) = " , numpy.format_float_scientific((MAE_s12.item()),precision=4))
     print()
+
+    print("s11: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s11/torch.mean(numpy.abs(numerical_s11).detach())).item(),precision=4))
+    print("s22: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s22/torch.mean(numpy.abs(numerical_s22).detach())).item(),precision=4))
+    print("s12: mean(|NN - Num|)/mean(|num|) = " , numpy.format_float_scientific((MAE_s12/torch.mean(numpy.abs(numerical_s12).detach())).item(),precision=4))
+    print()
+
+    ######################################################################################################
+

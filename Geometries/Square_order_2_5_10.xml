@@ -1,0 +1,56 @@
+<dolfin nsmap="{'dolfin': 'https://fenicsproject.org/'}">
+  <mesh celltype="triangle" dim="2">
+    <vertices size="36">
+      <vertex index="0" x="0.0" y="0.0" />
+      <vertex index="1" x="10.0" y="0.0" />
+      <vertex index="2" x="10.0" y="10.0" />
+      <vertex index="3" x="0.0" y="10.0" />
+      <vertex index="4" x="5.0" y="2.5" />
+      <vertex index="5" x="7.5" y="5.0" />
+      <vertex index="6" x="5.0" y="7.5" />
+      <vertex index="7" x="2.5" y="5.0" />
+      <vertex index="8" x="4.9999999999858" y="0.0" />
+      <vertex index="9" x="10.0" y="4.9999999999858" />
+      <vertex index="10" x="5.000000000012507" y="10.0" />
+      <vertex index="11" x="0.0" y="5.000000000012507" />
+      <vertex index="12" x="6.767766956920246" y="3.232233050987509" />
+      <vertex index="13" x="5.956708584009997" y="2.690301170004715" />
+      <vertex index="14" x="7.309698832968285" y="4.043291423167464" />
+      <vertex index="15" x="6.767766949009092" y="6.767766956923646" />
+      <vertex index="16" x="7.309698829715938" y="5.9567085846844" />
+      <vertex index="17" x="5.956708578980665" y="7.309698832078502" />
+      <vertex index="18" x="3.2322330431771" y="6.767766949109838" />
+      <vertex index="19" x="4.043291417956616" y="7.309698830809882" />
+      <vertex index="20" x="2.690301166870062" y="5.956708576442274" />
+      <vertex index="21" x="3.232233050886762" y="3.2322330431805" />
+      <vertex index="22" x="2.690301169986334" y="4.04329141603438" />
+      <vertex index="23" x="4.043291421493418" y="2.690301167725127" />
+      <vertex index="24" x="7.5" y="1.25" />
+      <vertex index="25" x="2.5" y="1.25" />
+      <vertex index="26" x="1.25" y="7.5" />
+      <vertex index="27" x="1.25" y="2.5" />
+      <vertex index="28" x="8.75" y="7.5" />
+      <vertex index="29" x="8.75" y="2.5" />
+      <vertex index="30" x="2.5" y="8.75" />
+      <vertex index="31" x="7.5" y="8.75" />
+      <vertex index="32" x="1.616116525443381" y="1.61611652159025" />
+      <vertex index="33" x="8.383883478460124" y="1.616116525493754" />
+      <vertex index="34" x="8.383883474504547" y="8.383883478461822" />
+      <vertex index="35" x="1.61611652158855" y="8.383883474554919" />
+    </vertices>
+    <cells size="12">
+      <triangle index="0" v0="1" v1="4" v2="0" />
+      <triangle index="1" v0="7" v1="3" v2="0" />
+      <triangle index="2" v0="2" v1="5" v2="1" />
+      <triangle index="3" v0="3" v1="6" v2="2" />
+      <triangle index="4" v0="4" v1="21" v2="0" />
+      <triangle index="5" v0="21" v1="7" v2="0" />
+      <triangle index="6" v0="1" v1="12" v2="4" />
+      <triangle index="7" v0="5" v1="12" v2="1" />
+      <triangle index="8" v0="15" v1="5" v2="2" />
+      <triangle index="9" v0="6" v1="15" v2="2" />
+      <triangle index="10" v0="6" v1="3" v2="18" />
+      <triangle index="11" v0="3" v1="7" v2="18" />
+    </cells>
+  </mesh>
+</dolfin>

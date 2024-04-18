@@ -623,7 +623,28 @@ def Export_Displacement_to_vtk(mesh_name, Model_u, ep ):
 
     meshBeam = meshio.read('geometries/'+mesh_name)
     u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
-    sol = meshio.Mesh(meshBeam.points, {"triangle6":meshBeam.cells_dict["triangle6"]},
+
+    coordinates = [coord for coord in Model_u.coordinates]
+    coordinates = torch.cat(coordinates,dim=0)
+
+    sol = meshio.Mesh(coordinates.data, {"triangle6":meshBeam.cells_dict["triangle6"]},
                         point_data={"U":u.data})
 
-    sol.write('Results/Anim/'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
+    sol.write('Results/Anim/Displacement_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
+
+def Export_Stress_to_vtk(mesh_name, Model, ep ):
+
+    s11 = [u for u in Model.nodal_values_x]
+    s22 = [u for u in Model.nodal_values_y]
+    s12 = [u for u in Model.nodal_values_xy]
+
+    meshBeam = meshio.read('geometries/'+mesh_name)
+    u = torch.stack([torch.cat(s11),torch.cat(s22), torch.cat(s12)],dim=1)
+
+    coordinates = [coord for coord in Model.coordinates]
+    coordinates = torch.cat(coordinates,dim=0)
+
+    sol = meshio.Mesh(coordinates.data, {"triangle":meshBeam.cells_dict["triangle"]},
+                        point_data={"stress":u.data})
+
+    sol.write('Results/Anim/Stress_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')

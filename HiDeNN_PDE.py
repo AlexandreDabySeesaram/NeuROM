@@ -537,7 +537,7 @@ class MeshNN_2D(nn.Module):
         self.relation_BC_lines = []
 
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
-
+        self.borders_nodes = mesh.borders_nodes
 
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
@@ -687,40 +687,29 @@ class MeshNN_2D(nn.Module):
 
 
     def Update_Middle_Nodes(self, mesh):
-        
-        print("     * Export current nodal coordinates")
 
         cell_nodes_IDs = mesh.Connectivity
-
         node1_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,0]])
         node2_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,1]])
         node3_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,2]])
 
-        # node4_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,3]])
-        # node5_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,4]])
-        # node6_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,5]])
-
-        T6_Coord1 = node1_coord*0.5 + node2_coord*0.5 
+        T6_Coord1 = torch.nn.Parameter(node1_coord*0.5 + node2_coord*0.5)
         T6_Coord2 = node2_coord*0.5 + node3_coord*0.5
         T6_Coord3 = node1_coord*0.5 + node3_coord*0.5
 
         for j in range(len(cell_nodes_IDs)):
-            self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j]
-            self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j]
-            self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j]
+            self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j].unsqueeze(0)
+            self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j].unsqueeze(0)
+            self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j].unsqueeze(0)
 
     def ComputeNormalVectors(self):
         print()
         print(" * ComputeNormalVectors")
-        print("Nodes : ", self.relation_BC_node_IDs)
         line_normals = []
-
 
         if len(self.relation_BC_node_IDs)==0:
             return []
         else:
-            print(self.relation_BC_lines[0])
-
             for line in self.relation_BC_lines[0]:
                 point_a = line[0]
                 point_b = line[1]
@@ -742,11 +731,16 @@ class MeshNN_2D(nn.Module):
                         normals[i].append(line_normals[j])
 
             normals = [(x[0]+x[1])/2 for x in normals]
-            print()
-            print("normals = ", normals)
 
             self.relation_BC_normals.append(normals)
 
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = True
+        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+        for node in border_nodes:
+            self.coordinates[node].requires_grad = False
 
 
 
@@ -770,3 +764,4 @@ def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
     x_extended = x_extended.unsqueeze(1)
 
     return torch.matmul(x_extended, inverse_matrix).squeeze(1)
+

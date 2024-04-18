@@ -93,6 +93,8 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
 
 
     Excluded_elements_u = []
+    Borders = [111,112,113,114,115]
+    Domain_mesh_u.AddBorders(Borders)
     Domain_mesh_u.AddBCs(Volume_element, Excluded_elements_u, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
     Domain_mesh_u.MeshGeo()                                # Mesh the .geo file if .msh does not exist
     Domain_mesh_u.ReadMesh()                               # Parse the .msh file
@@ -109,11 +111,13 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
                                 {"Entity": 114, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
                                 #{"Entity": 113, "Value": 0.05, "Normal": 1, "Relation": False, "Constitutive": False},
                                 #{"Entity": 113, "Value": 0.0, "Normal": 2, "Relation": False, "Constitutive": False},
-                                {"Entity": 115, "Value": [0.0], "Normal": 0, "Relation": True, "Constitutive": False}
+                                {"Entity": 115, "Value": [0.0,0.0], "Normal": 0, "Relation": True, "Constitutive": False}
                             ]
 
     Excluded_elements_du = [200]
 
+    Borders = [111,112,113,114,115]
+    Domain_mesh_du.AddBorders(Borders)
     Domain_mesh_du.AddBCs(Volume_element, Excluded_elements_du, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
     Domain_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist
     Domain_mesh_du.ReadMesh()                               # Parse the .msh file
@@ -126,6 +130,9 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     Model_u.UnFreeze_Values()
     Model_u.Freeze_Mesh()
     Model_u.ComputeNormalVectors()
+    Model_u.Freeze_Mesh()
+    Model_u.UnFreeze_Mesh()
+
 
     print()
     print("Model du")
@@ -133,6 +140,8 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     Model_du.UnFreeze_Values()
     Model_du.Freeze_Mesh()
     Model_du.ComputeNormalVectors()
+    Model_du.Freeze_Mesh()
+    Model_du.UnFreeze_Mesh()
 
     return Model_u, Model_du, Domain_mesh_u, Domain_mesh_du
 
@@ -159,13 +168,12 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
         print()
         print(" * Generate training data")
 
-        margin = 1.0e-3
+        margin = 1.0e-5
 
         cell_ids_unique = torch.arange(Domain_mesh_du.NElem)
         cell_ids = torch.repeat_interleave(cell_ids_unique, points_per_elem)
 
         ref_coords = torch.zeros(Domain_mesh_du.NElem*points_per_elem,3)
-        #ref_coords[:,0:2] = numpy.random.uniform(1.0e-2,1.0-1.0e-2,[Domain_mesh_du.NElem*points_per_elem,2])
         ref_coords[:,0] = torch.FloatTensor(Domain_mesh_du.NElem*points_per_elem).uniform_(margin, 1.0 - 2*margin)
         for i in range(ref_coords.shape[0]):
             ref_coords[i,1] = torch.FloatTensor(1).uniform_(margin, 1.0-ref_coords[i,0]-margin)
@@ -179,7 +187,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
     n_train = 40
     PlotCoordinates, IDs_u, IDs_du = GenerateData(n_train)
 
-    points_per_elem = int(3000/Domain_mesh_du.NElem) #200
+    points_per_elem = 15 #max(int(3000/Domain_mesh_du.NElem),4) #200
 
     cell_ids, ref_coords = Generate_Training_IDs(points_per_elem)
 
@@ -208,7 +216,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
 
     optimizer = torch.optim.Adam(list(Model_u.parameters())+list(Model_du.parameters()))
 
-    w0 = 10*E
+    w0 = L
     w1 = 1
 
     print("**************** START TRAINING 1st stage ***************\n")
@@ -216,7 +224,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
 
 
     current_BS = int(cell_ids.shape[0]/4)
-    n_epochs = 100
+    n_epochs = 2000
     CoordinatesBatchSet = torch.utils.data.DataLoader([[cell_ids[i], ref_coords[i]] for i in range((cell_ids.shape)[0])], 
                                                             batch_size=current_BS, shuffle=True)
 
@@ -333,27 +341,28 @@ def OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimens
 ########################################################################
 
 
+
 start_train_time = time.time()
 
 MaxElemSize = 10
-MinElemSize = 10
+MinElemSize = 5
 
 Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize)
 Model_u, Model_du = DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, L)
 
-MaxElemSize = 2
-MinElemSize = 2
+for i in range(4):
 
-Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u, order_du )
+    MaxElemSize = MaxElemSize/2
+    MinElemSize = MaxElemSize/2
 
-'''
-num_sol_name_displ = "Square_case_1/Nodes_order2_displacement.npy"
-num_sol_name_stress = "Square_case_1/Nodes_order1_stress.npy"
+    Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u, order_du )
 
 
 print("Total time : ", time.time() - start_train_time) 
 
-#Model_u.Update_Middle_Nodes(NewDomain_mesh_u)
-NumSol_eval(Domain_mesh_u, Domain_mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L)
+num_sol_name_displ = "Square_case_1/Nodes_order2_displacement.npy"
+num_sol_name_stress = "Square_case_1/Nodes_order1_stress.npy"
+NumSol_eval(Domain_mesh_u, Domain_mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L, lmbda, mu)
 
-'''
+#Model_u.Update_Middle_Nodes(NewDomain_mesh_u)
+

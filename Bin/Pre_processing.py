@@ -97,6 +97,11 @@ class Mesh:
         else:
             self.NoExcl = False
 
+    def AddBorders(self,borders):
+        self.borders = borders
+        self.borders_nodes = []
+
+
     def MeshGeo(self):
         path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):
@@ -173,6 +178,15 @@ class Mesh:
                                 self.node_per_elem = 6
                         flagType = False  
                     self.Connectivity.append(ElemList[-self.node_per_elem:])  
+
+                if ElemList[3] in self.borders: 
+                        match ElemList[1]:
+                            case 1:
+                                node_per_elem = 2
+                            case 8:
+                                node_per_elem = 3
+                        print("Border = ", ElemList[-node_per_elem:])
+                        self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:
                     for ID_idx in range(len(self.ListOfDirichletsBCsIds)):

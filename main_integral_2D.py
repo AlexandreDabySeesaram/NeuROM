@@ -16,10 +16,9 @@ import time
 import os
 import numpy as numpy
 
-Name = 'Rectangle'
+# Name = 'Rectangle'
 Name = 'Square'
-# Name = 'Hole'
-# Name = 'Bottom_square_hole'
+Name = 'Hole'
 
 
 Lame_coeff = False
@@ -64,7 +63,7 @@ Domain_mesh.ExportMeshVtk()
 Model_2D = MeshNN_2D(Domain_mesh, 2)                # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
 Model_2D.Freeze_Mesh()
-Model_2D.UnFreeze_Mesh()
+# Model_2D.UnFreeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -97,7 +96,7 @@ learning_rate = 0.001                              # optimizer learning rate
 
 #%% Training 
 # Fisrt stage
-max_refinment = 5
+max_refinment = 10
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -107,8 +106,10 @@ X_interm_tot = []
 Cell_dict = []
 d_eps_max_vect = []
 eps_max_vect = []
-
-dmax_threshold = 1e-2
+import numpy as np
+Nnodes_max = 10000
+coeff_refinement = np.power((Nnodes_max/Domain_mesh.NNodes),1/max_refinment)
+dmax_threshold = 1e-3
 import meshio
 while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
@@ -116,7 +117,7 @@ while n_refinement < max_refinment and not stagnation:
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
     n_epochs = 1000
     if n_refinement>4:
-        n_epochs = 400
+        n_epochs = 1000
     Loss_vect, Duration, U_interm, X_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
     # Save current convergence state
     Loss_tot += Loss_vect
@@ -141,7 +142,7 @@ while n_refinement < max_refinment and not stagnation:
         max_eps_old = max_eps
     if n_refinement < max_refinment and not stagnation:
         # Refine mesh
-        MaxElemSize = MaxElemSize/2
+        MaxElemSize = MaxElemSize/coeff_refinement
         Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
         Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
         Domain_mesh_2.AddBorders(Borders)
@@ -154,8 +155,25 @@ while n_refinement < max_refinment and not stagnation:
         
         newcoordinates = [coord for coord in Model_2D_2.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
+        # Update Domain_mesh vtk mesh to get correct cell Ids
+        Domain_mesh.Nodes = [[i+1,X_interm[-1][i,0].item(),X_interm[-1][i,1].item(),0] for i in range(len(Domain_mesh.Nodes))]
+        Domain_mesh.ExportMeshVtk(flag_update = True)
         IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
         NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 
+        if -1 in IDs_newcoord:
+            print(IDs_newcoord)
+            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
+            oldcoordinates = [coord for coord in Model_2D.coordinates]
+            oldcoordinates = torch.cat(oldcoordinates,dim=0)
+            for ind_neg in index_neg:
+                not_found_coordinates = newcoordinates[ind_neg]
+                dist_vect = not_found_coordinates - oldcoordinates
+                dist = torch.norm(dist_vect, dim=1)
+                closest_old_nodal_value = dist.topk(1, largest=False)[1]
+                NewNodalValues[0][ind_neg] = Model_2D.nodal_values_x[closest_old_nodal_value].type(torch.float64)
+                NewNodalValues[1][ind_neg] = Model_2D.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+                # IDs_newcoord[ind_neg] = 0
+
         new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
         new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
         new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
@@ -186,6 +204,8 @@ u_y = [u for u in Model_2D.nodal_values_y]
 _,xg,detJ = Model_2D(PlotCoordinates, List_elems)
 Model_2D.eval()
 eps =  Strain(Model_2D(xg, List_elems),xg)
+sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
+
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -194,9 +214,9 @@ u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[
 
 sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":meshBeam.cells_dict["triangle"]},
 point_data={"U":u.data}, 
-cell_data={"eps": [eps.data]}, )
+cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_fixed_overkill_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -209,5 +229,5 @@ for timestep in range(len(U_interm_tot)):
     point_data={"U":U_interm_tot[timestep]})
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_fixed_overkill_"+Name+f"_{timestep}.vtk",  
     )

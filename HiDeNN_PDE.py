@@ -13,6 +13,7 @@ torch.set_default_dtype(torch.float32)
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
 mps_device = torch.device("mps")
+import numpy as np
 
 
 
@@ -449,6 +450,9 @@ class InterpolationBlock2D_Lin(nn.Module):
        
         super(InterpolationBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
+    
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
 
     def forward(self, x, cell_id, nodal_values, shape_functions,flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
@@ -456,6 +460,8 @@ class InterpolationBlock2D_Lin(nn.Module):
         Those phantom elements are flagged with index -1
         """
         cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
 
         node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
         node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
@@ -507,6 +513,8 @@ class ElementBlock2D_Lin(nn.Module):
         """
         super(ElementBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
 
     def GP(self):
         return torch.tensor([[1/3,1/3, 1/3]],dtype=torch.float64, requires_grad=True) # a1, a2, a3 the 3 area coordinates
@@ -518,6 +526,8 @@ class ElementBlock2D_Lin(nn.Module):
         """
 
         cell_nodes_IDs = self.connectivity[cell_id,:]
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
         node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
         node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
         node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
@@ -614,7 +624,7 @@ class MeshNN_2D(nn.Module):
         self.relation_BC_values = []
         self.relation_BC_normals = []
         self.constit_BC_node_IDs = []
-
+        self.connectivity = mesh.Connectivity
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
         self.borders_nodes = mesh.borders_nodes
 
@@ -694,7 +704,7 @@ class MeshNN_2D(nn.Module):
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         else:
             self.NBCs = 0
-
+        self.order = mesh.order
         if mesh.order =='1':
             self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
             self.Interpolation = InterpolationBlock2D_Lin(mesh.Connectivity)
@@ -710,6 +720,27 @@ class MeshNN_2D(nn.Module):
         print("----------------------------------------------")
         print()
 
+    def SplitElem(self, el_id,point,value):
+        nodes = self.connectivity[el_id]
+        # Coord = [self.coordinates[int(i-1)] for i in nodes]
+        # new_point = (Coord[0] + Coord[1] + Coord[2])/3
+        # NewNodalValues = self(new_point,torch.tensor([el_id],dtype=torch.int)) 
+        self.coordinates.append(point)
+        new_connectivity = self.connectivity
+        new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
+        new_elem = np.array([[np.max(self.connectivity)+1, nodes[0], nodes[1]],
+                    [np.max(self.connectivity)+1, nodes[1], nodes[2]],
+                    [np.max(self.connectivity)+1, nodes[2], nodes[0]]])
+        new_connectivity = np.vstack((new_connectivity,new_elem))
+        self.connectivity = new_connectivity
+        if self.order =='1':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+        elif self.order == '2':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+        self.nodal_values[0].append(value[0])
+        self.nodal_values[1].append(value[1])
 
     def forward(self,x, el_id):
         if self.training:

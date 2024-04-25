@@ -989,7 +989,9 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     stag_threshold = 1e-6
     U_interm = []
     X_interm = []
+    Connectivity_interm = []
     stagnation = False
+    flag_Stop_refinement = False
     while epoch<n_epochs and not stagnation:
         # Compute loss
         loss_time_start = time.time()
@@ -1015,10 +1017,39 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
                 loss_old = loss.data
+                # d_detJ = (detJ_old - detJ)
+                D_detJ = (detJ_0 - detJ)/detJ_0
+                # detJ_old = detJ
+                if torch.max(D_detJ)>0.2 and not flag_Stop_refinement:
+                    indices = torch.nonzero(D_detJ > 0.1)
+                    flag_Stop_refinement = True
+                    compteur = 0
+                    for el_id in indices:
+                        # el_id = torch.argmax(D_detJ)
+                        el_id = torch.tensor([el_id],dtype=torch.int)
+                        new_coordinate = xg[el_id]
+                        el_id = el_id - compteur
+                        model.eval()
+                        newvalue = model(new_coordinate,el_id) 
+                        model.train()
+                        compteur+=1
+                        model.SplitElem(el_id,new_coordinate,newvalue)
+                        model.NElem +=2
+                        List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
+                        detJ_new0 = torch.range(0,model.NElem-1,dtype=torch.float64)
+                        detJ_new0[1:el_id] = detJ_0[1:el_id]
+                        detJ_new0[el_id:(el_id+ detJ_0[el_id+1:].shape[0])] = detJ_0[el_id+1:]
+                        detJ_0 = detJ_new0
+                        optimizer.add_param_group({'params': model.coordinates[-1]})
+                        optimizer.add_param_group({'params': model.nodal_values[0][-1]})
+                        optimizer.add_param_group({'params': model.nodal_values[1][-1]})
                 if d_loss < stag_threshold:
                     stagnation = True
             else:
                 loss_old = loss.item()
+                # detJ_old = detJ
+                detJ_0 = detJ
+
             Loss_vect.append(loss.item())
         if (epoch+1) % 50 == 0 or epoch ==1:
             u_x = [u for u in model.nodal_values_x]
@@ -1028,6 +1059,8 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
             new_coord = [coord for coord in model.coordinates]
             new_coord = torch.cat(new_coord,dim=0)
             X_interm.append(new_coord)
+            Connectivity_interm.append(model.connectivity-1)
+
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
@@ -1040,5 +1073,5 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
-    return Loss_vect, (time_stop-time_start), U_interm, X_interm
+    return Loss_vect, (time_stop-time_start), U_interm, X_interm,Connectivity_interm
     

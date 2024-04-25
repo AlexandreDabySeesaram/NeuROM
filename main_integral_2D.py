@@ -18,7 +18,7 @@ import numpy as numpy
 
 # Name = 'Rectangle'
 Name = 'Square'
-Name = 'Hole'
+# Name = 'Hole'
 
 
 Lame_coeff = False
@@ -38,7 +38,7 @@ else:
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
 
-MaxElemSize = 10
+MaxElemSize = 5
 
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
@@ -62,8 +62,8 @@ Domain_mesh.ExportMeshVtk()
 
 Model_2D = MeshNN_2D(Domain_mesh, 2)                # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
-Model_2D.Freeze_Mesh()
-# Model_2D.UnFreeze_Mesh()
+# Model_2D.Freeze_Mesh()
+Model_2D.UnFreeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -96,34 +96,36 @@ learning_rate = 0.001                              # optimizer learning rate
 
 #%% Training 
 # Fisrt stage
-max_refinment = 10
+max_refinment = 1
 n_refinement = 0
 stagnation = False
 Loss_tot = []
 Duration_tot = 0
 U_interm_tot = []
 X_interm_tot = []
+Connectivity_tot = []
 Cell_dict = []
 d_eps_max_vect = []
 eps_max_vect = []
 import numpy as np
-Nnodes_max = 10000
+Nnodes_max = 1000
 coeff_refinement = np.power((Nnodes_max/Domain_mesh.NNodes),1/max_refinment)
-dmax_threshold = 1e-3
+dmax_threshold = 1e-7
 import meshio
 while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-    n_epochs = 1000
+    n_epochs = 10000
     if n_refinement>4:
         n_epochs = 1000
-    Loss_vect, Duration, U_interm, X_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+    Loss_vect, Duration, U_interm, X_interm, Connectivity_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
     # Save current convergence state
     Loss_tot += Loss_vect
     Duration_tot += Duration
     U_interm_tot += U_interm
     X_interm_tot += X_interm
+    Connectivity_tot += Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
     Cell_dict+=[meshBeam.cells_dict["triangle"] for _ in range(len(X_interm))]
     # Cmpute max strain
@@ -183,7 +185,7 @@ while n_refinement < max_refinment and not stagnation:
         Domain_mesh = Domain_mesh_2
         Model_2D = Model_2D_2
         Model_2D.UnFreeze_Values()
-        Model_2D.Freeze_Mesh()
+        # Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
     else:
@@ -201,23 +203,24 @@ u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
-_,xg,detJ = Model_2D(PlotCoordinates, List_elems)
-Model_2D.eval()
-eps =  Strain(Model_2D(xg, List_elems),xg)
-sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
+# List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
+# _,xg,detJ = Model_2D(PlotCoordinates, List_elems)
+# Model_2D.eval()
+# eps =  Strain(Model_2D(xg, List_elems),xg)
+# sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
 
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 
-meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
-# u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+# meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
+# # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":meshBeam.cells_dict["triangle"]},
-point_data={"U":u.data}, 
-cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
-sol.write(
-    "Results/Paraview/sol_u_end_training_fixed_overkill_"+Name+".vtk", 
-)
+# sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
+# point_data={"U":u.data}, 
+# cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+# sol.write(
+#     "Results/Paraview/sol_u_end_training_shear_"+Name+".vtk", 
+# )
 
 #%% Export intermediate convergence steps
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -225,9 +228,11 @@ meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
 
 for timestep in range(len(U_interm_tot)):
-    sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Cell_dict[timestep]},
+    sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
     point_data={"U":U_interm_tot[timestep]})
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_fixed_overkill_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_shear_"+Name+f"_{timestep}.vtk",  
     )
+
+# %%

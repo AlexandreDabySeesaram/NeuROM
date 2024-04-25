@@ -803,7 +803,7 @@ class MeshNN_2D(nn.Module):
         new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
         #Evaluate new nodale values:
         self.eval()
-        newvalue = self(New_coordinates,torch.tensor([el_id,el_id+1,el_id]))
+        newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
         self.train()
         # Initialise new nodale values
         for i in range(newvalue.shape[1]):

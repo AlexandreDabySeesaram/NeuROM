@@ -19,6 +19,8 @@ import numpy as numpy
 # Name = 'Rectangle'
 Name = 'Square'
 # Name = 'Hole'
+Name = 'Square_small'
+Name = 'Hole_3'
 
 
 Lame_coeff = False
@@ -232,7 +234,7 @@ for timestep in range(len(U_interm_tot)):
     point_data={"U":U_interm_tot[timestep]})
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_shear_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

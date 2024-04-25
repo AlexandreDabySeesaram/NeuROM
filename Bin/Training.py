@@ -1020,10 +1020,11 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 # d_detJ = (detJ_old - detJ)
                 D_detJ = (detJ_0 - detJ)/detJ_0
                 # detJ_old = detJ
-                if torch.max(D_detJ)>0.2 and not flag_Stop_refinement:
-                    indices = torch.nonzero(D_detJ > 0.1)
+                if torch.max(D_detJ)>0.3 and not flag_Stop_refinement:
+                    indices = torch.nonzero(D_detJ > 0.2)
                     flag_Stop_refinement = True
                     compteur = 0
+
                     for el_id in indices:
                         # el_id = torch.argmax(D_detJ)
                         el_id = torch.tensor([el_id],dtype=torch.int)
@@ -1033,8 +1034,10 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                         newvalue = model(new_coordinate,el_id) 
                         model.train()
                         compteur+=1
-                        model.SplitElem(el_id,new_coordinate,newvalue)
-                        model.NElem +=2
+                        # model.SplitElem(el_id,new_coordinate,newvalue)
+
+                        model.SplitElemNonLoc(el_id)
+                        
                         List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
                         detJ_new0 = torch.range(0,model.NElem-1,dtype=torch.float64)
                         detJ_new0[1:el_id] = detJ_0[1:el_id]
@@ -1043,6 +1046,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                         optimizer.add_param_group({'params': model.coordinates[-1]})
                         optimizer.add_param_group({'params': model.nodal_values[0][-1]})
                         optimizer.add_param_group({'params': model.nodal_values[1][-1]})
+                    # model.Freeze_Mesh()
                 if d_loss < stag_threshold:
                     stagnation = True
             else:

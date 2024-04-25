@@ -741,6 +741,93 @@ class MeshNN_2D(nn.Module):
             self.Interpolation.UpdateConnectivity(self.connectivity)
         self.nodal_values[0].append(value[0])
         self.nodal_values[1].append(value[1])
+        self.NElem +=2
+
+    def Split_hangingNodes(self,edge_id,edge_nodes,new_node):
+        self.NElem +=1
+        nodes = self.connectivity[el_id]
+        Third_node = np.delete(nodes,np.where(nodes == edge_nodes[0]))
+        Third_node = np.delete(Third_node,np.where(nodes == edge_nodes[1]))
+
+
+        new_connectivity = self.connectivity
+        new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
+
+        new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
+                                [edge_nodes[1], new_node, Third_node[0]]])
+        new_connectivity = np.vstack((new_connectivity,new_elem))
+        self.connectivity = new_connectivity
+        if self.order =='1':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+        elif self.order == '2':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+
+
+    def SplitElemNonLoc(self, el_id):
+        nodes = self.connectivity[el_id]
+        # Find edges of the element
+        node1_indices = (self.connectivity[:, 0] == nodes[0]) + (self.connectivity[:, 1] == nodes[0]) + (self.connectivity[:, 2] == nodes[0])
+        node2_indices = (self.connectivity[:, 0] == nodes[1]) + (self.connectivity[:, 1] == nodes[1]) + (self.connectivity[:, 2] == nodes[1])
+        node3_indices = (self.connectivity[:, 0] == nodes[2]) + (self.connectivity[:, 1] == nodes[2]) + (self.connectivity[:, 2] == nodes[2])
+        # Find edges where there are the nodes
+        edge_1_2 = np.transpose(np.vstack((node1_indices,node2_indices)))
+        edge_1_3 = np.transpose(np.vstack((node1_indices,node3_indices)))
+        edge_2_3 = np.transpose(np.vstack((node2_indices,node3_indices)))
+        # Find element sharing the both nodes
+        elem_edge_1 = np.where(np.all(edge_1_2 == [True,True],axis=1))[0]
+        elem_edge_2 = np.where(np.all(edge_1_3 == [True,True],axis=1))[0]
+        elem_edge_3 = np.where(np.all(edge_2_3 == [True,True],axis=1))[0]
+        # Remove current element
+        elem_edge_1 = np.delete(elem_edge_1,np.where(elem_edge_1 == el_id.item()))
+        elem_edge_2 = np.delete(elem_edge_2,np.where(elem_edge_2 == el_id.item()))
+        elem_edge_3 = np.delete(elem_edge_3,np.where(elem_edge_3 == el_id.item()))
+
+        Coord = [self.coordinates[int(i-1)] for i in nodes]
+        New_coordinates = torch.vstack([0.5*(Coord[0]+Coord[1]),
+                                        0.5*(Coord[0]+Coord[2]),
+                                        0.5*(Coord[1]+Coord[2])])
+
+        NewNodes_indexes = np.max(self.connectivity) + np.array([1,2,3])
+        new_elem = np.array([   [NewNodes_indexes[0], NewNodes_indexes[1], nodes[0]],
+                                [nodes[1], NewNodes_indexes[2], NewNodes_indexes[0]],
+                                [NewNodes_indexes[2], nodes[2], NewNodes_indexes[1]],
+                                [NewNodes_indexes[2], NewNodes_indexes[1], NewNodes_indexes[0]]])
+
+
+        for i in range(New_coordinates.shape[0]):
+            self.coordinates.append(New_coordinates[None,i])
+        new_connectivity = self.connectivity
+        # Remove splitted element
+        new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
+        #Evaluate new nodale values:
+        self.eval()
+        newvalue = self(New_coordinates,torch.tensor([el_id,el_id+1,el_id]))
+        self.train()
+        # Initialise new nodale values
+        for i in range(newvalue.shape[1]):
+            self.nodal_values[0].append(newvalue[None,0,i])
+            self.nodal_values[1].append(newvalue[None,1,i])
+        # Update connectivity
+        new_connectivity = np.vstack((new_connectivity,new_elem))
+        self.connectivity = new_connectivity
+        if self.order =='1':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+        elif self.order == '2':
+            self.ElementBlock.UpdateConnectivity(self.connectivity)
+            self.Interpolation.UpdateConnectivity(self.connectivity)
+        self.NElem +=3
+        
+        Edges = [elem_edge_1,elem_edge_2,elem_edge_3]
+        nodes_edge = [[nodes[0],nodes[1]],[nodes[0],nodes[2]],[nodes[1],nodes[2]]]
+        for i in range(len(Edges)):
+            edge = Edges[i]
+            # Need to be updated to new connectivity
+            node_edge = nodes_edge[i]
+            if edge.shape[0] == 1:
+                self.Split_hangingNodes(edge,node_edge)
 
     def forward(self,x, el_id):
         if self.training:

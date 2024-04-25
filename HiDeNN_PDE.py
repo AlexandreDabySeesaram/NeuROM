@@ -829,7 +829,7 @@ class MeshNN_2D(nn.Module):
             if edge.shape[0] == 1:
                 edge_new = edge - np.where(np.array(Removed_elem_list)<edge)[0].shape[0]
                 self.Split_hangingNodes(edge_new,node_edge,NewNodes_indexes[i])
-                Removed_elem_list = [edge]
+                Removed_elem_list.append(edge)
 
 
     def forward(self,x, el_id):

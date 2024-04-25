@@ -1043,9 +1043,9 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                         detJ_new0[1:el_id] = detJ_0[1:el_id]
                         detJ_new0[el_id:(el_id+ detJ_0[el_id+1:].shape[0])] = detJ_0[el_id+1:]
                         detJ_0 = detJ_new0
-                        optimizer.add_param_group({'params': model.coordinates[-1]})
-                        optimizer.add_param_group({'params': model.nodal_values[0][-1]})
-                        optimizer.add_param_group({'params': model.nodal_values[1][-1]})
+                        optimizer.add_param_group({'params': model.coordinates[-3:]})
+                        optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
+                        optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
                     # model.Freeze_Mesh()
                 if d_loss < stag_threshold:
                     stagnation = True
@@ -1055,7 +1055,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 detJ_0 = detJ
 
             Loss_vect.append(loss.item())
-        if (epoch+1) % 1 == 0 or epoch ==1:
+        if (epoch+1) % 50 == 0 or epoch ==1:
             u_x = [u for u in model.nodal_values_x]
             u_y = [u for u in model.nodal_values_y]
             u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)

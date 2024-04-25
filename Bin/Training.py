@@ -1024,7 +1024,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                     indices = torch.nonzero(D_detJ > 0.2)
                     flag_Stop_refinement = True
                     compteur = 0
-
+                    indices = indices[0]
                     for el_id in indices:
                         # el_id = torch.argmax(D_detJ)
                         el_id = torch.tensor([el_id],dtype=torch.int)
@@ -1055,7 +1055,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 detJ_0 = detJ
 
             Loss_vect.append(loss.item())
-        if (epoch+1) % 50 == 0 or epoch ==1:
+        if (epoch+1) % 1 == 0 or epoch ==1:
             u_x = [u for u in model.nodal_values_x]
             u_y = [u for u in model.nodal_values_y]
             u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)

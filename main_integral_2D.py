@@ -118,7 +118,7 @@ while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-    n_epochs = 10000
+    n_epochs = 500
     if n_refinement>4:
         n_epochs = 1000
     Loss_vect, Duration, U_interm, X_interm, Connectivity_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
@@ -234,7 +234,7 @@ for timestep in range(len(U_interm_tot)):
     point_data={"U":U_interm_tot[timestep]})
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting2_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

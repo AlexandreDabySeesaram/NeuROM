@@ -745,13 +745,13 @@ class MeshNN_2D(nn.Module):
 
     def Split_hangingNodes(self,edge_id,edge_nodes,new_node):
         self.NElem +=1
-        nodes = self.connectivity[el_id]
+        nodes = self.connectivity[edge_id][0]
         Third_node = np.delete(nodes,np.where(nodes == edge_nodes[0]))
-        Third_node = np.delete(Third_node,np.where(nodes == edge_nodes[1]))
+        Third_node = np.delete(Third_node,np.where(Third_node == edge_nodes[1]))
 
 
         new_connectivity = self.connectivity
-        new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
+        new_connectivity = np.delete(new_connectivity,(edge_id),axis = 0)
 
         new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
                                 [edge_nodes[1], new_node, Third_node[0]]])
@@ -819,7 +819,7 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
         self.NElem +=3
-        
+        Removed_elem_list = [el_id]
         Edges = [elem_edge_1,elem_edge_2,elem_edge_3]
         nodes_edge = [[nodes[0],nodes[1]],[nodes[0],nodes[2]],[nodes[1],nodes[2]]]
         for i in range(len(Edges)):
@@ -827,7 +827,10 @@ class MeshNN_2D(nn.Module):
             # Need to be updated to new connectivity
             node_edge = nodes_edge[i]
             if edge.shape[0] == 1:
-                self.Split_hangingNodes(edge,node_edge)
+                edge_new = edge - np.where(np.array(Removed_elem_list)<edge)[0].shape[0]
+                self.Split_hangingNodes(edge_new,node_edge,NewNodes_indexes[i])
+                Removed_elem_list = [edge]
+
 
     def forward(self,x, el_id):
         if self.training:

@@ -1018,34 +1018,45 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
                 loss_old = loss.data
                 # d_detJ = (detJ_old - detJ)
-                D_detJ = (detJ_0 - detJ)/detJ_0
+                D_detJ = (torch.abs(detJ_0) - torch.abs(detJ))/torch.abs(detJ_0)
                 # detJ_old = detJ
-                if torch.max(D_detJ)>0.3 and not flag_Stop_refinement:
-                    indices = torch.nonzero(D_detJ > 0.2)
+                # if torch.max(D_detJ)>0.5 and not flag_Stop_refinement:
+                if torch.max(D_detJ)>0.5 and len(model.coordinates)<100:
+                    indices = torch.nonzero(D_detJ > 0.4)
                     flag_Stop_refinement = True
                     compteur = 0
-                    indices = indices[0]
-                    for el_id in indices:
-                        # el_id = torch.argmax(D_detJ)
-                        el_id = torch.tensor([el_id],dtype=torch.int)
-                        new_coordinate = xg[el_id]
-                        el_id = el_id - compteur
-                        model.eval()
-                        newvalue = model(new_coordinate,el_id) 
-                        model.train()
-                        compteur+=1
-                        # model.SplitElem(el_id,new_coordinate,newvalue)
+                    Removed_elem_list = []
+                    for i in range(indices.shape[0]):
+                        el_id = indices[i]  
+                        if el_id.item() not in Removed_elem_list:
+                            el_id = torch.tensor([el_id],dtype=torch.int)
+                            new_coordinate = xg[el_id]
+                            # el_id = el_id - compteur
+                            model.eval()
+                            newvalue = model(new_coordinate,el_id) 
+                            model.train()
+                            compteur+=1
 
-                        model.SplitElemNonLoc(el_id)
-                        
-                        List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
-                        detJ_new0 = torch.range(0,model.NElem-1,dtype=torch.float64)
-                        detJ_new0[1:el_id] = detJ_0[1:el_id]
-                        detJ_new0[el_id:(el_id+ detJ_0[el_id+1:].shape[0])] = detJ_0[el_id+1:]
-                        detJ_0 = detJ_new0
-                        optimizer.add_param_group({'params': model.coordinates[-3:]})
-                        optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
-                        optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
+                            Removed_elems = model.SplitElemNonLoc(el_id)
+                            Removed_elems[0] = Removed_elems[0].numpy()
+                            # Update indexes 
+                            for j in range(indices.shape[0]):
+                                number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
+                                indices[j] = indices[j] - number_elems_above
+                            # Update indexes of Removed_elem_list
+                            for j in range(len(Removed_elem_list)):
+                                number_elems_above = len([e for e in Removed_elems if e < Removed_elem_list[j]])
+                                Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
+
+                            # Add newly removed elems to list
+                            Removed_elem_list += Removed_elems
+                            List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
+                            optimizer.add_param_group({'params': model.coordinates[-3:]})
+                            optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
+                            optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
+                    _,_,detJ = model(PlotCoordinates, List_elems)
+                    detJ_0 = detJ
+
                     # model.Freeze_Mesh()
                 if d_loss < stag_threshold:
                     stagnation = True

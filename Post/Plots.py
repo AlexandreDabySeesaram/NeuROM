@@ -546,7 +546,7 @@ def Plot2Dresults(u_predicted, x, name):
 
     fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (18,8), dpi=50)
 
-    size =  8*50/ (np.sqrt(x.shape[0])/3)
+    size =  0.5*8*50/ (np.sqrt(x.shape[0])/3)
 
     # img0 = ax[0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.55, vmax=0.55, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
     # img1 = ax[1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=0, vmax=1.7, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
@@ -618,8 +618,8 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
 
 def Export_Displacement_to_vtk(mesh_name, Model_u, ep ):
 
-    u_x = [u for u in Model_u.nodal_values_x]
-    u_y = [u for u in Model_u.nodal_values_y]
+    u_x = [u for u in Model_u.nodal_values[0]]
+    u_y = [u for u in Model_u.nodal_values[1]]
 
     meshBeam = meshio.read('geometries/'+mesh_name)
     u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
@@ -632,14 +632,22 @@ def Export_Displacement_to_vtk(mesh_name, Model_u, ep ):
 
     sol.write('Results/Anim/Displacement_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
 
-def Export_Stress_to_vtk(mesh_name, Model, ep ):
+def Export_Stress_to_vtk(Mesh, Model, ep ):
 
-    s11 = [u for u in Model.nodal_values_x]
-    s22 = [u for u in Model.nodal_values_y]
-    s12 = [u for u in Model.nodal_values_xy]
+    mesh_name = Mesh.name_mesh
+
+    stress_all_coord = [(Model.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model.coordinates))]
+    stress_all_cell_IDs = torch.tensor([torch.tensor(Mesh.GetCellIds(i),dtype=torch.int)[0] for i in stress_all_coord])
+    stress_all_coord = (torch.cat(stress_all_coord)).clone().detach().requires_grad_(True)
+
+    stress = Model(stress_all_coord, stress_all_cell_IDs)
+
+    # s11 = [u for u in Model.nodal_values[0]]
+    # s22 = [u for u in Model.nodal_values[1]]
+    # s12 = [u for u in Model.nodal_values[2]]
 
     meshBeam = meshio.read('geometries/'+mesh_name)
-    u = torch.stack([torch.cat(s11),torch.cat(s22), torch.cat(s12)],dim=1)
+    u = torch.stack([stress[0,:],stress[1,:], stress[2,:]],dim=1)
 
     coordinates = [coord for coord in Model.coordinates]
     coordinates = torch.cat(coordinates,dim=0)

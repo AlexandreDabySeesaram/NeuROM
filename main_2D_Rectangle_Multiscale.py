@@ -103,6 +103,8 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
 
 
     Excluded_elements_u = []
+    Borders = [111,112,113,114,115]
+    Domain_mesh_u.AddBorders(Borders)
     Domain_mesh_u.AddBCs(Volume_element, Excluded_elements_u, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
     Domain_mesh_u.MeshGeo()                                # Mesh the .geo file if .msh does not exist
     Domain_mesh_u.ReadMesh()                               # Parse the .msh file
@@ -140,6 +142,8 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     '''
 
     Excluded_elements_du = [200]
+    Borders = [111,112,113,114,115]
+    Domain_mesh_du.AddBorders(Borders)
 
     Domain_mesh_du.AddBCs(Volume_element, Excluded_elements_du, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
     Domain_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist

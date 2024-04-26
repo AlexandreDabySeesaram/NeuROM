@@ -10,11 +10,9 @@ import torch.nn as nn
 from Bin.PDE_Library import Mixed_2D_loss, Stress
 
 
-def Read_NumSol(mesh, num_sol_name):
-    mesh_coord = torch.tensor(mesh.Nodes, dtype=torch.float64, requires_grad = True)
+def Read_NumSol(num_sol_name):
     nodal_values = torch.tensor(numpy.load("/Users/skardova/Dropbox/Lungs/HiDeNN_1D/Fenics_solution_2D/"+num_sol_name))
-    mesh_IDs_u = torch.tensor(mesh.GetCellIds(mesh_coord),dtype=torch.int)
-    return mesh_coord, mesh_IDs_u, nodal_values
+    return nodal_values
 
 
 def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_name_stress, L, lmbda, mu):
@@ -22,17 +20,14 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_
     print()
     print("*************** Evaluation wrt. Numerical solution ***************\n")
 
-    _, _, nodal_values_displ = Read_NumSol(mesh_u, num_sol_name_displ)
-    _, _, nodal_values_stress = Read_NumSol(mesh_u, num_sol_name_stress)
+    nodal_values_displ = Read_NumSol(num_sol_name_displ)
+    nodal_values_stress = Read_NumSol(num_sol_name_stress)
 
 
     mesh_coord_stress = [(Model_du.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model_du.coordinates))]
     mesh_coord_stress = (torch.cat(mesh_coord_stress)).clone().detach().requires_grad_(True)
 
     cell_ID_stress = torch.tensor(mesh_du.GetCellIds(mesh_coord_stress),dtype=torch.int)
-
-    print(mesh_coord_stress[0])
-    print(cell_ID_stress[0])
 
     num_u_x = nodal_values_displ[:,0]
     num_u_y = nodal_values_displ[:,1]
@@ -46,10 +41,19 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_
     u_predicted_x = torch.tensor(Model_u.nodal_values[0])
     u_predicted_y = torch.tensor(Model_u.nodal_values[1])
 
-    s11_predicted = torch.tensor(Model_du.nodal_values[0])
-    s22_predicted = torch.tensor(Model_du.nodal_values[1])
-    s12_predicted = torch.tensor(Model_du.nodal_values[2])
+    # s11_predicted = torch.tensor(Model_du.nodal_values[0])
+    # s22_predicted = torch.tensor(Model_du.nodal_values[1])
+    # s12_predicted = torch.tensor(Model_du.nodal_values[2])
 
+    stress_all_coord = [(Model_du.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model_du.coordinates))]
+    stress_all_cell_IDs = torch.tensor([torch.tensor(mesh_du.GetCellIds(i),dtype=torch.int)[0] for i in stress_all_coord])
+    stress_all_coord = (torch.cat(stress_all_coord)).clone().detach().requires_grad_(True)
+
+    stress = Model_du(stress_all_coord, stress_all_cell_IDs)
+
+    s11_predicted = stress[0,:]
+    s22_predicted = stress[1,:]
+    s12_predicted = stress[2,:]
 
     norm_num_ux = torch.norm(num_u_x)
     norm_num_uy = torch.norm(num_u_y)
@@ -115,3 +119,25 @@ def NumSol_eval(mesh_u, mesh_du, Model_u, Model_du, num_sol_name_displ, num_sol_
 
     ######################################################################################################
 
+
+def Num_to_NN(Model_u, Model_du, num_sol_name_displ, num_sol_name_stress):
+
+    nodal_values_displ = Read_NumSol(num_sol_name_displ)
+    nodal_values_stress = Read_NumSol(num_sol_name_stress)
+
+    num_u_x = nodal_values_displ[:,0]
+    num_u_y = nodal_values_displ[:,1]
+
+    numerical_s11 = nodal_values_stress[:,0]
+    numerical_s12 = nodal_values_stress[:,1]
+    numerical_s22 = nodal_values_stress[:,3]
+
+    
+    Model_u.nodal_values[0] = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in num_u_x])
+    Model_u.nodal_values[1] = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in num_u_y])
+
+    Model_du.nodal_values[0] = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in numerical_s11])
+    Model_du.nodal_values[1] = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in numerical_s22])
+    Model_du.nodal_values[2] = nn.ParameterList([nn.Parameter(torch.tensor([i])) for i in numerical_s12])
+
+    return Model_u, Model_du

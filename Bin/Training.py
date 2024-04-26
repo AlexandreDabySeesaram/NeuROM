@@ -11,7 +11,11 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
-                Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based
+                Mixed_2D_loss, Neumann_BC_rel, CheckNeumann_BC_rel, Constitutive_BC, GetRealCoord,\
+                    Update_Coordinates, CopyStress
+
+
+
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -806,8 +810,9 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
     while epoch<n_epochs and stop == False :
 
-        w1 = torch.randint(0, int(total/2) ,[1])
-        w0 = total - w1
+        # if epoch%200 == 0:
+        #     w1 = torch.randint(1, int(total/3) ,[1])
+        #     w0 = total - w1
 
         for DataSet in CoordinatesBatchSet:
 
@@ -816,19 +821,10 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
             # TrialIDs_u = DataSet[1]
             # TrialIDs_du = DataSet[2]
 
-            ##  n Training points generated in each element
-
             Cell_ids = DataSet[0]
             Ref_Coord = DataSet[1]
 
             TrialCoordinates, TrialIDs_u, TrialIDs_du = GetRealCoord(Model_du, Mesh_du, Cell_ids, Ref_Coord)
-
-            ##### Should we move this to the loss function??? Maybe it's ok
-            Neumann_BC_rel(Model_du)
-
-            if len(constit_cell_IDs_u)>0:
-                Constitutive_BC(Model_u, Model_du, constit_point_coord, constit_cell_IDs_u, lmbda, mu )
-            ##### ------------------------------------------
 
             start_time = time.time()
             u_predicted = Model_u(TrialCoordinates, TrialIDs_u) 
@@ -863,6 +859,9 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
             start_time = time.time()
             l.backward()
+
+            grads = [[p, p.grad] for p in Model_du.parameters()]
+
             backward_time += time.time() - start_time
 
             start_time = time.time()
@@ -871,30 +870,42 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
             optimizer.zero_grad()
 
-            Model_u.Update_Middle_Nodes(Mesh_u)
+            #Model_u.Update_Middle_Nodes(Mesh_u)
 
-        if (epoch+1)%10 == 0:
+
+        if (epoch+1)%100 == 0:
             print("     epoch = ", epoch +1)
             print("     loss_counter = ", loss_counter)
-            print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-100*n_batches_per_epoch:-1]), precision=4))
-            print("     mean loss compatibility = ", numpy.format_float_scientific(numpy.mean(loss[1][-100*n_batches_per_epoch:-1]), precision=4))
-            print("     mean loss decrease = ", numpy.format_float_scientific(numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]), precision=4))
-            # print("     displacement variance = ", numpy.format_float_scientific(numpy.mean((variance_u[-100*n_batches_per_epoch:-1])), precision=4))
+            print("     mean loss PDE = ", numpy.format_float_scientific(numpy.mean(loss[0][-500*n_batches_per_epoch:-1]), precision=4))
+            print("     mean loss compatibility = ", numpy.format_float_scientific(numpy.mean(loss[1][-500*n_batches_per_epoch:-1]), precision=4))
+            print("     mean loss decrease = ", numpy.format_float_scientific(numpy.mean(loss_decrease[-500*n_batches_per_epoch:-1]), precision=4))
+            # print("     displacement variance = ", numpy.format_float_scientific(numpy.mean((variance_u[-500*n_batches_per_epoch:-1])), precision=4))
             print("     w0, w1 : ", w0, w1)
             print()
             # print("     stagnancy_counter = ", stagnancy_counter)   
             print("     no_improvement = ", no_improvement)   
             print("     ...............................")
 
-            if numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-100*n_batches_per_epoch:-1]) < 5.0e-4 \
+            # print("coord = ", len(Model_du.coordinates))
+            # print("param = ", len(grads))
+            # print(grads[20])
+            # print(grads[20 + len(Model_du.coordinates)])
+            # print(grads[20 + 2*len(Model_du.coordinates)])
+            # print(grads[20 + 3*len(Model_du.coordinates)])
+            # print()
+            # print()
+
+
+
+            if numpy.mean(loss_decrease[-500*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-500*n_batches_per_epoch:-1]) < 1.0e-4 \
                     and no_improvement > 20*n_batches_per_epoch:
                     stop = True
 
 
-        if (epoch+1) % 10 == 0:
-            l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Stage1")
+        if (epoch+1) % 100 == 0:
+            l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du , PlotCoordinates, loss, n_train, "_Stage1")
             Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, epoch+1)
-            Pplot.Export_Stress_to_vtk(Mesh_du.name_mesh, Model_du, epoch+1)
+            Pplot.Export_Stress_to_vtk(Mesh_du, Model_du, epoch+1)
 
             print("     _______________________________")
 
@@ -904,14 +915,14 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
     l = Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train, "_Final")
     Pplot.Export_Displacement_to_vtk(Mesh_u.name_mesh, Model_u, epoch+1)
-    Pplot.Export_Stress_to_vtk(Mesh_du.name_mesh, Model_du, epoch+1)
+    Pplot.Export_Stress_to_vtk(Mesh_du, Model_du, epoch+1)
 
-    print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {stopt_train_time-start_train_time}s\n\
-        * Evaluation time: {evaluation_time}s\n\
-        * Loss time: {loss_time}s\n\
-        * Backward time: {backward_time}s\n\
-        * Training time per epochs: {(stopt_train_time-start_train_time)/n_epochs}s\n\
-        * Optimiser time: {optimizer_time}s\n')
+    # print("*************** END OF TRAINING ***************\n")
+    # print(f'* Training time: {stopt_train_time-start_train_time}s\n\
+    #     * Evaluation time: {evaluation_time}s\n\
+    #     * Loss time: {loss_time}s\n\
+    #     * Backward time: {backward_time}s\n\
+    #     * Training time per epochs: {(stopt_train_time-start_train_time)/n_epochs}s\n\
+    #     * Optimiser time: {optimizer_time}s\n')
 
     return Model_u, Model_du, loss

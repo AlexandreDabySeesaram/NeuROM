@@ -185,7 +185,6 @@ class Mesh:
                                 node_per_elem = 2
                             case 8:
                                 node_per_elem = 3
-                        print("Border = ", ElemList[-node_per_elem:])
                         self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:

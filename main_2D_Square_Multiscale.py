@@ -153,7 +153,7 @@ def Generate_Training_IDs(points_per_elem, Domain_mesh):
     print()
     print(" * Generate training data")
 
-    margin = 1.0e-5
+    margin = 1.0e-3
 
     cell_ids_unique = torch.arange(Domain_mesh.NElem)
     cell_ids = torch.repeat_interleave(cell_ids_unique, points_per_elem)
@@ -192,7 +192,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
     n_train = 50
     PlotCoordinates, IDs_u, IDs_du = GenerateData(n_train)
 
-    points_per_elem = 12
+    points_per_elem = 6 #max(int(1000/Domain_mesh_du.NElem), 6)
 
     cell_ids, ref_coords = Generate_Training_IDs(points_per_elem, Domain_mesh_du)
 
@@ -232,7 +232,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
     loss = [[],[]]
 
 
-    current_BS = int(cell_ids.shape[0]/2)
+    current_BS = int(cell_ids.shape[0]/2) #6*Domain_mesh_du.NElem
     n_epochs = 4000
     CoordinatesBatchSet = torch.utils.data.DataLoader([[cell_ids[i], ref_coords[i]] for i in range((cell_ids.shape)[0])], 
                                                             batch_size=current_BS, shuffle=True)
@@ -381,33 +381,48 @@ start_train_time = time.time()
 MaxElemSize_init = 10
 MinElemSize_init = 5
 
-MaxElemSize = MaxElemSize_init
-MinElemSize = MinElemSize_init
-w0 = 10
-w1 = 1
-
-Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize)
-#Model_u, Model_du = Num_to_NN(Model_u, Model_du, num_sol_name_displ, num_sol_name_stress)
-Model_u, Model_du = DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, L, w0, w1)
-
-# for i in range(1):
-
-MaxElemSize = MinElemSize_init/5
-MinElemSize = MinElemSize_init/5
-
-Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
-                                                            order_du, w0, w1 )
-
-MaxElemSize = MinElemSize_init/16
+MaxElemSize = MaxElemSize_init/16
 MinElemSize = MinElemSize_init/16
 
-Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
-                                                            order_du, w0, w1 )
+w0 = 1
+w1 = 100
+
+
+Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize)
+# #Model_u, Model_du = Num_to_NN(Model_u, Model_du, num_sol_name_displ, num_sol_name_stress)
+
+Model_u.load_state_dict(torch.load("Results/Model_u.pt"))
+Model_du.load_state_dict(torch.load("Results/Model_du.pt"))  
+
+Model_u, Model_du = DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, L, w0, w1)
+
+# # for i in range(4):
+
+# #     MaxElemSize = MaxElemSize/2
+# #     MinElemSize = MinElemSize/2
+
+# #     Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
+# #                                                                 order_du, w0, w1 )
+
+# MaxElemSize = MaxElemSize_init/4
+# MinElemSize = MinElemSize_init/4
+
+# Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
+                                                            # order_du, w0, w1 )
+
+# w0 = 1
+# w1 = 1
+
+# MaxElemSize = MaxElemSize_init/16
+# MinElemSize = MinElemSize_init/16
+
+# Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
+#                                                                 order_du, w0, w1 )                                                            
 
 print("Total time : ", time.time() - start_train_time) 
 
-torch.save(Model_u.state_dict(),"Results/Model_u.pt")
-torch.save(Model_du.state_dict(),"Results/Model_du.pt")
+# torch.save(Model_u.state_dict(),"Results/Model_u.pt")
+# torch.save(Model_du.state_dict(),"Results/Model_du.pt")
 
 cell_ids, ref_coords = Generate_Training_IDs(2, Domain_mesh_du)
 

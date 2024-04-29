@@ -70,6 +70,7 @@ def Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train
     print()
     print("     loss PDE = ", numpy.format_float_scientific(l_pde.item(),precision=4))
     print("     loss compatibility = ", numpy.format_float_scientific(l_compat.item(),precision=4))
+    print("     total = ", numpy.format_float_scientific(l_pde.item() + l_compat.item(),precision=4))
 
     #Model_u.CheckBCValues()
     Pplot.Plot2Dresults(u_predicted, PlotCoordinates, "_u"+stage)
@@ -846,6 +847,14 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
 
             loss_current = l_pde.item() + l_compat.item()
 
+            # if first_iteration == True:
+            #     variance_u.append(torch.mean((u_predicted - torch.zeros_like(u_predicted))**2).detach())
+            #     first_iteration == False
+            # else:
+            #     variance_u.append(torch.mean((u_predicted - u_pred_old)**2).detach()/torch.mean(u_predicted**2).detach())
+            # u_pred_old = u_predicted
+
+
             loss_decrease.append((loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current)))
             loss_old = loss_current
 
@@ -856,6 +865,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
                 no_improvement = 0
             else:
                 no_improvement = no_improvement +1
+
 
             start_time = time.time()
             l.backward()

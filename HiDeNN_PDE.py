@@ -627,6 +627,7 @@ class MeshNN_2D(nn.Module):
         self.connectivity = mesh.Connectivity
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
         self.borders_nodes = mesh.borders_nodes
+        self.elements_generation = np.ones(self.connectivity.shape[0])
 
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
@@ -751,12 +752,20 @@ class MeshNN_2D(nn.Module):
 
 
         new_connectivity = self.connectivity
+        new_generation = self.elements_generation
+        curren_gen = new_generation[edge_id]
+
         new_connectivity = np.delete(new_connectivity,(edge_id),axis = 0)
+        new_generation = np.delete(new_generation,(edge_id),axis = 0)
 
         new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
                                 [edge_nodes[1], new_node, Third_node[0]]])
         new_connectivity = np.vstack((new_connectivity,new_elem))
+        new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 2, axis=None)))
+
         self.connectivity = new_connectivity
+        self.elements_generation = new_generation
+
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
@@ -799,8 +808,11 @@ class MeshNN_2D(nn.Module):
         for i in range(New_coordinates.shape[0]):
             self.coordinates.append(New_coordinates[None,i])
         new_connectivity = self.connectivity
+        new_generation = self.elements_generation
         # Remove splitted element
         new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
+        curren_gen = new_generation[el_id]
+        new_generation = np.delete(new_generation,(el_id),axis = 0)
         #Evaluate new nodale values:
         self.eval()
         newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
@@ -811,7 +823,9 @@ class MeshNN_2D(nn.Module):
             self.nodal_values[1].append(newvalue[None,1,i])
         # Update connectivity
         new_connectivity = np.vstack((new_connectivity,new_elem))
+        new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 4, axis=None)))
         self.connectivity = new_connectivity
+        self.elements_generation = new_generation
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)

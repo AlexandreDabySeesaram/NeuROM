@@ -986,7 +986,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
     TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
     PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    stag_threshold = 1e-6
+    stag_threshold = 1e-7
     U_interm = []
     X_interm = []
     Connectivity_interm = []
@@ -1022,13 +1022,14 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 # detJ_old = detJ
                 # if torch.max(D_detJ)>0.5 and not flag_Stop_refinement:
                 if torch.max(D_detJ)>0.5 and len(model.coordinates)<100:
-                    indices = torch.nonzero(D_detJ > 0.4)
+                    indices = torch.nonzero(D_detJ > 0.3)
                     flag_Stop_refinement = True
                     compteur = 0
                     Removed_elem_list = []
+                    old_generation = model.elements_generation
                     for i in range(indices.shape[0]):
                         el_id = indices[i]  
-                        if el_id.item() not in Removed_elem_list:
+                        if el_id.item() not in Removed_elem_list and old_generation[el_id.item()]<3:
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
                             # el_id = el_id - compteur

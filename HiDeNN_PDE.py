@@ -713,7 +713,9 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock = ElementBlock2D_Quad(mesh.Connectivity)
             self.Interpolation = InterpolationBlock2D_Quad(mesh.Connectivity)
 
-
+        # set parameters 
+        self.RefinementParameters()
+        self.TrainingParameters()
 
         print("----------------------------------------------")
 
@@ -773,6 +775,32 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
 
+    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.Stagnation_threshold = Stagnation_threshold
+        self.Max_epochs = Max_epochs
+        self.learning_rate = learning_rate
+
+    def Initresults(self):
+        self.U_interm = []
+        self.X_interm = []
+        self.G_interm = []
+        self.Connectivity_interm = []
+
+    def StoreResults(self):
+        u_x = [u for u in self.nodal_values_x]
+        u_y = [u for u in self.nodal_values_y]
+        u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+        self.U_interm.append(u.data)
+        new_coord = [coord for coord in self.coordinates]
+        new_coord = torch.cat(new_coord,dim=0)
+        self.X_interm.append(new_coord)
+        self.G_interm.append(self.elements_generation)
+        self.Connectivity_interm.append(self.connectivity-1)
+
+    def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
+        self.MaxGeneration = MaxGeneration
+        self.Jacobian_threshold = Jacobian_threshold
+        self.MaxGeneration_elements = 0
 
     def SplitElemNonLoc(self, el_id):
         nodes = self.connectivity[el_id]
@@ -846,6 +874,10 @@ class MeshNN_2D(nn.Module):
                 Removed_elem_list.append(edge)
             else:
                 self.coordinates[-(3-i)].requires_grad = False
+                if not (self.nodal_values[0][int(node_edge[0])-1].requires_grad and self.nodal_values[0][int(node_edge[1])-1].requires_grad):
+                    self.nodal_values[0][-(3-i)].requires_grad = False
+                if not (self.nodal_values[1][int(node_edge[0])-1].requires_grad and self.nodal_values[1][int(node_edge[1])-1].requires_grad):
+                    self.nodal_values[1][-(3-i)].requires_grad = False
         return Removed_elem_list
 
     def forward(self,x, el_id):

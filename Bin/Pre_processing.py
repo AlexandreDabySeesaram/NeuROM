@@ -53,7 +53,18 @@ def PrintWelcome():
  |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n\n " + \
 "                 "+version)
 
-
+class Material():
+    def __init__(self,flag_lame,coef1,coef2):
+        if flag_lame:
+            self.lmbda = coef1                                               # First Lamé's coefficient
+            self.mu = coef2                                                  # Second Lamé's coefficient
+            self.E = self.mu*(3*self.lmbda+2*self.mu)/(self.lmbda+self.mu)                            # Young's modulus
+            self.nu = self.lmbda/(2*(self.lmbda+self.mu))                                   # Poisson's ratio
+        else:
+            self.E = coef1                                                   # Young's modulus (GPa)
+            self.nu = coef2                                                  # Poisson's ratio
+            self.lmbda = (self.E*self.nu)/((1+self.nu)*(1-2*self.nu))                            # First Lamé's coefficient
+            self.mu = self.E/(2*(1+self.nu))                                           # Second Lamé's coefficient
                                                                                                                                     
 class Mesh:
     def __init__(self,name,h_max, order, dimension):

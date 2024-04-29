@@ -972,7 +972,8 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
 
 
 
-def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
+def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
+    
     # Initialise vector of loss values
     Loss_vect = []
     print("**************** START TRAINING ***************\n")
@@ -986,24 +987,16 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
     TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
     PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    stag_threshold = 1e-7
-    U_interm = []
-    X_interm = []
-    G_interm = []
-    Connectivity_interm = []
+    model.Initresults()
     stagnation = False
     flag_Stop_refinement = False
-    while epoch<n_epochs and not stagnation:
+    while epoch<model.Max_epochs and not stagnation:
         # Compute loss
         loss_time_start = time.time()
         u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
- 
-        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,lmbda, mu)*torch.abs(detJ))
-
+        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()
-
-
         backward_time_start = time.time()
         loss.backward()
         back_time += time.time() - backward_time_start
@@ -1018,27 +1011,21 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
                 loss_old = loss.data
-                # d_detJ = (detJ_old - detJ)
                 D_detJ = (torch.abs(detJ_0) - torch.abs(detJ))/torch.abs(detJ_0)
-                # detJ_old = detJ
-                # if torch.max(D_detJ)>0.5 and not flag_Stop_refinement:
-                if torch.max(D_detJ)>0.4 and len(model.coordinates)<100:
-                    indices = torch.nonzero(D_detJ > 0.01)
-                    flag_Stop_refinement = True
-                    compteur = 0
+                if torch.max(D_detJ)>model.Jacobian_threshold and len(model.coordinates)<100:
+                    indices = torch.nonzero(D_detJ > 0.5*model.Jacobian_threshold)
                     Removed_elem_list = []
                     old_generation = model.elements_generation
                     for i in range(indices.shape[0]):
                         el_id = indices[i]  
-                        if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<3:
+                        if model.elements_generation[el_id.item()]<model.MaxGeneration:
+                            model.MaxGeneration_elements=1
+                        if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
-                            # el_id = el_id - compteur
                             model.eval()
                             newvalue = model(new_coordinate,el_id) 
                             model.train()
-                            compteur+=1
-
                             Removed_elems = model.SplitElemNonLoc(el_id)
                             Removed_elems[0] = Removed_elems[0].numpy()
                             # Update indexes 
@@ -1060,25 +1047,14 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                     detJ_0 = detJ
 
                     # model.Freeze_Mesh()
-                if d_loss < stag_threshold:
+                if d_loss < model.Stagnation_threshold:
                     stagnation = True
             else:
                 loss_old = loss.item()
-                # detJ_old = detJ
                 detJ_0 = detJ
-
             Loss_vect.append(loss.item())
         if (epoch+1) % 50 == 0 or epoch ==1:
-            u_x = [u for u in model.nodal_values_x]
-            u_y = [u for u in model.nodal_values_y]
-            u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
-            U_interm.append(u.data)
-            new_coord = [coord for coord in model.coordinates]
-            new_coord = torch.cat(new_coord,dim=0)
-            X_interm.append(new_coord)
-            G_interm.append(model.elements_generation)
-            Connectivity_interm.append(model.connectivity-1)
-
+            model.StoreResults()
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
@@ -1091,5 +1067,5 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
-    return Loss_vect, (time_stop-time_start), U_interm, X_interm,Connectivity_interm,G_interm
+    return Loss_vect, (time_stop-time_start)
     

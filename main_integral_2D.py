@@ -15,7 +15,7 @@ import os
 #%% Choose geometry
 # Name = 'Rectangle'
 Name = 'Square'
-# Name = 'Hole'
+Name = 'Hole'
 # Name = 'Square_small'
 # Name = 'Hole_3'
 
@@ -29,7 +29,7 @@ Mat = pre.Material( flag_lame = False,                         # If True should 
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 5                                                 # Maximum element size of the mesh
+MaxElemSize = 10                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -74,13 +74,13 @@ learning_rate = 0.001                                           # optimizer lear
 Model_2D.RefinementParameters(  MaxGeneration = 2, 
                                 Jacobian_threshold = 0.5)
                                 
-Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
+Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
                                 Max_epochs = 3000, 
                                 learning_rate = 0.001)
 
 #%% Training 
 # Fisrt stage
-max_refinment = 1
+max_refinment = 2
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -127,7 +127,9 @@ while n_refinement < max_refinment and not stagnation:
         max_eps_old = max_eps
     if n_refinement < max_refinment and not stagnation:
         # Refine mesh
-        MaxElemSize = MaxElemSize/coeff_refinement
+        # MaxElemSize = MaxElemSize/coeff_refinement
+        MaxElemSize = MaxElemSize/4
+
         Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
         Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
         Domain_mesh_2.AddBorders(Borders)
@@ -141,7 +143,7 @@ while n_refinement < max_refinment and not stagnation:
         newcoordinates = [coord for coord in Model_2D_2.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
         # Update Domain_mesh vtk mesh to get correct cell Ids
-        Domain_mesh.Nodes = [[i+1,X_interm[-1][i,0].item(),X_interm[-1][i,1].item(),0] for i in range(len(Domain_mesh.Nodes))]
+        Domain_mesh.Nodes = [[i+1,Model_2D.X_interm[-1][i,0].item(),Model_2D.X_interm[-1][i,1].item(),0] for i in range(len(Domain_mesh.Nodes))]
         Domain_mesh.ExportMeshVtk(flag_update = True)
         IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
         NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 

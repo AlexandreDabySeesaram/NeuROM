@@ -68,6 +68,10 @@ class Mesh:
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_min_str+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
     
+    def AddBorders(self,borders):
+        self.borders = borders
+        self.borders_nodes = []
+
     def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
         self.ExcludeId = Exclude
@@ -180,12 +184,12 @@ class Mesh:
                     self.Connectivity.append(ElemList[-self.node_per_elem:])  
 
                 if ElemList[3] in self.borders: 
-                        match ElemList[1]:
-                            case 1:
-                                node_per_elem = 2
-                            case 8:
-                                node_per_elem = 3
-                        self.borders_nodes.append(ElemList[-node_per_elem:])  
+                    match ElemList[1]:
+                        case 1:
+                            node_per_elem = 2
+                        case 8:
+                            node_per_elem = 3
+                    self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:
                     for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
@@ -219,22 +223,28 @@ class Mesh:
 #* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
 
 
-    def ExportMeshVtk(self):
+    def ExportMeshVtk(self,flag_update = False):
         msh_name = 'Geometries/'+self.name_mesh
         meshBeam = meshio.read(msh_name)
+
+        if flag_update:
+            points = np.array(self.Nodes)[:,1:]
+        else:
+            points = meshBeam.points
+
         # crete meshio mesh based on points and cells from .msh file
 
         if self.order =='1':
-            mesh = meshio.Mesh(meshBeam.points, {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points, {"triangle":meshBeam.cells_dict["triangle"]})
             meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-            mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
             meshio.write(msh_name[0:-4]+".xml", mesh)
 
         elif self.order =='2':
-            mesh = meshio.Mesh(meshBeam.points, {"triangle6":meshBeam.cells_dict["triangle6"]})
+            mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
             meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
 
-            mesh = meshio.Mesh(meshBeam.points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
+            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
             meshio.write(msh_name[0:-4]+".xml", mesh)
 
 

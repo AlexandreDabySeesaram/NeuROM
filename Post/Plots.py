@@ -15,7 +15,8 @@ from scipy import ndimage
 
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
-matplotlib.rcParams["font.size"] = "13"
+matplotlib.rcParams["font.size"] = "14"
+from matplotlib.ticker import MaxNLocator
 
 from Bin.PDE_Library import Stress
 
@@ -69,17 +70,77 @@ def PlotTrajectories(Coord_trajectories,name):
     #plt.show()
     plt.clf()
 
+def Plot_Loss_Modes(Modes_flag,error,name):
+    # Lift to be able to use semilogy
+    error3 = error-np.min(error)
+    plt.plot(Modes_flag,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
+    # plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error3,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    plt.clf()
+
+def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
+    # Lift to be able to use semilogy
+    plt.plot(Modes_flag,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.xlabel(r'Epochs')
+
+    # plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(decay,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
+    plt.axhline(threshold,color = 'k')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    plt.clf()
+
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
+    plt.semilogy(error2,color='#247ab5ff')
+    ax = plt.gca()
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    plt.ylabel(r'$\Xi$',color='#247ab5ff')
+    plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error3,color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    plt.clf()
+
+
+def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
+    # Lift to be able to use semilogy
+    #error_pde = error_pde-np.min(error_pde)
+    #error_constit = error_constit-np.min(error_constit)
+
     plt.semilogy(error2)
     plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     #plt.ylabel(r'$\Xi$')
     #plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3,color='#F39C12')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
+    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
+
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.legend()
     plt.clf()
 
 
@@ -108,7 +169,7 @@ def Plot_end(error,error2):
     #plt.semilogy(error2[-1000:-1])
     #plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     ax2 = plt.gca().twinx()
-    ax2.semilogy(error3[1000:],color='#F39C12', label="Min = "+str(np.format_float_scientific(np.min(error), precision=3))+", final = " +str(np.format_float_scientific(error[-1], precision=3)))
+    ax2.semilogy(error3[1000:],color='#d95319ff', label="Min = "+str(np.format_float_scientific(np.min(error), precision=3))+", final = " +str(np.format_float_scientific(error[-1], precision=3)))
     ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
     #plt.legend(bbox_to_anchor=[0.7, 0.5], loc='center')
     plt.legend()
@@ -224,15 +285,23 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
         uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data,u0,uL)
+        Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]
+        Nodal_coordinates = torch.cat(Nodal_coordinates)
+        u_analytical_E_discrete = AnalyticSolution(A,E,Nodal_coordinates.data,u0,uL)
         E = torch.tensor([E])
         E = E[:,None] # Add axis so that dimensions match
         u_E = BeamROM(TrialCoordinates,[E])
+        u_NN_discrete = BeamROM(Nodal_coordinates,[E])
         error_tensor = u_analytical_E - u_E
+        error_tensor_discrete = u_analytical_E_discrete - u_NN_discrete
         # Reative error in percentage
         error_norm = 100*torch.sqrt(torch.sum(error_tensor*error_tensor))/torch.sqrt(torch.sum(u_analytical_E*u_analytical_E))
         error_scientific_notation = f"{error_norm:.2e}"
+
+        error_norm_discrete = 100*torch.sqrt(torch.sum(error_tensor_discrete*error_tensor_discrete))/torch.sqrt(torch.sum(u_analytical_E_discrete*u_analytical_E_discrete))
+        error_scientific_notation_discrete = f"{error_norm_discrete:.2e}"
         # error_str = str(error_norm.item())
-        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'
+        title_error =  r'$\frac{\Vert u_{exact} - u_{ROM}\Vert}{\Vert u_{exact}\Vert}$ = '+error_scientific_notation+ '$\%$'+' Discrete: '+error_scientific_notation_discrete+ '$\%$'
         # Plot the function
         plt.plot(TrialCoordinates.data,u_analytical_E,color="#A92021", label = 'Ground truth')
         plt.plot(TrialCoordinates.data, u_E.data, label = 'Discrete solution')
@@ -291,9 +360,9 @@ def Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiPar
 
 def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     import torch
-    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara)[:,None] for l in range(BeamROM.n_para)]
         if mode == 0:
             lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
@@ -302,27 +371,27 @@ def PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
             New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
             lambda_i = torch.vstack((lambda_i,New_mode))
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
         plt.xlabel('x (mm)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara.data,lambda_i[mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E (GPa)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Para_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
 def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model):
     import torch
-    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
+    Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes_truncated)]
     u_i = torch.cat(Space_modes,dim=1)  
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara[l][:,0].view(-1,1))[:,None] for l in range(BeamROM.n_para)]
         if mode == 0:
             lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(BeamROM.n_para)]
@@ -330,26 +399,26 @@ def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model
             New_mode = Para_mode_List
             lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(BeamROM.n_para)]
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialCoordinates.data,u_i[:,mode].data,label='Mode'+str(mode+1))
         plt.xlabel('x (mm)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Space_modes'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara[0].data,lambda_i[0][mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E1 (GPa)')
         plt.legend(loc="upper left")
-    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
 
-    for mode in range(BeamROM.n_modes):
+    for mode in range(BeamROM.n_modes_truncated):
         plt.plot(TrialPara[1].data,lambda_i[1][mode,:,0].data,label='Mode'+str(mode+1))
         plt.xlabel('E2 (GPa)')
         plt.legend(loc="upper left")
-        plt.savefig('Results/Pre_trained_Para_modes_E2'+str(BeamROM.n_modes)+'.pdf', transparent=True)  
+        plt.savefig('Results/Pre_trained_Para_modes_E2'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
     plt.clf()
         # plt.show()
 

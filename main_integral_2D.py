@@ -144,6 +144,8 @@ while n_refinement < max_refinment and not stagnation:
         newcoordinates = torch.cat(newcoordinates,dim=0)
         # Update Domain_mesh vtk mesh to get correct cell Ids
         Domain_mesh.Nodes = [[i+1,Model_2D.X_interm[-1][i,0].item(),Model_2D.X_interm[-1][i,1].item(),0] for i in range(len(Domain_mesh.Nodes))]
+        Domain_mesh.Connectivity = Model_2D.Connectivity_interm[-1].astype(int)
+        # HERE THE CELLs must be updated due to h adaptivity
         Domain_mesh.ExportMeshVtk(flag_update = True)
         IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
         NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 

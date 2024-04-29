@@ -231,15 +231,16 @@ class Mesh:
 
         if flag_update:
             points = np.array(self.Nodes)[:,1:]
+            cells = self.Connectivity
         else:
             points = meshBeam.points
-
+            cells = meshBeam.cells_dict["triangle"]
         # crete meshio mesh based on points and cells from .msh file
 
         if self.order =='1':
-            mesh = meshio.Mesh(points, {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points, {"triangle":cells})
             meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
             meshio.write(msh_name[0:-4]+".xml", mesh)
 
         elif self.order =='2':

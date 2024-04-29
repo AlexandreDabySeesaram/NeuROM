@@ -104,6 +104,7 @@ stagnation = False
 Loss_tot = []
 Duration_tot = 0
 U_interm_tot = []
+Gen_interm_tot = []
 X_interm_tot = []
 Connectivity_tot = []
 Cell_dict = []
@@ -118,14 +119,15 @@ while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-    n_epochs = 10000
+    n_epochs = 5000
     if n_refinement>4:
         n_epochs = 1000
-    Loss_vect, Duration, U_interm, X_interm, Connectivity_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+    Loss_vect, Duration, U_interm, X_interm, Connectivity_interm, G_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
     # Save current convergence state
     Loss_tot += Loss_vect
     Duration_tot += Duration
     U_interm_tot += U_interm
+    Gen_interm_tot += G_interm
     X_interm_tot += X_interm
     Connectivity_tot += Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -205,11 +207,11 @@ u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
-# List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
-# _,xg,detJ = Model_2D(PlotCoordinates, List_elems)
-# Model_2D.eval()
-# eps =  Strain(Model_2D(xg, List_elems),xg)
-# sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
+List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
+_,xg,detJ = Model_2D(PlotCoordinates, List_elems)
+Model_2D.eval()
+eps =  Strain(Model_2D(xg, List_elems),xg)
+sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
 
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 
@@ -217,12 +219,12 @@ X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_
 # # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-# sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
-# point_data={"U":u.data}, 
-# cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
-# sol.write(
-#     "Results/Paraview/sol_u_end_training_shear_"+Name+".vtk", 
-# )
+sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
+point_data={"U":u.data}, 
+cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+sol.write(
+    "Results/Paraview/sol_u_end_training_test_"+Name+".vtk", 
+)
 
 #%% Export intermediate convergence steps
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -231,7 +233,8 @@ U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm
 
 for timestep in range(len(U_interm_tot)):
     sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
-    point_data={"U":U_interm_tot[timestep]})
+    point_data={"U":U_interm_tot[timestep]}, 
+    cell_data={"Gen": [Gen_interm_tot[timestep]]}, )
 
     sol.write(
         f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting3_"+Name+f"_{timestep}.vtk",  

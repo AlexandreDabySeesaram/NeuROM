@@ -989,6 +989,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     stag_threshold = 1e-7
     U_interm = []
     X_interm = []
+    G_interm = []
     Connectivity_interm = []
     stagnation = False
     flag_Stop_refinement = False
@@ -1021,15 +1022,15 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
                 D_detJ = (torch.abs(detJ_0) - torch.abs(detJ))/torch.abs(detJ_0)
                 # detJ_old = detJ
                 # if torch.max(D_detJ)>0.5 and not flag_Stop_refinement:
-                if torch.max(D_detJ)>0.5 and len(model.coordinates)<100:
-                    indices = torch.nonzero(D_detJ > 0.3)
+                if torch.max(D_detJ)>0.4 and len(model.coordinates)<100:
+                    indices = torch.nonzero(D_detJ > 0.01)
                     flag_Stop_refinement = True
                     compteur = 0
                     Removed_elem_list = []
                     old_generation = model.elements_generation
                     for i in range(indices.shape[0]):
                         el_id = indices[i]  
-                        if el_id.item() not in Removed_elem_list and old_generation[el_id.item()]<3:
+                        if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<3:
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
                             # el_id = el_id - compteur
@@ -1075,6 +1076,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
             new_coord = [coord for coord in model.coordinates]
             new_coord = torch.cat(new_coord,dim=0)
             X_interm.append(new_coord)
+            G_interm.append(model.elements_generation)
             Connectivity_interm.append(model.connectivity-1)
 
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
@@ -1089,5 +1091,5 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
     print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
-    return Loss_vect, (time_stop-time_start), U_interm, X_interm,Connectivity_interm
+    return Loss_vect, (time_stop-time_start), U_interm, X_interm,Connectivity_interm,G_interm
     

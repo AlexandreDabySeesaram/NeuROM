@@ -231,11 +231,11 @@ class Mesh:
 
         if flag_update:
             points = np.array(self.Nodes)[:,1:]
-            cells = self.Connectivity
+            cells = (self.Connectivity-1).astype(np.int32)
         else:
             points = meshBeam.points
             cells = meshBeam.cells_dict["triangle"]
-        # crete meshio mesh based on points and cells from .msh file
+        # create meshio mesh based on points and cells from .msh file
 
         if self.order =='1':
             mesh = meshio.Mesh(points, {"triangle":cells})

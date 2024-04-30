@@ -9,7 +9,7 @@ from Bin.Training import Training_2D_Integral
 import Post.Plots as Pplot
 import time
 import os
-
+import matplotlib.pyplot as plt
 
 
 #%% Choose geometry
@@ -80,7 +80,7 @@ Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5,
 
 #%% Training 
 # Fisrt stage
-max_refinment = 2
+max_refinment = 3
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -99,7 +99,7 @@ while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=Model_2D.learning_rate)
-    n_epochs = 5000
+    n_epochs = 3000
     if n_refinement>4:
         n_epochs = 1000
     Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
@@ -143,8 +143,8 @@ while n_refinement < max_refinment and not stagnation:
         newcoordinates = [coord for coord in Model_2D_2.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
         # Update Domain_mesh vtk mesh to get correct cell Ids
-        Domain_mesh.Nodes = [[i+1,Model_2D.X_interm[-1][i,0].item(),Model_2D.X_interm[-1][i,1].item(),0] for i in range(len(Domain_mesh.Nodes))]
-        Domain_mesh.Connectivity = Model_2D.Connectivity_interm[-1].astype(int)
+        Domain_mesh.Nodes = [[i+1,Model_2D.coordinates[i][0][0].item(),Model_2D.coordinates[i][0][1].item(),0] for i in range(len(Model_2D.coordinates))]
+        Domain_mesh.Connectivity = Model_2D.connectivity
         # HERE THE CELLs must be updated due to h adaptivity
         Domain_mesh.ExportMeshVtk(flag_update = True)
         IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
@@ -174,6 +174,8 @@ while n_refinement < max_refinment and not stagnation:
         # Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
+        Model_2D.RefinementParameters(  MaxGeneration = 3, 
+                                Jacobian_threshold = 0.5)
     else:
         Model_2D.train()
 

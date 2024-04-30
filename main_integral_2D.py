@@ -197,7 +197,9 @@ sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
+Coord_converged = np.array([[Model_2D.coordinates[i][0][0].item(),Model_2D.coordinates[i][0][1].item(),0] for i in range(len(Model_2D.coordinates))])
+Connect_converged = Model_2D.connectivity
+sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(

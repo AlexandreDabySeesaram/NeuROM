@@ -1012,7 +1012,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
                 loss_old = loss.data
                 D_detJ = (torch.abs(detJ_0) - torch.abs(detJ))/torch.abs(detJ_0)
-                if torch.max(D_detJ)>model.Jacobian_threshold and len(model.coordinates)<100:
+                if torch.max(D_detJ)>model.Jacobian_threshold:
                     indices = torch.nonzero(D_detJ > 0.5*model.Jacobian_threshold)
                     Removed_elem_list = []
                     old_generation = model.elements_generation
@@ -1053,7 +1053,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 loss_old = loss.item()
                 detJ_0 = detJ
             Loss_vect.append(loss.item())
-        if (epoch+1) % 50 == 0 or epoch ==1:
+        if (epoch+1) % 50 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
             model.StoreResults()
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 

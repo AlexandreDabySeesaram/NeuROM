@@ -222,7 +222,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_free_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_all_free_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

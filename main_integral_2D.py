@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 Name = 'Square'
 Name = 'Hole'
 # Name = 'Square_small'
-# Name = 'Hole_3'
+Name = 'Hole_3'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
@@ -203,7 +203,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_over_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_over_free_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -217,7 +217,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_free_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

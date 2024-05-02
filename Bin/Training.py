@@ -1041,6 +1041,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                             # Add newly removed elems to list
                             Removed_elem_list += Removed_elems
                             List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
+                            # print("******************** change to torch.arrange ********************")
                             optimizer.add_param_group({'params': model.coordinates[-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
@@ -1055,7 +1056,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 detJ_0 = detJ
                 model.detJ_0 = detJ
             Loss_vect.append(loss.item())
-        if (epoch+1) % 1 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+        if (epoch+1) % 50 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
             model.StoreResults()
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 

@@ -18,6 +18,7 @@ Name = 'Square'
 Name = 'Hole'
 # Name = 'Square_small'
 # Name = 'Hole_3'
+# Name = 'L_shape'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
@@ -75,7 +76,7 @@ Model_2D.RefinementParameters(  MaxGeneration = 2,
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 500, 
+                                Max_epochs = 3000, 
                                 learning_rate = 0.001)
 
 #%% Training 
@@ -152,7 +153,7 @@ while n_refinement < max_refinment and not stagnation:
         IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
         NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 
         if -1 in IDs_newcoord:
-            print(IDs_newcoord)
+            # print(IDs_newcoord)
             index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
             oldcoordinates = [coord for coord in Model_2D.coordinates]
             oldcoordinates = torch.cat(oldcoordinates,dim=0)
@@ -179,7 +180,7 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.3)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                        Max_epochs = 500, 
+                                        Max_epochs = 2500, 
                                         learning_rate = 0.001)
     else:
         Model_2D.train()

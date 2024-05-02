@@ -312,6 +312,12 @@ def MixedFormulation_Loss(A, E, u, du, x, b):
     return torch.mean(res_eq), torch.mean(res_constit)
 
 def InternalEnergy_2D(u,x,lmbda, mu):
+
+    print("InternalEnergy_2D")
+    print(u.shape)
+    print(x.shape)
+    print()
+
     eps =  Strain(u,x)
     sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
     W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
@@ -514,15 +520,6 @@ def GetRealCoord(model, mesh, cell_ids, ref_coord):
 
     coord = ref_coord[:,0].view(-1, 1)*node1_coord + ref_coord[:,1].view(-1, 1)*node2_coord + ref_coord[:,2].view(-1, 1)*node3_coord
 
-    # print("cell ids : ", cell_ids[0])
-    # print("node ids : ", node_ids[0,:])
-
-    # print("n1 : ", node1_coord[0])
-    # print("n2 : ", node2_coord[0])
-    # print("n3 : ", node3_coord[0])
-    # print("x : ", coord[0])
-    # print("check cell ID : ", mesh.GetCellIds(coord)[0])
-    # print()
     return coord.clone().detach().requires_grad_(True), cell_ids, cell_ids
 
 
@@ -575,3 +572,4 @@ def CopyStress(Model_u, Model_du, Domain_mesh_u, lmbda, mu):
         Model_du.nodal_values[1][j] = torch.nn.Parameter(torch.tensor([s_22[j]]))
     for j in node_IDs_s12:
         Model_du.nodal_values[2][j] = torch.nn.Parameter(torch.tensor([s_12[j]]))
+

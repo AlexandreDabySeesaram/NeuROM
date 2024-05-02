@@ -23,7 +23,7 @@ Name = 'Square'
 # Name = 'Hole_3'
 
 
-Lame_coeff = False
+Lame_coeff = True
 
 if Lame_coeff:
     lmbda = 1.25                                                # First Lamé's coefficient
@@ -37,12 +37,14 @@ else:
     mu = E/(2*(1+nu))                                           # Second Lamé's coefficient
 
 
-order = 1                                                       # Order of the FE interpolation
+order = 2                                                      # Order of the FE interpolation
+n_integration_points = 3
+
 dimension = 2                                                   # Dimension of the problem
 
-MaxElemSize = 5
+MaxElemSize = 10/16
 
-Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
+Domain_mesh = pre.Mesh(Name,MaxElemSize, MaxElemSize/2,  order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
 
 
@@ -62,37 +64,44 @@ Domain_mesh.ExportMeshVtk()
 
 
 
-Model_2D = MeshNN_2D(Domain_mesh, 2)                # Create the associated model (with 2 components)
+Model_2D = MeshNN_2D(Domain_mesh, 2, n_integration_points)                # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
-# Model_2D.Freeze_Mesh()
-Model_2D.UnFreeze_Mesh()
+Model_2D.Freeze_Mesh()
+#Model_2D.UnFreeze_Mesh()
 
 
 # Get plotcoordinates 
 L = 10                                              # Length of the Beam
 
-n_visu = 10                                         # Sample in smallest direction for post-processing
+n_visu = 20                                         # Sample in smallest direction for post-processing
 TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
-TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*L,5*n_visu)],dtype=torch.float64,  requires_grad=True)
+TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64,  requires_grad=True)
 PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
 IDs_plot = torch.tensor(Domain_mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+
+
 Model_2D.eval()
 u_predicted = Model_2D(PlotCoordinates, IDs_plot)
 
 Pplot.Plot2Dresults(u_predicted, PlotCoordinates , "_u_init_integral_fine")
 
 Model_2D.train()
-List_elems = torch.range(0,Domain_mesh.NElem-1,dtype=torch.int)
+List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
 u_predicted,xg,detJ = Model_2D(PlotCoordinates, List_elems)
-
 detJ = torch.abs(detJ)
+
+print(" u_predicted : ", u_predicted.shape)
+print(" xg : ", xg.shape)
+print(" detJ : ", detJ.shape)
 
 Model_2D.eval()
 u_predicted_eval = Model_2D(xg, List_elems)
 Pplot.Plot2Dresults(u_predicted_eval, xg , "_u_init_integral_Gauss")
 
+
 We = torch.sum(InternalEnergy_2D(u_predicted_eval,xg,lmbda, mu)*detJ)
-print(We)
+print("We = ", We)
 learning_rate = 0.001                              # optimizer learning rate
 
 
@@ -104,6 +113,7 @@ stagnation = False
 Loss_tot = []
 Duration_tot = 0
 U_interm_tot = []
+Gen_interm_tot = []
 X_interm_tot = []
 Connectivity_tot = []
 Cell_dict = []
@@ -118,14 +128,16 @@ while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-    n_epochs = 10000
+    n_epochs = 5000
     if n_refinement>4:
         n_epochs = 1000
     Loss_vect, Duration, U_interm, X_interm, Connectivity_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
+
     # Save current convergence state
     Loss_tot += Loss_vect
     Duration_tot += Duration
     U_interm_tot += U_interm
+    # Gen_interm_tot += G_interm
     X_interm_tot += X_interm
     Connectivity_tot += Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -144,10 +156,11 @@ while n_refinement < max_refinment and not stagnation:
             stagnation = True
     else:
         max_eps_old = max_eps
+
     if n_refinement < max_refinment and not stagnation:
         # Refine mesh
         MaxElemSize = MaxElemSize/coeff_refinement
-        Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
+        Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, MaxElemSize/2, order, dimension)    # Create the mesh object
         Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
         Domain_mesh_2.AddBorders(Borders)
         Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
@@ -205,11 +218,11 @@ u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
-# List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
-# _,xg,detJ = Model_2D(PlotCoordinates, List_elems)
-# Model_2D.eval()
-# eps =  Strain(Model_2D(xg, List_elems),xg)
-# sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
+List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
+_,xg,detJ = Model_2D(PlotCoordinates, List_elems)
+Model_2D.eval()
+eps =  Strain(Model_2D(xg, List_elems),xg)
+sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
 
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 
@@ -217,12 +230,12 @@ X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_
 # # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-# sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
-# point_data={"U":u.data}, 
-# cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
-# sol.write(
-#     "Results/Paraview/sol_u_end_training_shear_"+Name+".vtk", 
-# )
+sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
+point_data={"U":u.data}, 
+cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+sol.write(
+    "Results/Paraview/sol_u_end_training_test_"+Name+".vtk", 
+)
 
 #%% Export intermediate convergence steps
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -231,10 +244,29 @@ U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm
 
 for timestep in range(len(U_interm_tot)):
     sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
-    point_data={"U":U_interm_tot[timestep]})
+    point_data={"U":U_interm_tot[timestep]} )
 
     sol.write(
         f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting3_"+Name+f"_{timestep}.vtk",  
     )
 
-# %%
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+coord = torch.tensor(numpy.load("Results_Mixed/coordinates.npy"), dtype=torch.float64, requires_grad=True)
+IDs = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
+
+u_predicted = Model_2D(coord, IDs) 
+
+du = torch.autograd.grad(u_predicted[0,:], coord, grad_outputs=torch.ones_like(u_predicted[0,:]), create_graph=True)[0]
+dv = torch.autograd.grad(u_predicted[1,:], coord, grad_outputs=torch.ones_like(u_predicted[0,:]), create_graph=True)[0]
+    
+s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+
+stress_NN = torch.stack([s_11, s_22, s_12],dim=1)
+
+
+numpy.save("Results/u.npy", numpy.array(u_predicted.detach()))
+numpy.save("Results/stress_u.npy", numpy.array(stress_NN.detach()))
+

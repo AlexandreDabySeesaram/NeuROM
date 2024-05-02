@@ -961,7 +961,6 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, Plo
             # print()
 
 
-
             if numpy.mean(loss_decrease[-500*n_batches_per_epoch:-1]) > 0 and  numpy.mean(loss_decrease[-500*n_batches_per_epoch:-1]) < 1.0e-4 \
                     and no_improvement > 20*n_batches_per_epoch:
                     stop = True
@@ -1037,6 +1036,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
 
         backward_time_start = time.time()
         loss.backward()
+
         back_time += time.time() - backward_time_start
         # update weights
         update_time_start = time.time()
@@ -1123,3 +1123,26 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,lmbda, mu):
 
     return Loss_vect, (time_stop-time_start), U_interm, X_interm,Connectivity_interm
     
+
+
+def Generate_Training_IDs(points_per_elem, Domain_mesh):
+    print()
+    print(" * Generate training data")
+
+    margin = 1.0e-3
+
+    cell_ids_unique = torch.arange(Domain_mesh.NElem)
+    cell_ids = torch.repeat_interleave(cell_ids_unique, points_per_elem)
+
+    ref_coords = torch.zeros(Domain_mesh.NElem*points_per_elem,3)
+    ref_coords[:,0] = torch.FloatTensor(Domain_mesh.NElem*points_per_elem).uniform_(margin, 1.0 - 2*margin)
+
+    for i in range(ref_coords.shape[0]):
+        ref_coords[i,1] = torch.FloatTensor(1).uniform_(margin, 1.0-ref_coords[i,0]-margin)
+        ref_coords[i,2] = 1.0 - ref_coords[i,0] - ref_coords[i,1]
+        if i%3==1:
+            ref_coords[i,:] = ref_coords[i,[1,0,2]]
+        elif i%3==2:
+            ref_coords[i,:] = ref_coords[i,[2,1,0]]
+
+    return cell_ids, ref_coords

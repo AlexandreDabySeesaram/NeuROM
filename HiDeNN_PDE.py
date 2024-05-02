@@ -791,6 +791,8 @@ class MeshNN_2D(nn.Module):
         self.X_interm = []
         self.G_interm = []
         self.Connectivity_interm = []
+        self.Jacobian_interm = []
+
 
     def StoreResults(self):
         u_x = [u for u in self.nodal_values_x]
@@ -802,6 +804,7 @@ class MeshNN_2D(nn.Module):
         self.X_interm.append(new_coord)
         self.G_interm.append(self.elements_generation)
         self.Connectivity_interm.append(self.connectivity-1)
+        self.Jacobian_interm.append(self.detJ_0)
 
     def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
         self.MaxGeneration = MaxGeneration

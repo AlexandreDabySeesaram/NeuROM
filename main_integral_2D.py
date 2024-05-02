@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 Name = 'Square'
 Name = 'Hole'
 # Name = 'Square_small'
-Name = 'Hole_3'
+# Name = 'Hole_3'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
@@ -75,7 +75,7 @@ Model_2D.RefinementParameters(  MaxGeneration = 2,
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 3000, 
+                                Max_epochs = 500, 
                                 learning_rate = 0.001)
 
 #%% Training 
@@ -91,6 +91,7 @@ X_interm_tot = []
 Connectivity_tot = []
 d_eps_max_vect = []
 eps_max_vect = []
+detJ_tot = []
 Nnodes_max = 1000
 coeff_refinement = np.power((Nnodes_max/Domain_mesh.NNodes),1/max_refinment)
 dmax_threshold = 1e-7
@@ -108,6 +109,7 @@ while n_refinement < max_refinment and not stagnation:
     Duration_tot += Duration
     U_interm_tot += Model_2D.U_interm
     Gen_interm_tot += Model_2D.G_interm
+    detJ_tot += Model_2D.Jacobian_interm
     X_interm_tot += Model_2D.X_interm
     Connectivity_tot += Model_2D.Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
@@ -176,6 +178,9 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.train()
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.3)
+        Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
+                                        Max_epochs = 500, 
+                                        learning_rate = 0.001)
     else:
         Model_2D.train()
 
@@ -214,7 +219,7 @@ U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm
 for timestep in range(len(U_interm_tot)):
     sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
     point_data={"U":U_interm_tot[timestep]}, 
-    cell_data={"Gen": [Gen_interm_tot[timestep]]}, )
+    cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
         f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_free_"+Name+f"_{timestep}.vtk",  

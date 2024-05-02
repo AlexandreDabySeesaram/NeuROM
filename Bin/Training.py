@@ -1013,7 +1013,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 loss_old = loss.data
                 D_detJ = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(detJ_0)
                 if torch.max(D_detJ)>model.Jacobian_threshold:
-                    indices = torch.nonzero(D_detJ > 0.5*model.Jacobian_threshold)
+                    indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
                     Removed_elem_list = []
                     old_generation = model.elements_generation
                     for i in range(indices.shape[0]):

@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 #%% Choose geometry
 # Name = 'Rectangle'
 Name = 'Square'
-Name = 'Hole'
+# Name = 'Hole'
 # Name = 'Square_small'
 # Name = 'Hole_3'
 # Name = 'L_shape'
@@ -67,7 +67,7 @@ TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*L,5*n_visu)],dtype
 EvalCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
 
 
-List_elems = torch.range(0,Domain_mesh.NElem-1,dtype=torch.int)
+List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
 
 
 learning_rate = 0.001                                           # optimizer learning rate
@@ -139,7 +139,7 @@ while n_refinement < max_refinment and not stagnation:
         Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
         Domain_mesh_2.ReadMesh()                               # Parse the .msh file
         Domain_mesh_2.ExportMeshVtk()
-        List_elems = torch.range(0,Domain_mesh_2.NElem-1,dtype=torch.int)
+        List_elems = torch.arange(0,Domain_mesh_2.NElem,dtype=torch.int)
         # Initialise finer model
         Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2)                # Create the associated model (with 2 components)
         
@@ -195,7 +195,7 @@ u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
 
 #%% Compute the strain 
-List_elems = torch.range(0,Model_2D.NElem-1,dtype=torch.int)
+List_elems = torch.arange(0,Model_2D.NElem,dtype=torch.int)
 _,xg,detJ = Model_2D(EvalCoordinates, List_elems)
 Model_2D.eval()
 eps =  Strain(Model_2D(xg, List_elems),xg)

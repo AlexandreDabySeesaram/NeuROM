@@ -1040,8 +1040,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
 
                             # Add newly removed elems to list
                             Removed_elem_list += Removed_elems
-                            List_elems = torch.range(0,model.NElem-1,dtype=torch.int)
-                            # print("******************** change to torch.arrange ********************")
+                            List_elems = torch.arange(0,model.NElem,dtype=torch.int)
                             optimizer.add_param_group({'params': model.coordinates[-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})

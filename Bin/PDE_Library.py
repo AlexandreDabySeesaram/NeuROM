@@ -318,11 +318,11 @@ def InternalEnergy_2D(u,x,lmbda, mu):
     return W_e
 
 def Gravity(theta,rho = 1):
-    g = 9.81                            #m/s^2
+    g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
-def VolumeForcesEnergy_2D(u,x,theta, rho = 1):
-    fv = 1e-3*Gravity(theta,rho)
+def VolumeForcesEnergy_2D(u,x,theta, rho):
+    fv = Gravity(theta,rho)
     W_e = u.t()@fv
     return W_e
 

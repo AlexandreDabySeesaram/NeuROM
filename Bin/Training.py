@@ -1009,7 +1009,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
         with torch.no_grad():
             epoch+=1
             if epoch >1:
-                d_loss = 2*(torch.abs(loss.data-loss_old))/(loss.data+loss_old)
+                d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
                 D_detJ = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)
                 if torch.max(D_detJ)>model.Jacobian_threshold:

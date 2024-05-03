@@ -17,12 +17,12 @@ Name = 'Rectangle'
 # Name = 'Square'
 # Name = 'Hole'
 # Name = 'Square_small'
-Name = 'Hole_3'
+# Name = 'Hole_3'
 # Name = 'L_shape'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
-                    coef1 = 175,                                    # Young Modulus
+                    coef1 = 5*1e-3,                                    # Young Modulus
                     coef2 = 0.3                                    # Poisson's ratio
                     )
 

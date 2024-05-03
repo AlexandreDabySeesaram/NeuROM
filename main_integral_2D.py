@@ -17,7 +17,7 @@ Name = 'Rectangle'
 # Name = 'Square'
 # Name = 'Hole'
 # Name = 'Square_small'
-# Name = 'Hole_3'
+Name = 'Hole_3'
 # Name = 'L_shape'
 
 # Initialise meterial
@@ -36,7 +36,7 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -56,7 +56,7 @@ n_component = 2                                                 # Number of comp
 Model_2D = MeshNN_2D(Domain_mesh, n_component)                  # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
 Model_2D.UnFreeze_Mesh()
-# Model_2D.Freeze_Mesh()
+Model_2D.Freeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -72,16 +72,16 @@ List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
 
 learning_rate = 0.001                                           # optimizer learning rate
 
-Model_2D.RefinementParameters(  MaxGeneration = 3, 
+Model_2D.RefinementParameters(  MaxGeneration = 2, 
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 10000, 
+                                Max_epochs = 5000, 
                                 learning_rate = 0.001)
 
 #%% Training 
 # Fisrt stage
-max_refinment = 2
+max_refinment = 3
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -177,10 +177,10 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
-        Model_2D.RefinementParameters(  MaxGeneration = 3, 
-                                Jacobian_threshold = 0.3)
+        Model_2D.RefinementParameters(  MaxGeneration = 2, 
+                                Jacobian_threshold = 0.5)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                        Max_epochs = 1500, 
+                                        Max_epochs = 2000, 
                                         learning_rate = 0.001)
     else:
         Model_2D.train()
@@ -209,7 +209,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_over_free_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_gravity_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -223,7 +223,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_over_all_free_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

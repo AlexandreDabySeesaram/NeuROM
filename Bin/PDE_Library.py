@@ -324,7 +324,7 @@ def Gravity(theta,rho = 1):
 def VolumeForcesEnergy_2D(u,x,theta, rho):
     fv = Gravity(theta,rho)
     W_e = u.t()@fv
-    return W_e
+    return torch.squeeze(W_e)
 
 def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22

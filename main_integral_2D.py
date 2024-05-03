@@ -22,7 +22,7 @@ Name = 'Hole_3'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
-                    coef1 = 5*1e-3,                                    # Young Modulus
+                    coef1 = 175,                                    # Young Modulus
                     coef2 = 0.3                                    # Poisson's ratio
                     )
 
@@ -56,7 +56,7 @@ n_component = 2                                                 # Number of comp
 Model_2D = MeshNN_2D(Domain_mesh, n_component)                  # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
 Model_2D.UnFreeze_Mesh()
-Model_2D.Freeze_Mesh()
+# Model_2D.Freeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -209,7 +209,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_gravity_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_gravity_90_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -223,7 +223,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_90_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

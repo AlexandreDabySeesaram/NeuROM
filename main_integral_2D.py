@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 
 
 #%% Choose geometry
-# Name = 'Rectangle'
-Name = 'Square'
+Name = 'Rectangle'
+# Name = 'Square'
 # Name = 'Hole'
 # Name = 'Square_small'
 # Name = 'Hole_3'
@@ -36,7 +36,7 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -72,16 +72,16 @@ List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
 
 learning_rate = 0.001                                           # optimizer learning rate
 
-Model_2D.RefinementParameters(  MaxGeneration = 2, 
+Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 3000, 
+                                Max_epochs = 10000, 
                                 learning_rate = 0.001)
 
 #%% Training 
 # Fisrt stage
-max_refinment = 3
+max_refinment = 2
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -174,13 +174,13 @@ while n_refinement < max_refinment and not stagnation:
         Domain_mesh = Domain_mesh_2
         Model_2D = Model_2D_2
         Model_2D.UnFreeze_Values()
-        # Model_2D.Freeze_Mesh()
+        Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.3)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                        Max_epochs = 2500, 
+                                        Max_epochs = 1500, 
                                         learning_rate = 0.001)
     else:
         Model_2D.train()

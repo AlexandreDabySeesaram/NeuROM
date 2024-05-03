@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
-                    InternalEnergy_2D
+                    InternalEnergy_2D, VolumeForcesEnergy_2D
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -994,7 +994,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
         # Compute loss
         loss_time_start = time.time()
         u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
-        loss = torch.sum(InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+        loss = torch.sum(0.5*(InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(torch.pi/2), rho = 1))*torch.abs(detJ))
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()
         backward_time_start = time.time()
@@ -1014,6 +1014,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 D_detJ = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)
                 if torch.max(D_detJ)>model.Jacobian_threshold:
                     indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
+                    # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
                     model.detJ_0[indices] = detJ[indices]
                     Removed_elem_list = []
                     old_generation = model.elements_generation
@@ -1050,6 +1051,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                     # model.Freeze_Mesh()
                 if d_loss < model.Stagnation_threshold:
                     stagnation = True
+                    stagnation = False
             else:
                 loss_old = loss.item()
                 detJ_0 = detJ

@@ -317,6 +317,15 @@ def InternalEnergy_2D(u,x,lmbda, mu):
     W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
     return W_e
 
+def Gravity(theta,rho = 1):
+    g = 9.81                            #m/s^2
+    return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
+
+def VolumeForcesEnergy_2D(u,x,theta, rho = 1):
+    fv = 1e-3*Gravity(theta,rho)
+    W_e = u.t()@fv
+    return W_e
+
 def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12

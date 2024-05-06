@@ -13,12 +13,13 @@ import matplotlib.pyplot as plt
 
 
 #%% Choose geometry
-Name = 'Rectangle'
+# Name = 'Rectangle'
 # Name = 'Square'
 # Name = 'Hole'
 # Name = 'Square_small'
-# Name = 'Hole_3'
+Name = 'Hole_3'
 # Name = 'L_shape'
+Name = 'Square_Holes_3'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
@@ -36,8 +37,8 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
+                            # {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            # {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
 Borders = [111,112,113,114,115]                                 # List of the structure's boundaries
@@ -209,7 +210,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_gravity_90_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_gravity_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -223,7 +224,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_90_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

@@ -92,7 +92,6 @@ def EnhanceGramSchmidt(B,L):
     return orth_basis, L_updated
 
 
-
 def GramSchmidt(B):
     """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
      Args:
@@ -331,22 +330,26 @@ def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
 
 def Stress_tensor(eps, lmbda, mu):
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]])
-    sigma = torch.einsum('ij,ej->je',K,eps)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
 def InternalEnergy_2D_einsum(u,x,lmbda, mu):
     eps =  Strain_sqrt(u,x)
-    W_e = torch.einsum('ij,ej,ej->e',K,eps,eps)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+    return W_e
 
-def InternalEnergy_2D_einsum(u,x,lmbda, mu,ParaMode):
+def InternalEnergy_2D_einsum_para(u,x,lmbda, mu,ParaMode):
     eps =  Strain_sqrt(u,x)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]])
     W_e = torch.einsum('ij,ejm,ejm,...m,...m->e',K,eps,eps,ParaMode)
-
+    return W_e
+    
 def Strain_sqrt(u,x):
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(2))*(du[:,1] + dv[:,0])],dim=1)
+    return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
 
 def Strain(u,x):
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]

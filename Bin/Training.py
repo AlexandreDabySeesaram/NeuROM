@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
-                    InternalEnergy_2D, VolumeForcesEnergy_2D
+                    InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -994,7 +994,8 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
         # Compute loss
         loss_time_start = time.time()
         u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
-        loss = torch.sum((0.5*InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+        # loss_previousVersion = torch.sum((0.5*InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()
         backward_time_start = time.time()

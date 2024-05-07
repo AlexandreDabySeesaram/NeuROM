@@ -329,6 +329,13 @@ def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
 
+def VonMises(sigma):
+    two = torch.tensor(2,dtype=torch.float64)
+    VM = torch.tensor([[2/3, -1/3, 0],[-1/3, 2/3, 0],[0, 0, torch.sqrt(two)]],dtype=torch.float64)
+    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma) # in voigt notation
+    sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
+    return torch.sqrt((3/2)*sigma_VM)
+
 def Stress_tensor(eps, lmbda, mu):
     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
     sigma = torch.einsum('ij,ej->ei',K,eps)
@@ -345,7 +352,7 @@ def InternalEnergy_2D_einsum_para(u,x,lmbda, mu,ParaMode):
     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]])
     W_e = torch.einsum('ij,ejm,ejm,...m,...m->e',K,eps,eps,ParaMode)
     return W_e
-    
+
 def Strain_sqrt(u,x):
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]

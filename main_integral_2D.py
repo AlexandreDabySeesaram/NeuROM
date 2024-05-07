@@ -4,7 +4,7 @@ import Bin.Pre_processing as pre
 import torch
 import torch.nn as nn
 import numpy as np
-from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D
+from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
 from Bin.Training import Training_2D_Integral
 import Post.Plots as Pplot
 import time
@@ -15,11 +15,11 @@ import matplotlib.pyplot as plt
 #%% Choose geometry
 # Name = 'Rectangle'
 # Name = 'Square'
-# Name = 'Hole'
+Name = 'Hole'
 # Name = 'Square_small'
 Name = 'Hole_3'
 # Name = 'L_shape'
-Name = 'Square_Holes_3'
+# Name = 'Square_Holes_3'
 
 # Initialise meterial
 Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
@@ -31,14 +31,14 @@ Mat = pre.Material( flag_lame = False,                         # If True should 
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 10                                                 # Maximum element size of the mesh
+MaxElemSize = 5                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            # {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
-                            # {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
+                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
 Borders = [111,112,113,114,115]                                 # List of the structure's boundaries
@@ -178,8 +178,8 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
-        Model_2D.RefinementParameters(  MaxGeneration = 2, 
-                                Jacobian_threshold = 0.5)
+        Model_2D.RefinementParameters(  MaxGeneration = 3, 
+                                Jacobian_threshold = 0.4)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
                                         Max_epochs = 2000, 
                                         learning_rate = 0.001)
@@ -201,6 +201,7 @@ _,xg,detJ = Model_2D(EvalCoordinates, List_elems)
 Model_2D.eval()
 eps =  Strain(Model_2D(xg, List_elems),xg)
 sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
+sigma_VM = VonMises(sigma)
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
@@ -208,9 +209,9 @@ Coord_converged = np.array([[Model_2D.coordinates[i][0][0].item(),Model_2D.coord
 Connect_converged = Model_2D.connectivity
 sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
-cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_gravity_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_gravity_free_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -224,7 +225,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_gravity_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/solution_multiscale_gravity_free_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

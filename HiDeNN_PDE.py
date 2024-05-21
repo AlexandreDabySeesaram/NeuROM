@@ -302,9 +302,9 @@ class InterpPara(nn.Module):
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
-    def __init__(self, mesh, BCs, n_modes, ParametersList):
+    def __init__(self, mesh, n_modes, ParametersList):
         super(NeuROM, self).__init__()
-        IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
+        IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
         self.IndexesNon0BCs = IndexesNon0BCs
@@ -319,7 +319,7 @@ class NeuROM(nn.Module):
         # Set BCs 
         if IndexesNon0BCs:
             # First modes get the Boundary conditions
-            self.Space_modes[0].SetBCs(BCs[0],BCs[1])
+            self.Space_modes[0].SetBCs(mesh.ListOfDirichletsBCsValues[0],mesh.ListOfDirichletsBCsValues[1])
             for para in range(self.n_para):
                 self.Para_modes[0][para].InterpoLayer.weight.data.fill_(1) # Mode for parameters not trained and set to 1 to get correct space BCs
                 self.Para_modes[0][para].Freeze_FEM()

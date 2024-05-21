@@ -127,7 +127,7 @@ else:
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
 u_L = DirichletDictionryList[1]['Value']           #Right BCF
 BCs = [u_0,u_L]
-BeamROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)
+BeamROM = NeuROM(Beam_mesh, n_modes, ParameterHypercube)
 name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
             +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
 

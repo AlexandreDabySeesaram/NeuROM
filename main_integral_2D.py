@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 # Name = 'Square'
 Name = 'Hole'
 # Name = 'Square_small'
-Name = 'Hole_3'
+# Name = 'Hole_3'
 # Name = 'L_shape'
 # Name = 'Square_Holes_3'
 
@@ -37,7 +37,7 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -175,11 +175,11 @@ while n_refinement < max_refinment and not stagnation:
         Domain_mesh = Domain_mesh_2
         Model_2D = Model_2D_2
         Model_2D.UnFreeze_Values()
-        Model_2D.Freeze_Mesh()
+        # Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
-                                Jacobian_threshold = 0.4)
+                                Jacobian_threshold = 0.2)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
                                         Max_epochs = 2000, 
                                         learning_rate = 0.001)
@@ -211,7 +211,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_gravity_free_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_gravity_NoBCs_"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -225,7 +225,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/solution_multiscale_gravity_free_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/solution_multiscale_gravity_NoBCs_"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

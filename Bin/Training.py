@@ -993,7 +993,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
     while epoch<model.Max_epochs and not stagnation:
         # Compute loss
         loss_time_start = time.time()
-        u_predicted,xg,detJ = model(PlotCoordinates, List_elems)
+        u_predicted,xg,detJ = model()
         # loss_previous = torch.sum((0.5*InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
         loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
         eval_time += time.time() - loss_time_start
@@ -1042,7 +1042,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
 
                             # Add newly removed elems to list
                             Removed_elem_list += Removed_elems
-                            List_elems = torch.arange(0,model.NElem,dtype=torch.int)
+                            # List_elems = torch.arange(0,model.NElem,dtype=torch.int)
                             optimizer.add_param_group({'params': model.coordinates[-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})

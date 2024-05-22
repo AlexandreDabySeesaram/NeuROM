@@ -315,8 +315,11 @@ class NeuROM(nn.Module):
             self.n_modes_truncated+=1
 
         self.n_para = len(ParametersList)
-        self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
-
+        match mesh.dimension:
+            case '1':
+                self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
+            case '2':
+                self.Space_modes = nn.ModuleList([MeshNN_2D(mesh, n_components= 2) for i in range(self.n_modes)])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
 
@@ -335,6 +338,15 @@ class NeuROM(nn.Module):
 
         self.FreezeAll()
         self.UnfreezeTruncated()
+    def train(self):
+        self.training = True
+        for i in range(self.n_modes_truncated):
+            self.Space_modes[i].train() 
+
+    def eval(self):
+        self.training = False
+        for i in range(self.n_modes_truncated):
+            self.Space_modes[i].eval()  
 
     def FreezeAll(self):
         """This method allows to freeze all sub neural networks"""
@@ -420,13 +432,6 @@ class NeuROM(nn.Module):
                 self.Para_modes[i][j].UnFreeze_FEM()  
 
     def forward(self,x,mu):
-        Orthgonality = False                                    # Enable othogonality constraint of the space modes
-        if Orthgonality and self.training:
-            Space_modes_nodal = [torch.unsqueeze(self.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(self.n_modes_truncated)]
-            Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
-            Space_modes_nodal = GramSchmidt(Space_modes_nodal)
-            for mode in range(self.n_modes_truncated):
-                self.Space_modes[mode].InterpoLayer_uu.weight.data = Space_modes_nodal[:,mode]
 
         Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
         Space_modes = torch.cat(Space_modes,dim=1)
@@ -661,11 +666,7 @@ class MeshNN_2D(nn.Module):
         self.RefinementParameters()
         self.TrainingParameters()
 
-        print("----------------------------------------------")
 
-
-        print("----------------------------------------------")
-        print()
 
     def SetBCs(self, ListOfDirichletsBCsValues):
         for i in range(len(ListOfDirichletsBCsValues)):
@@ -895,8 +896,9 @@ class MeshNN_2D(nn.Module):
                     self.nodal_values[1][-(3-i)].requires_grad = False
         return Removed_elem_list
 
-    def forward(self,x, el_id):
+    def forward(self,x = 'NaN', el_id = 'NaN'):
         if self.training:
+            el_id = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
             interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.training)
             return interpol,x_g, detJ
@@ -905,7 +907,7 @@ class MeshNN_2D(nn.Module):
             interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.training)
             return interpol
 
-    def UnFreeze_Values(self):
+    def UnFreeze_FEM(self):
         """Set the coordinates as trainable parameters """
         # print("Unfreeze values")
 
@@ -923,7 +925,13 @@ class MeshNN_2D(nn.Module):
                     values[idf].requires_grad = False
                 else:
                     values[idf].requires_grad = True
-        
+
+    def Freeze_FEM(self):
+        """Set the coordinates as untrainable parameters """
+        for dim in self.nodal_values:
+            for val in dim:
+                val.requires_grad = False
+      
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
         for param in self.coordinates:

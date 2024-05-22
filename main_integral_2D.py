@@ -55,7 +55,7 @@ Domain_mesh.ExportMeshVtk()
 # Create model
 n_component = 2                                                 # Number of components of the interpolated field
 Model_2D = MeshNN_2D(Domain_mesh, n_component)                  # Create the associated model (with 2 components)
-Model_2D.UnFreeze_Values()
+Model_2D.UnFreeze_FEM()
 Model_2D.UnFreeze_Mesh()
 # Model_2D.Freeze_Mesh()
 
@@ -116,8 +116,9 @@ while n_refinement < max_refinment and not stagnation:
     Connectivity_tot += Model_2D.Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
     # Cmpute max strain
-    _,xg,detJ = Model_2D(EvalCoordinates, List_elems)
+    _,xg,detJ = Model_2D()
     Model_2D.eval()
+    List_elems = torch.arange(0,Model_2D.NElem,dtype=torch.int)
     eps =  Strain(Model_2D(xg, List_elems),xg)
     max_eps = torch.max(eps)
     if n_refinement >1:
@@ -174,7 +175,7 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D_2.nodal_values = new_nodal_values
         Domain_mesh = Domain_mesh_2
         Model_2D = Model_2D_2
-        Model_2D.UnFreeze_Values()
+        Model_2D.UnFreeze_FEM()
         # Model_2D.Freeze_Mesh()
         Model_2D.UnFreeze_Mesh()
         Model_2D.train()

@@ -196,13 +196,13 @@ class MeshNN(nn.Module):
  
         return self.SumLayer(u)
     
-    def SetBCs(self,u_0,u_L):
+    def SetBCs(self,u_d):
         """Set the two Dirichlet boundary conditions
         Args:
-            u_0 (Float): The left BC
-            u_L (Float): The right BC """
-        self.u_0 = torch.tensor(u_0, dtype=torch.float32)
-        self.u_L = torch.tensor(u_L, dtype=torch.float32)
+            u_d (Float list): The left and right BCs"""
+
+        self.u_0 = torch.tensor(u_d[0], dtype=torch.float32)
+        self.u_L = torch.tensor(u_d[1], dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -322,16 +322,16 @@ class NeuROM(nn.Module):
 
         if IndexesNon0BCs:
             # First modes get the Boundary conditions
-            self.Space_modes[0].SetBCs(mesh.ListOfDirichletsBCsValues[0],mesh.ListOfDirichletsBCsValues[1])
+            self.Space_modes[0].SetBCs(mesh.ListOfDirichletsBCsValues)
             for para in range(self.n_para):
                 self.Para_modes[0][para].InterpoLayer.weight.data.fill_(1) # Mode for parameters not trained and set to 1 to get correct space BCs
                 self.Para_modes[0][para].Freeze_FEM()
             # Following modes are homogeneous (admissible to 0)
             for i in range(1,self.n_modes):
-                self.Space_modes[i].SetBCs(0,0)
+                self.Space_modes[i].SetBCs([0]*len(mesh.ListOfDirichletsBCsValues))
         else:
             for i in range(self.n_modes):
-                self.Space_modes[i].SetBCs(0,0)
+                self.Space_modes[i].SetBCs([0]*len(mesh.ListOfDirichletsBCsValues))
 
         self.FreezeAll()
         self.UnfreezeTruncated()

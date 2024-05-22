@@ -93,7 +93,7 @@ BeamModel = MeshNN(Beam_mesh)                # Create the associated model
 # Boundary conditions
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
 u_L = DirichletDictionryList[1]['Value']           #Right BC
-BeamModel.SetBCs(u_0,u_L)
+BeamModel.SetBCs([u_0,u_L])
 
 # Set the boundary values as trainable
 # Set the coordinates as trainable

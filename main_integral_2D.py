@@ -181,7 +181,7 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.2)
         Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                        Max_epochs = 2000, 
+                                        Max_epochs = 500, 
                                         learning_rate = 0.001)
     else:
         Model_2D.train()

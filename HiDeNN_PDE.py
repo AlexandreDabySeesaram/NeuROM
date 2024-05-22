@@ -310,13 +310,16 @@ class NeuROM(nn.Module):
         self.IndexesNon0BCs = IndexesNon0BCs
         self.n_modes = n_modes
         self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(1))
+
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
+
         self.n_para = len(ParametersList)
         self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
-        # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
+
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
+
         if IndexesNon0BCs:
             # First modes get the Boundary conditions
             self.Space_modes[0].SetBCs(mesh.ListOfDirichletsBCsValues[0],mesh.ListOfDirichletsBCsValues[1])
@@ -329,8 +332,10 @@ class NeuROM(nn.Module):
         else:
             for i in range(self.n_modes):
                 self.Space_modes[i].SetBCs(0,0)
+
         self.FreezeAll()
         self.UnfreezeTruncated()
+
     def FreezeAll(self):
         """This method allows to freeze all sub neural networks"""
         self.Freeze_Mesh()
@@ -628,83 +633,22 @@ class MeshNN_2D(nn.Module):
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
         self.borders_nodes = mesh.borders_nodes
         self.elements_generation = np.ones(self.connectivity.shape[0])
-
-        if mesh.NoBC==False:
-            for i in range(len(mesh.ListOfDirichletsBCsValues)):
-                if mesh.ListOfDirichletsBCsRelation[i] == False:
-                    if mesh.ListOfDirichletsBCsConstit[i] == False:
-                        IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                        self.frozen_BC_node_IDs.append(IDs)
-                        self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
-                        self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
-                        # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                        # print("    Simple BC ")
-                        # print("      IDs : ", IDs)
-                        # print("      component : ", mesh.ListOfDirichletsBCsNormals[i])
-                        # print("      values : ", mesh.ListOfDirichletsBCsValues[i])
-                        # print()
-                else:
-                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                    self.relation_BC_node_IDs.append(IDs)
-                    self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
-                    self.relation_BC_normals.append(mesh.normals[IDs])
-                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    # print("    Relation BC ")
-                    # print("      IDs : ", IDs)
-                    # print("      values : ", self.relation_BC_values)
-                    # print()
-
-            for i in range(len(mesh.ListOfDirichletsBCsValues)):
-                if mesh.ListOfDirichletsBCsConstit[i] == True:
-                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-
-                    if len(self.relation_BC_node_IDs)>0:
-                        delete_relation = torch.cat(self.relation_BC_node_IDs)
-
-                        for elem in IDs:
-                            if elem in delete_relation:
-                                IDs = IDs[IDs!=elem]
-                    if len(self.frozen_BC_node_IDs)>0:
-                        delete_simple = torch.cat(self.frozen_BC_node_IDs)
-                        for elem in IDs:
-                            if elem in delete_simple:
-                                IDs = IDs[IDs!=elem]
-
-                    self.constit_BC_node_IDs.append(IDs)
-
-                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    # print("    Constitutive BC ")
-                    # print("      IDs : ", IDs)
-                    # print()
-
-
-        if n_components ==2:
-            # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
-            self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
-            self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
-            self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
-
-
-        elif n_components ==3:
-            # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
-            self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
-            self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
-            self.nodal_values_xy = nn.ParameterList([nn.Parameter(torch.tensor([i[2]])) for i in self.values])
-            self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
-
-
-        print("self.nodal_values = ", len(self.nodal_values), (len(self.nodal_values[0])))
-
+        self.ListOfDirichletsBCsRelation = mesh.ListOfDirichletsBCsRelation
+        self.ListOfDirichletsBCsConstit = mesh.ListOfDirichletsBCsConstit
+        self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes
+        self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
+        # self.normals = mesh.normals
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
-    
+        self.n_components = n_components
+
+
         if mesh.NoBC==False:
+            self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         else:
             self.NBCs = 0
+
         self.order = mesh.order
         if mesh.order =='1':
             self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
@@ -722,6 +666,59 @@ class MeshNN_2D(nn.Module):
 
         print("----------------------------------------------")
         print()
+
+    def SetBCs(self, ListOfDirichletsBCsValues):
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsRelation[i] == False:
+                if self.ListOfDirichletsBCsConstit[i] == False:
+                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                    self.frozen_BC_node_IDs.append(IDs)
+                    self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
+                    self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+
+            else:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                self.relation_BC_node_IDs.append(IDs)
+                self.relation_BC_values.append(ListOfDirichletsBCsValues[i])
+                # self.relation_BC_normals.append(self.normals[IDs])
+
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsConstit[i] == True:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+
+                if len(self.relation_BC_node_IDs)>0:
+                    delete_relation = torch.cat(self.relation_BC_node_IDs)
+
+                    for elem in IDs:
+                        if elem in delete_relation:
+                            IDs = IDs[IDs!=elem]
+                if len(self.frozen_BC_node_IDs)>0:
+                    delete_simple = torch.cat(self.frozen_BC_node_IDs)
+                    for elem in IDs:
+                        if elem in delete_simple:
+                            IDs = IDs[IDs!=elem]
+
+                self.constit_BC_node_IDs.append(IDs)
+
+        if self.n_components ==2:
+            # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
+            self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
+            self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
+            self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+
+        elif self.n_components ==3:
+            # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
+            self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
+            self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
+            self.nodal_values_xy = nn.ParameterList([nn.Parameter(torch.tensor([i[2]])) for i in self.values])
+            self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
+
+
+
+
 
     def SplitElem(self, el_id,point,value):
         nodes = self.connectivity[el_id]

@@ -3,7 +3,7 @@ L=10;
 r = L/4;
 
 dh = L; // Minimum size is the length of the beam
-Mesh.Algorithm = 6;
+Mesh.Algorithm = 5;
 
 Point(1) = {0, 0, 0, dh};
 Point(2) = {L, 0, 0, dh};

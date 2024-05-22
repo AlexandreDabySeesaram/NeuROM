@@ -189,6 +189,8 @@ class Mesh:
                             node_per_elem = 2
                         case 8:
                             node_per_elem = 3
+                        case 15:
+                            node_per_elem = 1
                     self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:
@@ -203,6 +205,10 @@ class Mesh:
                                     self.type = "3-node quadratic bar"
                                     self.dim = 1
                                     self.node_per_elem = 3
+                                case 15:
+                                    self.type = "point"
+                                    self.dim = 1
+                                    self.node_per_elem = 1
                             self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
 
                 if self.NoExcl == False:
@@ -247,13 +253,57 @@ class Mesh:
             mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
             meshio.write(msh_name[0:-4]+".xml", mesh)
 
-
-
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()
         reader.SetFileName(msh_name[0:-4]+".vtk",)  
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
+
+
+    def ExportMeshVtk1D(self,flag_update = False):
+
+        msh_name = 'Geometries/'+self.name_mesh
+        meshBeam = meshio.read(msh_name)
+
+        if flag_update:
+            points = np.array(self.Nodes)[:,1:]
+        else:
+            points = meshBeam.points
+
+        # crete meshio mesh based on points and cells from .msh file
+
+        if self.order =='1':
+            mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+               
+        reader = vtk.vtkUnstructuredGridReader()
+        reader.SetFileName(msh_name[0:-4]+".vtk",)  
+        reader.Update()
+        self.vtk_mesh = reader.GetOutput()
+
+
+
+    def ReWriteMeshVtk1D(self,new_points):
+
+        msh_name = 'Geometries/'+self.name_mesh
+        meshBeam = meshio.read(msh_name)
+
+        if flag_update:
+            points = np.array(self.Nodes)[:,1:]
+        else:
+            points = meshBeam.points
+
+        # crete meshio mesh based on points and cells from .msh file
+
+        if self.order =='1':
+            mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+               
+        reader = vtk.vtkUnstructuredGridReader()
+        reader.SetFileName(msh_name[0:-4]+".vtk",)  
+        reader.Update()
+        self.vtk_mesh = reader.GetOutput()
+
 
 
     def ReadNormalVectors(self):
@@ -305,6 +355,7 @@ class Mesh:
                 self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
                 idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
                 self.assembly_vector[idx]=-1
+                
         if self.dimension =='2':
             if self.order =='1':
                 weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
@@ -338,6 +389,19 @@ class Mesh:
 
         for coord in TrialCoordinates:
             point = [coord[0], coord[1], 0]
+            ids.append(locator.FindCell(point))
+
+        return ids
+
+    def GetCellIds1D(self, TrialCoordinates):
+        locator = vtk.vtkCellLocator()
+        locator.SetDataSet(self.vtk_mesh)
+        locator.Update()
+
+        ids = []
+
+        for coord in TrialCoordinates:
+            point = [coord, 0, 0]
             ids.append(locator.FindCell(point))
 
         return ids

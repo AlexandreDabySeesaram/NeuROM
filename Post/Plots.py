@@ -24,7 +24,14 @@ from Bin.PDE_Library import Stress
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+    
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+        
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
     plt.plot(TrialCoordinates.data,model(TrialCoordinates).data,'--', label = 'HiDeNN')
@@ -40,7 +47,12 @@ def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,T
     # Plots the gradient & compare to reference
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')'
 
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
     plt.plot(TrialCoordinates.data,Derivative(model(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
@@ -110,17 +122,20 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
-    error3 = error-np.min(error)
+    # error3 = error-np.min(error)
+
+    error3 = np.abs(error)
+
     plt.semilogy(error2,color='#247ab5ff')
     ax = plt.gca()
     ax.tick_params(axis='y', colors='#247ab5ff')
     # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     plt.ylabel(r'$\Xi$',color='#247ab5ff')
-    plt.ylim((0.01,20))
+    # plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
     ax2.semilogy(error3,color='#d95319ff')
     ax2.tick_params(axis='y', colors='#d95319ff')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
@@ -143,24 +158,6 @@ def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
     plt.legend()
     plt.clf()
 
-
-def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
-    # Lift to be able to use semilogy
-    #error_pde = error_pde-np.min(error_pde)
-    #error_constit = error_constit-np.min(error_constit)
-
-    plt.semilogy(error2)
-    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
-    #plt.ylabel(r'$\Xi$')
-    #plt.ylim((0.01,20))
-    ax2 = plt.gca().twinx()
-    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
-    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
-
-    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
-    plt.savefig('Results/'+name+'.pdf', transparent=True) 
-    plt.legend()
-    plt.clf()
 
 def Plot_end(error,error2):
     # Lift to be able to use semilogy
@@ -612,6 +609,9 @@ def Plot1DSection(u_predicted, n_train_x, n_train_y, name):
 
 
 def Plot2Dresults(u_predicted, x, name):
+
+    u_predicted = u_predicted.reshape(2,-1)
+    x = x.reshape(-1,2)
 
     fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (18,8), dpi=50)
 

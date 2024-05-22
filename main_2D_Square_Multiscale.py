@@ -124,7 +124,7 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
     Mixed = True
 
     print("Model u")
-    Model_u = MeshNN_2D(Domain_mesh_u, 2, Mixed)                # Create the associated model
+    Model_u = MeshNN_2D(Domain_mesh_u, 2,0)                # Create the associated model
     Model_u.Freeze_Mesh()
     Model_u.ComputeNormalVectors()
     Model_u.UnFreeze_Values()
@@ -134,7 +134,7 @@ def DefineModels(dimension, order_u, order_du, MaxElemSize, MinElemSize):
 
     print()
     print("Model du")
-    Model_du = MeshNN_2D(Domain_mesh_du, 3, Mixed)                # Create the associated model
+    Model_du = MeshNN_2D(Domain_mesh_du, 3,0)                # Create the associated model
     Model_du.Freeze_Mesh()
     Model_du.ComputeNormalVectors()
     Model_du.UnFreeze_Values()
@@ -167,7 +167,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
     n_train = 50
     PlotCoordinates, IDs_u, IDs_du = GenerateData(n_train)
 
-    points_per_elem = 6 #max(int(1000/Domain_mesh_du.NElem), 6)
+    points_per_elem = 12 #max(int(1000/Domain_mesh_du.NElem), 6)
 
     cell_ids, ref_coords = Generate_Training_IDs(points_per_elem, Domain_mesh_du)
 
@@ -207,7 +207,7 @@ def DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, 
     loss = [[],[]]
 
 
-    current_BS = int(cell_ids.shape[0]/2) #6*Domain_mesh_du.NElem
+    current_BS = max(2,int(cell_ids.shape[0]/100)) #6*Domain_mesh_du.NElem
     n_epochs = 4000
     CoordinatesBatchSet = torch.utils.data.DataLoader([[cell_ids[i], ref_coords[i]] for i in range((cell_ids.shape)[0])], 
                                                             batch_size=current_BS, shuffle=True)
@@ -353,11 +353,11 @@ num_sol_name_stress = "Square_case_1/Nodes_order1_stress.npy"
 
 start_train_time = time.time()
 
-MaxElemSize_init = 10
-MinElemSize_init = 5
+MaxElemSize_init = 10/16
+MinElemSize_init = 4/16
 
-MaxElemSize = MaxElemSize_init/16
-MinElemSize = MinElemSize_init/16
+MaxElemSize = MaxElemSize_init
+MinElemSize = MinElemSize_init
 
 w0 = 1
 w1 = 10
@@ -369,21 +369,21 @@ Model_u.load_state_dict(torch.load("Results/Model_u.pt"))
 Model_du.load_state_dict(torch.load("Results/Model_du.pt"))  
 Model_u, Model_du = DoTheRest( Model_u, Model_du, Domain_mesh_u, Domain_mesh_du,  E, mu, lmbda, L, w0, w1)
 
-'''
-for i in range(2):
 
-    MaxElemSize = MaxElemSize/4
-    MinElemSize = MinElemSize/4
+# for i in range(2):
 
-    Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
-                                                                order_du, w0, w1 )
+#     MaxElemSize = MaxElemSize/4
+#     MinElemSize = MinElemSize/4
+
+#     Model_u, Model_u, Model_du, Domain_mesh_u, Domain_mesh_du = OneCycle(MaxElemSize, MinElemSize, Model_u, Model_du, Domain_mesh_du, dimension, order_u,\
+#                                                                 order_du, w0, w1 )
                                                          
 
-print("Total time : ", time.time() - start_train_time) 
+# print("Total time : ", time.time() - start_train_time) 
 
-torch.save(Model_u.state_dict(),"Results/Model_u.pt")
-torch.save(Model_du.state_dict(),"Results/Model_du.pt")
-'''
+# torch.save(Model_u.state_dict(),"Results/Model_u.pt")
+# torch.save(Model_du.state_dict(),"Results/Model_du.pt")
+
 
 cell_ids, ref_coords = Generate_Training_IDs(2, Domain_mesh_du)
 

@@ -8,7 +8,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import torch librairies
 import torch
 import torch.nn as nn
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 #Import post processing libraries
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
@@ -146,6 +146,8 @@ class MeshNN(nn.Module):
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
 
+        self.connectivity = mesh.Connectivity
+
         if mesh.NoBC==False:
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         else:
@@ -156,6 +158,7 @@ class MeshNN(nn.Module):
         elif mesh.order =='2':
             self.ElementBlock = ElementBlock_Bar_Quadr(mesh.Connectivity)
 
+
         # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
@@ -164,7 +167,7 @@ class MeshNN(nn.Module):
         # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  
         self.AssemblyLayer = nn.Linear(2*(self.NElem+2),self.dofs)
-        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float32).clone().detach()
+        self.AssemblyLayer.weight.data = torch.tensor(mesh.weights_assembly_total,dtype=torch.float64).clone().detach()
         self.AssemblyLayer.weight.requires_grad=False
         # self.AssemblyLayer.bias.data =  torch.tensor(mesh.assembly_vector,dtype=torch.float32).clone().detach()
         self.AssemblyLayer.bias.data =  mesh.assembly_vector.clone().detach() # Remove warning, assembly_vector is already a tensor
@@ -201,8 +204,8 @@ class MeshNN(nn.Module):
         Args:
             u_0 (Float): The left BC
             u_L (Float): The right BC """
-        self.u_0 = torch.tensor(u_0, dtype=torch.float32)
-        self.u_L = torch.tensor(u_L, dtype=torch.float32)
+        self.u_0 = torch.tensor(u_0, dtype=torch.float64)
+        self.u_L = torch.tensor(u_L, dtype=torch.float64)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -494,14 +497,24 @@ class InterpolationBlock2D_Lin(nn.Module):
                         normal = normals[j]
 
                         if np.isclose(normal[0],0.0, atol=1.0e-8):
-                            values[2,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
-                            values[1,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
+                            values[2,ID] = value[0]/normal[1]
+                            values[1,ID] = value[1]/normal[1]
                         elif np.isclose(normal[1],0.0, atol=1.0e-8):
-                            values[0,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
-                            values[2,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
+                            values[0,ID] = value[0]/normal[0]
+                            values[2,ID] = value[1]/normal[0]
                         else:
                             values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
                             values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
+
+                        # if np.isclose(normal[0],0.0, atol=1.0e-8):
+                        #     values[2,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
+                        #     values[1,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
+                        # elif np.isclose(normal[1],0.0, atol=1.0e-8):
+                        #     values[0,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
+                        #     values[2,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
+                        # else:
+                        #     values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
+                        #     values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
 
                 elif len(value)==1:
                     for j in range(nodes.shape[0]):
@@ -555,15 +568,11 @@ class InterpolationBlock2D_Quad(nn.Module):
         node6_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,5]]) for val in nodal_values], dim=0)
         #out = torch.cat(shape_functions[:,0]*node1_value[:,0] + shape_functions[:,1]*node2_value[:,0] + shape_functions[:,2]*node3_value[:,0], shape_functions[:,0]*node1_value[:,1] + shape_functions[:,1]*node2_value[:,1] + shape_functions[:,2]*node3_value[:,1])
 
-        if flag_training:
-            prod = [shape_functions[:,0,k]*node1_value + shape_functions[:,1,k]*node2_value + shape_functions[:,2,k]*node3_value+\
-                shape_functions[:,3,k]*node4_value + shape_functions[:,4,k]*node5_value + shape_functions[:,5,k]*node6_value for k in range(shape_functions.shape[2])]
-            prod = torch.stack(prod, dim=2)
-            return prod
-        else:
+        prod = [shape_functions[:,0,k]*node1_value + shape_functions[:,1,k]*node2_value + shape_functions[:,2,k]*node3_value+\
+            shape_functions[:,3,k]*node4_value + shape_functions[:,4,k]*node5_value + shape_functions[:,5,k]*node6_value for k in range(shape_functions.shape[2])]
+        prod = torch.stack(prod, dim=2)
+        return prod
 
-            return shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value+\
-                shape_functions[:,3]*node4_value + shape_functions[:,4]*node5_value + shape_functions[:,5]*node6_value
 
 
 class ElementBlock2D_Lin(nn.Module):
@@ -604,17 +613,12 @@ class ElementBlock2D_Lin(nn.Module):
 
             x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
             
+
             refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
 
             N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
 
             detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
-            
-            print("N1 : ", refCoord[:,0].shape)
-            print("N : ", N.shape)
-            print("xg : ", x_g.shape)
-            print("detJ : ", detJ.shape)
-            print()
             
             return N,x_g, detJ*w_g
 
@@ -636,7 +640,7 @@ class ElementBlock2D_Quad(nn.Module):
         self.connectivity = connectivity.astype(int)
     
     def GP(self):
-        return torch.tensor([[1/6,1/6, 1-2/6],[2/3,1/6, 1-2/3-1/6],[1/6,2/3, 1-2/3-1/6]])
+        return torch.tensor([[1/6,1/6, 1-2/6],[2/3,1/6, 1-2/3-1/6],[1/6,2/3, 1-2/3-1/6]], dtype=torch.float64, requires_grad=True)
 
     def forward(self, x, cell_id, coordinates, nodal_values, flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
@@ -655,24 +659,13 @@ class ElementBlock2D_Quad(nn.Module):
         if flag_training:
             refCoordg = self.GP().unsqueeze(0).repeat(cell_id.shape[0],1,1)
 
-            # refCoordg = refCoordg.reshape((-1,3))
-            # [N_elem, N_int_points, coord = 3 ] vs [ 3x N_elem, coord = 3]
             w_g = 1/6
-
-            # print("res = ", refCoordg[:,:,0]*node1_coord[:,0].unsqueeze(1))
 
             x_g = torch.stack([refCoordg[:,:,0]*node1_coord[:,0].unsqueeze(1) + refCoordg[:,:,1]*node2_coord[:,0].unsqueeze(1) + refCoordg[:,:,2]*node3_coord[:,0].unsqueeze(1),\
                 refCoordg[:,:,0]*node1_coord[:,1].unsqueeze(1) + refCoordg[:,:,1]*node2_coord[:,1].unsqueeze(1) + refCoordg[:,:,2]*node3_coord[:,1].unsqueeze(1)],dim=2)
-            
 
-            # x_g = torch.zeros(refCoordg.shape[0],refCoordg.shape[1],2)
-
-            # x_g[:,:,0] = refCoordg[:,:,0]*node1_coord[:,0].unsqueeze(1)
-
-            # refCoord = GetRefCoord(x_g[:,:,0],x_g[:,:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
             refCoord = [GetRefCoord(x_g[:,k,0],x_g[:,k,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1]) for k in range(x_g.shape[1])]
             refCoord = torch.stack(refCoord, dim=1)
-
 
             N1 = refCoord[:,:,0]*(2*refCoord[:,:,0]-1)
             N2 = refCoord[:,:,1]*(2*refCoord[:,:,1]-1)
@@ -687,34 +680,28 @@ class ElementBlock2D_Quad(nn.Module):
 
             detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
             
-            # print("N1 : ", N1.shape)
-            # print("N : ", N.shape)
-            # print("xg : ", x_g.shape)
-            # print("detJ : ", detJ.shape)
-            # print()
-    
             return N, x_g, detJ*w_g
 
 
         else:
-            refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-            # print("refCoord : ", refCoord.shape)
+            if len(x.shape)<3:
+                x = x.unsqueeze(1)
+            
+            refCoord = [GetRefCoord(x[:,k,0],x[:,k,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1]) for k in range(x.shape[1])]
+            refCoord = torch.stack(refCoord, dim=1)
 
-            N1 = refCoord[:,0]*(2*refCoord[:,0]-1)
-            N2  = refCoord[:,1]*(2*refCoord[:,1]-1)
-            N3  = refCoord[:,2]*(2*refCoord[:,2]-1)
+            N1 = refCoord[:,:,0]*(2*refCoord[:,:,0]-1)
+            N2 = refCoord[:,:,1]*(2*refCoord[:,:,1]-1)
+            N3 = refCoord[:,:,2]*(2*refCoord[:,:,2]-1)
 
-            N4 = 4*refCoord[:,0]*refCoord[:,1]
-            N5 = 4*refCoord[:,1]*refCoord[:,2]
-            N6 = 4*refCoord[:,2]*refCoord[:,0]
+            N4 = 4*refCoord[:,:,0]*refCoord[:,:,1]
+            N5 = 4*refCoord[:,:,1]*refCoord[:,:,2]
+            N6 = 4*refCoord[:,:,2]*refCoord[:,:,0]
 
-            # print("N1 : ", N1.shape)        
-            # print("N : ", torch.stack((N1,N2,N3,N4,N5,N6),dim=1).shape)
-            # print()
+            N = torch.stack((N1,N2,N3,N4,N5,N6),dim=1)
 
-
-        out = torch.stack((N1,N2,N3,N4,N5,N6),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-        return out
+            out = torch.stack((N1,N2,N3,N4,N5,N6),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            return out
 
 class MeshNN_2D(nn.Module):
     """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
@@ -724,11 +711,15 @@ class MeshNN_2D(nn.Module):
     is equivqlent to solving the PDE. """
 
 
-    def __init__(self, mesh, n_components, n_integr_points, mixed = False):
+    def __init__(self, mesh, n_components, n_integr_points):
         super(MeshNN_2D, self).__init__()
 
-        self.Mixed = mixed
         self.n_integr_points = n_integr_points
+        if self.n_integr_points == 0:
+            self.Mixed = True
+        else:
+            self.Mixed = False
+
 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
@@ -964,23 +955,13 @@ class MeshNN_2D(nn.Module):
 
     def forward(self,x, el_id):
         if self.training and self.Mixed == False:
-
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
             interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.training)
-            
-            print("Training")
-            print(" interpol : ", interpol.shape)
-            print(" x_g : ", x_g.shape)
-            print(" detJ : ", detJ.shape)
-            print()
-
+        
             return interpol, x_g, detJ
         else:
             shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
             interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, False)
-            
-            print("Evaluation")
-            print(" interpol : ", interpol.shape)
 
             return interpol
 
@@ -1088,13 +1069,13 @@ class MeshNN_2D(nn.Module):
             normals = [(x[0]+x[1])/2 for x in normals]
             self.relation_BC_normals.append(normals)
 
-    def UnFreeze_Mesh(self):
-        """Set the coordinates as trainable parameters"""
-        for param in self.coordinates:
-            param.requires_grad = True
-        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
-        for node in border_nodes:
-            self.coordinates[node].requires_grad = False
+    # def UnFreeze_Mesh(self):
+    #     """Set the coordinates as trainable parameters"""
+    #     for param in self.coordinates:
+    #         param.requires_grad = True
+    #     border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+    #     for node in border_nodes:
+    #         self.coordinates[node].requires_grad = False
 
 
 
@@ -1129,3 +1110,229 @@ def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
 
 
 
+def GetRefCoord_1D(x,x1,x2):
+
+    return 2*(x-x1)/(x2-x1)-1
+
+
+def GetRealCoord_1D(xi,x1,x2):
+
+    return x1 + (xi+1)*(x2-x1)/2
+
+
+class InterpolationBlock1D_Lin(nn.Module):
+    
+    def __init__(self, connectivity):
+       
+        super(InterpolationBlock1D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+    
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
+
+    def forward(self, x, cell_id, nodal_values, shape_functions):
+
+        cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+        node1_value = torch.cat([nodal_values[row] for row in cell_nodes_IDs[:,0]]) 
+        node2_value = torch.cat([nodal_values[row] for row in cell_nodes_IDs[:,1]]) 
+
+        prod = [shape_functions[:,0,k]*node1_value + shape_functions[:,1,k]*node2_value for k in range(shape_functions.shape[2])]
+        prod = torch.stack(prod, dim=1)
+
+        # print("shape_functions = ", shape_functions.shape)
+        # print("prod = ", prod.shape)
+        # print("__________________________________")
+        # print()
+
+        return prod
+
+
+
+class ElementBlock1D_Lin(nn.Module):
+    """
+    Returns:
+         N_i(x)'s for each nodes within each element"""
+    def __init__(self, connectivity, n_integr_points):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 1D mesh
+        """
+        super(ElementBlock1D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+        self.n_integr_points = n_integr_points
+
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
+
+    def GP(self, n_integr_points):
+        if n_integr_points ==1:
+            return torch.tensor([[0.0]],dtype=torch.float64, requires_grad=True) # coordinates in ref. element
+        elif n_integr_points ==2:
+            return torch.tensor([[-1/np.sqrt(3.0),1/np.sqrt(3.0)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==3:
+            return torch.tensor([[-np.sqrt(3/5), 0, np.sqrt(3/5)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==4:
+            return torch.tensor([[  -np.sqrt((3+2*np.sqrt(6/5))/7), 
+                                    -np.sqrt((3-2*np.sqrt(6/5))/7), 
+                                    np.sqrt((3-2*np.sqrt(6/5))/7),
+                                    np.sqrt((3+2*np.sqrt(6/5))/7)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==5:
+            return torch.tensor([[  0,
+                                    -1/3*np.sqrt(5-2*np.sqrt(10/7)), 
+                                    1/3*np.sqrt(5-2*np.sqrt(10/7)), 
+                                    -1/3*np.sqrt(5+2*np.sqrt(10/7)),
+                                    1/3*np.sqrt(5+2*np.sqrt(10/7))]],dtype=torch.float64, requires_grad=True)
+
+
+    def forward(self, x, cell_id, coordinates, nodal_values,flag_training):
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
+
+        cell_nodes_IDs = self.connectivity[cell_id,:]
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+        node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
+        node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
+        
+        if flag_training:
+            refCoordg = self.GP(self.n_integr_points).repeat(cell_id.shape[0],1)
+                                   # Gauss weight
+            if self.n_integr_points ==1:
+                w_g = torch.tensor([2]).repeat(cell_id.shape[0],1)
+            elif self.n_integr_points ==2:   
+                w_g = torch.tensor([1,1]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==3:   
+                w_g = torch.tensor([5/9,8/9,5/9]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==4:   
+                w_g = torch.tensor([(18-np.sqrt(30))/36, (18+np.sqrt(30))/36, (18+np.sqrt(30))/36, (18-np.sqrt(30))/36]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==5:    
+                w_g = torch.tensor([128/225,
+                                    (322+13*np.sqrt(70))/900, (322+13*np.sqrt(70))/900, 
+                                    (322-13*np.sqrt(70))/900,(322-13*np.sqrt(70))/900]).repeat(cell_id.shape[0],1)                                                                                          
+
+            x_g = GetRealCoord_1D(refCoordg,node1_coord,node2_coord)
+            refCoord = GetRefCoord_1D(x_g, node1_coord,node2_coord)
+            N = torch.stack((-0.5*refCoord + 0.5, 0.5*refCoord + 0.5),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            detJ = (node2_coord - node1_coord)/2
+
+            # print("refCoordg = ", refCoordg.shape)
+            # print("x_g = ", x_g.shape, x_g[2])
+            # print("nodes = ", node1_coord[-1], node2_coord[-1])
+            # print("refCoord = ", refCoord[-1])
+            # print("N = ", N.shape, N[2,0,:], N[2,1,:])
+            # print("detJ = ", detJ[-1])
+            # print()
+            # print("detJ*w_g = ",  (detJ*w_g).shape)
+
+            # print()
+
+            return N, x_g, detJ*w_g
+
+        else:
+            refCoord = GetRefCoord_1D(x.unsqueeze(1), node1_coord,node2_coord)
+            N = torch.stack((-0.5*refCoord + 0.5, 0.5*refCoord + 0.5),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            
+            # print("cell_id = ", cell_id[-150])
+            # print("x = ", x[-150])
+            # print("cell_nodes_IDs = ", cell_nodes_IDs.shape)
+            # print("nodes = ", node1_coord[-150], node2_coord[-150])
+            # print("refCoord = ", refCoord.shape, refCoord[2])
+            # print("N = ", N.shape, N[2,0,:], N[2,1,:])
+            # print()
+            return N
+
+class MeshNN_1D(nn.Module):
+    """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
+    The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
+    Updating those parameters correspond to r-adaptativity
+    The Interpolation layer weights correspond to the nodal values. Updating them 
+    is equivqlent to solving the PDE. """
+
+
+    def __init__(self, mesh, n_integr_points):
+        super(MeshNN_1D, self).__init__()
+
+        self.n_integr_points = n_integr_points
+        # if self.n_integr_points == 0:
+        #     self.Mixed = True
+        n_components = 1
+
+        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+                                             for i in range(len(mesh.Nodes))])
+
+        print("mesh.NNodes = ", mesh.NNodes)
+        # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,1))
+
+        self.values =0.1*torch.ones((mesh.NNodes,1))
+
+        self.connectivity = mesh.Connectivity
+        self.borders_nodes = mesh.borders_nodes
+
+        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem = mesh.NElem
+        self.order = mesh.order
+        print("self.order = ", self.order)
+        self.frozen_BC_node_IDs = []
+        self.frozen_BC_component_IDs = []
+
+        print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
+
+        if mesh.NoBC==False:
+            for i in range(len(mesh.ListOfDirichletsBCsValues)):
+                IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                print("IDs = ", IDs)
+                self.frozen_BC_node_IDs.append(IDs)
+                self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
+                self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
+
+
+        self.nodal_values = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
+
+        if self.order == '1':
+            self.ElementBlock = ElementBlock1D_Lin(mesh.Connectivity, self.n_integr_points)
+            self.Interpolation = InterpolationBlock1D_Lin(mesh.Connectivity)
+
+
+    def UnFreeze_Values(self):
+        """Set the coordinates as trainable parameters """
+        # print("Unfreeze values")
+
+        for val in self.nodal_values:
+            val.requires_grad = True
+
+        for j in range(len(self.frozen_BC_node_IDs)):
+            frozen = self.frozen_BC_node_IDs[j]
+            self.nodal_values[frozen].requires_grad = False
+
+    def Freeze_Mesh(self):
+        """Set the coordinates as untrainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = False
+    
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = True
+
+        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+        for node in border_nodes:
+            self.coordinates[node].requires_grad = False
+    
+    def forward(self,x, el_id):
+        if self.training:
+            shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
+            interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions)
+
+            return interpol, x_g, detJ
+        else:
+            shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
+            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
+
+            return interpol

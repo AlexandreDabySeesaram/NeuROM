@@ -268,12 +268,14 @@ def Derivative(u,x):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     return du_dx
 
-def AnalyticSolution(A,E,x,u0=0,uL=0):
+def AnalyticSolution(A,E,x,u0=0,uL=0.005):
     lin = u0 + ((uL-u0)/10)*x
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
         + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out+lin
+
+
 
 def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
     E = E[0] # to simple parametric solution
@@ -292,11 +294,12 @@ def AnalyticBiParametricSolution(A,E,x,u0=0,uL=0):
             - (x/(10*A*E1))*(np.exp(-6.25*np.pi)) + (x/(10*A*E2))*(np.exp(-56.25*np.pi))
     return out
 
-def AnalyticGradientSolution(A,E,x):
+def AnalyticGradientSolution(A,E,x,u0=0,uL=0.005):
+    lin = ((uL-u0)/10)
     out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) \
         + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \
             - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
-    return out
+    return out + lin
 
 def MixedFormulation_Loss(A, E, u, du, x, b):
 
@@ -311,25 +314,51 @@ def MixedFormulation_Loss(A, E, u, du, x, b):
 
     return torch.mean(res_eq), torch.mean(res_constit)
 
+
+def AnalyticSolution1(A,E,x,u0=0,uL=0.005):
+    C =( uL - 10**3/(3*A*E))/10
+    return 1/(A*E)*(x**3/3) + C*x
+
+def AnalyticGradientSolution1(A,E,x,u0=0,uL=0.005):
+    C =( uL - 10**3/(3*A*E))/10
+
+    return 1/(A*E)*(x**2) + C
+
+def RHS1(x):
+    return  2*x
+
+def InternalEnergy_1D(u,x,A,E):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    W_e = 0.5*A*E*du_dx*du_dx - RHS(x)*u
+    
+    return W_e
+
 def InternalEnergy_2D(u,x,lmbda, mu):
 
-    print("InternalEnergy_2D")
-    print(u.shape)
-    print(x.shape)
-    print()
-
     eps =  Strain(u,x)
+
     sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
-    W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
+
+    W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=-1)
+    
     return W_e
 
 def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
+
+
 def Strain(u,x):
+
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0])],dim=1)
+
+    return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
+
+
+
+
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 

@@ -42,7 +42,7 @@ n_integration_points = 3
 
 dimension = 2                                                   # Dimension of the problem
 
-MaxElemSize = 10/16
+MaxElemSize = 2
 
 Domain_mesh = pre.Mesh(Name,MaxElemSize, MaxElemSize/2,  order, dimension)    # Create the mesh object
 Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
@@ -50,8 +50,8 @@ Volume_element = 100                               # Volume element correspond t
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
+                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 1, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
 Borders = [111,112,113,114,115]
@@ -67,6 +67,8 @@ Domain_mesh.ExportMeshVtk()
 Model_2D = MeshNN_2D(Domain_mesh, 2, n_integration_points)                # Create the associated model (with 2 components)
 Model_2D.UnFreeze_Values()
 Model_2D.Freeze_Mesh()
+Model_2D.Update_Middle_Nodes(Domain_mesh)
+
 #Model_2D.UnFreeze_Mesh()
 
 
@@ -91,17 +93,15 @@ List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
 u_predicted,xg,detJ = Model_2D(PlotCoordinates, List_elems)
 detJ = torch.abs(detJ)
 
-print(" u_predicted : ", u_predicted.shape)
-print(" xg : ", xg.shape)
-print(" detJ : ", detJ.shape)
-
 Model_2D.eval()
 u_predicted_eval = Model_2D(xg, List_elems)
 Pplot.Plot2Dresults(u_predicted_eval, xg , "_u_init_integral_Gauss")
 
 
-We = torch.sum(InternalEnergy_2D(u_predicted_eval,xg,lmbda, mu)*detJ)
-print("We = ", We)
+print("detJ : ", (detJ.unsqueeze(1)).shape)
+
+We = torch.sum(InternalEnergy_2D(u_predicted_eval,xg,lmbda, mu)*detJ.unsqueeze(1))
+print("Energy = ", We)
 learning_rate = 0.001                              # optimizer learning rate
 
 
@@ -124,11 +124,12 @@ Nnodes_max = 1000
 coeff_refinement = np.power((Nnodes_max/Domain_mesh.NNodes),1/max_refinment)
 dmax_threshold = 1e-7
 import meshio
+
 while n_refinement < max_refinment and not stagnation:
     print(f"Refinement level: {n_refinement}")
     n_refinement +=1
     optimizer = torch.optim.Adam(Model_2D.parameters(), lr=learning_rate)
-    n_epochs = 5000
+    n_epochs = 10000
     if n_refinement>4:
         n_epochs = 1000
     Loss_vect, Duration, U_interm, X_interm, Connectivity_interm = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,lmbda, mu)
@@ -141,7 +142,11 @@ while n_refinement < max_refinment and not stagnation:
     X_interm_tot += X_interm
     Connectivity_tot += Connectivity_interm
     meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
-    Cell_dict+=[meshBeam.cells_dict["triangle"] for _ in range(len(X_interm))]
+
+    if order ==1:
+        Cell_dict+=[meshBeam.cells_dict["triangle"] for _ in range(len(X_interm))]
+    elif order ==2:
+        Cell_dict+=[meshBeam.cells_dict["triangle6"] for _ in range(len(X_interm))]
     # Cmpute max strain
     _,xg,detJ = Model_2D(PlotCoordinates, List_elems)
     Model_2D.eval()
@@ -168,7 +173,7 @@ while n_refinement < max_refinment and not stagnation:
         Domain_mesh_2.ExportMeshVtk()
         List_elems = torch.range(0,Domain_mesh_2.NElem-1,dtype=torch.int)
         # Initialise finer model
-        Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2)                # Create the associated model (with 2 components)
+        Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2, n_integration_points)                # Create the associated model (with 2 components)
         
         newcoordinates = [coord for coord in Model_2D_2.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
@@ -230,33 +235,54 @@ X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_
 # # u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
-sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
-point_data={"U":u.data}, 
-cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
-sol.write(
-    "Results/Paraview/sol_u_end_training_test_"+Name+".vtk", 
-)
+if order == 1:
+    sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle":Connectivity_tot[-1].data},
+    point_data={"U":u.data}, 
+    cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+    sol.write(
+        "Results/Paraview/sol_u_end_training_test_"+Name+".vtk", 
+    )
+elif order ==2:
+
+    sol = meshio.Mesh(X_interm_tot[-1].data, {"triangle6":Connectivity_tot[-1].data},
+    point_data={"U":u.data})
+    # cell_data={"eps": [eps.data], "sigma": [sigma.data]}, )
+    sol.write("Results/Paraview/sol_u_end_training_test_"+Name+".vtk") 
+
+
+
+    
 
 #%% Export intermediate convergence steps
 meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 
 U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
 
-for timestep in range(len(U_interm_tot)):
-    sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
-    point_data={"U":U_interm_tot[timestep]} )
+if order == 1:
+    for timestep in range(len(U_interm_tot)):
+        sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
+        point_data={"U":U_interm_tot[timestep]} )
 
-    sol.write(
-        f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting3_"+Name+f"_{timestep}.vtk",  
-    )
+        sol.write(
+            f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting3_"+Name+f"_{timestep}.vtk",  
+        )
+elif order==2:
+    for timestep in range(len(U_interm_tot)):
+        sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle6":Connectivity_tot[timestep].data},
+        point_data={"U":U_interm_tot[timestep]} )
 
+        sol.write(
+            f"Results/Paraview/TimeSeries/sol_u_multiscale_autom_spliting3_"+Name+f"_{timestep}.vtk",  
+        )
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-coord = torch.tensor(numpy.load("Results_Mixed/coordinates.npy"), dtype=torch.float64, requires_grad=True)
+
+# coord = torch.tensor(numpy.load("Results_Mixed/coordinates.npy"), dtype=torch.float64, requires_grad=True)
 IDs = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
 
+Model_2D.eval()
 u_predicted = Model_2D(coord, IDs) 
 
 du = torch.autograd.grad(u_predicted[0,:], coord, grad_outputs=torch.ones_like(u_predicted[0,:]), create_graph=True)[0]
@@ -265,7 +291,6 @@ dv = torch.autograd.grad(u_predicted[1,:], coord, grad_outputs=torch.ones_like(u
 s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
 
 stress_NN = torch.stack([s_11, s_22, s_12],dim=1)
-
 
 numpy.save("Results/u.npy", numpy.array(u_predicted.detach()))
 numpy.save("Results/stress_u.npy", numpy.array(stress_NN.detach()))

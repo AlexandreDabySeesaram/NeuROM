@@ -91,7 +91,6 @@ def EnhanceGramSchmidt(B,L):
     L_updated = L.clone()+sum(L_correction_List)
     return orth_basis, L_updated
 
-
 def GramSchmidt(B):
     """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
      Args:
@@ -123,7 +122,6 @@ def GramSchmidt(B):
             orth_basis[:, n] = un * 0
 
     return orth_basis
-
 
 def GramSchmidt_test(B):
     """This is a Gram-Schmidt algorithm that allows to output the orth(no)gonal basis 
@@ -165,7 +163,6 @@ def GramSchmidt_test(B):
 
     ###############
     return orth_basis, coef
-
 
 def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
@@ -253,7 +250,6 @@ def PotentialEnergyVectorised(A, E, u, x, b):
     integral = torch.sum(int_term1 - int_term2)
 
     return integral
-
 
 def AlternativePotentialEnergy(A,E,u,x,b):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
@@ -347,6 +343,20 @@ def InternalEnergy_2D_einsum(u,x,lmbda, mu):
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
     return W_e
 
+def InternalResidual(u,x,u_star,x_star,lmbda, mu):
+    eps =  Strain_sqrt(u,x)
+    eps_star = Strain_sqrt(u_star,x_star)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
+    return W_e
+
+def InternalResidual_precomputed(eps,eps_star,lmbda, mu):
+    # eps =  Strain_sqrt(u,x)
+    # eps_star = Strain_sqrt(u_star,x_star)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
+    return W_e
+
 def InternalEnergy_2D_einsum_para(u,x,lmbda, mu,ParaMode):
     eps =  Strain_sqrt(u,x)
     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]])
@@ -354,11 +364,13 @@ def InternalEnergy_2D_einsum_para(u,x,lmbda, mu,ParaMode):
     return W_e
 
 def Strain_sqrt(u,x):
+    """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
     return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
 
 def Strain(u,x):
+    """ Return the vector strain [eps_xx eps_yy eps_xy]"""
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
     return torch.stack([du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0])],dim=1)
@@ -407,8 +419,6 @@ def Mixed_2D_loss_Displacement_based(model_u, model_du, x, lmbda, mu):
     assert sum(res_eq.shape) == x.shape[0]
 
     return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
-    
-
 
 def Neumann_BC_rel(Model):
 
@@ -494,7 +504,6 @@ def Constitutive_BC(model_u, model_du, constit_point_coord_all, constit_cell_IDs
                 NN_s_11[ID] = torch.nn.Parameter(torch.tensor([s_11[j]]))
                 NN_s_22[ID] = torch.nn.Parameter(torch.tensor([s_22[j]]))
                 NN_s_12[ID] = torch.nn.Parameter(torch.tensor([s_12[j]]))
-
 
 def GetRealCoord(model, mesh, cell_ids, ref_coord):
 

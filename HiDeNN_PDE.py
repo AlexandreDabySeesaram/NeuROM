@@ -348,6 +348,12 @@ class NeuROM(nn.Module):
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].eval()  
 
+    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.Stagnation_threshold = Stagnation_threshold
+        self.Max_epochs = Max_epochs
+        self.learning_rate = learning_rate
+
+
     def FreezeAll(self):
         """This method allows to freeze all sub neural networks"""
         self.Freeze_Mesh()
@@ -646,7 +652,7 @@ class MeshNN_2D(nn.Module):
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.n_components = n_components
-
+        self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
 
         if mesh.NoBC==False:
             self.SetBCs(mesh.ListOfDirichletsBCsValues)

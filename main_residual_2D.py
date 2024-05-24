@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
-from Bin.Training import Training_2D_Integral
+from Bin.Training import Training_2D_Integral, Training_2D_Residual,Training_2D_Residual_LBFGS,Training_2D_Integral_LBFGS
 import Post.Plots as Pplot
 import time
 import os
@@ -37,7 +37,7 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -68,8 +68,6 @@ TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*L,5*n_visu)],dtype
 EvalCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
 
 
-List_elems = torch.arange(0,Domain_mesh.NElem,dtype=torch.int)
-
 
 learning_rate = 0.001                                           # optimizer learning rate
 
@@ -79,6 +77,21 @@ Model_2D.RefinementParameters(  MaxGeneration = 2,
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
                                 Max_epochs = 5000, 
                                 learning_rate = 0.001)
+
+
+Model_test =MeshNN_2D(Domain_mesh, n_component)                  # Create the associated model (with 2 components)
+new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor(1,dtype=torch.float64))) for i in range(len(Model_test.nodal_values_y))])
+new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor(1,dtype=torch.float64)) for i in range(len(Model_test.nodal_values_y))])
+new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+Model_test.nodal_values_x = new_nodal_values_x
+Model_test.nodal_values_y = new_nodal_values_y
+Model_test.nodal_values = new_nodal_values
+Model_test.values = 1+0*Model_test.values
+Model_test.SetBCs(len(Domain_mesh.ListOfDirichletsBCsValues)*[0])
+
+Model_test.Freeze_Mesh()
+Model_test.Freeze_FEM()
+
 
 #%% Training 
 # Fisrt stage
@@ -98,104 +111,30 @@ Nnodes_max = 1000
 coeff_refinement = np.power((Nnodes_max/Domain_mesh.NNodes),1/max_refinment)
 dmax_threshold = 1e-7
 import meshio
-while n_refinement < max_refinment and not stagnation:
-    print(f"Refinement level: {n_refinement}")
-    n_refinement +=1
-    optimizer = torch.optim.Adam(Model_2D.parameters(), lr=Model_2D.learning_rate)
-    n_epochs = 3000
-    if n_refinement>4:
-        n_epochs = 1000
-    Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
-    # Save current convergence state
-    Loss_tot += Loss_vect
-    Duration_tot += Duration
-    U_interm_tot += Model_2D.U_interm
-    Gen_interm_tot += Model_2D.G_interm
-    detJ_tot += Model_2D.Jacobian_interm
-    X_interm_tot += Model_2D.X_interm
-    Connectivity_tot += Model_2D.Connectivity_interm
-    meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
-    # Cmpute max strain
-    _,xg,detJ = Model_2D()
-    Model_2D.eval()
-    List_elems = torch.arange(0,Model_2D.NElem,dtype=torch.int)
-    eps =  Strain(Model_2D(xg, List_elems),xg)
-    max_eps = torch.max(eps)
-    if n_refinement >1:
-        d_eps_max = 2*torch.abs(max_eps-max_eps_old)/(max_eps_old+max_eps_old)
-        d_eps_max_vect.append(d_eps_max.data)
-        eps_max_vect.append(max_eps.data)
-        max_eps_old = max_eps
-        if d_eps_max<dmax_threshold:
-            stagnation = True
-    else:
-        max_eps_old = max_eps
-    if n_refinement < max_refinment and not stagnation:
-        # Refine mesh
-        # MaxElemSize = MaxElemSize/coeff_refinement
-        MaxElemSize = MaxElemSize/4
 
-        Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
-        Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
-        Domain_mesh_2.AddBorders(Borders)
-        Domain_mesh_2.MeshGeo()                                # Mesh the .geo file if .msh does not exist
-        Domain_mesh_2.ReadMesh()                               # Parse the .msh file
-        Domain_mesh_2.ExportMeshVtk()
-        List_elems = torch.arange(0,Domain_mesh_2.NElem,dtype=torch.int)
-        # Initialise finer model
-        Model_2D_2 = MeshNN_2D(Domain_mesh_2, 2)                # Create the associated model (with 2 components)
-        
-        newcoordinates = [coord for coord in Model_2D_2.coordinates]
-        newcoordinates = torch.cat(newcoordinates,dim=0)
-        # Update Domain_mesh vtk mesh to get correct cell Ids
-        Domain_mesh.Nodes = [[i+1,Model_2D.coordinates[i][0][0].item(),Model_2D.coordinates[i][0][1].item(),0] for i in range(len(Model_2D.coordinates))]
-        Domain_mesh.Connectivity = Model_2D.connectivity
-        # HERE THE CELLs must be updated due to h adaptivity
-        Domain_mesh.ExportMeshVtk(flag_update = True)
-        IDs_newcoord = torch.tensor(Domain_mesh.GetCellIds(newcoordinates),dtype=torch.int)
-        NewNodalValues = Model_2D(newcoordinates,IDs_newcoord) 
-        if -1 in IDs_newcoord:
-            # print(IDs_newcoord)
-            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
-            oldcoordinates = [coord for coord in Model_2D.coordinates]
-            oldcoordinates = torch.cat(oldcoordinates,dim=0)
-            for ind_neg in index_neg:
-                not_found_coordinates = newcoordinates[ind_neg]
-                dist_vect = not_found_coordinates - oldcoordinates
-                dist = torch.norm(dist_vect, dim=1)
-                closest_old_nodal_value = dist.topk(1, largest=False)[1]
-                NewNodalValues[0][ind_neg] = Model_2D.nodal_values_x[closest_old_nodal_value].type(torch.float64)
-                NewNodalValues[1][ind_neg] = Model_2D.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+optimizer = torch.optim.AdamW(Model_2D.parameters(), lr=Model_2D.learning_rate)
+n_epochs = 3000
 
-        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
-        new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
-        new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
-        Model_2D_2.nodal_values_x = new_nodal_values_x
-        Model_2D_2.nodal_values_y = new_nodal_values_y
-        Model_2D_2.nodal_values = new_nodal_values
-        Domain_mesh = Domain_mesh_2
-        Model_2D = Model_2D_2
-        Model_2D.UnFreeze_FEM()
-        Model_2D.Freeze_Mesh()
-        # Model_2D.UnFreeze_Mesh()
-        Model_2D.train()
-        Model_2D.RefinementParameters(  MaxGeneration = 3, 
-                                Jacobian_threshold = 0.2)
-        Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                        Max_epochs = 500, 
-                                        learning_rate = 0.001)
-    else:
-        Model_2D.train()
+Model_2D.train()
+u_predicted,xg,detJ = Model_2D()
+List_elems = torch.tensor(Domain_mesh.GetCellIds(xg),dtype=torch.int)
+
+Loss_vect, Duration = Training_2D_Residual(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
+
+# Loss_vect, Duration = Training_2D_Residual_LBFGS(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
+
+# Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+# Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, optimizer, n_epochs,List_elems,Mat)
 
 
 
-#%% Export the results to vtk 
+    #%% Export the results to vtk 
 import meshio
 #%% Read mesh
 #%% Get nodal values from the trained model
 u_x = [u for u in Model_2D.nodal_values_x]
 u_y = [u for u in Model_2D.nodal_values_y]
-
+Model_2D.train()
 #%% Compute the strain 
 List_elems = torch.arange(0,Model_2D.NElem,dtype=torch.int)
 _,xg,detJ = Model_2D(EvalCoordinates, List_elems)
@@ -212,7 +151,7 @@ sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
 point_data={"U":u.data}, 
 cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
 sol.write(
-    "Results/Paraview/sol_u_end_training_gravity_NoBCs_fixed_"+Name+".vtk", 
+    "Results/Paraview/sol_u_end_training_Petrov"+Name+".vtk", 
 )
 
 #%% Export intermediate convergence steps
@@ -226,7 +165,7 @@ for timestep in range(len(U_interm_tot)):
     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
     sol.write(
-        f"Results/Paraview/TimeSeries/solution_multiscale_gravity_NoBCs_fixed_"+Name+f"_{timestep}.vtk",  
+        f"Results/Paraview/TimeSeries/solution_multiscale_Petrov"+Name+f"_{timestep}.vtk",  
     )
 
 # %%

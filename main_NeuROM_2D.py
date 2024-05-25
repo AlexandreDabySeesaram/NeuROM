@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
-from Bin.Training import Training_2D_Integral
+from Bin.Training import Training_2D_Integral,Training_2D_NeuROM
 import Post.Plots as Pplot
 import time
 import os
@@ -50,6 +50,7 @@ Domain_mesh.ExportMeshVtk()
 # Parametric domain
 #%% Application of NeuROM
 n_modes = 100
+
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -67,8 +68,15 @@ n_modes = 100
 
 BeamROM = NeuROM(Domain_mesh, n_modes, ParameterHypercube)
 BeamROM.train()
-
-
+BeamROM.TrainingParameters(    Stagnation_threshold = 1e-7, 
+                                Max_epochs = 1000, 
+                                learning_rate = 0.001)
 u_predicted,xg,detJ = BeamROM.Space_modes[0]()
+optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=BeamROM.learning_rate)
+Param_trial = torch.linspace(mu_min,mu_max,50, 
+                                    dtype=torch.float32, requires_grad=True)
+Param_trial = Param_trial[:,None] # Add axis so that dimensions match
 
+Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
 
+Loss_vect, Duration = Training_2D_NeuROM(BeamROM, Para_coord_list, optimizer, BeamROM.Max_epochs,Mat)

@@ -12,7 +12,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
-                    InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed
+                    InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
+                        InternalEnergy_2D_einsum_para
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -78,7 +79,6 @@ def Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train
 
     return l
 
-
 def Collision_Check(MeshBeam, coord_old, proximity_limit):
     # Chock colission -> Revert if needed
     coord_new = [MeshBeam.coordinates[i].data.item() for i in range(len(MeshBeam.coordinates))]
@@ -91,7 +91,6 @@ def Collision_Check(MeshBeam, coord_old, proximity_limit):
 
 def RandomSign():
     return 1 if random.random() < 0.5 else -1
-
 
 def FilterBatchTrainingData(BeamModel, TestData):
     ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
@@ -155,7 +154,6 @@ def Test_GenerateShapeFunctions(BeamModel, TrialCoordinates):
 
     pred, ShapeFunctions = BeamModel(TrialCoordinates)
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, False)
-
 
 def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData):
 
@@ -293,7 +291,6 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
 
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
 
-
 def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData, error=[], error2 =[],Coord_trajectories=[]):
     optim = torch.optim.LBFGS(BeamModel.parameters(),
                     #history_size=5, 
@@ -355,7 +352,6 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print("*************** END OF SECOND STAGE ***************\n")
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
-
 
 def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,BiPara):
     # Initialise vector of loss values
@@ -481,7 +477,6 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
 
     return Loss_vect, L2_error, (time_stop-time_start), Modes_vect, Loss_decrease_vect
     
-
 def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
@@ -692,8 +687,6 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
 
     return error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories
     
-
-
 def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,
                                         TrialCoordinates, n_epochs, BoolCompareNorms, 
                                         MSE, BoolFilterTrainingData,
@@ -769,7 +762,6 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final training loss: {numpy.format_float_scientific( error_pde[-1], precision=4)}')
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
-
 def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates, 
                         #TrainCoordinates, TrainIDs_u, TrainIDs_du,
                         Cell_ids, Ref_Coord,
@@ -830,7 +822,6 @@ def LBFGS_Stage2_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
     Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, [], n_train, "_Final")
 
     return Model_u, Model_du
-
 
 def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinates,
                             CoordinatesBatchSet, w0, w1, n_epochs, optimizer, n_train, 
@@ -968,10 +959,6 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
 
     return Model_u, Model_du, loss
 
-
-
-
-
 def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
     
     # Initialise vector of loss values
@@ -995,7 +982,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
         loss_time_start = time.time()
         u_predicted,xg,detJ = model()
         # loss_previous = torch.sum((0.5*InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
-        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()
         backward_time_start = time.time()
@@ -1184,14 +1171,18 @@ def Training_2D_Integral_LBFGS(model, optimizer, n_epochs,List_elems,Mat):
 
 def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
     time_start = time.time()
+    epoch = 0 
+    Loss_vect = []
+    stagnation = False
     while epoch<model.Max_epochs and not stagnation:
-        loss = PotentialEnergyParametric_2D(model,Param_trial)
+        loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Param_trial)
         loss.backward()
         # update weights
         optimizer.step()
         # zero the gradients after updating
         optimizer.zero_grad()
         with torch.no_grad():
+            Loss_vect.append(loss.item())
             epoch+=1
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
@@ -1205,6 +1196,9 @@ def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
+    print("*************** END OF TRAINING ***************\n")
+    # print("*************** END FIRST PHASE ***************\n")
+    print(f'* Training time: {time_stop-time_start}s')
     return Loss_vect, (time_stop-time_start)
 
 
@@ -1304,9 +1298,6 @@ def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
     return Loss_vect, (time_stop-time_start)
-
-
-
 
 def Training_2D_Residual_LBFGS(model, model_test, optimizer, n_epochs,List_elems,Mat):
     

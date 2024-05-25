@@ -316,7 +316,7 @@ def Gravity(theta,rho = 1):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
-def VolumeForcesEnergy_2D(u,x,theta, rho):
+def VolumeForcesEnergy_2D(u,theta, rho):
     fv = Gravity(theta,rho)
     W_e = u.t()@fv
     return torch.squeeze(W_e)
@@ -357,11 +357,41 @@ def InternalResidual_precomputed(eps,eps_star,lmbda, mu):
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
-def InternalEnergy_2D_einsum_para(u,x,lmbda, mu,ParaMode):
-    eps =  Strain_sqrt(u,x)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]])
-    W_e = torch.einsum('ij,ejm,ejm,...m,...m->e',K,eps,eps,ParaMode)
-    return W_e
+def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
+    # Space_modes = [model.Space_modes[l]()[0] for l in range(model.n_modes_truncated)]
+    # # Need to extract the u_i and xg simultaneously to keep the linkj
+    # xg_modes = [model.Space_modes[l]()[1] for l in range(model.n_modes_truncated)]
+    # detJ_modes = [model.Space_modes[l]()[2] for l in range(model.n_modes_truncated)]
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]    
+    W_int = torch.einsum('ij,ejm,eim,...m,...m->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
+    W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
+    W_ext_e = torch.stack(W_ext_e,dim=1)
+    W_ext = torch.einsum('...m,...m,...m->',W_ext_e,torch.abs(detJ_i),lambda_i[0])
+    return (W_int - W_ext)/(E[0].shape[0])
 
 def Strain_sqrt(u,x):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""

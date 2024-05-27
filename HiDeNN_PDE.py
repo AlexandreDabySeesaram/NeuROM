@@ -310,7 +310,7 @@ class NeuROM(nn.Module):
         self.IndexesNon0BCs = IndexesNon0BCs
         self.n_modes = n_modes_max
         self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
-
+        self.dimension = mesh.dimension
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
 
@@ -438,10 +438,6 @@ class NeuROM(nn.Module):
                 self.Para_modes[i][j].UnFreeze_FEM()  
 
     def forward(self,x,mu):
-
-        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
-        Space_modes = torch.cat(Space_modes,dim=1)
-
         # Use list comprehension to create Para_modes
         Para_mode_Lists = [
         [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
@@ -453,11 +449,28 @@ class NeuROM(nn.Module):
             for l in range(self.n_para)
         ]
 
-        if len(mu)==1:
-            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
-        elif len(mu)==2:
-            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
-                            Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+        match self.dimension:
+            case '1':
+                Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
+                Space_modes = torch.cat(Space_modes,dim=1)
+
+
+
+                if len(mu)==1:
+                    out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                elif len(mu)==2:
+                    out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
+                                    Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+            
+            case '2':
+                Space_modes = []
+                for i in range(self.n_modes_truncated):
+                    IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                    u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                    Space_modes.append(u_k)
+                u_i = torch.stack(Space_modes,dim=2)
+                P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                out = torch.einsum('xyk,kj->xyj',u_i,P1)
         return out
 
 class InterpolationBlock2D_Lin(nn.Module):
@@ -653,7 +666,7 @@ class MeshNN_2D(nn.Module):
         self.NElem = mesh.NElem
         self.n_components = n_components
         self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
-
+        self.mesh = mesh
         if mesh.NoBC==False:
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs

@@ -104,6 +104,75 @@ u_k2,xg_k2,detJ_k2 = BeamROM.Space_modes[1]()
 
 Pplot.Plot2Dresults(u_k2, xg_k2, '2D_ROM_SecondMode')
 
+# %% Pyvista plot
+
+import pyvista as pv
+import vtk
+import meshio
+
+#%% Solo
+filename = 'Geometries/'+Domain_mesh.name_mesh
+mesh = pv.read(filename)
+
+Nodes = np.stack(Domain_mesh.Nodes)
+
+Param_trial = torch.tensor([parameter],dtype=torch.float32)
+Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+
+u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
+u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+
+
+# Plot the mesh
+scalar_field_name = 'U'
+mesh.point_data['U'] = u.data
+plotter = pv.Plotter()
+plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='coolwarm', scalar_bar_args={'title': 'Displacement', 'vertical': True})
+plotter.show()
+
+#%% Parametric
+
+
+
+# Define the parameter to adjust and its initial value
+parameter = 5e-3
+
+Param_trial = torch.tensor([parameter],dtype=torch.float32)
+Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+
+BeamROM.eval()
+u_sol = BeamROM(meshBeam.points,Para_coord_list)
+u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+
+
+
+# Function to update the solution based on the parameter
+def update_solution(slider):
+    global parameter
+    parameter = slider.value
+
+    Param_trial = torch.tensor([parameter],dtype=torch.float32)
+    Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+    Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+    u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
+    u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+    mesh.point_data['U'] = u.data
+
+    plotter.update()
+
+# Create a PyVista plotter
+plotter = pv.Plotter()
+plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='coolwarm', scalar_bar_args={'title': 'Displacement', 'vertical': True})
+
+# Create a slider widget
+slider = pv.Slider(title="Parameter", min_value=1e-3, max_value=10e-3, value=parameter, callback=update_solution)
+plotter.add_widget(slider)
+
+# Show the plot
+plotter.show()
+
+
+
 # %%
-
-

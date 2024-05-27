@@ -384,18 +384,22 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
         for mode in range(model.n_modes_truncated)
         ]
     lambda_i = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
             for l in range(model.n_para)
         ]    
     lambda_debug = 1+0*lambda_i[0].to(torch.float64)
     E_debug = (E[0][:,0]/E[0][:,0]).to(torch.float64)*5e-3
-    W_int = torch.einsum('ij,ejm,eim,em,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_debug,E_debug)
+    E_float = E[0][:,0].to(torch.float64)
+
+    # W_int = torch.einsum('ij,ejm,eim,em,mp...,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_debug,lambda_debug,E_debug)
+    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
+
     # W_int = torch.einsum('ij,ejm,eim,em,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0].to(torch.float64),E[0][:,0].to(torch.float64))
     W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
     W_ext_e = torch.stack(W_ext_e,dim=1)
     W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
-    # return (0.5*W_int - W_ext)/(E[0].shape[0])
-    return (0.5*W_int)/(E[0].shape[0])
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
+    # return (0.5*W_int)/(E[0].shape[0])
 
 def Strain_sqrt(u,x):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""

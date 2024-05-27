@@ -31,7 +31,7 @@ Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -49,11 +49,12 @@ Domain_mesh.ExportMeshVtk()
 
 # Parametric domain
 #%% Application of NeuROM
-n_modes = 100
+n_modes_max = 100
+n_modes_ini = 2
 
 mu_min = 100
 mu_max = 200
-N_mu = 10
+N_mu = 30
 
 # Para Young
 Eu_min = 1e-3
@@ -66,10 +67,10 @@ ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 
 n_modes = 100
 
-BeamROM = NeuROM(Domain_mesh, n_modes, ParameterHypercube)
+BeamROM = NeuROM(Domain_mesh, ParameterHypercube, n_modes_ini,n_modes_max)
 BeamROM.train()
 BeamROM.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                Max_epochs = 1500, 
+                                Max_epochs = 5000, 
                                 learning_rate = 0.001)
 u_predicted,xg,detJ = BeamROM.Space_modes[0]()
 optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=BeamROM.learning_rate)
@@ -104,3 +105,5 @@ u_k2,xg_k2,detJ_k2 = BeamROM.Space_modes[1]()
 Pplot.Plot2Dresults(u_k2, xg_k2, '2D_ROM_SecondMode')
 
 # %%
+
+

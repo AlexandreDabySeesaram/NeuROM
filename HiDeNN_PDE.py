@@ -302,14 +302,14 @@ class InterpPara(nn.Module):
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
-    def __init__(self, mesh, n_modes, ParametersList):
+    def __init__(self, mesh, ParametersList, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
         self.IndexesNon0BCs = IndexesNon0BCs
-        self.n_modes = n_modes
-        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(1))
+        self.n_modes = n_modes_max
+        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
 
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1

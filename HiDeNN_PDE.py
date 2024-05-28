@@ -1235,14 +1235,17 @@ class ElementBlock1D_Lin(nn.Module):
             return N, x_g, detJ*w_g
 
         else:
-            refCoord = GetRefCoord_1D(x.unsqueeze(1), node1_coord,node2_coord)
+            if len(x.shape)==1:
+                refCoord = GetRefCoord_1D(x.unsqueeze(1), node1_coord,node2_coord)
+            else: 
+                refCoord = GetRefCoord_1D(x, node1_coord,node2_coord)
+
             N = torch.stack((-0.5*refCoord + 0.5, 0.5*refCoord + 0.5),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
             
-            # print("cell_id = ", cell_id[-150])
-            # print("x = ", x[-150])
-            # print("cell_nodes_IDs = ", cell_nodes_IDs.shape)
-            # print("nodes = ", node1_coord[-150], node2_coord[-150])
-            # print("refCoord = ", refCoord.shape, refCoord[2])
+            # print("cell_id = ", cell_id[-2])
+            # print("x = ", x.shape, x[-2])
+            # print("nodes = ", node1_coord[-2], node2_coord[-2])
+            # print("refCoord = ", refCoord.shape, refCoord[-2])
             # print("N = ", N.shape, N[2,0,:], N[2,1,:])
             # print()
             return N
@@ -1267,7 +1270,8 @@ class MeshNN_1D(nn.Module):
                                              for i in range(len(mesh.Nodes))])
 
         print("mesh.NNodes = ", mesh.NNodes)
-        # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,1))
+        # self.values = 0.001*torch.randint(low=-10, high=10, size=(mesh.NNodes,1))
+        # self.values =0.01*torch.ones((mesh.NNodes,1))
 
         self.values =0.1*torch.ones((mesh.NNodes,1))
 
@@ -1310,6 +1314,26 @@ class MeshNN_1D(nn.Module):
         for j in range(len(self.frozen_BC_node_IDs)):
             frozen = self.frozen_BC_node_IDs[j]
             self.nodal_values[frozen].requires_grad = False
+
+    def SetFixedValues(self, node, val_inter):
+        """Set the coordinates as trainable parameters """
+        # print("Unfreeze values")
+
+
+        for val in self.nodal_values:
+            val.data = torch.tensor([0])
+        ids = []
+        for i in range(self.NElem+1):
+            if i not in self.frozen_BC_node_IDs:
+                ids.append(i)
+        self.nodal_values[ids[node]].data = torch.tensor([val_inter])
+
+
+
+    def Freeze_Values(self):
+        """Set the coordinates as untrainable parameters"""
+        for val in self.nodal_values:
+            val.requires_grad = False
 
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""

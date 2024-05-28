@@ -334,6 +334,18 @@ def InternalEnergy_1D(u,x,A,E):
     
     return W_e
 
+def WeakEquilibrium_1D(u, u_test, du_test_dx, x, A, E):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    # du_test_dx = torch.autograd.grad(u_test, x, grad_outputs=torch.ones_like(u_test), create_graph=True)[0]
+
+    prod = A*E*du_dx*du_test_dx - RHS(x)*u_test
+
+    return prod
+
+
+
+
 def InternalEnergy_2D(u,x,lmbda, mu):
 
     eps =  Strain(u,x)

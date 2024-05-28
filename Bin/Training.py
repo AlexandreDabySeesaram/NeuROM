@@ -17,7 +17,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord,\
-                    InternalEnergy_2D, InternalEnergy_1D
+                    InternalEnergy_2D, InternalEnergy_1D, WeakEquilibrium_1D
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -638,7 +638,7 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
     stagnancy_counter = 0
     epoch = 0
     loss_old = 1.0e3
-    loss_min = 1.0e3
+    loss_min = 1.0e5
     loss_counter = 0
 
     analytical_norm = torch.norm(AnalyticSolution(A,E,PlotData.data))
@@ -651,7 +651,7 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
     optimizer_time = 0
     backward_time = 0
 
-    while epoch<n_epochs and loss_counter<1000 and  stagnancy_counter < 50: 
+    while epoch<n_epochs and loss_counter<1000*len(CoordinatesBatchSet) and  stagnancy_counter < 50*len(CoordinatesBatchSet): 
 
         for TrialCoordinates in CoordinatesBatchSet:
         #for i in range(1):
@@ -730,13 +730,16 @@ def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesB
                     
         if (epoch+1) % 200 == 0:
                 print('* epoch ', epoch+1, ' loss = ', numpy.format_float_scientific( l.item(), precision=4))
-                print('* loss PDE = ', numpy.format_float_scientific( l_pde.item(), precision=4))
-                print('* loss constit = ', numpy.format_float_scientific( l_constit.item(), precision=4))
-                #print("* loss decrease = ",  numpy.format_float_scientific( loss_decrease, precision=4))
+                print('*    loss PDE = ', numpy.format_float_scientific( l_pde.item(), precision=4))
+                print('*    loss constit = ', numpy.format_float_scientific( l_constit.item(), precision=4))
+                print()
+                print("     stagnancy counter = ", stagnancy_counter)
+                print("     loss counter = ", loss_counter)
+                print()
 
-                #plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
-                #                            PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
-                #                            Coord_trajectories, error_pde, error_constit, error2)    
+                plot_everything_mixed(A,E,InitialCoordinates_u, InitialCoordinates_du, Coordinates_u_i, Coordinates_du_i,
+                                           PlotData, AnalyticSolution, BeamModel_u, BeamModel_du, \
+                                           Coord_trajectories, error_pde, error_constit, error2)    
 
         epoch = epoch+1
 
@@ -856,7 +859,8 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
     u_predicted = BeamModel_u(PlotCoordinates) 
-    du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+    du_dx = BeamModel_du(PlotCoordinates) 
+    # du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
     l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
     print(f'* Final l2 loss grad : {numpy.format_float_scientific(l2_loss_grad, precision=4)}')
 
@@ -1509,9 +1513,237 @@ def Training_1D_Integral_LBFGS(model, n_epochs, PlotCoordinates, IDs_plot, List_
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
 
+def Training_1D_WeakEQ_LBFGS(model, model_test, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E, error, error2, Coord_trajectories):
+
+    epoch = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
+
+    loss_old = 1.0
+    stagnancy_counter = 0
+
+    model.eval()
+
+    InitialCoordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    
+    analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    print()
+    print("analytical_norm = ", analytical_norm)
+    print()
+    
+    optimizer = torch.optim.LBFGS(model.parameters(),
+                    # history_size=2, 
+                    # max_iter=20, 
+                    #tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")
+
+    while epoch<n_epochs and stagnancy_counter < 5:
+
+        # coord_old = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        # Compute loss
+
+        def closure():
+            loss = 0
+
+            for node in range(model.NElem-1):
+
+                model_test.SetFixedValues(node,1)
+                model_test.Freeze_Values()
+
+                u_predicted_test, xg, detJ = model_test(PlotCoordinates, List_elems)
+                du_test_dx = torch.autograd.grad(u_predicted_test, xg, grad_outputs=torch.ones_like(u_predicted_test), create_graph=True)[0]
+
+                nonzeros = torch.where(u_predicted_test!=0)
+                
+                list_elem = List_elems.repeat(u_predicted_test.shape[1],1)
+
+                xg = xg[nonzeros]
+                detJ = detJ[nonzeros]
+                u_predicted_test = u_predicted_test[nonzeros]
+                du_test_dx = du_test_dx[nonzeros]
+                list_elem = torch.transpose(list_elem,0,1)[nonzeros]
+
+                u_predicted = model(xg, list_elem)[:,0]
+
+                loss = loss + torch.pow(torch.sum(WeakEquilibrium_1D(u_predicted,u_predicted_test,du_test_dx,xg,A, E)*torch.abs(detJ)),2)
+
+            # loss = loss/(model.NElem-1)
+            loss.backward()
+
+            return loss
+
+        loss = closure()
+
+        # for p in model.parameters():
+        #     print(p, p.grad)
+
+        optimizer.step(closure)
+
+        loss_current = loss.item()
+
+        epoch = epoch+1
+
+        error.append(loss.item())
+
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
+
+        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        with torch.no_grad():
+            # model.eval()
+            # u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+            # Stores the coordinates trajectories
+          
+            Coordinates_i = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+            Coord_trajectories.append(Coordinates_i)
+            # error2.append(torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm)
+            # error2.append(torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm)
+
+        if epoch%1 == 0:
+            print("epoch = ", epoch)
+            print("     loss = ", loss_current)
+            print("     loss_decrease = ", loss_decrease)
+
+
+    print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
+    # print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
+
+    Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
 
 
 
+
+def Training_1D_WeakEQ(model, model_test, optimizer, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E):
+
+    epoch = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
+
+    error = []
+    error2 = []
+    Coord_trajectories = []
+
+    loss_min = 1.0e3
+    loss_old = 1.0
+    loss_counter = 0
+    stagnancy_counter = 0
+
+    InitialCoordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    
+    analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+
+
+    while epoch<n_epochs and loss_old > 1.0e-6 and loss_counter<1000:
+
+        coord_old = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+
+        loss_time_start = time.time()
+        
+        # # # Loss # # #
+        loss = 0
+
+        for node in range(model.NElem-1):
+            
+            model_test.SetFixedValues(node,1)
+            model_test.Freeze_Values()
+
+            u_predicted_test, xg, detJ = model_test(PlotCoordinates, List_elems)
+            du_test_dx = torch.autograd.grad(u_predicted_test, xg, grad_outputs=torch.ones_like(u_predicted_test), create_graph=True)[0]
+
+            nonzeros = torch.where((u_predicted_test!=0))
+            list_elem = List_elems.repeat(u_predicted_test.shape[1],1)
+            
+        
+            xg = xg[nonzeros]
+            detJ = detJ[nonzeros]
+            u_predicted_test = u_predicted_test[nonzeros]
+            du_test_dx = du_test_dx[nonzeros]
+            list_elem = torch.transpose(list_elem,0,1)[nonzeros]
+
+
+            u_predicted = model(xg, list_elem)[:,0]
+
+            loss = loss + torch.pow(torch.sum(WeakEquilibrium_1D(u_predicted,u_predicted_test,du_test_dx,xg,A, E)*torch.abs(detJ)),2)
+
+        # loss = loss/(model.NElem-1)
+        optimizer.zero_grad()
+
+        eval_time += time.time() - loss_time_start
+        loss_current = loss.item()
+
+        backward_time_start = time.time()
+        loss.backward()
+
+        back_time += time.time() - backward_time_start
+        # update weights
+        update_time_start = time.time()
+        optimizer.step()
+        update_time += time.time() - update_time_start
+        # zero the gradients after updating
+
+
+        # # # # # # # # # # # # # # # # # #  
+        epoch = epoch+1
+
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
+
+        # check for new minimal loss - Update the state for revert
+        if loss_min > loss_current:
+            loss_min = loss_current    
+            # torch.save(model.state_dict(),"Results/Net_u.pt")
+
+            loss_counter = 0
+        else:
+            loss_counter += 1
+
+        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        error.append(loss.item())
+
+        with torch.no_grad():
+
+            model.eval()
+            u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+
+            Coordinates_i = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+            Coord_trajectories.append(Coordinates_i)
+
+        if epoch%100 == 0:
+            print("epoch = ", epoch)
+            print("     loss = ", loss_current)
+            print("     loss_decrease = ", loss_decrease)
+            print()
+            print("stagnancy counter ", stagnancy_counter)
+            print("loss counter ", loss_counter)
+
+            # for p in model.parameters():
+            #     if p.requires_grad:
+            #         print(p, p.grad.view(-1))
+            # print()
+
+
+            Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
+
+    Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+
+    print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
+    # print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
+
+    return error, error2, Coord_trajectories
 
 

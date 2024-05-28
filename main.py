@@ -37,7 +37,7 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 160                                             # Number of Nodes in the Mesh
+np = 80                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175                                             # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -50,7 +50,7 @@ DirichletDictionryList = [  {"Entity": 1,
 
 # Definition of the space discretisation
 alpha = 0.0                                       # Weight for the Mesh regularisation 
-order = 1                                          # Order of the shape functions
+order = 2                                          # Order of the shape functions
 dimension = 1
 
 if order ==1:
@@ -252,29 +252,26 @@ if not ParametricStudy:
                                         dtype=torch.float32, requires_grad=True).to(mps_device)
 
 
-        CoordinatesDataset = Dataset(torch.tensor([[i] for i in torch.linspace(0,L,10*BeamModel_u.NElem)], dtype=torch.float64, requires_grad=True))
-        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=10*BeamModel_u.NElem, shuffle=True)
+        CoordinatesDataset = Dataset(torch.tensor([[i] for i in torch.linspace(0,L,30*BeamModel_u.NElem)], dtype=torch.float64, requires_grad=True))
+        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=30*BeamModel_u.NElem, shuffle=True)
         print("Number of batches per epoch = ", len(CoordinatesBatchSet))
 
 
         BeamModel_du.Freeze_Mesh()
-        BeamModel_u.Freeze_Mesh()
-        
-        BeamModel_u.UnFreeze_Mesh()
-        BeamModel_du.UnFreeze_Mesh()
+        BeamModel_u.Freeze_Mesh()   
+        # BeamModel_u.UnFreeze_Mesh()
+        # BeamModel_du.UnFreeze_Mesh()
 
 
-
-        n_epochs = 10000
+        n_epochs = 8000
         error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
                                                                                         CoordinatesBatchSet, PlotCoordTensor, 
                                                                                         optimizer, n_epochs, 
                                                                                         BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData, 
                                                                                         L,1)
-
-        n_epochs = 1
+        n_epochs = 100
         
-        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,50*BeamModel_u.NElem)], dtype=torch.float32, requires_grad=True)
+        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,30*BeamModel_u.NElem)], dtype=torch.float32, requires_grad=True)
 
         # Second stage on 500 points only.
         Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,

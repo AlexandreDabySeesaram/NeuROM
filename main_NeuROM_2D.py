@@ -115,20 +115,25 @@ filename = 'Geometries/'+Domain_mesh.name_mesh
 mesh = pv.read(filename)
 
 Nodes = np.stack(Domain_mesh.Nodes)
+parameter = 5e-3
 
 Param_trial = torch.tensor([parameter],dtype=torch.float32)
 Param_trial = Param_trial[:,None] # Add axis so that dimensions match
 Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
-
+BeamROM.eval()
 u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
 u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
 
 
 # Plot the mesh
-scalar_field_name = 'U'
+scalar_field_name = 'Ux'
 mesh.point_data['U'] = u.data
+mesh.point_data['Ux'] = u[:,0].data
+mesh.point_data['Uy'] = u[:,1].data
+mesh.point_data['Uz'] = u[:,2].data
+
 plotter = pv.Plotter()
-plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='coolwarm', scalar_bar_args={'title': 'Displacement', 'vertical': True})
+plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
 plotter.show()
 
 #%% Parametric
@@ -145,33 +150,28 @@ Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
 BeamROM.eval()
 u_sol = BeamROM(meshBeam.points,Para_coord_list)
 u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
-
+mesh.point_data['U'] = u.data
+mesh.point_data['Ux'] = u[:,0].data
+mesh.point_data['Uy'] = u[:,1].data
+mesh.point_data['Uz'] = u[:,2].data
 
 
 # Function to update the solution based on the parameter
-def update_solution(slider):
-    global parameter
-    parameter = slider.value
-
+def update_solution(value):
+    parameter = value
     Param_trial = torch.tensor([parameter],dtype=torch.float32)
     Param_trial = Param_trial[:,None] # Add axis so that dimensions match
     Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
     u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
     u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
     mesh.point_data['U'] = u.data
-
+    mesh.point_data['Ux'] = u[:,0].data
+    mesh.point_data['Uy'] = u[:,1].data
+    mesh.point_data['Uz'] = u[:,2].data
     plotter.update()
 
-# Create a PyVista plotter
-plotter = pv.Plotter()
-plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='coolwarm', scalar_bar_args={'title': 'Displacement', 'vertical': True})
-
-# Create a slider widget
-slider = pv.Slider(title="Parameter", min_value=1e-3, max_value=10e-3, value=parameter, callback=update_solution)
-plotter.add_widget(slider)
-
-# Show the plot
-plotter.show()
+p.add_slider_widget(update_solution, [1e-3, 10e-3], title='Stifness')
+p.show()
 
 
 

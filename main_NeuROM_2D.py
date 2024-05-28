@@ -10,6 +10,7 @@ import Post.Plots as Pplot
 import time
 import os
 import matplotlib.pyplot as plt
+from importlib import reload  # Python 3.4+
 
 #%% Build model
 
@@ -25,7 +26,7 @@ Mat = pre.Material( flag_lame = False,                          # If True should
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 1                                                 # Maximum element size of the mesh
+MaxElemSize = 0.5                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -70,7 +71,7 @@ n_modes = 100
 BeamROM = NeuROM(Domain_mesh, ParameterHypercube, n_modes_ini,n_modes_max)
 BeamROM.train()
 BeamROM.TrainingParameters(    Stagnation_threshold = 1e-7, 
-                                Max_epochs = 5000, 
+                                Max_epochs = 10000, 
                                 learning_rate = 0.001)
 u_predicted,xg,detJ = BeamROM.Space_modes[0]()
 optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=BeamROM.learning_rate)
@@ -97,12 +98,12 @@ Loss_vect, Duration = Training_2D_NeuROM(BeamROM, Para_coord_list, optimizer, Be
 
 #%% Post 
 u_k,xg_k,detJ_k = BeamROM.Space_modes[0]()
-
 Pplot.Plot2Dresults(u_k, xg_k, '2D_ROM_FirstMode')
-
 u_k2,xg_k2,detJ_k2 = BeamROM.Space_modes[1]()
-
 Pplot.Plot2Dresults(u_k2, xg_k2, '2D_ROM_SecondMode')
+
+Pplot.PlotParaModes(BeamROM,Para_coord_list,'name_model')
+
 
 # %% Pyvista plot
 
@@ -126,7 +127,7 @@ u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0]
 
 
 # Plot the mesh
-scalar_field_name = 'Ux'
+scalar_field_name = 'Uy'
 mesh.point_data['U'] = u.data
 mesh.point_data['Ux'] = u[:,0].data
 mesh.point_data['Uy'] = u[:,1].data
@@ -148,31 +149,31 @@ Param_trial = Param_trial[:,None] # Add axis so that dimensions match
 Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
 
 BeamROM.eval()
-u_sol = BeamROM(meshBeam.points,Para_coord_list)
+u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
 u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
 mesh.point_data['U'] = u.data
 mesh.point_data['Ux'] = u[:,0].data
 mesh.point_data['Uy'] = u[:,1].data
 mesh.point_data['Uz'] = u[:,2].data
 plotter = pv.Plotter()
-plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
-
 
 # Function to update the solution based on the parameter
 def update_solution(value):
+    # plotter.clear()
     parameter = value
     Param_trial = torch.tensor([parameter],dtype=torch.float32)
     Param_trial = Param_trial[:,None] # Add axis so that dimensions match
     Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
     u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
     u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+    mesh = pv.read(filename)
+    u[:,2]+=200*value
     mesh.point_data['U'] = u.data
     mesh.point_data['Ux'] = u[:,0].data
     mesh.point_data['Uy'] = u[:,1].data
     mesh.point_data['Uz'] = u[:,2].data
-    # plotter.update()
-    plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
-
+    plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+    return
 
 plotter.add_slider_widget(update_solution, [1e-3, 10e-3], title='Stifness')
 plotter.show()

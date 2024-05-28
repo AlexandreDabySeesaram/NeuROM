@@ -419,6 +419,28 @@ def PlotModesBi(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model
     plt.clf()
         # plt.show()
 
+def PlotParaModes(BeamROM,TrialPara,name_model):
+    import torch
+
+    for mode in range(BeamROM.n_modes_truncated):
+        Para_mode_List = [BeamROM.Para_modes[mode][l](TrialPara[l][:,0].view(-1,1))[:,None] for l in range(BeamROM.n_para)]
+        if mode == 0:
+            lambda_i = [torch.unsqueeze(Para_mode_List[l],dim=0) for l in range(BeamROM.n_para)]
+        else:
+            New_mode = Para_mode_List
+            lambda_i = [torch.vstack((lambda_i[l],torch.unsqueeze(New_mode[l],dim=0))) for l in range(BeamROM.n_para)]
+
+
+    for mode in range(BeamROM.n_modes_truncated):
+        plt.plot(TrialPara[0].data,lambda_i[0][mode,:,0].data,label='Mode'+str(mode+1))
+        plt.xlabel('E (GPa)')
+        plt.legend(loc="upper left")
+    plt.savefig('Results/Pre_trained_Para_modes_E1'+str(BeamROM.n_modes_truncated)+'.pdf', transparent=True)  
+    plt.clf()
+
+
+        # plt.show()
+
 def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     import matplotlib as mpl
     my_dpi = 50

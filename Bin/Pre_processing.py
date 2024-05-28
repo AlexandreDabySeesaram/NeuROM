@@ -53,7 +53,18 @@ def PrintWelcome():
  |_| \_|\___|\__,_|_| \_\ ___/|_|  |_|\n\n " + \
 "                 "+version)
 
-
+class Material():
+    def __init__(self,flag_lame,coef1,coef2):
+        if flag_lame:
+            self.lmbda = coef1                                               # First Lamé's coefficient
+            self.mu = coef2                                                  # Second Lamé's coefficient
+            self.E = self.mu*(3*self.lmbda+2*self.mu)/(self.lmbda+self.mu)                            # Young's modulus
+            self.nu = self.lmbda/(2*(self.lmbda+self.mu))                                   # Poisson's ratio
+        else:
+            self.E = coef1                                                   # Young's modulus (GPa)
+            self.nu = coef2                                                  # Poisson's ratio
+            self.lmbda = (self.E*self.nu)/((1+self.nu)*(1-2*self.nu))                            # First Lamé's coefficient
+            self.mu = self.E/(2*(1+self.nu))                                           # Second Lamé's coefficient
                                                                                                                                     
 class Mesh:
     def __init__(self,name,h_max, h_min, order, dimension):
@@ -67,10 +78,12 @@ class Mesh:
         self.name = name
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_min_str+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
+        self.borders_exist = False
     
     def AddBorders(self,borders):
         self.borders = borders
         self.borders_nodes = []
+        self.borders_exist = True
 
     def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
@@ -235,15 +248,16 @@ class Mesh:
 
         if flag_update:
             points = np.array(self.Nodes)[:,1:]
+            cells = (self.Connectivity-1).astype(np.int32)
         else:
             points = meshBeam.points
-
-        # crete meshio mesh based on points and cells from .msh file
+            cells = meshBeam.cells_dict["triangle"]
+        # create meshio mesh based on points and cells from .msh file
 
         if self.order =='1':
-            mesh = meshio.Mesh(points, {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points, {"triangle":cells})
             meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle"]})
+            mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
             meshio.write(msh_name[0:-4]+".xml", mesh)
 
         elif self.order =='2':

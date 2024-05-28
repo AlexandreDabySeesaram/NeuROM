@@ -199,13 +199,13 @@ class MeshNN(nn.Module):
  
         return self.SumLayer(u)
     
-    def SetBCs(self,u_0,u_L):
+    def SetBCs(self,u_d):
         """Set the two Dirichlet boundary conditions
         Args:
-            u_0 (Float): The left BC
-            u_L (Float): The right BC """
-        self.u_0 = torch.tensor(u_0, dtype=torch.float64)
-        self.u_L = torch.tensor(u_L, dtype=torch.float64)
+            u_d (Float list): The left and right BCs"""
+
+        self.u_0 = torch.tensor(u_d[0], dtype=torch.float32)
+        self.u_L = torch.tensor(u_d[1], dtype=torch.float32)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -305,35 +305,58 @@ class InterpPara(nn.Module):
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
-    def __init__(self, mesh, BCs, n_modes, ParametersList):
+    def __init__(self, mesh, ParametersList, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
-        IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
+        IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
             n_modes+=1
         self.IndexesNon0BCs = IndexesNon0BCs
-        self.n_modes = n_modes
-        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(1))
+        self.n_modes = n_modes_max
+        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
+        self.dimension = mesh.dimension
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
+
         self.n_para = len(ParametersList)
-        self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
-        # self.Para_Nets = nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList])
+        match mesh.dimension:
+            case '1':
+                self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
+            case '2':
+                self.Space_modes = nn.ModuleList([MeshNN_2D(mesh, n_components= 2) for i in range(self.n_modes)])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
+
         if IndexesNon0BCs:
             # First modes get the Boundary conditions
-            self.Space_modes[0].SetBCs(BCs[0],BCs[1])
+            self.Space_modes[0].SetBCs(mesh.ListOfDirichletsBCsValues)
             for para in range(self.n_para):
                 self.Para_modes[0][para].InterpoLayer.weight.data.fill_(1) # Mode for parameters not trained and set to 1 to get correct space BCs
                 self.Para_modes[0][para].Freeze_FEM()
             # Following modes are homogeneous (admissible to 0)
             for i in range(1,self.n_modes):
-                self.Space_modes[i].SetBCs(0,0)
+                self.Space_modes[i].SetBCs([0]*len(mesh.ListOfDirichletsBCsValues))
         else:
             for i in range(self.n_modes):
-                self.Space_modes[i].SetBCs(0,0)
+                self.Space_modes[i].SetBCs([0]*len(mesh.ListOfDirichletsBCsValues))
+
         self.FreezeAll()
         self.UnfreezeTruncated()
+    def train(self):
+        self.training = True
+        for i in range(self.n_modes_truncated):
+            self.Space_modes[i].train() 
+
+    def eval(self):
+        self.training = False
+        for i in range(self.n_modes_truncated):
+            self.Space_modes[i].eval()  
+
+    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.Stagnation_threshold = Stagnation_threshold
+        self.Max_epochs = Max_epochs
+        self.learning_rate = learning_rate
+
+
     def FreezeAll(self):
         """This method allows to freeze all sub neural networks"""
         self.Freeze_Mesh()
@@ -418,17 +441,6 @@ class NeuROM(nn.Module):
                 self.Para_modes[i][j].UnFreeze_FEM()  
 
     def forward(self,x,mu):
-        Orthgonality = False                                    # Enable othogonality constraint of the space modes
-        if Orthgonality and self.training:
-            Space_modes_nodal = [torch.unsqueeze(self.Space_modes[l].InterpoLayer_uu.weight.data,dim=1) for l in range(self.n_modes_truncated)]
-            Space_modes_nodal = torch.cat(Space_modes_nodal,dim=1)
-            Space_modes_nodal = GramSchmidt(Space_modes_nodal)
-            for mode in range(self.n_modes_truncated):
-                self.Space_modes[mode].InterpoLayer_uu.weight.data = Space_modes_nodal[:,mode]
-
-        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
-        Space_modes = torch.cat(Space_modes,dim=1)
-
         # Use list comprehension to create Para_modes
         Para_mode_Lists = [
         [self.Para_modes[mode][l](mu[l][:,0].view(-1,1))[:,None] for l in range(self.n_para)]
@@ -440,11 +452,28 @@ class NeuROM(nn.Module):
             for l in range(self.n_para)
         ]
 
-        if len(mu)==1:
-            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
-        elif len(mu)==2:
-            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
-                            Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+        match self.dimension:
+            case '1':
+                Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
+                Space_modes = torch.cat(Space_modes,dim=1)
+
+
+
+                if len(mu)==1:
+                    out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                elif len(mu)==2:
+                    out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
+                                    Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+            
+            case '2':
+                Space_modes = []
+                for i in range(self.n_modes_truncated):
+                    IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                    u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                    Space_modes.append(u_k)
+                u_i = torch.stack(Space_modes,dim=2)
+                P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                out = torch.einsum('xyk,kj->xyj',u_i,P1)
         return out
 
 class InterpolationBlock2D_Lin(nn.Module):
@@ -739,74 +768,87 @@ class MeshNN_2D(nn.Module):
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
         self.borders_nodes = mesh.borders_nodes
         self.elements_generation = np.ones(self.connectivity.shape[0])
-
+        self.ListOfDirichletsBCsRelation = mesh.ListOfDirichletsBCsRelation
+        self.ListOfDirichletsBCsConstit = mesh.ListOfDirichletsBCsConstit
+        self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes
+        self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
+        # self.normals = mesh.normals
+        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem = mesh.NElem
+        self.n_components = n_components
+        self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
+        self.mesh = mesh
         if mesh.NoBC==False:
-            for i in range(len(mesh.ListOfDirichletsBCsValues)):
-                if mesh.ListOfDirichletsBCsRelation[i] == False:
-                    if mesh.ListOfDirichletsBCsConstit[i] == False:
-                        IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                        self.frozen_BC_node_IDs.append(IDs)
-                        self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
-                        self.values[IDs,mesh.ListOfDirichletsBCsNormals[i]] = mesh.ListOfDirichletsBCsValues[i]
-                        # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                        # print("    Simple BC ")
-                        # print("      IDs : ", IDs)
-                        # print("      component : ", mesh.ListOfDirichletsBCsNormals[i])
-                        # print("      values : ", mesh.ListOfDirichletsBCsValues[i])
-                        # print()
-                else:
-                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                    self.relation_BC_lines.append(IDs)
+            self.SetBCs(mesh.ListOfDirichletsBCsValues)
+            self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+        else:
+            self.NBCs = 0
+
+        self.order = mesh.order
+        if mesh.order =='1':
+            self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
+            self.Interpolation = InterpolationBlock2D_Lin(mesh.Connectivity)
+        elif mesh.order == '2':
+            self.ElementBlock = ElementBlock2D_Quad(mesh.Connectivity)
+            self.Interpolation = InterpolationBlock2D_Quad(mesh.Connectivity)
+
+        # set parameters 
+        self.RefinementParameters()
+        self.TrainingParameters()
+
+
+
+    def SetBCs(self, ListOfDirichletsBCsValues):
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsRelation[i] == False:
+                if self.ListOfDirichletsBCsConstit[i] == False:
+                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
                     IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                    self.relation_BC_node_IDs.append(IDs)
-                    self.relation_BC_values.append(mesh.ListOfDirichletsBCsValues[i])
-                    #self.relation_BC_normals.append(mesh.normals[IDs])
-                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    # print("    Relation BC ")
-                    # print("      IDs : ", IDs)
-                    # print("      values : ", self.relation_BC_values)
-                    # print()
+                    self.frozen_BC_node_IDs.append(IDs)
+                    self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
+                    self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
 
-            for i in range(len(mesh.ListOfDirichletsBCsValues)):
-                if mesh.ListOfDirichletsBCsConstit[i] == True:
-                    IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+            else:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                self.relation_BC_node_IDs.append(IDs)
+                self.relation_BC_values.append(ListOfDirichletsBCsValues[i])
+                # self.relation_BC_normals.append(self.normals[IDs])
 
-                    if len(self.relation_BC_node_IDs)>0:
-                        delete_relation = torch.cat(self.relation_BC_node_IDs)
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsConstit[i] == True:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
 
-                        for elem in IDs:
-                            if elem in delete_relation:
-                                IDs = IDs[IDs!=elem]
-                    if len(self.frozen_BC_node_IDs)>0:
-                        delete_simple = torch.cat(self.frozen_BC_node_IDs)
-                        for elem in IDs:
-                            if elem in delete_simple:
-                                IDs = IDs[IDs!=elem]
+                if len(self.relation_BC_node_IDs)>0:
+                    delete_relation = torch.cat(self.relation_BC_node_IDs)
 
-                    self.constit_BC_node_IDs.append(IDs)
+                    for elem in IDs:
+                        if elem in delete_relation:
+                            IDs = IDs[IDs!=elem]
+                if len(self.frozen_BC_node_IDs)>0:
+                    delete_simple = torch.cat(self.frozen_BC_node_IDs)
+                    for elem in IDs:
+                        if elem in delete_simple:
+                            IDs = IDs[IDs!=elem]
 
-                    # print("  Entity : ", mesh.ListOfDirichletsBCsIds[i])
-                    # print("    Constitutive BC ")
-                    # print("      IDs : ", IDs)
-                    # print()
+                self.constit_BC_node_IDs.append(IDs)
 
-
-        if n_components ==2:
+        if self.n_components ==2:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
             self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
             self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
-
-        elif n_components ==3:
+        elif self.n_components ==3:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
             self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
             self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
             self.nodal_values_xy = nn.ParameterList([nn.Parameter(torch.tensor([i[2]])) for i in self.values])
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
 
+
+        print("self.nodal_values = ", len(self.nodal_values), (len(self.nodal_values[0])))
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
@@ -822,6 +864,11 @@ class MeshNN_2D(nn.Module):
         elif mesh.order == '2':
             self.ElementBlock = ElementBlock2D_Quad(mesh.Connectivity)
             self.Interpolation = InterpolationBlock2D_Quad(mesh.Connectivity)
+
+
+
+        print("----------------------------------------------")
+
 
         print("----------------------------------------------")
         print()
@@ -858,18 +905,24 @@ class MeshNN_2D(nn.Module):
 
         new_connectivity = self.connectivity
         new_generation = self.elements_generation
+        new_det = self.detJ_0.numpy()
+        curren_det = new_det[edge_id]
+
         curren_gen = new_generation[edge_id]
 
         new_connectivity = np.delete(new_connectivity,(edge_id),axis = 0)
         new_generation = np.delete(new_generation,(edge_id),axis = 0)
+        new_det = np.delete(new_det,(edge_id),axis = 0)
 
         new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
                                 [edge_nodes[1], new_node, Third_node[0]]])
         new_connectivity = np.vstack((new_connectivity,new_elem))
         new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 2, axis=None)))
+        new_det = np.hstack((new_det,np.repeat(np.array(curren_det/2), 2, axis=None)))
 
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
+        self.detJ_0 = torch.tensor(new_det)
 
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
@@ -878,6 +931,35 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
 
+    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.Stagnation_threshold = Stagnation_threshold
+        self.Max_epochs = Max_epochs
+        self.learning_rate = learning_rate
+
+    def Initresults(self):
+        self.U_interm = []
+        self.X_interm = []
+        self.G_interm = []
+        self.Connectivity_interm = []
+        self.Jacobian_interm = []
+
+
+    def StoreResults(self):
+        u_x = [u for u in self.nodal_values_x]
+        u_y = [u for u in self.nodal_values_y]
+        u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+        self.U_interm.append(u.data)
+        new_coord = [coord for coord in self.coordinates]
+        new_coord = torch.cat(new_coord,dim=0)
+        self.X_interm.append(new_coord)
+        self.G_interm.append(self.elements_generation)
+        self.Connectivity_interm.append(self.connectivity-1)
+        self.Jacobian_interm.append(self.detJ_0)
+
+    def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
+        self.MaxGeneration = MaxGeneration
+        self.Jacobian_threshold = Jacobian_threshold
+        self.MaxGeneration_elements = 0
 
     def SplitElemNonLoc(self, el_id):
         nodes = self.connectivity[el_id]
@@ -914,10 +996,15 @@ class MeshNN_2D(nn.Module):
             self.coordinates.append(New_coordinates[None,i])
         new_connectivity = self.connectivity
         new_generation = self.elements_generation
+        new_det = self.detJ_0.numpy()
+
         # Remove splitted element
         new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
         curren_gen = new_generation[el_id]
+        curren_det = new_det[el_id]
         new_generation = np.delete(new_generation,(el_id),axis = 0)
+        new_det = np.delete(new_det,(el_id),axis = 0)
+
         #Evaluate new nodale values:
         self.eval()
         newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
@@ -929,8 +1016,12 @@ class MeshNN_2D(nn.Module):
         # Update connectivity
         new_connectivity = np.vstack((new_connectivity,new_elem))
         new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 4, axis=None)))
+        new_det = np.hstack((new_det,np.repeat(np.array(curren_det/4), 4, axis=None)))
+
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
+        self.detJ_0 = torch.tensor(new_det)
+
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
@@ -951,10 +1042,15 @@ class MeshNN_2D(nn.Module):
                 Removed_elem_list.append(edge)
             else:
                 self.coordinates[-(3-i)].requires_grad = False
+                if not (self.nodal_values[0][int(node_edge[0])-1].requires_grad and self.nodal_values[0][int(node_edge[1])-1].requires_grad):
+                    self.nodal_values[0][-(3-i)].requires_grad = False
+                if not (self.nodal_values[1][int(node_edge[0])-1].requires_grad and self.nodal_values[1][int(node_edge[1])-1].requires_grad):
+                    self.nodal_values[1][-(3-i)].requires_grad = False
         return Removed_elem_list
 
-    def forward(self,x, el_id):
-        if self.training and self.Mixed == False:
+    def forward(self,x = 'NaN', el_id = 'NaN'):
+        if self.training:
+            el_id = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
             interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.training)
         
@@ -965,7 +1061,7 @@ class MeshNN_2D(nn.Module):
 
             return interpol
 
-    def UnFreeze_Values(self):
+    def UnFreeze_FEM(self):
         """Set the coordinates as trainable parameters """
         # print("Unfreeze values")
 
@@ -978,24 +1074,18 @@ class MeshNN_2D(nn.Module):
             # print("excluded : ", self.ExcludeFromDirichlet)
             values = self.nodal_values[self.frozen_BC_component_IDs[j]]
             frozen = self.frozen_BC_node_IDs[j]
-            
-            all_excluded =  [f in self.ExcludeFromDirichlet for f in frozen]
-
-            if all(all_excluded) == False:
-                # print("Excluded")
-
-                for idf in frozen:
-                    if idf not in self.ExcludeFromDirichlet:
-                        values[idf].requires_grad = False
-                    else:
-                        values[idf].requires_grad = True
-            else:
-                # print("Not excluded")
-                for idf in frozen:
+            for idf in frozen:
+                if idf not in self.ExcludeFromDirichlet:
                     values[idf].requires_grad = False
-        print()
+                else:
+                    values[idf].requires_grad = True
 
-
+    def Freeze_FEM(self):
+        """Set the coordinates as untrainable parameters """
+        for dim in self.nodal_values:
+            for val in dim:
+                val.requires_grad = False
+      
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
         for param in self.coordinates:

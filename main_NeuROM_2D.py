@@ -137,9 +137,68 @@ plotter = pv.Plotter()
 plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
 plotter.show()
 
-#%% Parametric
+#%% Parametric 3D static
+plotter.close()
+filename = 'Geometries/'+Domain_mesh.name_mesh
+mesh = pv.read(filename)
+# Define the parameter to adjust and its initial value
+parameter = 1e-3
+
+Param_trial = torch.tensor([parameter],dtype=torch.float32)
+Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+
+BeamROM.eval()
+u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
+u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+mesh.point_data['U'] = u.data
+mesh.point_data['Ux'] = u[:,0].data
+mesh.point_data['Uy'] = u[:,1].data
+mesh.point_data['Uz'] = u[:,2].data
+plotter = pv.Plotter()
+u[:,2]+=200*parameter
+plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+
+# Function to update the solution based on the parameter
+def update_solution(value):
+    # plotter.clear()
+    parameter = value
+    Param_trial = torch.tensor([parameter],dtype=torch.float32)
+    Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+    Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+    u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
+    u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+    mesh = pv.read(filename)
+    u[:,2]+=200*value
+    # mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
+    mesh.point_data['U'] = u.data
+    mesh.point_data['Ux'] = u[:,0].data
+    mesh.point_data['Uy'] = u[:,1].data
+    mesh.point_data['Uz'] = u[:,2].data
+    plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+    return
+labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
+
+parameters_vect = [2e-3,3e-3,4e-3,5e-3,6e-3,7e-3,8e-3,9e-3,10e-3]
+
+for param in parameters_vect:
+    update_solution(param)
+plotter.show_grid(
+    color='gray',
+    location='outer',
+    grid='back',
+    ticks='outside',
+    xtitle='x (mm)',
+    ytitle='y (mm)',
+    ztitle='E (MPa)',
+    font_size=10,
+)
+plotter.add_axes(**labels)
+plotter.show()
 
 
+#%% Parametric remove previous instance
+plotter.close()
 
 # Define the parameter to adjust and its initial value
 parameter = 5e-3
@@ -156,9 +215,10 @@ mesh.point_data['Ux'] = u[:,0].data
 mesh.point_data['Uy'] = u[:,1].data
 mesh.point_data['Uz'] = u[:,2].data
 plotter = pv.Plotter()
+plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
 
 # Function to update the solution based on the parameter
-def update_solution(value):
+def update_solution2(value):
     # plotter.clear()
     parameter = value
     Param_trial = torch.tensor([parameter],dtype=torch.float32)
@@ -166,18 +226,16 @@ def update_solution(value):
     Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
     u_sol = BeamROM(torch.tensor(Nodes[:,1:]),Para_coord_list)
     u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
-    mesh = pv.read(filename)
-    u[:,2]+=200*value
+    # u[:,2]+=200*value
+    mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
     mesh.point_data['U'] = u.data
     mesh.point_data['Ux'] = u[:,0].data
     mesh.point_data['Uy'] = u[:,1].data
     mesh.point_data['Uz'] = u[:,2].data
-    plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+    mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True)
+    # plotter.render()
     return
 
-plotter.add_slider_widget(update_solution, [1e-3, 10e-3], title='Stifness')
+plotter.add_slider_widget(update_solution2, [1e-3, 10e-3], title='Stiffness (MPa)')
 plotter.show()
-
-
-
 # %%

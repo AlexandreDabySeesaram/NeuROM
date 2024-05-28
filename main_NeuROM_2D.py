@@ -154,6 +154,8 @@ mesh.point_data['U'] = u.data
 mesh.point_data['Ux'] = u[:,0].data
 mesh.point_data['Uy'] = u[:,1].data
 mesh.point_data['Uz'] = u[:,2].data
+plotter = pv.Plotter()
+plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
 
 
 # Function to update the solution based on the parameter
@@ -168,10 +170,12 @@ def update_solution(value):
     mesh.point_data['Ux'] = u[:,0].data
     mesh.point_data['Uy'] = u[:,1].data
     mesh.point_data['Uz'] = u[:,2].data
-    plotter.update()
+    # plotter.update()
+    plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
 
-p.add_slider_widget(update_solution, [1e-3, 10e-3], title='Stifness')
-p.show()
+
+plotter.add_slider_widget(update_solution, [1e-3, 10e-3], title='Stifness')
+plotter.show()
 
 
 

@@ -199,6 +199,7 @@ plotter.show()
 
 #%% Parametric remove previous instance
 plotter.close()
+mesh = pv.read(filename)
 
 # Define the parameter to adjust and its initial value
 parameter = 5e-3

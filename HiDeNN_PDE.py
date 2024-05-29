@@ -797,7 +797,6 @@ class MeshNN_2D(nn.Module):
         self.TrainingParameters()
 
 
-
     def SetBCs(self, ListOfDirichletsBCsValues):
         for i in range(len(ListOfDirichletsBCsValues)):
             if self.ListOfDirichletsBCsRelation[i] == False:
@@ -848,30 +847,8 @@ class MeshNN_2D(nn.Module):
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
 
 
-        print("self.nodal_values = ", len(self.nodal_values), (len(self.nodal_values[0])))
-
-        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
-        self.NElem = mesh.NElem
-    
-        if mesh.NoBC==False:
-            self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
-        else:
-            self.NBCs = 0
-        self.order = mesh.order
-        if mesh.order =='1':
-            self.ElementBlock = ElementBlock2D_Lin(mesh.Connectivity)
-            self.Interpolation = InterpolationBlock2D_Lin(mesh.Connectivity)
-        elif mesh.order == '2':
-            self.ElementBlock = ElementBlock2D_Quad(mesh.Connectivity)
-            self.Interpolation = InterpolationBlock2D_Quad(mesh.Connectivity)
 
 
-
-        print("----------------------------------------------")
-
-
-        print("----------------------------------------------")
-        print()
 
     def SplitElem(self, el_id,point,value):
         nodes = self.connectivity[el_id]

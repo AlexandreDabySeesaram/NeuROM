@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
-from Bin.Training import Training_2D_Integral
+from Bin.Training import Training_2D_Integral, Training_2D_Integral_LBFGS
 import Post.Plots as Pplot
 import time
 import os
@@ -14,30 +14,34 @@ import matplotlib.pyplot as plt
 
 #%% Choose geometry
 # Name = 'Rectangle'
-# Name = 'Square'
-Name = 'Hole'
+Name = 'Square'
+# Name = 'Hole'
 # Name = 'Square_small'
 # Name = 'Hole_3'
 # Name = 'L_shape'
 # Name = 'Square_Holes_3'
 
 # Initialise meterial
-Mat = pre.Material( flag_lame = False,                         # If True should input lmbda and mu instead
-                    coef1 = 5*1e-3,                                    # Young Modulus
-                    coef2 = 0.3                                    # Poisson's ratio
+Mat = pre.Material( flag_lame = True,                         # If True should input lmbda and mu instead
+                    #coef1 = 5*1e-3,                                    # Young Modulus
+                    # coef2 = 0.3                                    # Poisson's ratio
+                    coef1 = 1.25,
+                    coef2 = 1.0
                     )
 
 
 # Create mesh
-order = 1                                                       # Order of the FE interpolation
+order = 1    
+n_integration_points = 1
+                                                   # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 5                                                 # Maximum element size of the mesh
+MaxElemSize = 0.125                                             # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
 DirichletDictionryList = [  {"Entity": 111, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 111, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False},
-                            {"Entity": 113, "Value": 0, "Normal": 1, "Relation": False, "Constitutive": False},
+                            {"Entity": 113, "Value": 1, "Normal": 1, "Relation": False, "Constitutive": False},
                             {"Entity": 113, "Value": 0, "Normal": 0, "Relation": False, "Constitutive": False}
                             ]
 
@@ -54,9 +58,9 @@ Domain_mesh.ExportMeshVtk()
 
 # Create model
 n_component = 2                                                 # Number of components of the interpolated field
-Model_2D = MeshNN_2D(Domain_mesh, n_component)                  # Create the associated model (with 2 components)
+Model_2D = MeshNN_2D(Domain_mesh, n_component, n_integration_points)                  # Create the associated model (with 2 components)
 Model_2D.UnFreeze_FEM()
-Model_2D.UnFreeze_Mesh()
+# Model_2D.UnFreeze_Mesh()
 Model_2D.Freeze_Mesh()
 
 
@@ -76,13 +80,13 @@ learning_rate = 0.001                                           # optimizer lear
 Model_2D.RefinementParameters(  MaxGeneration = 2, 
                                 Jacobian_threshold = 0.5)
                                 
-Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 5000, 
+Model_2D.TrainingParameters(    Stagnation_threshold = 1e-8, 
+                                Max_epochs = 12000, 
                                 learning_rate = 0.001)
 
 #%% Training 
 # Fisrt stage
-max_refinment = 3
+max_refinment = 1
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -106,7 +110,12 @@ while n_refinement < max_refinment and not stagnation:
     n_epochs = 3000
     if n_refinement>4:
         n_epochs = 1000
-    Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+    # Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+
+    optimizer = torch.optim.LBFGS(Model_2D.parameters(),line_search_fn="strong_wolfe")
+    Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, optimizer, n_epochs,List_elems,Mat)
+
+
     # Save current convergence state
     Loss_tot += Loss_vect
     Duration_tot += Duration
@@ -208,6 +217,7 @@ sigma_VM = VonMises(sigma)
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
+
 Coord_converged = np.array([[Model_2D.coordinates[i][0][0].item(),Model_2D.coordinates[i][0][1].item(),0] for i in range(len(Model_2D.coordinates))])
 Connect_converged = Model_2D.connectivity
 sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
@@ -217,37 +227,32 @@ sol.write(
     "Results/Paraview/sol_u_end_training_gravity_NoBCs_fixed_"+Name+".vtk", 
 )
 
-#%% Export intermediate convergence steps
-meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
+# #%% Export intermediate convergence steps
+# meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
 
-U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
+# U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
 
-for timestep in range(len(U_interm_tot)):
-    sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
-    point_data={"U":U_interm_tot[timestep]}, 
-    cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
+# for timestep in range(len(U_interm_tot)):
+#     sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
+#     point_data={"U":U_interm_tot[timestep]}, 
+#     cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
-    sol.write(
-        f"Results/Paraview/TimeSeries/solution_multiscale_gravity_NoBCs_fixed_"+Name+f"_{timestep}.vtk",  
-    )
-
+#     sol.write(
+#         f"Results/Paraview/TimeSeries/solution_multiscale_gravity_NoBCs_fixed_"+Name+f"_{timestep}.vtk",  
+#     )
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
 
-# coord = torch.tensor(numpy.load("Results_Mixed/coordinates.npy"), dtype=torch.float64, requires_grad=True)
-IDs = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
+coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)
+List_elems = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
 
-Model_2D.eval()
-u_predicted = Model_2D(coord, IDs) 
+u = Model_2D(coord, List_elems)
+eps =  Strain(Model_2D(coord, List_elems),coord)
+sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
+sigma_VM = VonMises(sigma)
 
-du = torch.autograd.grad(u_predicted[0,:], coord, grad_outputs=torch.ones_like(u_predicted[0,:]), create_graph=True)[0]
-dv = torch.autograd.grad(u_predicted[1,:], coord, grad_outputs=torch.ones_like(u_predicted[0,:]), create_graph=True)[0]
-    
-s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
-
-stress_NN = torch.stack([s_11, s_22, s_12],dim=1)
-
-numpy.save("Results/u.npy", numpy.array(u_predicted.detach()))
-numpy.save("Results/stress_u.npy", numpy.array(stress_NN.detach()))
+np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_u.npy", np.array(u.detach()))
+np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_sigma.npy", np.array(sigma.detach()))
+np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_sigma_VM.npy", np.array(sigma_VM.detach()))
 

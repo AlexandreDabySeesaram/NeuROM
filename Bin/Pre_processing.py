@@ -67,16 +67,15 @@ class Material():
             self.mu = self.E/(2*(1+self.nu))                                           # Second Lamé's coefficient
                                                                                                                                     
 class Mesh:
-    def __init__(self,name,h_max, h_min, order, dimension):
+    def __init__(self, name, h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
         PrintWelcome()
         self.h_max_str = str(np.around(h_max, decimals=3))
-        self.h_min_str = str(np.around(h_min, decimals=3))
 
         self.order = str(order)
         self.dimension = str(dimension)
         self.name = name
-        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_min_str+'_'+self.h_max_str+'.msh'
+        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
         self.borders_exist = False
     
@@ -129,9 +128,8 @@ class Mesh:
             # -1 = Perform 1D mesh generation
             mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
                     ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
-                    ' -clmin '+self.h_min_str + \
                     ' -clmax '+self.h_max_str  
-                    #'- algo delquad'
+                    ##' -clmin '+self.h_min_str + '- algo delquad'
             os.system(mesh_command)        
          
     

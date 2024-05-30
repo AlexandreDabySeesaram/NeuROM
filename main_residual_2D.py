@@ -31,7 +31,7 @@ Mat = pre.Material( flag_lame = False,                         # If True should 
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 1                                                 # Maximum element size of the mesh
+MaxElemSize = 5                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -75,7 +75,7 @@ Model_2D.RefinementParameters(  MaxGeneration = 2,
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 10000, 
+                                Max_epochs = 5000, 
                                 learning_rate = 0.001)
 
 

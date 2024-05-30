@@ -19,6 +19,13 @@ from matplotlib.ticker import MaxNLocator
 
 from Bin.PDE_Library import Stress
 
+def export_csv(Name,y, x='None'):
+    import pandas as pd
+    x_values = list(range(1,len(y)))
+    a = np.stack((y,x_values),axis=1)
+    df = pd.DataFrame(a, columns=['y', 'x'])
+    df.to_csv('Results/'+Name+'.csv')
+
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 

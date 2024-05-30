@@ -312,7 +312,7 @@ def InternalEnergy_2D(u,x,lmbda, mu):
     W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
     return W_e
 
-def Gravity(theta,rho = 1):
+def Gravity(theta,rho = 1e-9):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
@@ -387,16 +387,58 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
             for l in range(model.n_para)
         ]    
-    lambda_debug = 1+0*lambda_i[0].to(torch.float64)
-    E_debug = (E[0][:,0]/E[0][:,0]).to(torch.float64)*5e-3
     E_float = E[0][:,0].to(torch.float64)
 
-    # W_int = torch.einsum('ij,ejm,eim,em,mp...,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_debug,lambda_debug,E_debug)
     W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
 
     # W_int = torch.einsum('ij,ejm,eim,em,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0].to(torch.float64),E[0][:,0].to(torch.float64))
     W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
     W_ext_e = torch.stack(W_ext_e,dim=1)
+    W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
+    # return (0.5*W_int)/(E[0].shape[0])
+
+def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
+    # Space_modes = [model.Space_modes[l]()[0] for l in range(model.n_modes_truncated)]
+    # # Need to extract the u_i and xg simultaneously to keep the linkj
+    # xg_modes = [model.Space_modes[l]()[1] for l in range(model.n_modes_truncated)]
+    # detJ_modes = [model.Space_modes[l]()[2] for l in range(model.n_modes_truncated)]
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            for l in range(model.n_para)
+        ]    
+    E_float = E[0][:,0].to(torch.float64)
+    theta_float = E[1][:,0].to(torch.float64)
+
+    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
+
+    Gravity_vect = Gravity(theta,rho = 1e-9)
+    
+    W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
+    W_ext_e = torch.stack(W_ext_e,dim=1)
+
+
     W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])

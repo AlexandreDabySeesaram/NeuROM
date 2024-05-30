@@ -53,9 +53,9 @@ Domain_mesh.ExportMeshVtk()
 n_modes_max = 100
 n_modes_ini = 2
 
-mu_min = 100
-mu_max = 200
-N_mu = 30
+theta_min = 100
+theta_max = 200
+N_theta = 30
 
 # Para Young
 Eu_min = 1e-3
@@ -63,8 +63,8 @@ Eu_max = 10e-3
 N_E = 10
 
 
-# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_A]])
-ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
+ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[theta_min,theta_max,N_theta]])
+# ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 
 n_modes = 100
 
@@ -75,11 +75,15 @@ BeamROM.TrainingParameters(    Stagnation_threshold = 1e-7,
                                 learning_rate = 0.001)
 u_predicted,xg,detJ = BeamROM.Space_modes[0]()
 optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=BeamROM.learning_rate)
-Param_trial = torch.linspace(Eu_min,Eu_max,50, 
+Param_trial1 = torch.linspace(Eu_min,Eu_max,50, 
                                     dtype=torch.float32, requires_grad=True)
-Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+Param_trial1 = Param_trial1[:,None] # Add axis so that dimensions match
 
-Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+Param_trial2 = torch.linspace(theta_min,theta_max,50, 
+                                    dtype=torch.float32, requires_grad=True)
+Param_trial2 = Param_trial2[:,None] # Add axis so that dimensions match
+
+Para_coord_list = nn.ParameterList((Param_trial1,Param_trial2))
 
 #%% Check init
 

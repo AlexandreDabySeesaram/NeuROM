@@ -1061,8 +1061,12 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
     
-def Training_2D_Integral_LBFGS(model, optimizer, n_epochs,List_elems,Mat):
-    
+def Training_2D_Integral_LBFGS(model, n_epochs,List_elems,Mat):
+    optimizer = torch.optim.LBFGS(list(model.parameters()),
+                    history_size=5, 
+                    max_iter=15, 
+                    tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")
     # Initialise vector of loss values
     Loss_vect = []
     print("**************** START TRAINING ***************\n")
@@ -1085,7 +1089,7 @@ def Training_2D_Integral_LBFGS(model, optimizer, n_epochs,List_elems,Mat):
         u_predicted,xg,detJ = model()
         def closure():
             optimizer.zero_grad()
-            loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+            loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
             loss.backward(retain_graph=True)
             return loss
         optimizer.step(closure)
@@ -1255,12 +1259,12 @@ def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
             u_predicted_star = u_predicted_star_list_x[i]
             eps_predicted_star = eps_predicted_star_list_x[i]
             loss += torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
-                                1*VolumeForcesEnergy_2D(u_predicted_star,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+                                1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
                                 *torch.abs(detJ)))
             u_predicted_star = u_predicted_star_list_y[i]
             eps_predicted_star = eps_predicted_star_list_y[i]
             loss +=  torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
-                                1*VolumeForcesEnergy_2D(u_predicted_star,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+                                1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
                                 *torch.abs(detJ)))
         # loss = torch.abs(loss)
         eval_time += time.time() - loss_time_start
@@ -1299,9 +1303,12 @@ def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
 
-def Training_2D_Residual_LBFGS(model, model_test, optimizer, n_epochs,List_elems,Mat):
-    
-    # Initialise vector of loss values
+def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
+    optimizer = torch.optim.LBFGS(list(model.parameters()),
+                    history_size=5, 
+                    max_iter=15, 
+                    tolerance_grad = 1.0e-9,
+                    line_search_fn="strong_wolfe")    # Initialise vector of loss values
     Loss_vect = []
     print("**************** START TRAINING ***************\n")
     time_start = time.time()
@@ -1325,7 +1332,7 @@ def Training_2D_Residual_LBFGS(model, model_test, optimizer, n_epochs,List_elems
     _,xg,detJ = model()
     model.eval()
     model_test.eval()
-    # Pre compute the teste displacement and test strains
+    # Pre compute the test displacements and test strains
     for dof in List_Dofs_free:
         model_test.values = 0*model_test.values
         model_test.values[dof,:] = torch.tensor([1., 0.])
@@ -1344,23 +1351,24 @@ def Training_2D_Residual_LBFGS(model, model_test, optimizer, n_epochs,List_elems
     while epoch<model.Max_epochs and not stagnation:
         # Compute loss
         loss_time_start = time.time()
-        u_predicted = model(xg,List_elems)
-        eps = Strain_sqrt(u_predicted,xg)
+
 
 
         def closure():
             optimizer.zero_grad()
             loss = 0
+            u_predicted = model(xg,List_elems)
+            eps = Strain_sqrt(u_predicted,xg)
             for i in range(List_Dofs_free.shape[0]):
                 u_predicted_star = u_predicted_star_list_x[i]
                 eps_predicted_star = eps_predicted_star_list_x[i]
                 loss += torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
-                                    1*VolumeForcesEnergy_2D(u_predicted_star,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+                                    1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
                                     *torch.abs(detJ)))
                 u_predicted_star = u_predicted_star_list_y[i]
                 eps_predicted_star = eps_predicted_star_list_y[i]
                 loss +=  torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
-                                    1*VolumeForcesEnergy_2D(u_predicted_star,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+                                    1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
                                     *torch.abs(detJ)))
             loss.backward(retain_graph=True)
             return loss
@@ -1368,19 +1376,16 @@ def Training_2D_Residual_LBFGS(model, model_test, optimizer, n_epochs,List_elems
         optimizer.step(closure)
         loss = closure()
 
-        # update weights
-        update_time_start = time.time()
-        optimizer.step()
-        update_time += time.time() - update_time_start
+
         # zero the gradients after updating
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
         with torch.no_grad():
             epoch+=1
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
                 if d_loss < model.Stagnation_threshold:
-                    stagnation = False
+                    stagnation = True
             else:
                 loss_old = loss.item()
             Loss_vect.append(loss.item())

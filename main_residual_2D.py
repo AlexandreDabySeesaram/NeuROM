@@ -119,12 +119,12 @@ Model_2D.train()
 u_predicted,xg,detJ = Model_2D()
 List_elems = torch.tensor(Domain_mesh.GetCellIds(xg),dtype=torch.int)
 
-Loss_vect, Duration = Training_2D_Residual(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
+# Loss_vect, Duration = Training_2D_Residual(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
 
-# Loss_vect, Duration = Training_2D_Residual_LBFGS(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
+# Loss_vect, Duration = Training_2D_Residual_LBFGS(Model_2D,Model_test, n_epochs,List_elems,Mat)
 
-# Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
-# Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, optimizer, n_epochs,List_elems,Mat)
+Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+# Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, n_epochs,List_elems,Mat)
 
 
 

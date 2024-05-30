@@ -31,7 +31,7 @@ Mat = pre.Material( flag_lame = False,                         # If True should 
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 5                                                 # Maximum element size of the mesh
+MaxElemSize = 1                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -75,7 +75,7 @@ Model_2D.RefinementParameters(  MaxGeneration = 2,
                                 Jacobian_threshold = 0.5)
                                 
 Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
-                                Max_epochs = 5000, 
+                                Max_epochs = 10000, 
                                 learning_rate = 0.001)
 
 
@@ -119,11 +119,11 @@ Model_2D.train()
 u_predicted,xg,detJ = Model_2D()
 List_elems = torch.tensor(Domain_mesh.GetCellIds(xg),dtype=torch.int)
 
-# Loss_vect, Duration = Training_2D_Residual(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
+Loss_vect, Duration = Training_2D_Residual(Model_2D,Model_test, optimizer, n_epochs,List_elems,Mat)
 
 # Loss_vect, Duration = Training_2D_Residual_LBFGS(Model_2D,Model_test, n_epochs,List_elems,Mat)
 
-Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+# Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
 # Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, n_epochs,List_elems,Mat)
 
 

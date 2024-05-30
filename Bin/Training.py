@@ -1258,14 +1258,20 @@ def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
         for i in range(List_Dofs_free.shape[0]):
             u_predicted_star = u_predicted_star_list_x[i]
             eps_predicted_star = eps_predicted_star_list_x[i]
-            loss += torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
+            # loss += torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
+            #                     1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+            #                     *torch.abs(detJ)))
+            loss += torch.pow(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
                                 1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
-                                *torch.abs(detJ)))
+                                *torch.abs(detJ)),2)            
             u_predicted_star = u_predicted_star_list_y[i]
             eps_predicted_star = eps_predicted_star_list_y[i]
-            loss +=  torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
+            # loss +=  torch.abs(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
+            #                     1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
+            #                     *torch.abs(detJ)))
+            loss +=  torch.pow(torch.sum((InternalResidual_precomputed(eps,eps_predicted_star,Mat.lmbda, Mat.mu)-
                                 1*VolumeForcesEnergy_2D(u_predicted_star,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))
-                                *torch.abs(detJ)))
+                                *torch.abs(detJ)),2)
         # loss = torch.abs(loss)
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()

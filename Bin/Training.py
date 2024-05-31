@@ -13,7 +13,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
-                        InternalEnergy_2D_einsum_para
+                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara
 
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
@@ -1179,7 +1179,10 @@ def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
     Loss_vect = []
     stagnation = False
     while epoch<model.Max_epochs and not stagnation:
-        loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Param_trial)
+        
+        # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Param_trial)
+        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Param_trial)
+
         loss.backward()
         # update weights
         optimizer.step()
@@ -1204,8 +1207,6 @@ def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
     # print("*************** END FIRST PHASE ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
     return Loss_vect, (time_stop-time_start)
-
-
 
 def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
     

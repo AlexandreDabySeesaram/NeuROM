@@ -316,6 +316,12 @@ def Gravity(theta,rho = 1e-9):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
+def Gravity_vect(theta,rho = 1e-9):
+    """Should be unified with Gravity defined above, require chaging torch.tensor(0*torch.pi/2) to torch.tensor([0*torch.pi/2]) in 
+    functions referencing the latter."""
+    g = 9.81*1e3                            #m/s^2
+    return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
+
 def VolumeForcesEnergy_2D(u,theta, rho):
     fv = Gravity(theta,rho)
     W_e = u.t()@fv
@@ -399,10 +405,7 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
     # return (0.5*W_int)/(E[0].shape[0])
 
 def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
-    # Space_modes = [model.Space_modes[l]()[0] for l in range(model.n_modes_truncated)]
-    # # Need to extract the u_i and xg simultaneously to keep the linkj
-    # xg_modes = [model.Space_modes[l]()[1] for l in range(model.n_modes_truncated)]
-    # detJ_modes = [model.Space_modes[l]()[2] for l in range(model.n_modes_truncated)]
+
     Space_modes = []
     xg_modes = []
     detJ_modes = []
@@ -431,15 +434,11 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
     E_float = E[0][:,0].to(torch.float64)
     theta_float = E[1][:,0].to(torch.float64)
 
-    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
+    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
 
-    Gravity_vect = Gravity(theta,rho = 1e-9)
-    
-    W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
-    W_ext_e = torch.stack(W_ext_e,dim=1)
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
+    W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
-
-    W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 

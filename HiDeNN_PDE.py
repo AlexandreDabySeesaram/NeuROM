@@ -463,14 +463,26 @@ class NeuROM(nn.Module):
                                     Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
             
             case '2':
-                Space_modes = []
-                for i in range(self.n_modes_truncated):
-                    IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
-                    u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
-                    Space_modes.append(u_k)
-                u_i = torch.stack(Space_modes,dim=2)
-                P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
-                out = torch.einsum('xyk,kj->xyj',u_i,P1)
+                match self.n_para:
+                    case 1:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=2)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj->xyj',u_i,P1)
+                    case 2:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=2)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
         return out
 
 class InterpolationBlock2D_Lin(nn.Module):

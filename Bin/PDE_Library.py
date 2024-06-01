@@ -332,6 +332,7 @@ def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
 
 def VonMises(sigma):
+    # Warning! Should add sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     VM = torch.tensor([[2/3, -1/3, 0],[-1/3, 2/3, 0],[0, 0, torch.sqrt(two)]],dtype=torch.float64)
     sigma_dev = torch.einsum('ij,ej->ei',VM,sigma) # in voigt notation

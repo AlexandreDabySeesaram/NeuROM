@@ -4,7 +4,7 @@ import Bin.Pre_processing as pre
 import torch
 import torch.nn as nn
 import numpy as np
-from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
+from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain
 from Bin.Training import Training_2D_Integral
 import Post.Plots as Pplot
 import time
@@ -31,7 +31,7 @@ Mat = pre.Material( flag_lame = False,                         # If True should 
 # Create mesh
 order = 1                                                       # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 5                                                 # Maximum element size of the mesh
+MaxElemSize = 1                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -203,6 +203,8 @@ Model_2D.eval()
 eps =  Strain(Model_2D(xg, List_elems),xg)
 sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
 sigma_VM = VonMises(sigma)
+sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
+
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 

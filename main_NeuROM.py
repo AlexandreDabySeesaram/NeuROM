@@ -35,10 +35,10 @@ BoolGPU = False                                     # Boolean enabling GPU compu
 BoolCompile = False                                 # Enable compilation of the model
 
 # Training
-TrainingRequired = True                             # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = False                             # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs = 3000                                     # Maximum number of iterations for the training stage
 learning_rate = 0.001                               # optimizer learning rate
-LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
+LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData = True                       # Slightly move training samples if they are on the mesh nodes exactly
 
 # post-process
@@ -66,7 +66,7 @@ match dimension:
         # Name = 'Hole_3'
 
 # Defintition of the structure 
-np = 10                                             # Number of Nodes in the Mesh in 1D
+np = 100                                             # Number of Nodes in the Mesh in 1D
 MaxElemSize2D = 1                                   # Maximum element size in the 2D mesh
 L = 10                                              # Length of the Beam
 A = 1                                               # Section of the beam
@@ -138,21 +138,20 @@ else:
     ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
 
 ROM_model = NeuROM(                               # Build the surrogate (reduced-order) model
-                Beam_mesh, 
+                Mesh_object, 
                 ParameterHypercube, 
                 n_modes_ini,
                 n_modes_max
                 )
 
-name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
-            +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
-
-
+# name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
+            # +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
+            
 
 #%% Load coarser model  
 PreviousFullModel = 'TrainedModels/FullModel_np_100'
 if LoadPreviousModel:
-    ROM_model.Init_from_previous(self,PreviousFullModel)
+    ROM_model.Init_from_previous(PreviousFullModel)
 
 #%% Training 
 
@@ -174,11 +173,11 @@ else:
     Para_coord_list = [TrialPara]
 
 if not TrainingRequired:
-    if IndexesNon0BCs:
-        name_model+='_BCs'
     # Load pre trained model
-    if os.path.isfile('TrainedModels/'+name_model):
-        ROM_model.load_state_dict(torch.load('TrainedModels/'+name_model))
+    # if os.path.isfile('TrainedModels/'+name_model):
+    if os.path.isfile(PreviousFullModel):
+        # ROM_model.load_state_dict(torch.load('TrainedModels/'+name_model))
+        ROM_model.load_state_dict(torch.load(PreviousFullModel))
         print('************ LOADING MODEL COMPLETE ***********\n')
     else: 
         TrainingRequired = True

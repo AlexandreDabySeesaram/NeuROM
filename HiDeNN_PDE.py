@@ -485,9 +485,10 @@ class NeuROM(nn.Module):
                         out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
         return out
     def Init_from_previous(self,PreviousFullModel):
+        import os
         if os.path.isfile(PreviousFullModel):
             BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
+            newcoordinates = [coord for coord in self.Space_modes[0].coordinates]
             newcoordinates = torch.cat(newcoordinates,dim=0)
             Nb_modes_fine = len(self.Space_modes)
             Nb_modes_coarse = len(BeamROM_coarse.Space_modes)

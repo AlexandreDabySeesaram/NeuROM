@@ -19,6 +19,7 @@ import time
 import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
+from importlib import reload  # Python 3.4+
 
 class Dataset(torch.utils.data.Dataset):
 
@@ -104,6 +105,10 @@ BeamModel.Freeze_Mesh()
 
 #%% Application of NeuROM
 n_modes = 100
+n_modes_max = 100
+n_modes_ini = 1
+loss_decrease_c = 1e-5 
+
 mu_min = 100
 mu_max = 200
 N_mu = 10
@@ -127,7 +132,7 @@ else:
 u_0 = DirichletDictionryList[0]['Value']           #Left BC
 u_L = DirichletDictionryList[1]['Value']           #Right BCF
 BCs = [u_0,u_L]
-BeamROM = NeuROM(Beam_mesh, n_modes, ParameterHypercube)
+BeamROM = NeuROM(Beam_mesh, ParameterHypercube, n_modes_ini,n_modes_max)
 name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
             +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
 
@@ -138,8 +143,6 @@ PreviousFullModel = 'TrainedModels/FullModel_np_100'
 if LoadPreviousModel and os.path.isfile(PreviousFullModel):
     # torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
     BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-    # BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
-    # BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
     newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
     newcoordinates = torch.cat(newcoordinates,dim=0)
     Nb_modes_fine = len(BeamROM.Space_modes)
@@ -158,7 +161,6 @@ if LoadPreviousModel and os.path.isfile(PreviousFullModel):
             BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
         if Nb_modes_coarse<Nb_modes_fine:
             for mode in range(Nb_modes_coarse,Nb_modes_fine):
-                # print(mode)
                 BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
                 BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
 elif not os.path.isfile(PreviousFullModel):
@@ -311,12 +313,12 @@ else:
             BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
             optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
             u_copm = BeamROM_compiled(TrialCoordinates,Para_coord_list)
-            Loss_vect, L2_error, training_time, Mode_vect, Loss_decrease_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error, training_time, Mode_vect, Loss_decrease_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara,loss_decrease_c = loss_decrease_c)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
 
         else:
             optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=learning_rate)
-            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
+            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara,loss_decrease_c = loss_decrease_c)
             Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
         BeamROM.eval()
     
@@ -371,6 +373,7 @@ else:
 
         Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
         Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
-
+        Pplot.Plot_Lossdecay_Modes(Mode_vect,Loss_decrease_vect,'LossDecay_Modes',1e-5)
+        Pplot.Plot_NegLoss_Modes(Mode_vect,Loss_vect,'Loss_ModesNeg',True)
 
 # %%

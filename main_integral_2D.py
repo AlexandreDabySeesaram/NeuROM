@@ -10,6 +10,7 @@ import Post.Plots as Pplot
 import time
 import os
 import matplotlib.pyplot as plt
+from importlib import reload  # Python 3.4+
 
 
 #%% Choose geometry

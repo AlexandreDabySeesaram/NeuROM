@@ -178,7 +178,7 @@ class MeshNN(nn.Module):
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
         self.ElemList = torch.arange(self.NElem)
-
+        self.SetBCs(mesh.ListOfDirichletsBCsValues)
 
     def forward(self,x):
         # Compute shape functions 
@@ -484,6 +484,23 @@ class NeuROM(nn.Module):
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
         return out
+    def Init_from_previous(self,PreviousFullModel):
+        if os.path.isfile(PreviousFullModel):
+            BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
+            newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
+            newcoordinates = torch.cat(newcoordinates,dim=0)
+            Nb_modes_fine = len(self.Space_modes)
+            Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
+            for mode in range(Nb_modes_coarse):
+                NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
+                self.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+                self.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
+            if Nb_modes_coarse<Nb_modes_fine:
+                for mode in range(Nb_modes_coarse,Nb_modes_fine):
+                    self.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
+                    self.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
+        elif not os.path.isfile(PreviousFullModel):
+            print('******** WARNING LEARNING FROM SCRATCH ********\n')
 
 class InterpolationBlock2D_Lin(nn.Module):
     

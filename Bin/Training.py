@@ -353,7 +353,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
-def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,BiPara):
+def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,BiPara,loss_decrease_c=1e-5):
     # Initialise vector of loss values
     Loss_vect = []
     # Initialise vector of L2 error
@@ -369,7 +369,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     eval_time = 0
     back_time = 0
     update_time = 0
-    loss_decrease_c = 1e-5 # Criterion of stagnation for the loss
+    # loss_decrease_c = 1e-4 # Criterion of stagnation for the loss
     Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
     FlagAddedMode_usefull = True    # Flag stating that the new mode did help speeding-up the convergence
     stagnancy_counter = 0
@@ -398,6 +398,7 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
             # if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
             if numpy.abs(loss_decrease) < loss_decrease_c:
                 stagnancy_counter = stagnancy_counter +1
+                Usefullness = 0
             else:
                 stagnancy_counter = 0
                 if loss_decrease >= 0:

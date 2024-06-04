@@ -340,9 +340,9 @@ def VonMises(sigma):
     return torch.sqrt((3/2)*sigma_VM)
 
 def VonMises_plain_strain(sigma, lmbda, mu):
-    # Warning! Should add sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
+    # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
-    two2threeD = torch.tensor([[1, 0, 0], [1, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=torch.float64)
+    two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=torch.float64)
     sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
     VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=torch.float64)
     sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 

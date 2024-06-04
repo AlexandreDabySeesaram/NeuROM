@@ -66,6 +66,20 @@ class Material():
             self.lmbda = (self.E*self.nu)/((1+self.nu)*(1-2*self.nu))                            # First Lamé's coefficient
             self.mu = self.E/(2*(1+self.nu))                                           # Second Lamé's coefficient
                                                                                                                                     
+def ElementSize(dimension, **kwargs):
+    if dimension ==1:
+        L = kwargs['L']
+        order = kwargs['order']
+        np = kwargs['np']
+        if order ==1:
+            MaxElemSize = L/(np-1)                         # Compute element size
+        elif order ==2:
+            n_elem = 0.5*(np-1)
+            MaxElemSize = L/n_elem                         # Compute element size
+    else:
+        MaxElemSize = kwargs['MaxElemSize2D']
+    return MaxElemSize
+    
 class Mesh:
     def __init__(self,name,h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""

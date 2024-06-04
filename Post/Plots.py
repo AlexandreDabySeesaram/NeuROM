@@ -76,6 +76,35 @@ def PlotTrajectories(Coord_trajectories,name):
     #plt.show()
     plt.clf()
 
+def Plot_NegLoss_Modes(Modes_flag,error,name,tikz = False):
+    # from matplotlib.legend import Legend
+    # Legend._ncol = property(lambda self: self._ncols)
+    # Legend._ncol = property(lambda self: self._ncols)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    g1 = ax.plot(Modes_flag, color='#247ab5ff')
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
+    ax2 = ax.twinx()
+    ax2.invert_yaxis()
+    g2 = ax2.semilogy(-torch.tensor(error), color='#d95319ff')
+    # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+
+    lns = g1+g2
+    labs = [l.get_label() for l in lns]
+    # ax.legend(lns, labs, loc="upper center")
+    ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
+    plt.clf() 
+
 def Plot_Loss_Modes(Modes_flag,error,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
@@ -94,7 +123,7 @@ def Plot_Loss_Modes(Modes_flag,error,name):
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
-def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
+def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold,tikz = False):
     # Lift to be able to use semilogy
     plt.plot(Modes_flag,color='#247ab5ff')
     ax = plt.gca()
@@ -112,6 +141,9 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
     ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
     plt.axhline(threshold,color = 'k')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):

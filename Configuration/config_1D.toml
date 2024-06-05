@@ -1,13 +1,18 @@
+[geometry]
 Name = 'Hole'
+L = 10                                              # Length of the Beam
+A = 1                                               # Section of the beam
+Volume_element = 100                                # Volume element correspond to the 1D elem in 1D
+
+[material]
+E = 175                                             # Young's modulus (175 if 1D 5*1e-3 if 2D)
+nu = 0.3                                            # Poisson's ration
 
 [interpolation]
 dimension = 1                                       # Dimension of the study (1D or 2D)
 order = 2                                           # Order of the shape functions
 np = 20                                             # Number of Nodes in the Mesh in 1D
 MaxElemSize2D = 1                                   # Maximum element size in the 2D mesh
-L = 10                                              # Length of the Beam
-A = 1                                               # Section of the beam
-E = 5e-3                                            # Young's modulus (175 if 1D 5*1e-3 if 2D)
 
 [solver]
 TrainingStrategy = 'Integral'                       # 'Integral' or 'Mixed'
@@ -44,9 +49,29 @@ Relation = false
 Constitutive = false
 
 [[DirichletDictionryList]]
-Entity = 1 
+Entity = 2 
 Value = 0 
 Normal =1 
 Relation = false
 Constitutive = false
 
+[parameters]
+#%% 1D
+# Stiffness
+para_1_min = 100                                                # Minimum value for the 1st parameter
+para_1_max = 200                                                # Maximum value for the 1st parameter
+N_para_1 = 10                                                   # Discretisation of the 1D parametric space
+
+para_2_min = 100                                                # Minimum value for the 2nd parameter
+para_2_max = 200                                                # Minimum value for the 2nd parameter
+N_para_2 = 10                                                   # Discretisation of the 1D parametric space
+
+#%% 2D
+# # Stiffness
+# para_1_min = 1e-3                                               # Minimum value for the 1st parameter
+# para_1_max = 10e-3                                              # Maximum value for the 1st parameter
+# N_para_1 = 10                                                   # Discretisation of the 1D parametric space
+# # Angle
+# para_2_min = 0                                                  # Minimum value for the 2nd parameter
+# para_2_max = 6.29                                               # Maximum value for the 2nd parameter (2*pi)
+# N_para_2 = 30                                                   # Discretisation of the 1D parametric space

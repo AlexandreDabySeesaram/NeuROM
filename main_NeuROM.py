@@ -106,6 +106,8 @@ Mesh_object = pre.Mesh( Name,                       # Create the mesh object
                         MaxElemSize, 
                         order, 
                         dimension)
+if int(Mesh_object.dim) != int(Mesh_object.dimension):
+    raise ValueError("The dimension of the provided geometry does not match the job dimension")
 
 Mesh_object.AddBCs(Volume_element,Excluded,
                  DirichletDictionryList)            # Include Boundary physical domains infos (BCs+volume)

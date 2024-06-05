@@ -842,7 +842,6 @@ class MeshNN_2D(nn.Module):
         self.Connectivity_interm = []
         self.Jacobian_interm = []
 
-
     def StoreResults(self):
         u_x = [u for u in self.nodal_values_x]
         u_y = [u for u in self.nodal_values_y]

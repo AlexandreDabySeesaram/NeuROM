@@ -109,81 +109,84 @@ if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)
 
 #%% Training 
-ROM_model.Freeze_Mesh()                                                 # Set space mesh cordinates as untrainable
-ROM_model.Freeze_MeshPara()                                             # Set parameters mesh cordinates as untrainable
+if config["solver"]["ParametricStudy"]: 
+    ROM_model.Freeze_Mesh()                                                 # Set space mesh cordinates as untrainable
+    ROM_model.Freeze_MeshPara()                                             # Set parameters mesh cordinates as untrainable
 
-ROM_model.TrainingParameters(   Stagnation_threshold = config["training"]["Stagnation_threshold"], 
-                                Max_epochs = config["training"]["n_epochs"], 
-                                learning_rate = config["training"]["learning_rate"])
-                                
-match config["interpolation"]["dimension"]:
-    case 1:
-        # Nodale coordinates where the model is evaluated during training
-        Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                            dtype=torch.float32, 
-                                            requires_grad=True)
-
-Training_para_coordinates_1 = torch.linspace(
-                                            config["parameters"]["para_1_min"],
-                                            config["parameters"]["para_1_max"],
-                                            5*config["parameters"]["N_para_1"], 
-                                            dtype=torch.float32, 
-                                            requires_grad=True
-                                            )
-
-Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
-
-Training_para_coordinates_2 = torch.linspace(
-                                            config["parameters"]["para_2_min"],
-                                            config["parameters"]["para_2_max"],
-                                            5*config["parameters"]["N_para_2"], 
-                                            dtype=torch.float32, 
-                                            requires_grad=True
-                                            )
-
-Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
-
-if config["solver"]["BiPara"]:
-    Training_para_coordinates_list = nn.ParameterList(
-                                                        (Training_para_coordinates_1,
-                                                        Training_para_coordinates_2))
-else:
-    Training_para_coordinates_list = [Training_para_coordinates_1]
-
-if config["training"]["TrainingRequired"]:
-    ROM_model.train()
-    optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
+    ROM_model.TrainingParameters(   Stagnation_threshold = config["training"]["Stagnation_threshold"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
+                                    
     match config["interpolation"]["dimension"]:
         case 1:
-            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect = Training_NeuROM( ROM_model,
-                                                                                                 config["geometry"]["A"], 
-                                                                                                 config["geometry"]["L"], 
-                                                                                                 Training_coordinates,
-                                                                                                 Training_para_coordinates_list, 
-                                                                                                 optimizer, 
-                                                                                                 config["training"]["n_epochs"],
-                                                                                                 config["solver"]["BiPara"],
-                                                                                                 loss_decrease_c = config["training"]["loss_decrease_c"])
+            # Nodale coordinates where the model is evaluated during training
+            Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True)
 
-            Loss_vect, L2_error = Training_NeuROM_FinalStageLBFGS(  ROM_model, 
-                                                                    config["geometry"]["A"], 
-                                                                    config["geometry"]["L"], 
-                                                                    Training_coordinates,
-                                                                    Training_para_coordinates_list, 
-                                                                    optimizer, 
-                                                                    config["training"]["n_epochs"], 
-                                                                    10,
-                                                                    Loss_vect,
-                                                                    L2_error,
-                                                                    training_time,
-                                                                    config["solver"]["BiPara"])
-        case 2:
-            Loss_vect, Duration = Training_2D_NeuROM(   ROM_model, 
-                                                        Training_para_coordinates_list, 
-                                                        optimizer, 
-                                                        ROM_model.Max_epochs,
-                                                        Mat)
-    ROM_model.eval()
+    Training_para_coordinates_1 = torch.linspace(
+                                                config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                5*config["parameters"]["N_para_1"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+    Training_para_coordinates_2 = torch.linspace(
+                                                config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                5*config["parameters"]["N_para_2"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
+
+    if config["solver"]["BiPara"]:
+        Training_para_coordinates_list = nn.ParameterList(
+                                                            (Training_para_coordinates_1,
+                                                            Training_para_coordinates_2))
+    else:
+        Training_para_coordinates_list = [Training_para_coordinates_1]
+
+    if config["training"]["TrainingRequired"]:
+        ROM_model.train()
+        optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
+        match config["interpolation"]["dimension"]:
+            case 1:
+                Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect = Training_NeuROM( ROM_model,
+                                                                                                    config["geometry"]["A"], 
+                                                                                                    config["geometry"]["L"], 
+                                                                                                    Training_coordinates,
+                                                                                                    Training_para_coordinates_list, 
+                                                                                                    optimizer, 
+                                                                                                    config["training"]["n_epochs"],
+                                                                                                    config["solver"]["BiPara"],
+                                                                                                    loss_decrease_c = config["training"]["loss_decrease_c"])
+
+                Loss_vect, L2_error = Training_NeuROM_FinalStageLBFGS(  ROM_model, 
+                                                                        config["geometry"]["A"], 
+                                                                        config["geometry"]["L"], 
+                                                                        Training_coordinates,
+                                                                        Training_para_coordinates_list, 
+                                                                        optimizer, 
+                                                                        config["training"]["n_epochs"], 
+                                                                        10,
+                                                                        Loss_vect,
+                                                                        L2_error,
+                                                                        training_time,
+                                                                        config["solver"]["BiPara"])
+            case 2:
+                Loss_vect, Duration = Training_2D_NeuROM(   ROM_model, 
+                                                            Training_para_coordinates_list, 
+                                                            optimizer, 
+                                                            ROM_model.Max_epochs,
+                                                            Mat)
+        ROM_model.eval()
+else:
+    Loss_vect, Duration = Training_2D_Integral(Model_FEM, optimizer, n_epochs,List_elems,Mat)
 
     #%% Post-processing
 # Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')

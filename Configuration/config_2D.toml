@@ -76,6 +76,7 @@ MaxElemSize2D           = 5                                         # Maximum el
 ####################################################
 
 [solver]
+FrozenMesh              = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara = true                                                       # Enable bi-stifness beam in 1D

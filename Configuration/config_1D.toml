@@ -1,5 +1,5 @@
 [geometry]
-Name = 'Hole'
+Name = 'Beam'
 L = 10                                              # Length of the Beam
 A = 1                                               # Section of the beam
 Volume_element = 100                                # Volume element correspond to the 1D elem in 1D
@@ -20,7 +20,6 @@ ParametricStudy = true                              # Boolean to switch between 
 BiPara = true                                       # Enable bi-stifness beam in 1D
 n_modes_max = 100                                   # Maximum number of modes in the Tensor Decomposition
 n_modes_ini = 1                                     # Initial number of modes in the Tensor Decomposition
-loss_decrease_c = 1e-5                              # Stagnation criterion for the loss decay rate (mode addition criterion)
 
 [hardware]
 BoolGPU = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
@@ -32,6 +31,7 @@ n_epochs = 3000                                     # Maximum number of iteratio
 learning_rate = 0.001                               # optimizer learning rate
 LoadPreviousModel = true                           # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData = true                       # Slightly move training samples if they are on the mesh nodes exactly
+loss_decrease_c = 1e-5                              # Stagnation criterion for the loss decay rate (mode addition criterion)
 
 [postprocess]
 BoolPlot = false                                    # Boolean for plots used for gif

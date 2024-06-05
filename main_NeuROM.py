@@ -92,7 +92,7 @@ DirichletDictionryList = [  {"Entity": 1,
                              "Relation": False, 
                              "Constitutive": False}
                         ]
-
+#%% Create mesh object
 # Definition of the (initial) element size of the mesh
 MaxElemSize = pre.ElementSize(
                                 dimension=dimension,
@@ -123,19 +123,32 @@ Model_FEM.Freeze_Mesh()
 
 #%% Application of NeuROM
 # Parameter space-definition
-mu_min = 100
-mu_max = 200
-N_mu = 10
 
-# Para Young
-Eu_min = 100
-Eu_max = 200
-N_E = 10
+match dimension:
+    case 1:
+        # Stiffness
+        para_1_min = 100                            # Minimum value for the 1st parameter
+        para_1_max = 200                            # Maximum value for the 1st parameter
+        N_para_1 = 10                               # Discretisation of the 1D parametric space
+
+        para_2_min = 100                            # Minimum value for the 2nd parameter
+        para_2_max = 200                            # Minimum value for the 2nd parameter
+        N_para_2 = 10                               # Discretisation of the 1D parametric space
+    case 2:
+        # Stiffness
+        para_1_min = 1e-3                           # Minimum value for the 1st parameter
+        para_1_max = 10e-3                          # Maximum value for the 1st parameter
+        N_para_1 = 10                               # Discretisation of the 1D parametric space
+        # Angle
+        para_2_min = 0                              # Minimum value for the 2nd parameter
+        para_2_max = 2*torch.pi                     # Maximum value for the 2nd parameter
+        N_para_2 = 30                               # Discretisation of the 1D parametric space
 
 if BiPara:
-    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_mu]])
+    ParameterHypercube = torch.tensor([ [para_1_min,para_1_max,N_para_1],
+                                        [para_2_min,para_2_max,N_para_2]])
 else:
-    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
+    ParameterHypercube = torch.tensor([[para_1_min,para_1_max,N_para_1]])
 
 ROM_model = NeuROM(                               # Build the surrogate (reduced-order) model
                 Mesh_object, 
@@ -144,83 +157,82 @@ ROM_model = NeuROM(                               # Build the surrogate (reduced
                 n_modes_max
                 )
 
-# name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
-            # +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
-            
-
 #%% Load coarser model  
-# PreviousFullModel = 'TrainedModels/FullModel_np_100'
+
 PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
 if LoadPreviousModel:
     ROM_model.Init_from_previous(PreviousFullModel)
 
 #%% Training 
+ROM_model.Freeze_Mesh()                         # Set space mesh cordinates as untrainable
+ROM_model.Freeze_MeshPara()                     # Set parameters mesh cordinates as untrainable
 
-ROM_model.Freeze_Mesh()
-ROM_model.Freeze_MeshPara()
-TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
+match dimension:
+    case 1:
+        # Nodale coordinates where the model is evaluated during training
+        Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
                                 dtype=torch.float32, requires_grad=True)
-TrialPara = torch.linspace(mu_min,mu_max,50, 
-                                dtype=torch.float32, requires_grad=True)
-TrialPara = TrialPara[:,None] # Add axis so that dimensions match
 
-TrialPara2 = torch.linspace(mu_min,mu_max,50, 
-                                dtype=torch.float32, requires_grad=True)
-TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
+Training_para_coordinates_1 = torch.linspace(
+                            para_1_min,para_1_max,5*N_para_1, 
+                            dtype=torch.float32, requires_grad=True
+                            )
+Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+Training_para_coordinates_2 = torch.linspace(
+                            para_2_min,para_2_max,5*N_para_2, 
+                            dtype=torch.float32, requires_grad=True
+                            )
+Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
 
 if BiPara:
-    Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+    Training_para_coordinates_list = nn.ParameterList(
+                                        (Training_para_coordinates_1,
+                                        Training_para_coordinates_2))
 else:
-    Para_coord_list = [TrialPara]
-
-# if not TrainingRequired:
-#     # Load pre trained model
-#     # if os.path.isfile('TrainedModels/'+name_model):
-#     if os.path.isfile(PreviousFullModel):
-#         # ROM_model.load_state_dict(torch.load('TrainedModels/'+name_model))
-#         ROM_model.load_state_dict(torch.load(PreviousFullModel))
-#         print('************ LOADING MODEL COMPLETE ***********\n')
-#     else: 
-#         TrainingRequired = True
-#         print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
-
+    Training_para_coordinates_list = [Training_para_coordinates_1]
 
 if TrainingRequired:
     ROM_model.train()
     optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=learning_rate)
-    Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect =  Training_NeuROM(ROM_model, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara,loss_decrease_c = loss_decrease_c)
-    Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(ROM_model, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
+    match dimension:
+        case 1:
+            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect = Training_NeuROM(ROM_model, A, L, Training_coordinates,Training_para_coordinates_list, optimizer, n_epochs,BiPara,loss_decrease_c = loss_decrease_c)
+            Loss_vect, L2_error = Training_NeuROM_FinalStageLBFGS(ROM_model, A, L, Training_coordinates,Training_para_coordinates_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
+        case 2:
+            Loss_vect, Duration = Training_2D_NeuROM(   ROM_model, 
+                                                        Training_para_coordinates_list, 
+                                                        optimizer, 
+                                                        ROM_model.Max_epochs,
+                                                        Mat)
     ROM_model.eval()
-    # Save model
-    if SaveModel:
-        torch.save(ROM_model.state_dict(), 'TrainedModels/'+name_model)
 
     #%% Post-processing
 
     if BoolPlotPost:
-        Pplot.Plot_Parametric_Young(ROM_model,TrialCoordinates,A,AnalyticSolution,name_model)
-        Pplot.Plot_Parametric_Young_Interactive(ROM_model,TrialCoordinates,A,AnalyticSolution,name_model)
-        Pplot.PlotModes(ROM_model,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model)
+        Pplot.Plot_Parametric_Young(ROM_model,Training_coordinates,A,AnalyticSolution,name_model)
+        Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,A,AnalyticSolution,name_model)
+        Pplot.PlotModes(ROM_model,Training_coordinates,TrialPara,A,AnalyticSolution,name_model)
         Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'2StageTraining')
 
     if False:
-        Space_modes = [ROM_model.Space_modes[l](TrialCoordinates) for l in range(ROM_model.n_modes)]
+        Space_modes = [ROM_model.Space_modes[l](Training_coordinates) for l in range(ROM_model.n_modes)]
         u_i = torch.cat(Space_modes,dim=1) 
     if Visualisatoin_only:
-        Space_modes = [ROM_model.Space_modes[l](TrialCoordinates) for l in range(ROM_model.n_modes)]
+        Space_modes = [ROM_model.Space_modes[l](Training_coordinates) for l in range(ROM_model.n_modes)]
         u_i = torch.cat(Space_modes,dim=1) 
 
-    # Pplot.Plot_Parametric_Young_Interactive(ROM_model,TrialCoordinates,A,AnalyticSolution,name_model)
-    # Pplot.AppInteractive(ROM_model,TrialCoordinates,A,AnalyticSolution)
+    # Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,A,AnalyticSolution,name_model)
+    # Pplot.AppInteractive(ROM_model,Training_coordinates,A,AnalyticSolution)
 
-    u_eval = ROM_model(TrialCoordinates,Para_coord_list)
+    u_eval = ROM_model(Training_coordinates,Training_para_coordinates_list)
     import matplotlib.pyplot as plt
-    # Pplot.PlotModesBi(ROM_model,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
+    # Pplot.PlotModesBi(ROM_model,Training_coordinates,Training_para_coordinates_list,A,AnalyticSolution,name_model)
     # ROM_model = torch.load('TrainedModels/FullModel_BiParametric')
 
 
     if Visualisatoin_only:
-        TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], 
+        Training_coordinates = torch.tensor([[i/10] for i in range(2,100)], 
                                         dtype=torch.float32, requires_grad=True)
         TrialPara = torch.linspace(mu_min,mu_max,50, 
                                         dtype=torch.float32, requires_grad=True)
@@ -231,13 +243,13 @@ if TrainingRequired:
         TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
 
         if BiPara:
-            Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+            Training_para_coordinates_list = nn.ParameterList((TrialPara,TrialPara2))
         else:
-            Para_coord_list = [TrialPara]
+            Training_para_coordinates_list = [TrialPara]
         ROM_model = torch.load('TrainedModels/FullModel_BiParametric')
         ROM_model = torch.load('TrainedModels/FullModel_BiParametric_np100')
 
-        Pplot.Plot_BiParametric_Young_Interactive(ROM_model,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
+        Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,A,AnalyticBiParametricSolution,name_model)
         Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
         Pplot.Plot_Lossdecay_Modes(Mode_vect,Loss_decrease_vect,'LossDecay_Modes',1e-5)
         Pplot.Plot_NegLoss_Modes(Mode_vect,Loss_vect,'Loss_ModesNeg',True)

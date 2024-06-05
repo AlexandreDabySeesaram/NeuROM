@@ -1,0 +1,53 @@
+Name = 'Hole'
+
+
+[solver]
+TrainingStrategy = 'Integral'                       # 'Integral' or 'Mixed'
+ParametricStudy = true                              # Boolean to switch between plain HiDeNN and NeuROM
+BiPara = true                                       # Enable bi-stifness beam in 1D
+n_modes_max = 100                                   # Maximum number of modes in the Tensor Decomposition
+n_modes_ini = 1                                     # Initial number of modes in the Tensor Decomposition
+loss_decrease_c = 1e-5                              # Stagnation criterion for the loss decay rate (mode addition criterion)
+
+[hardware]
+BoolGPU = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
+BoolCompile = false                                 # Enable compilation of the model
+
+[training]
+TrainingRequired = true                             # Boolean leading to Loading pre trained model or retraining from scratch
+n_epochs = 3000                                     # Maximum number of iterations for the training stage
+learning_rate = 0.001                               # optimizer learning rate
+LoadPreviousModel = true                           # Boolean to enable reusing a previously trained model
+BoolFilterTrainingData = true                       # Slightly move training samples if they are on the mesh nodes exactly
+
+[postprocess]
+BoolPlot = false                                    # Boolean for plots used for gif
+BoolPlotPost = false                                # Boolean for plots used for Post
+BoolCompareNorms = true                             # Boolean for comparing energy norm to L2 norm
+SaveModel = false                                   # Boolean leading to Loading pre trained model or retraining from scratch
+Visualisatoin_only = false
+
+[interpolation]
+dimension = 1                                       # Dimension of the study (1D or 2D)
+order = 2                                           # Order of the shape functions
+np = 20                                             # Number of Nodes in the Mesh in 1D
+MaxElemSize2D = 1                                   # Maximum element size in the 2D mesh
+L = 10                                              # Length of the Beam
+A = 1                                               # Section of the beam
+E = 5e-3                                            # Young's modulus (175 if 1D 5*1e-3 if 2D)
+
+
+[[DirichletDictionryList]]
+Entity = 1                                          # Physical tag of the boundary
+Value = 0                                           # numerical value
+Normal =1                                           # prescribed component (0=x,1=y,2=z)
+Relation = false
+Constitutive = false
+
+[[DirichletDictionryList]]
+Entity = 1 
+Value = 0 
+Normal =1 
+Relation = false
+Constitutive = false
+

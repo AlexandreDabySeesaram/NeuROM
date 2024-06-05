@@ -23,6 +23,8 @@ from importlib import reload  # Python 3.4+
 
 #%% Import config file
 import tomllib
+
+# Add possibility to specify name of config file with argparse
 with open("Configuration/config_2D.toml", mode="rb") as f:
     config = tomllib.load(f)
     

@@ -118,7 +118,6 @@ def FilterBatchTrainingData(BeamModel, TestData):
 
     return torch.tensor(TestData, dtype=torch.float32, requires_grad=True)
 
-
 def FilterTrainingData(BeamModel, TestData):
     ### Filter training data in order to avoid collision of training point and mesh coordinate (ie derivative being automatically zero)
     TestData = numpy.array(TestData.detach())

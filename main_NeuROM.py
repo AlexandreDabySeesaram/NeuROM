@@ -35,7 +35,7 @@ BoolGPU = False                                     # Boolean enabling GPU compu
 BoolCompile = False                                 # Enable compilation of the model
 
 # Training
-TrainingRequired = False                             # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired = True                             # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs = 3000                                     # Maximum number of iterations for the training stage
 learning_rate = 0.001                               # optimizer learning rate
 LoadPreviousModel = True                           # Boolean to enable reusing a previously trained model
@@ -51,7 +51,7 @@ Visualisatoin_only = False
 #%% Pre-processing (could be put in config file later)
 # Definition of the space discretisation
 dimension = 1                                      # Dimension of the study (1D or 2D)
-order = 1                                          # Order of the shape functions
+order = 2                                          # Order of the shape functions
 
 # Choose the geometry
 match dimension:
@@ -66,7 +66,7 @@ match dimension:
         # Name = 'Hole_3'
 
 # Defintition of the structure 
-np = 100                                             # Number of Nodes in the Mesh in 1D
+np = 20                                             # Number of Nodes in the Mesh in 1D
 MaxElemSize2D = 1                                   # Maximum element size in the 2D mesh
 L = 10                                              # Length of the Beam
 A = 1                                               # Section of the beam
@@ -149,7 +149,8 @@ ROM_model = NeuROM(                               # Build the surrogate (reduced
             
 
 #%% Load coarser model  
-PreviousFullModel = 'TrainedModels/FullModel_np_100'
+# PreviousFullModel = 'TrainedModels/FullModel_np_100'
+PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
 if LoadPreviousModel:
     ROM_model.Init_from_previous(PreviousFullModel)
 
@@ -172,16 +173,16 @@ if BiPara:
 else:
     Para_coord_list = [TrialPara]
 
-if not TrainingRequired:
-    # Load pre trained model
-    # if os.path.isfile('TrainedModels/'+name_model):
-    if os.path.isfile(PreviousFullModel):
-        # ROM_model.load_state_dict(torch.load('TrainedModels/'+name_model))
-        ROM_model.load_state_dict(torch.load(PreviousFullModel))
-        print('************ LOADING MODEL COMPLETE ***********\n')
-    else: 
-        TrainingRequired = True
-        print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
+# if not TrainingRequired:
+#     # Load pre trained model
+#     # if os.path.isfile('TrainedModels/'+name_model):
+#     if os.path.isfile(PreviousFullModel):
+#         # ROM_model.load_state_dict(torch.load('TrainedModels/'+name_model))
+#         ROM_model.load_state_dict(torch.load(PreviousFullModel))
+#         print('************ LOADING MODEL COMPLETE ***********\n')
+#     else: 
+#         TrainingRequired = True
+#         print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
 
 
 if TrainingRequired:

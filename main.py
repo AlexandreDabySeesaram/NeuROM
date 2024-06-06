@@ -136,5 +136,15 @@ else:
     Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
 
 
-    #%% Post-processing
-# Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+#%% Post-processing
+
+print("*************** POST-PROCESSING ***************\n")
+
+if config["solver"]["ParametricStudy"]:
+    Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+else:
+    if config["postprocess"]["exportVTK"]:
+        Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+        Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+       
+# %%

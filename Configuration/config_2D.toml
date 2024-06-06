@@ -126,6 +126,8 @@ BoolPlotPost            = false                                     # Boolean fo
 BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
+exportVTK               = true                                      # Enables VTK export 
+Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
 
 ####################################################
 ###                                              ###

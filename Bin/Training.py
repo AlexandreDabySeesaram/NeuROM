@@ -1042,22 +1042,23 @@ def Training_2D_Integral(model, optimizer, n_epochs,Mat):
     Loss_vect                           = []                  # Initialise vector of loss values
     time_start                          = time.time()
     epoch                               = 0                   # Epoch counter
-    save_time                           = 0                     
-    eval_time                           = 0
-    back_time                           = 0
-    update_time                         = 0
-    model.train()
-    TrailCoord_1d_x = torch.tensor([i for i in torch.linspace(0,1,1)],dtype=torch.float64, requires_grad=True)
-    TrailCoord_1d_y = torch.tensor([i for i in torch.linspace(0,5*1,5*1)],dtype=torch.float64,  requires_grad=True)
-    PlotCoordinates = torch.cartesian_prod(TrailCoord_1d_x,TrailCoord_1d_y)
-    model.Initresults()
-    stagnation                          = False
-    flag_Stop_refinement                = False
+    save_time                           = 0                   # Stopwatch for saving the model     
+    eval_time                           = 0                   # Stopwatch for evaluating the model     
+    back_time                           = 0                   # Stopwatch for backpropagation
+    update_time                         = 0                   # Stopwatch for updating the parameters
+    model.train()                                             # Training mode
+    
+    model.Initresults()                                       # Initialise the structure for saving training history
+    stagnation                          = False               # Stagnation of loss decay
     while epoch<model.Max_epochs and not stagnation:
         # Compute loss
         loss_time_start                 = time.time()
         u_predicted,xg,detJ             = model()
-        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+        loss                            = torch.sum((
+                                                    0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-
+                                                    10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9)
+                                                    )*torch.abs(detJ))
+
         eval_time                       = time.time() - loss_time_start
         loss_current                    = loss.item()
         backward_time_start             = time.time()
@@ -1071,9 +1072,9 @@ def Training_2D_Integral(model, optimizer, n_epochs,Mat):
         with torch.no_grad():
             epoch+=1
             if epoch >1:
-                d_loss                  = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
-                loss_old                = loss.data
-                D_detJ                  = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)
+                d_loss                  = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))     # Relative loss decay
+                loss_old                = loss.data                                                             # Update old loss value
+                D_detJ                  = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)   # Relative delat jacobian
                 if torch.max(D_detJ)>model.Jacobian_threshold:
                     indices             = torch.nonzero(D_detJ > model.Jacobian_threshold)
                     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
@@ -1090,7 +1091,7 @@ def Training_2D_Integral(model, optimizer, n_epochs,Mat):
                             model.eval()
                             newvalue = model(new_coordinate,el_id) 
                             model.train()
-                            Removed_elems = model.SplitElemNonLoc(el_id)
+                            Removed_elems = model.SplitElemNonLoc(el_id)                                    # Refine element el_id and remove consequently splitted element from the list of element to split
                             Removed_elems[0] = Removed_elems[0].numpy()
                             # Update indexes 
                             for j in range(indices.shape[0]):
@@ -1542,6 +1543,7 @@ def Training_2D_FEM(model, config, Mat):
         n_refinement        +=1
         optimizer           = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
 
+        # Call the mono-scale training routine
         match config["solver"]["TrainingStrategy"]:
             case "Integral":
                 Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat)
@@ -1549,7 +1551,7 @@ def Training_2D_FEM(model, config, Mat):
                 Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat)
             case "Mixed":
                 Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat) 
-
+        # Update the training history
         Loss_tot            += Loss_vect
         Duration_tot        += Duration
         U_interm_tot        += model.U_interm
@@ -1557,11 +1559,14 @@ def Training_2D_FEM(model, config, Mat):
         detJ_tot            += model.Jacobian_interm
         X_interm_tot        += model.X_interm
         Connectivity_tot    += model.Connectivity_interm
+
+        # Compute maximum strain 
         _,xg,detJ            = model()
         model.eval()
         List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
         eps                  =  Strain(model(xg, List_elems),xg)
         max_eps              = torch.max(eps)
+
         if n_refinement > 1:
             d_eps_max        = 2*torch.abs(max_eps-max_eps_old)/(max_eps_old+max_eps_old)
             d_eps_max_vect.append(d_eps_max.data)
@@ -1586,14 +1591,14 @@ def Training_2D_FEM(model, config, Mat):
             Mesh_object_fine.ReadMesh()   
             Mesh_object_fine.ExportMeshVtk()
             List_elems          = torch.arange(0,Mesh_object_fine.NElem,dtype=torch.int)
-            model_2 = MeshNN_2D(Mesh_object_fine, 2)                # Create the associated model (with 2 components)
+            model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
             # Update model's mesh
             model.mesh.Nodes    = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
             model.mesh.Connectivity = model.connectivity
             model.mesh.ExportMeshVtk(flag_update = True)
 
-            model_2.Init_from_previous(model)                  # Initialise fine model with coarse one
-            model = model_2                                         # model is now the fine 
+            model_2.Init_from_previous(model)                                           # Initialise fine model with coarse one
+            model = model_2                                                             # model is now the fine 
             model.UnFreeze_FEM()
             model.Freeze_Mesh()
             model.UnFreeze_Mesh()

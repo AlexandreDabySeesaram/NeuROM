@@ -1,8 +1,10 @@
 import numpy as numpy
 import torch
+from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
 import Post.Plots as Pplot
 import copy
 import time
+import Bin.Pre_processing as pre
 import torch
 import random 
 import torch.nn as nn
@@ -13,7 +15,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
-                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara
+                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -1036,7 +1038,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
 
     return Model_u, Model_du, loss
 
-def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
+def Training_2D_Integral(model, optimizer, n_epochs,Mat):
     
     # Initialise vector of loss values
     Loss_vect = []
@@ -1110,11 +1112,11 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                             optimizer.add_param_group({'params': model.coordinates[-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
                             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
-                    _,_,detJ = model(PlotCoordinates, List_elems)
+                    # _,_,detJ = model(PlotCoordinates, List_elems)
                     # model.detJ = detJ
 
                     # model.Freeze_Mesh()
-                if d_loss < model.Stagnation_threshold:
+                if d_loss < model.loss_decrease_c:
                     stagnation = True
                     # stagnation = False
             else:
@@ -1226,7 +1228,7 @@ def Training_2D_Integral_LBFGS(model, n_epochs,List_elems,Mat):
                     # model.detJ = detJ
 
                     # model.Freeze_Mesh()
-                if d_loss < model.Stagnation_threshold:
+                if d_loss < model.loss_decrease_c:
                     stagnation = True
                     # stagnation = False
             else:
@@ -1300,7 +1302,7 @@ def Training_2D_NeuROM(model, config, optimizer,Mat):
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
-                if d_loss < model.Stagnation_threshold:
+                if d_loss < model.loss_decrease_c:
                     stagnation = True
                     # stagnation = False
             else:
@@ -1402,7 +1404,7 @@ def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
-                if d_loss < model.Stagnation_threshold:
+                if d_loss < model.loss_decrease_c:
                     stagnation = False
             else:
                 loss_old = loss.item()
@@ -1509,7 +1511,7 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
             if epoch >1:
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
-                if d_loss < model.Stagnation_threshold:
+                if d_loss < model.loss_decrease_c:
                     stagnation = True
             else:
                 loss_old = loss.item()
@@ -1528,3 +1530,97 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
     return Loss_vect, (time_stop-time_start)
+
+def Training_2D_FEM(model, config, Mat):
+    n_epochs = config["training"]["n_epochs"]
+    n_refinement        = 0                                 # Initialise the refinement level
+    stagnation          = False                             # Stagnation flag
+    Loss_tot            = []                                # Vector of loss values throught training
+    Duration_tot        = 0                                 # Stopwatch of the training
+    U_interm_tot        = []                                # List of displacement solutions history throught training
+    Gen_interm_tot      = []                                # List of the elements' generation history throught training
+    X_interm_tot        = []                                # List nodal position history throught training
+    Connectivity_tot    = []                                # List connectivity table history through training
+    d_eps_max_vect      = []                                # List of reltive delta of maximum strain through training
+    eps_max_vect        = []                                # List of maximum strain through training
+    detJ_tot            = []                                # List of history of detJ through training
+    MaxElemSize         = config["interpolation"]["MaxElemSize2D"] # Initial value of max elem size from config file
+    import meshio
+    while n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
+        print(f"* Refinement level: {n_refinement}\n")
+        n_refinement        +=1
+        optimizer           = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+
+        match config["solver"]["TrainingStrategy"]:
+            case "Integral":
+                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat)
+            case "Residual":
+                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat)
+            case "Mixed":
+                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat) 
+
+        Loss_tot            += Loss_vect
+        Duration_tot        += Duration
+        U_interm_tot        += model.U_interm
+        Gen_interm_tot      += model.G_interm
+        detJ_tot            += model.Jacobian_interm
+        X_interm_tot        += model.X_interm
+        Connectivity_tot    += model.Connectivity_interm
+        _,xg,detJ            = model()
+        model.eval()
+        List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
+        eps                  =  Strain(model(xg, List_elems),xg)
+        max_eps              = torch.max(eps)
+        if n_refinement > 1:
+            d_eps_max        = 2*torch.abs(max_eps-max_eps_old)/(max_eps_old+max_eps_old)
+            d_eps_max_vect.append(d_eps_max.data)
+            eps_max_vect.append(max_eps.data)
+            max_eps_old      = max_eps
+            if d_eps_max < config["training"]["d_eps_max_threshold"]:
+                stagnation   = True
+        else:
+            max_eps_old      = max_eps
+        if n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
+
+            MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
+            Mesh_object_fine = pre.Mesh( config["geometry"]["Name"],                    # Create the mesh object
+                                         MaxElemSize, 
+                                         config["interpolation"]["order"], 
+                                         config["interpolation"]["dimension"])
+            Mesh_object_fine.AddBorders( config["Borders"]["Borders"])
+            Mesh_object_fine.AddBCs(     config["geometry"]["Volume_element"],
+                                    [],
+                                    config["DirichletDictionryList"])                   
+            Mesh_object_fine.MeshGeo()                                                       
+            Mesh_object_fine.ReadMesh()   
+            Mesh_object_fine.ExportMeshVtk()
+            List_elems          = torch.arange(0,Mesh_object_fine.NElem,dtype=torch.int)
+            model_2 = MeshNN_2D(Mesh_object_fine, 2)                # Create the associated model (with 2 components)
+            # Update model's mesh
+            model.mesh.Nodes    = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+            model.mesh.Connectivity = model.connectivity
+            model.mesh.ExportMeshVtk(flag_update = True)
+
+            model_2.Init_from_previous(model)                  # Initialise fine model with coarse one
+            model = model_2                                         # model is now the fine 
+            model.UnFreeze_FEM()
+            model.Freeze_Mesh()
+            model.UnFreeze_Mesh()
+            model.train()
+            model.RefinementParameters( MaxGeneration = 3, 
+                                        Jacobian_threshold = 0.2)
+            model.TrainingParameters(   loss_decrease_c = 1e-7, 
+                                        Max_epochs = 500, 
+                                        learning_rate = 0.001)
+        else:
+            model.train()
+            model.training_recap = {"Loss_tot":Loss_tot,
+                                    "Duration_tot":Duration_tot,
+                                    "U_interm_tot":U_interm_tot,
+                                    "Gen_interm_tot":Gen_interm_tot,
+                                    "X_interm_tot":X_interm_tot,
+                                    "Connectivity_tot":Connectivity_tot,
+                                    "d_eps_max_vect":d_eps_max_vect,
+                                    "eps_max_vect":eps_max_vect,
+                                    "detJ_tot":detJ_tot}
+    return model 

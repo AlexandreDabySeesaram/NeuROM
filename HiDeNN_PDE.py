@@ -305,8 +305,8 @@ class NeuROM(nn.Module):
     def __init__(self, mesh, ParametersList, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
-        if IndexesNon0BCs and n_modes==1: #If non homogeneous BCs, add mode for relevement
-            n_modes+=1
+        if IndexesNon0BCs and n_modes_max==1: #If non homogeneous BCs, add mode for relevement
+            n_modes_max+=1
         self.IndexesNon0BCs = IndexesNon0BCs
         self.n_modes = n_modes_max
         self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
@@ -348,8 +348,8 @@ class NeuROM(nn.Module):
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].eval()  
 
-    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
-        self.Stagnation_threshold = Stagnation_threshold
+    def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.loss_decrease_c = Stagnation_threshold
         self.Max_epochs = Max_epochs
         self.learning_rate = learning_rate
 
@@ -717,7 +717,30 @@ class MeshNN_2D(nn.Module):
         self.RefinementParameters()
         self.TrainingParameters()
 
-
+    def Init_from_previous(self,CoarseModel):
+        newcoordinates = [coord for coord in self.coordinates]
+        newcoordinates = torch.cat(newcoordinates,dim=0)
+        IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
+        NewNodalValues = CoarseModel(newcoordinates,IDs_newcoord)
+        # check if a cell ID was not found for some new nodes 
+        if -1 in IDs_newcoord:
+            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
+            oldcoordinates = [coord for coord in CoarseModel.coordinates]
+            oldcoordinates = torch.cat(oldcoordinates,dim=0)
+            for ind_neg in index_neg:
+                not_found_coordinates = newcoordinates[ind_neg]
+                dist_vect = not_found_coordinates - oldcoordinates
+                dist = torch.norm(dist_vect, dim=1)
+                closest_old_nodal_value = dist.topk(1, largest=False)[1]
+                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].type(torch.float64)
+                NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
+        new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
+        new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+        self.nodal_values_x = new_nodal_values_x
+        self.nodal_values_y = new_nodal_values_y
+        self.nodal_values = new_nodal_values
+ 
 
     def SetBCs(self, ListOfDirichletsBCsValues):
         for i in range(len(ListOfDirichletsBCsValues)):
@@ -830,8 +853,8 @@ class MeshNN_2D(nn.Module):
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
 
-    def TrainingParameters(self, Stagnation_threshold = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
-        self.Stagnation_threshold = Stagnation_threshold
+    def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.loss_decrease_c = loss_decrease_c
         self.Max_epochs = Max_epochs
         self.learning_rate = learning_rate
 

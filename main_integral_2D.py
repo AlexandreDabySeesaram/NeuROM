@@ -77,7 +77,7 @@ learning_rate = 0.001                                           # optimizer lear
 Model_2D.RefinementParameters(  MaxGeneration = 2, 
                                 Jacobian_threshold = 0.5)
                                 
-Model_2D.TrainingParameters(    Stagnation_threshold = 1e-5, 
+Model_2D.TrainingParameters(    loss_decrease_c = 1e-5, 
                                 Max_epochs = 5000, 
                                 learning_rate = 0.001)
 
@@ -106,7 +106,7 @@ while n_refinement < max_refinment and not stagnation:
     n_epochs = 3000
     if n_refinement>4:
         n_epochs = 1000
-    Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+    Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,Mat)
     # Save current convergence state
     Loss_tot += Loss_vect
     Duration_tot += Duration
@@ -115,7 +115,7 @@ while n_refinement < max_refinment and not stagnation:
     detJ_tot += Model_2D.Jacobian_interm
     X_interm_tot += Model_2D.X_interm
     Connectivity_tot += Model_2D.Connectivity_interm
-    meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
+    # meshBeam = meshio.read('geometries/'+Domain_mesh.name_mesh)
     # Cmpute max strain
     _,xg,detJ = Model_2D()
     Model_2D.eval()
@@ -182,7 +182,7 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D.train()
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.2)
-        Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
+        Model_2D.TrainingParameters(    loss_decrease_c = 1e-7, 
                                         Max_epochs = 500, 
                                         learning_rate = 0.001)
     else:

@@ -12,7 +12,7 @@ Volume_element          = 100                                       # Volume ele
 
 ####################################################
 ###                                              ###
-###              Boundary Conditions             ###
+###              BOUNDARY CONDITIONS             ###
 ###                                              ###
 ####################################################
 
@@ -35,7 +35,7 @@ Constitutive            = false
 
 [[DirichletDictionryList]]
 Entity                  = 113                                       # Physical tag of the boundary
-Value                   = 0                                         # numerical value
+Value                   = 1                                         # numerical value
 Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
@@ -78,10 +78,11 @@ MaxElemSize2D           = 5                                         # Maximum el
 [solver]
 FrozenMesh              = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
-ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
+ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara = true                                                       # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
+# MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################
 ###                                              ###
@@ -101,12 +102,17 @@ BoolCompile             = false                                     # Enable com
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 3000                                      # Maximum number of iterations for the training stage
+n_epochs                = 300                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
+r_adapt                 = false                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
-Stagnation_threshold    = 1e-7
+loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
+multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
+h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
+d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
+multiscl_refinment_cf   = 3                                         # Multiscale homogeneous refinement coefficient
 
 ####################################################
 ###                                              ###
@@ -123,7 +129,7 @@ Visualisatoin_only      = false
 
 ####################################################
 ###                                              ###
-###                  Parameters                  ###
+###                  PARAMETERS                  ###
 ###                                              ###
 ####################################################
 

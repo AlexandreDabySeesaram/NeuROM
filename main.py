@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -46,24 +46,25 @@ MaxElemSize = pre.ElementSize(
                             )
 Excluded = []
 Mesh_object = pre.Mesh( 
-                                config["geometry"]["Name"],             # Create the mesh object
+                                config["geometry"]["Name"],                 # Create the mesh object
                                 MaxElemSize, 
                                 config["interpolation"]["order"], 
                                 config["interpolation"]["dimension"]
                         )
 
 Mesh_object.AddBorders(config["Borders"]["Borders"])
-Mesh_object.AddBCs(                                                     # Include Boundary physical domains infos (BCs+volume)
+Mesh_object.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
                                 config["geometry"]["Volume_element"],
                                 Excluded,
                                 config["DirichletDictionryList"]
                     )                   
 
-Mesh_object.MeshGeo()                                                   # Mesh the .geo file if .msh does not exist
-Mesh_object.ReadMesh()                                                  # Parse the .msh file
+Mesh_object.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
+Mesh_object.ReadMesh()                                                      # Parse the .msh file
+Mesh_object.ExportMeshVtk()
 
 if config["interpolation"]["dimension"] ==1:
-    Mesh_object.AssemblyMatrix()                                        # Build the assembly weight matrix
+    Mesh_object.AssemblyMatrix()                                            # Build the assembly weight matrix
 
 if int(Mesh_object.dim) != int(Mesh_object.dimension):
     raise ValueError("The dimension of the provided geometry does not match the job dimension")
@@ -71,7 +72,7 @@ if int(Mesh_object.dim) != int(Mesh_object.dimension):
 #%% Application of the Space HiDeNN
 match config["interpolation"]["dimension"]:
     case 1:     
-        Model_FEM = MeshNN(Mesh_object)                                 # Build the model
+        Model_FEM = MeshNN(Mesh_object)                                     # Build the model
     case 2:
         Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
@@ -95,7 +96,7 @@ else:
                                             config["parameters"]["para_1_max"],
                                             config["parameters"]["N_para_1"]]])
 
-ROM_model = NeuROM(                                                     # Build the surrogate (reduced-order) model
+ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
                                             Mesh_object, 
                                             ParameterHypercube, 
                                             config["solver"]["n_modes_ini"],
@@ -113,7 +114,7 @@ if config["solver"]["ParametricStudy"]:
     ROM_model.Freeze_Mesh()                                                 # Set space mesh cordinates as untrainable
     ROM_model.Freeze_MeshPara()                                             # Set parameters mesh cordinates as untrainable
 
-    ROM_model.TrainingParameters(   Stagnation_threshold = config["training"]["Stagnation_threshold"], 
+    ROM_model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
                                     Max_epochs = config["training"]["n_epochs"], 
                                     learning_rate = config["training"]["learning_rate"])
                                     
@@ -129,7 +130,11 @@ if config["solver"]["ParametricStudy"]:
                 Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
         ROM_model.eval()
 else:
-    Loss_vect, Duration = Training_2D_Integral(Model_FEM, optimizer, n_epochs,List_elems,Mat)
+    Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
+    Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
+
 
     #%% Post-processing
 # Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')

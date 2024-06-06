@@ -1250,15 +1250,44 @@ def Training_2D_Integral_LBFGS(model, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
 
-def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
+def Training_2D_NeuROM(model, config, optimizer,Mat):
+    n_epochs = model.Max_epochs
+    # In the parameters space
+    Training_para_coordinates_1 = torch.linspace(
+                                                config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                5*config["parameters"]["N_para_1"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+    Training_para_coordinates_2 = torch.linspace(
+                                                config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                5*config["parameters"]["N_para_2"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
+    if config["solver"]["BiPara"]:
+        Training_para_coordinates_list = nn.ParameterList(
+                                                            (Training_para_coordinates_1,
+                                                            Training_para_coordinates_2))
+    else:
+        Training_para_coordinates_list = [Training_para_coordinates_1]
+
     time_start = time.time()
     epoch = 0 
     Loss_vect = []
     stagnation = False
     while epoch<model.Max_epochs and not stagnation:
         
-        # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Param_trial)
-        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Param_trial)
+        # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
 
         loss.backward()
         # update weights
@@ -1283,7 +1312,13 @@ def Training_2D_NeuROM(model, Param_trial, optimizer, n_epochs,Mat):
     print("*************** END OF TRAINING ***************\n")
     # print("*************** END FIRST PHASE ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
-    return Loss_vect, (time_stop-time_start)
+    model.training_recap = {"Loss_vect":Loss_vect,
+                        # "L2_error":L2_error,
+                        "training_time":(time_stop-time_start),
+                        # "Mode_vect":Modes_vect,
+                        # "Loss_decrease_vect":Loss_decrease_vect
+                        }
+    return
 
 def Training_2D_Residual(model, model_test, optimizer, n_epochs,List_elems,Mat):
     

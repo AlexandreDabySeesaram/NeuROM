@@ -25,7 +25,7 @@ from importlib import reload  # Python 3.4+
 import tomllib
 
 # Add possibility to specify name of config file with argparse
-with open("Configuration/config_1D.toml", mode="rb") as f:
+with open("Configuration/config_2D.toml", mode="rb") as f:
     config = tomllib.load(f)
     
 #%% Initialise material
@@ -126,11 +126,7 @@ if config["solver"]["ParametricStudy"]:
 
                 Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
             case 2:
-                Loss_vect, Duration = Training_2D_NeuROM(   ROM_model, 
-                                                            Training_para_coordinates_list, 
-                                                            optimizer, 
-                                                            ROM_model.Max_epochs,
-                                                            Mat)
+                Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
         ROM_model.eval()
 else:
     Loss_vect, Duration = Training_2D_Integral(Model_FEM, optimizer, n_epochs,List_elems,Mat)

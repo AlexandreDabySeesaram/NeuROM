@@ -80,6 +80,7 @@ match config["interpolation"]["dimension"]:
 Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 Model_FEM.Freeze_Mesh()
+Model_FEM.UnFreeze_FEM()
 
 #%% Application of NeuROM
 # Parameter space-definition

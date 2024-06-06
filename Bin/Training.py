@@ -5,7 +5,7 @@ import copy
 import time
 import torch
 import random 
-
+import torch.nn as nn
 from Bin.PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
@@ -14,7 +14,6 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara
-
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                                             TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -352,41 +351,79 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
-def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,BiPara,loss_decrease_c=1e-5):
+def Training_NeuROM(model, config, optimizer):
+    A = config["geometry"]["A"]
+    L = config["geometry"]["L"]
+    n_epochs = config["training"]["n_epochs"]
+    BiPara = config["solver"]["BiPara"]
+    loss_decrease_c = config["training"]["loss_decrease_c"]
+    ### Generate training points coordinates
+    # In space
+    Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                        dtype=torch.float32, 
+                                        requires_grad=True)
+    # In the parameters space
+    Training_para_coordinates_1 = torch.linspace(
+                                                config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                5*config["parameters"]["N_para_1"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+    Training_para_coordinates_2 = torch.linspace(
+                                                config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                5*config["parameters"]["N_para_2"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
+    if config["solver"]["BiPara"]:
+        Training_para_coordinates_list = nn.ParameterList(
+                                                            (Training_para_coordinates_1,
+                                                            Training_para_coordinates_2))
+    else:
+        Training_para_coordinates_list = [Training_para_coordinates_1]
+
     # Initialise vector of loss values
     Loss_vect = []
     # Initialise vector of L2 error
     L2_error = []
     # BCs used for the analytical comparison 
-    u0 = model.Space_modes[0].u_0
-    uL = model.Space_modes[0].u_L
+    u0 = model.Space_modes[0].u_0                                       # Left BC
+    uL = model.Space_modes[0].u_L                                       # Right BC
     print("**************** START TRAINING ***************\n")
     time_start = time.time()
-    epoch = 0
-    loss_counter = 0
-    save_time = 0
-    eval_time = 0
-    back_time = 0
-    update_time = 0
-    # loss_decrease_c = 1e-4 # Criterion of stagnation for the loss
-    Add_mode_c = 1e-5 # Criterion of stagnation before adding a new mode
-    FlagAddedMode_usefull = True    # Flag stating that the new mode did help speeding-up the convergence
-    stagnancy_counter = 0
-    local_stagnancy_counter = 0 # Stagnancy since last additoin of a mode
-    FlagAddedMode = False # Flag activated whn a mode has been added
-    Modes_vect = []
-    Loss_decrease_vect = []
-    Usefullness = 0
+    epoch = 0                                                           # Initial epoch number
+    loss_counter = 0                                                    # Ounter for loss stoped decreasing 
+    save_time = 0                                                       # Saving model stopwatch
+    eval_time = 0                                                       # Evaluating model stopwatch                                   
+    back_time = 0                                                       # Backpropagation stopwatch
+    update_time = 0                                                     # Updating parameters stopwatch
+
+    Add_mode_c = 1e-5                                                   # Criterion of stagnation before adding a new mode
+    FlagAddedMode_usefull = True                                        # Flag stating that the new mode did help speeding-up the convergence
+    stagnancy_counter = 0                                               # Stagnancy since last additoin of a mode
+    local_stagnancy_counter = 0
+    FlagAddedMode = False                                               # Flag activated when a new mode has been added
+    Modes_vect = []                                                     # List of number of modes through the iterations
+    Loss_decrease_vect = []                                             # Loss decrease rate through the iterations
+    Usefullness = 0                                                     # Number of iteration in a row during which the last added mode helped the convergence
+
     while epoch<n_epochs and loss_counter<100:
-        # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-        if stagnancy_counter>5 and not FlagAddedMode_usefull:
+        if stagnancy_counter>5 and not FlagAddedMode_usefull:           # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
             break 
         # Compute loss
         loss_time_start = time.time()
         if not BiPara:
-            loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+            loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
         else:
-            loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,TrialCoordinates,RHS(TrialCoordinates))
+            loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
         eval_time += time.time() - loss_time_start
         loss_current = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -394,44 +431,40 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
             loss_decrease = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
             Loss_decrease_vect.append(loss_decrease)
             loss_old = loss_current
-            # if loss_decrease >= 0 and loss_decrease < loss_decrease_c:
-            if numpy.abs(loss_decrease) < loss_decrease_c:
-                stagnancy_counter = stagnancy_counter +1
-                Usefullness = 0
+            if numpy.abs(loss_decrease) < loss_decrease_c:              # Check for stagnation of the loss
+                stagnancy_counter = stagnancy_counter +1                # Increment stagnation
+                Usefullness = 0                                         # Reinit. usefullness of last added mode
             else:
-                stagnancy_counter = 0
-                if loss_decrease >= 0:
-                    Usefullness+=1
-                    if Usefullness>=15:
-                        FlagAddedMode_usefull = True    # Flag stating that the new mode did help speeding-up the convergence
+                stagnancy_counter = 0                                   # Reinit. stagnation
+                if loss_decrease >= 0:                                  # Check that loss decreases
+                    Usefullness+=1                                      # Increment usefullness of of the last added mode
+                    if Usefullness>=15:                                 # Check if mode was usefull for more than 15 iterations in a raw
+                        FlagAddedMode_usefull = True                    # Flag stating that the new mode did help speeding-up the convergence
 
-
-            if loss_min > loss_current:
+            if loss_min > loss_current:                                 
                 with torch.no_grad():
-                    if (epoch+1) % 300 == 0:
+                    if (epoch+1) % 300 == 0:                            # Update saved model only every 300 iterations to save saving time
                         save_start = time.time()
                         loss_min = loss_current
-                        # torch.save(model.state_dict(),"Results/Current_best")
-                        Current_best = copy.deepcopy(model.state_dict()) # Store in variable instead of writing file
+                        Current_best = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
                         save_stop = time.time()
                         save_time+=(save_stop-save_start)
-                    loss_counter = 0
+                    loss_counter = 0                                    # breaks series of non decreasing loss
             else:
-                loss_counter += 1
+                loss_counter += 1                                       # increments breaks series of non decreasing loss
                 
         else:
-            loss_min = loss_current + 1 
-            loss_old = loss_current
+            loss_min = loss_current + 1                                 # Initialise to dummy (lagrger than current) loss min
+            loss_old = loss_current                                     # Initialise previous loss
 
         backward_time_start = time.time()
         loss.backward()
         back_time += time.time() - backward_time_start
         # update weights
         update_time_start = time.time()
-        optimizer.step()
+        optimizer.step()                                                # Update parameters
         update_time += time.time() - update_time_start
-        # zero the gradients after updating
-        optimizer.zero_grad()
+        optimizer.zero_grad()                                           # zero the gradients after updating
         Modes_vect.append(model.n_modes_truncated.detach().clone())
         if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
@@ -449,9 +482,9 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
         with torch.no_grad():
             epoch+=1
             Loss_vect.append(loss.item())
-            numel_E = E_trial[0].shape[0]
+            numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
-                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
+                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 100 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
@@ -471,22 +504,66 @@ def Training_NeuROM(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs,B
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min < loss_current:
         print("*************** REVERT TO BEST  ***************\n")
-        # model.load_state_dict(torch.load("Results/Current_best"))
         model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
-
-    return Loss_vect, L2_error, (time_stop-time_start), Modes_vect, Loss_decrease_vect
     
-def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optimizer, n_epochs, max_stagnation,Loss_vect,L2_error,training_time,BiPara):
+    model.training_recap = {"Loss_vect":Loss_vect,
+                            "L2_error":L2_error,
+                            "training_time":(time_stop-time_start),
+                            "Mode_vect":Modes_vect,
+                            "Loss_decrease_vect":Loss_decrease_vect
+                            }
+    return 
+
+def Training_NeuROM_FinalStageLBFGS(model,config):
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 
                     #tolerance_grad = 1.0e-9,
                     line_search_fn="strong_wolfe")
+    
+    A = config["geometry"]["A"]
+    L = config["geometry"]["L"]
+    n_epochs = config["training"]["n_epochs"]
+    BiPara = config["solver"]["BiPara"]
+    loss_decrease_c = config["training"]["loss_decrease_c"]
+    ### Generate training points coordinates
+    # In space
+    Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                                        dtype=torch.float32, 
+                                        requires_grad=True)
+    # In the parameters space
+    Training_para_coordinates_1 = torch.linspace(
+                                                config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                5*config["parameters"]["N_para_1"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+    Training_para_coordinates_2 = torch.linspace(
+                                                config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                5*config["parameters"]["N_para_2"], 
+                                                dtype=torch.float32, 
+                                                requires_grad=True
+                                                )
+
+    Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
+
+    if config["solver"]["BiPara"]:
+        Training_para_coordinates_list = nn.ParameterList(
+                                                            (Training_para_coordinates_1,
+                                                            Training_para_coordinates_2))
+    else:
+        Training_para_coordinates_list = [Training_para_coordinates_1]
+
     epoch = 0
     stagnancy_counter = 0
     # model.UnFreeze_Mesh()
-    loss_old = Loss_vect[-1]
+    loss_old = model.training_recap["Loss_vect"][-1]
     # BCs used for the analytical comparison 
     u0 = model.Space_modes[0].u_0
     uL = model.Space_modes[0].u_L
@@ -498,9 +575,9 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
         def closure():
             optim.zero_grad()
             if not BiPara:
-                loss = PotentialEnergyVectorisedParametric(model,A,E_trial,model(TrialCoordinates,E_trial),TrialCoordinates,RHS(TrialCoordinates))
+                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
             else:
-                loss = PotentialEnergyVectorisedBiParametric(model,A,E_trial,TrialCoordinates,RHS(TrialCoordinates))
+                loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
             loss.backward()
             return loss
         optim.step(closure)
@@ -516,10 +593,10 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
 
         with torch.no_grad():
             epoch+=1
-            Loss_vect.append(loss.item())
-            numel_E = E_trial[0].shape[0]
+            model.training_recap["Loss_vect"].append(loss.item())
+            numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
-                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL)-model(TrialCoordinates,E_trial),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,E_trial,TrialCoordinates.data,u0,uL),dim=1)/numel_E)))
+                model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 5 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
@@ -528,9 +605,9 @@ def Training_NeuROM_FinalStageLBFGS(model, A, L, TrialCoordinates,E_trial, optim
 
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {training_time+time_stop-time_start}s')
+    print(f'* Training time: {model.training_recap["training_time"]+time_stop-time_start}s')
 
-    return Loss_vect, L2_error
+    return 
 
 def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 
                                 optimizer, n_epochs,

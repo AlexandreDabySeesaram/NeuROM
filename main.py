@@ -25,10 +25,10 @@ from importlib import reload  # Python 3.4+
 import tomllib
 
 # Add possibility to specify name of config file with argparse
-with open("Configuration/config_2D.toml", mode="rb") as f:
+with open("Configuration/config_1D.toml", mode="rb") as f:
     config = tomllib.load(f)
     
-#%% Initialise meterial
+#%% Initialise material
 Mat = pre.Material(             flag_lame = False,                          # If True should input lmbda and mu instead of E and nu
                                 coef1     = config["material"]["E"],        # Young Modulus
                                 coef2     = config["material"]["nu"]        # Poisson's ratio
@@ -117,67 +117,14 @@ if config["solver"]["ParametricStudy"]:
                                     Max_epochs = config["training"]["n_epochs"], 
                                     learning_rate = config["training"]["learning_rate"])
                                     
-    match config["interpolation"]["dimension"]:
-        case 1:
-            # Nodale coordinates where the model is evaluated during training
-            Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                                dtype=torch.float32, 
-                                                requires_grad=True)
-
-    Training_para_coordinates_1 = torch.linspace(
-                                                config["parameters"]["para_1_min"],
-                                                config["parameters"]["para_1_max"],
-                                                5*config["parameters"]["N_para_1"], 
-                                                dtype=torch.float32, 
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
-
-    Training_para_coordinates_2 = torch.linspace(
-                                                config["parameters"]["para_2_min"],
-                                                config["parameters"]["para_2_max"],
-                                                5*config["parameters"]["N_para_2"], 
-                                                dtype=torch.float32, 
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
-
-    if config["solver"]["BiPara"]:
-        Training_para_coordinates_list = nn.ParameterList(
-                                                            (Training_para_coordinates_1,
-                                                            Training_para_coordinates_2))
-    else:
-        Training_para_coordinates_list = [Training_para_coordinates_1]
-
     if config["training"]["TrainingRequired"]:
         ROM_model.train()
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:
-                Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect = Training_NeuROM( ROM_model,
-                                                                                                    config["geometry"]["A"], 
-                                                                                                    config["geometry"]["L"], 
-                                                                                                    Training_coordinates,
-                                                                                                    Training_para_coordinates_list, 
-                                                                                                    optimizer, 
-                                                                                                    config["training"]["n_epochs"],
-                                                                                                    config["solver"]["BiPara"],
-                                                                                                    loss_decrease_c = config["training"]["loss_decrease_c"])
+                Training_NeuROM(ROM_model,config,optimizer)                 # First stage of training (ADAM)
 
-                Loss_vect, L2_error = Training_NeuROM_FinalStageLBFGS(  ROM_model, 
-                                                                        config["geometry"]["A"], 
-                                                                        config["geometry"]["L"], 
-                                                                        Training_coordinates,
-                                                                        Training_para_coordinates_list, 
-                                                                        optimizer, 
-                                                                        config["training"]["n_epochs"], 
-                                                                        10,
-                                                                        Loss_vect,
-                                                                        L2_error,
-                                                                        training_time,
-                                                                        config["solver"]["BiPara"])
+                Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
             case 2:
                 Loss_vect, Duration = Training_2D_NeuROM(   ROM_model, 
                                                             Training_para_coordinates_list, 

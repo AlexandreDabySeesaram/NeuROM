@@ -1,6 +1,6 @@
 #%% Libraries import
 # import HiDeNN library
-from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
+from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_1D
 # Import pre-processing functions
 import Bin.Pre_processing as pre
 # Import torch librairies
@@ -87,10 +87,18 @@ Mesh_object.AddBCs(                                                         # In
 
 Mesh_object.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
 Mesh_object.ReadMesh()                                                      # Parse the .msh file
-if config["interpolation"]["dimension"] ==2:
-    Mesh_object.ExportMeshVtk()
 
-if config["interpolation"]["dimension"] ==1:
+match config["interpolation"]["dimension"]:
+    case 1:
+        if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+            Mesh_object.ExportMeshVtk1D()
+    case 2:
+        Mesh_object.ExportMeshVtk()
+
+# if config["interpolation"]["dimension"] ==2:
+#     Mesh_object.ExportMeshVtk()
+
+if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
     Mesh_object.AssemblyMatrix()                                            # Build the assembly weight matrix
 
 if int(Mesh_object.dim) != int(Mesh_object.dimension):
@@ -98,8 +106,12 @@ if int(Mesh_object.dim) != int(Mesh_object.dimension):
 
 #%% Application of the Space HiDeNN
 match config["interpolation"]["dimension"]:
-    case 1:     
-        Model_FEM = MeshNN(Mesh_object)                                     # Build the model
+    case 1:
+        match config["solver"]["IntegralMethod"]:                           # Build the model
+            case "Gaussian_quad":
+                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+            case "Trapezoidal":
+                Model_FEM = MeshNN(Mesh_object)
     case 2:
         Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
@@ -109,6 +121,7 @@ Model_FEM.UnFreeze_Mesh()
 Model_FEM.Freeze_Mesh()
 if not config["solver"]["FrozenMesh"]:
     Model_FEM.UnFreeze_FEM()
+
 
 #%% Application of NeuROM
 # Parameter space-definition

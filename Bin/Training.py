@@ -488,7 +488,7 @@ def Training_NeuROM(model, config, optimizer):
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
-        if (epoch+1) % 1 == 0:
+        if (epoch+1) % 100 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
             else:

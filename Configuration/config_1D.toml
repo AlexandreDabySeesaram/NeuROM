@@ -17,19 +17,19 @@ Volume_element          = 100                                       # Volume ele
 ####################################################
 
 [Borders]
-Borders                 = [111,112,113,114,115]                     # List of the structure's boundaries
+Borders                 = [1,2]                     # List of the structure's boundaries
 
 [[DirichletDictionryList]]
-Entity                  = 1                                         # Physical tag of the boundary
+Entity                  = 3                                         # Physical tag of the boundary
 Value                   = 0                                         # numerical value
-Normal                  = 1                                          # prescribed component (0=x,1=y,2=z)
+Normal                  = 0                                          # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
 [[DirichletDictionryList]]
-Entity                  = 2 
+Entity                  = 4 
 Value                   = 0 
-Normal                  = 1 
+Normal                  = 0 
 Relation                = false
 Constitutive            = false
 
@@ -52,8 +52,9 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 100                                            # Number of Nodes in the Mesh in 1D
+np                      = 20                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
+n_integr_points         = 5                                             # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -65,6 +66,7 @@ MaxElemSize2D           = 1                                             # Maximu
 FrozenMesh              = true                                         # Nodal coordinates frozen
 FrozenParaMesh          = true                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
+IntegralMethod          = 'Trapezoidal'                               # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = false                                          # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition

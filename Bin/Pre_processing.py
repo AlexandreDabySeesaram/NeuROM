@@ -221,6 +221,10 @@ class Mesh:
                                     self.type = "3-node quadratic bar"
                                     self.dim = 1
                                     self.node_per_elem = 3
+                                case 15:
+                                    self.type = "point"
+                                    self.dim = 1
+                                    self.node_per_elem = 1
                             self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
 
                 if self.NoExcl == False:
@@ -273,6 +277,28 @@ class Mesh:
         reader.SetFileName(msh_name[0:-4]+".vtk",)  
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
+
+    def ExportMeshVtk1D(self,flag_update = False):
+
+        msh_name = 'Geometries/'+self.name_mesh
+        meshBeam = meshio.read(msh_name)
+
+        if flag_update:
+            points = np.array(self.Nodes)[:,1:]
+        else:
+            points = meshBeam.points
+
+        # crete meshio mesh based on points and cells from .msh file
+
+        if self.order =='1':
+            mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+               
+        reader = vtk.vtkUnstructuredGridReader()
+        reader.SetFileName(msh_name[0:-4]+".vtk",)  
+        reader.Update()
+        self.vtk_mesh = reader.GetOutput()
+
 
 
     def ReadNormalVectors(self):

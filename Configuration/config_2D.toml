@@ -76,7 +76,8 @@ MaxElemSize2D           = 5                                         # Maximum el
 ####################################################
 
 [solver]
-FrozenMesh              = true                                      # Nodal coordinates frozen
+FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenParaMesh          = true                                  # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara = true                                                       # Enable bi-stifness beam in 1D
@@ -127,7 +128,7 @@ BoolCompareNorms        = true                                      # Boolean fo
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
-Name_export             = "UNIFIED_VTK2"                             # Name for the VTK results files
+Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
 
 ####################################################
 ###                                              ###

@@ -442,11 +442,12 @@ def Training_NeuROM(model, config, optimizer):
                     if Usefullness>=15:                                     # Check if mode was usefull for more than 15 iterations in a raw
                         FlagAddedMode_usefull = True                        # Flag stating that the new mode did help speeding-up the convergence
 
-            if loss_min > loss_current:                                 
+            if loss_min > loss_current:  
+                loss_min    = loss_current
                 with torch.no_grad():
                     if (epoch+1) % 300 == 0:                                # Update saved model only every 300 iterations to save saving time
                         save_start  = time.time()
-                        loss_min    = loss_current
+                        loss_min_saved = loss_current
                         Current_best = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
                         save_stop   = time.time()
                         save_time   +=(save_stop-save_start)
@@ -455,6 +456,7 @@ def Training_NeuROM(model, config, optimizer):
                 loss_counter += 1                                           # increments breaks series of non decreasing loss
                 
         else:
+            loss_min_saved          = loss_current + 1   
             loss_min                = loss_current + 1                      # Initialise to dummy (lagrger than current) loss min
             loss_old                = loss_current                          # Initialise previous loss
 
@@ -486,7 +488,7 @@ def Training_NeuROM(model, config, optimizer):
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 1 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
             else:
@@ -503,7 +505,7 @@ def Training_NeuROM(model, config, optimizer):
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
     # Final loss evaluation - Revert to minimal-loss state if needed
-    if loss_min < loss_current:
+    if loss_min_saved < loss_current:
         print("*************** REVERT TO BEST  ***************\n")
         model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
@@ -600,7 +602,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
                 model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
         if (epoch+1) % 5 == 0:
             if not BiPara:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}%')
             else:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 

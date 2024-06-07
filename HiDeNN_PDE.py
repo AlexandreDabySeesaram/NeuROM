@@ -349,7 +349,7 @@ class NeuROM(nn.Module):
             self.Space_modes[i].eval()  
 
     def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
-        self.loss_decrease_c = Stagnation_threshold
+        self.loss_decrease_c = loss_decrease_c
         self.Max_epochs = Max_epochs
         self.learning_rate = learning_rate
 
@@ -400,7 +400,7 @@ class NeuROM(nn.Module):
 
     def UnFreeze_Mesh(self):
         """Set the space coordinates as trainable parameters"""
-        for i in range(self.n_modes):
+        for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_Mesh()
 
     def Freeze_Space(self):

@@ -20,12 +20,38 @@ import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
 from importlib import reload  # Python 3.4+
-
-#%% Import config file
+from Bin import MyHeaders
 import tomllib
 
+#%% Specify default configuratoin file
+
+####################################################
+###                                              ###
+###                  USER INPUT                  ###
+###                                              ###
+####################################################
+
+Default_config_file = 'Configuration/config_1D.toml'
+
+####################################################
+###                                              ###
+####################################################
+#%% Import config file
+# Read script arguments
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-cf',type=str, help = 'path to the desired configuration file', default=Default_config_file, action = 'store')
+    jupyter = MyHeaders.is_notebook()
+    if jupyter:
+        args = parser.parse_args('')
+    else:
+        args = parser.parse_args()
+    inputs = vars(args)
+    print(f"* Executing job in {args.cf}")
+
 # Add possibility to specify name of config file with argparse
-with open("Configuration/config_2D.toml", mode="rb") as f:
+with open(args.cf, mode="rb") as f:
     config = tomllib.load(f)
     
 #%% Initialise material
@@ -61,7 +87,8 @@ Mesh_object.AddBCs(                                                         # In
 
 Mesh_object.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
 Mesh_object.ReadMesh()                                                      # Parse the .msh file
-Mesh_object.ExportMeshVtk()
+if config["interpolation"]["dimension"] ==2:
+    Mesh_object.ExportMeshVtk()
 
 if config["interpolation"]["dimension"] ==1:
     Mesh_object.AssemblyMatrix()                                            # Build the assembly weight matrix
@@ -80,7 +107,8 @@ match config["interpolation"]["dimension"]:
 Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 Model_FEM.Freeze_Mesh()
-Model_FEM.UnFreeze_FEM()
+if not config["solver"]["FrozenMesh"]:
+    Model_FEM.UnFreeze_FEM()
 
 #%% Application of NeuROM
 # Parameter space-definition
@@ -106,14 +134,24 @@ ROM_model = NeuROM(                                                         # Bu
 
 #%% Load coarser model  
 
-PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+match config["solver"]["BiPara"]:
+    case True:
+        PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+    case False:
+        PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+
 if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)
 
 #%% Training 
+ROM_model.Freeze_Mesh()                                                     # Set space mesh cordinates as untrainable
+ROM_model.Freeze_MeshPara()                                                 # Set parameters mesh cordinates as untrainable
+
 if config["solver"]["ParametricStudy"]: 
-    ROM_model.Freeze_Mesh()                                                 # Set space mesh cordinates as untrainable
-    ROM_model.Freeze_MeshPara()                                             # Set parameters mesh cordinates as untrainable
+    if not config["solver"]["FrozenMesh"]:
+        ROM_model.UnFreeze_Mesh()                                             # Set space mesh cordinates as trainable
+    if not config["solver"]["FrozenParaMesh"]:
+        ROM_model.UnFreeze_MeshPara()                                         # Set parameters mesh cordinates as trainable
 
     ROM_model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
                                     Max_epochs = config["training"]["n_epochs"], 
@@ -142,7 +180,18 @@ else:
 print("*************** POST-PROCESSING ***************\n")
 
 if config["solver"]["ParametricStudy"]:
-    Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+    Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                    dtype=torch.float32, 
+                    requires_grad=True)
+    if config["postprocess"]["Plot_loss_mode"]:
+        Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],'Loss_ModesNeg13',True)
+    if config["postprocess"]["Plot_loss_decay_mode"]:
+        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],'Loss_ModesNeg13',True)
+    match config["solver"]["BiPara"]:
+        case True:
+            Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+        case False:  
+            Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
 else:
     if config["postprocess"]["exportVTK"]:
         Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])

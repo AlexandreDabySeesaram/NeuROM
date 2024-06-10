@@ -1782,6 +1782,9 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
     n_epochs = config["training"]["n_epochs"]
     A = config["material"]["A"]
     E = config["material"]["E"]
+    max_stagnation_counter = config["training"]["Stagnation_counter"]
+    stagnation_threshold = config["training"]["Stagnation_threshold"]
+
 
     Coord_trajectories = []
     error = []
@@ -1801,7 +1804,7 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
     optimizer = torch.optim.LBFGS(model.parameters(),
                     line_search_fn="strong_wolfe")
 
-    while epoch<n_epochs and stagnancy_counter < 5:
+    while epoch<n_epochs and stagnancy_counter < max_stagnation_counter:
 
         coord_old = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
         # Compute loss
@@ -1860,7 +1863,7 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
         loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
         loss_old = loss_current
 
-        if loss_decrease >= 0 and loss_decrease < 1.0e-7:
+        if loss_decrease >= 0 and loss_decrease < stagnation_threshold:
             stagnancy_counter = stagnancy_counter +1
         else:
             stagnancy_counter = 0

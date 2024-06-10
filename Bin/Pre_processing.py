@@ -127,11 +127,6 @@ class Mesh:
         else:
             self.NoExcl = False
 
-    def AddBorders(self,borders):
-        self.borders = borders
-        self.borders_nodes = []
-
-
     def MeshGeo(self):
         path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):

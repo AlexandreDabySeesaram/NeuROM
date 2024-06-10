@@ -17,7 +17,7 @@ Volume_element          = 100                                       # Volume ele
 ####################################################
 
 [Borders]
-Borders                 = [1,2]                                     # List of the structure's boundaries
+Borders                 = [3,4]                                     # List of the structure's boundaries
 
 [[DirichletDictionryList]]
 Entity                  = 3                                         # Physical tag of the boundary
@@ -54,9 +54,9 @@ A                       = 1.0
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 10                                            # Number of Nodes in the Mesh in 1D
+np                      = 80                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
-n_integr_points         = 5                                             # Number of integration points per element
+n_integr_points         = 3                                             # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -65,7 +65,7 @@ n_integr_points         = 5                                             # Number
 ####################################################
 
 [solver]
-FrozenMesh              = true                                         # Nodal coordinates frozen
+FrozenMesh              = false                                         # Nodal coordinates frozen
 FrozenParaMesh          = true                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
 IntegralMethod          = 'Gaussian_quad'                               # Type of integration (Gaussian_quad, Trapezoidal)
@@ -98,6 +98,7 @@ LoadPreviousModel       = false                                          # Boole
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-15                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
+Stagnation_counter      = 5
 
 ####################################################
 ###                                              ###
@@ -113,6 +114,8 @@ SaveModel               = false                                         # Boolea
 Visualisatoin_only      = false
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
+n_visualization         = 1000                                          # Number of points used to plot the results 
+
 
 ####################################################
 ###                                              ###

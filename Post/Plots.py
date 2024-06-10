@@ -833,7 +833,7 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
 
 
 
-def Plot_Eval_1d(model, config, Mat, mesh):
+def Plot_Eval_1d(model, config, Mat):
 
     new_coord = [coord for coord in model.coordinates]
     new_coord = torch.cat(new_coord,dim=0)
@@ -841,15 +841,15 @@ def Plot_Eval_1d(model, config, Mat, mesh):
     L = config["geometry"]["L"]
     A = config["material"]["A"]
     E = config["material"]["E"]
+    n_visu = config["postprocess"]["n_visualization"]
 
     if config["solver"]["IntegralMethod"] == "Gaussian_quad":
-        mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(mesh.Nodes))]
-        mesh.ExportMeshVtk1D(flag_update = True)
+        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
+        model.mesh.ExportMeshVtk1D(flag_update = True)
 
 
-    n_visu = 1000
     PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
-    IDs_plot = torch.tensor(mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+    IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
 
     model.eval()
     u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
@@ -863,9 +863,11 @@ def Plot_Eval_1d(model, config, Mat, mesh):
 
     param = model.coordinates[3]
     if param.requires_grad == True:
-        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
-        
-    plt.plot(new_coord,[coord*0 for coord in new_coord],'.k', markersize=2, label = 'Nodal position')
+        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+
+    Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
     plt.plot(PlotCoordinates.data,u_predicted.data,'--', label = 'Predicted solution')
     plt.xlabel(r'$\underline{x}$ [m]')
@@ -882,9 +884,9 @@ def Plot_Eval_1d(model, config, Mat, mesh):
 
     param = model.coordinates[3]
     if param.requires_grad == True:
-        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
         
-    plt.plot(new_coord,[coord*0 for coord in new_coord],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
     plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
     plt.xlabel(r'$\underline{x}$ [m]')

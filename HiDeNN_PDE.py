@@ -1429,6 +1429,7 @@ class MeshNN_1D(nn.Module):
 
         self.connectivity = mesh.Connectivity
         self.borders_nodes = mesh.borders_nodes
+        print("border_nodes : ", self.borders_nodes)
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
@@ -1503,6 +1504,8 @@ class MeshNN_1D(nn.Module):
     
     def UnFreeze_Mesh(self):
         """Set the coordinates as trainable parameters"""
+
+        self.original_coordinates = [self.coordinates[i].data.item() for i in range(len(self.coordinates))]
         for param in self.coordinates:
             param.requires_grad = True
 

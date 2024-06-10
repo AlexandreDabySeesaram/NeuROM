@@ -190,10 +190,11 @@ if config["solver"]["ParametricStudy"]:
                 Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
         ROM_model.eval()
 else:
-     match config["interpolation"]["dimension"]:
-        case 1:
-            InitialCoordinates = [Model_FEM.coordinates[i].data.item() for i in range(len(Model_FEM.coordinates))]
+    if not config["solver"]["FrozenMesh"]:
+        Model_FEM.UnFreeze_Mesh()    
 
+    match config["interpolation"]["dimension"]:
+        case 1:
             Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
                                             Max_epochs = config["training"]["n_epochs"], 
                                             learning_rate = config["training"]["learning_rate"])
@@ -237,7 +238,7 @@ else:
                 Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
         
         case 1:
-            Pplot.Plot_Eval_1d(Model_FEM,config,Mat,Mesh_object)
+            Pplot.Plot_Eval_1d(Model_FEM,config,Mat)
 
 
             

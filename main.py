@@ -164,7 +164,8 @@ match config["solver"]["BiPara"]:
             case "Trapezoidal":
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
             case "Gaussian_quad":
-                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_40'
+                # PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_40'
+                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'
 
 
 if config["training"]["LoadPreviousModel"]:

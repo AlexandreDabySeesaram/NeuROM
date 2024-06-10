@@ -524,7 +524,7 @@ class NeuROM(nn.Module):
             Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
             Nb_parameters_fine = len(self.Para_modes[0])
             Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
-            self.n_modes_truncated
+            # self.n_modes_truncated
             for mode in range(self.n_modes_truncated):
                 self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
                 # newcoordinates = [coord for coord in self.Space_modes[mode].coordinates]
@@ -1371,6 +1371,30 @@ class MeshNN_1D(nn.Module):
         border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
         for node in border_nodes:
             self.coordinates[node].requires_grad = False
+
+    def Init_from_previous(self,CoarseModel):
+        newcoordinates = [coord for coord in self.coordinates]
+        newcoordinates = torch.cat(newcoordinates,dim=0)
+        IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
+        NewNodalValues = CoarseModel(newcoordinates,IDs_newcoord)
+        # check if a cell ID was not found for some new nodes 
+        if -1 in IDs_newcoord:
+            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
+            oldcoordinates = [coord for coord in CoarseModel.coordinates]
+            oldcoordinates = torch.cat(oldcoordinates,dim=0)
+            for ind_neg in index_neg:
+                not_found_coordinates = newcoordinates[ind_neg]
+                dist_vect = not_found_coordinates - oldcoordinates
+                dist = torch.norm(dist_vect, dim=1)
+                closest_old_nodal_value = dist.topk(1, largest=False)[1]
+                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].type(torch.float64)
+                # NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues])
+        # new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
+        # new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+        self.nodal_values = new_nodal_values_x
+        # self.nodal_values_y = new_nodal_values_y
+        # self.nodal_values = new_nodal_values
     
     def forward(self,x = 'NaN', el_id = 'NaN'):
         if self.training:

@@ -23,6 +23,14 @@ from importlib import reload  # Python 3.4+
 from Bin import MyHeaders
 import tomllib
 
+
+####################################################
+###                                              ###
+###             /!\   WARNING   /!\              ###
+###      import vtkmodules.util.pickle_support   ###
+###         in serialization.py of poytorch      ###
+###                                              ###
+##################################################### 
 #%% Specify default configuratoin file
 
 ####################################################
@@ -152,7 +160,12 @@ match config["solver"]["BiPara"]:
     case True:
         PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
     case False:
-        PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+        match config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+            case "Gaussian_quad":
+                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_40'
+
 
 if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)

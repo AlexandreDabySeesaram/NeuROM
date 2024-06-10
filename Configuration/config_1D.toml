@@ -52,7 +52,7 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 40                                            # Number of Nodes in the Mesh in 1D
+np                      = 500                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 n_integr_points         = 5                                             # Number of integration points per element
 
@@ -92,7 +92,7 @@ BoolCompile             = false                                         # Enable
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 3000                                          # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                         # optimizer learning rate
-LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
+LoadPreviousModel       = true                                          # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7

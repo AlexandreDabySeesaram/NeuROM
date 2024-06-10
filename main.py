@@ -1,6 +1,6 @@
 #%% Libraries import
 # import HiDeNN library
-from HiDeNN_PDE import MeshNN, NeuROM
+from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_1D
 # Import pre-processing functions
 import Bin.Pre_processing as pre
 # Import torch librairies
@@ -12,384 +12,238 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_1D_FEM_LBFGS
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
 import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
+from importlib import reload  # Python 3.4+
+# from Bin import MyHeaders
+import tomllib
 
-class Dataset(torch.utils.data.Dataset):
+#%% Specify default configuratoin file
 
-    def __init__(self, X):
-        self.X = X
-        
-    def __len__(self):
-        return len(self.X)
+####################################################
+###                                              ###
+###                  USER INPUT                  ###
+###                                              ###
+####################################################
 
-    def __getitem__(self, index):    
-        x = self.X[index]
+Default_config_file = 'Configuration/config_1D.toml'
 
-        return x
+####################################################
+###                                              ###
+####################################################
+#%% Import config file
+# Read script arguments
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-cf',type=str, help = 'path to the desired configuration file', default=Default_config_file, action = 'store')
+    
+    jupyter = False
+    # jupyter = MyHeaders.is_notebook()
+    if jupyter:
+        args = parser.parse_args('')
+    else:
+        args = parser.parse_args()
+    inputs = vars(args)
+    print(f"* Executing job in {args.cf}")
+
+# Add possibility to specify name of config file with argparse
+with open(args.cf, mode="rb") as f:
+    config = tomllib.load(f)
+    
+#%% Initialise material
+Mat = pre.Material(             flag_lame = False,                          # If True should input lmbda and mu instead of E and nu
+                                coef1     = config["material"]["E"],        # Young Modulus
+                                coef2     = config["material"]["nu"]        # Poisson's ratio
+                    )
 
 
-#%% Pre-processing (could be put in config file later)
-# Defintition of the structure and meterial
-L = 10                                              # Length of the Beam
-np = 7                                             # Number of Nodes in the Mesh
-A = 1                                               # Section of the beam
-E = 175                                             # Young's Modulus (should be 175)
-# User defines all boundary conditions 
-DirichletDictionryList = [  {"Entity": 1, 
-                             "Value": 0.0, 
-                             "Normal":1, "Relation": False, "Constitutive": False}, 
-                            {"Entity": 2, 
-                             "Value": 0.005, 
-                             "Normal":1, "Relation": False, "Constitutive": False}]
-
-# Definition of the space discretisation
-alpha = 0.0                                       # Weight for the Mesh regularisation 
-order = 2                                          # Order of the shape functions
-dimension = 1
-
-if order ==1:
-    MaxElemSize = L/(np-1)                         # Compute element size
-elif order ==2:
-    n_elem = 0.5*(np-1)
-    MaxElemSize = L/n_elem                         # Compute element size
+#%% Create mesh object
+# Definition of the (initial) element size of the mesh
+MaxElemSize = pre.ElementSize(
+                                dimension     = config["interpolation"]["dimension"],
+                                L             = config["geometry"]["L"],
+                                order         = config["interpolation"]["order"],
+                                np            = config["interpolation"]["np"],
+                                MaxElemSize2D = config["interpolation"]["MaxElemSize2D"]
+                            )
 Excluded = []
+Mesh_object = pre.Mesh( 
+                                config["geometry"]["Name"],                 # Create the mesh object
+                                MaxElemSize, 
+                                config["interpolation"]["order"], 
+                                config["interpolation"]["dimension"]
+                        )
 
-if dimension ==1:
-    Beam_mesh = pre.Mesh('Beam',MaxElemSize, order, dimension)    # Create the mesh object
-if dimension ==2:
-    Beam_mesh = pre.Mesh('Rectangle',MaxElemSize, order, dimension)    # Create the mesh object
+Mesh_object.AddBorders(config["Borders"]["Borders"])
+Mesh_object.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
+                                config["geometry"]["Volume_element"],
+                                Excluded,
+                                config["DirichletDictionryList"]
+                    )                   
 
-Borders = []
-Beam_mesh.AddBorders(Borders)
-Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
-Beam_mesh.AddBCs(Volume_element,Excluded,
-                 DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
-Beam_mesh.MeshGeo()                                # Mesh the .geo file if .msh does not exist
-Beam_mesh.ReadMesh()                               # Parse the .msh file
-Beam_mesh.AssemblyMatrix()                         # Build the assembly weight matrix
+Mesh_object.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
+Mesh_object.ReadMesh()                                                      # Parse the .msh file
 
-#%% Options & Hyperparameters
-BoolPlot = False                                   # Boolean for plots used for gif
-BoolPlotPost = False                               # Boolean for plots used for Post
-BoolCompareNorms = True                            # Boolean for comparing energy norm to L2 norm
-BoolGPU = False                                    # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
-TrainingRequired = True                           # Boolean leading to Loading pre trained model or retraining from scratch
-SaveModel = False                                  # Boolean leading to Loading pre trained model or retraining from scratch
-ParametricStudy = False                             # Boolean to switch between space model and parametric sturdy
-TrainingStrategy = 'Integral'                         # 'Integral' or 'Mixed'
-LoadPreviousModel = False                           # Boolean to enable reusing a previously trained model
-n_epochs = 25000                                    # Maximum number of iterations for the training stage
-learning_rate = 1.0e-3                            # optimizer learning rate
-BoolFilterTrainingData = False                         # Slightly move training samples if they are on the mesh nodes exactly
-BoolCompile = False                                 # Enable compilation of the model
-BiPara = True                                       # Enable 2 Young modulus
-Visualisatoin_only = False
+match config["interpolation"]["dimension"]:
+    case 1:
+        if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+            Mesh_object.ExportMeshVtk1D()
+    case 2:
+        Mesh_object.ExportMeshVtk()
+
+# if config["interpolation"]["dimension"] ==2:
+#     Mesh_object.ExportMeshVtk()
+
+if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
+    Mesh_object.AssemblyMatrix()                                            # Build the assembly weight matrix
+
+if int(Mesh_object.dim) != int(Mesh_object.dimension):
+    raise ValueError("The dimension of the provided geometry does not match the job dimension")
+
 #%% Application of the Space HiDeNN
-BeamModel = MeshNN(Beam_mesh)                # Create the associated model
-# Boundary conditions
-u_0 = DirichletDictionryList[0]['Value']           #Left BC
-u_L = DirichletDictionryList[1]['Value']           #Right BC
-BeamModel.SetBCs([u_0,u_L])
+match config["interpolation"]["dimension"]:
+    case 1:
+        match config["solver"]["IntegralMethod"]:                           # Build the model
+            case "Gaussian_quad":
+                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+            case "Trapezoidal":
+                Model_FEM = MeshNN(Mesh_object)
+    case 2:
+        Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
-# Set the boundary values as trainable
 # Set the coordinates as trainable
-# BeamModel.Freeze_Mesh()
+Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-# BeamModel.UnFreeze_Mesh()
-# Set the require output requirements
+Model_FEM.Freeze_Mesh()
+Model_FEM.Freeze_Mesh()
+
+# Make nodal values trainable (except the BC). Default choice 
+Model_FEM.UnFreeze_FEM()
+
+# if not config["solver"]["FrozenMesh"]:
+#     Model_FEM.UnFreeze_FEM()
 
 #%% Application of NeuROM
-n_modes = 100
-mu_min = 100
-mu_max = 200
-N_mu = 10
+# Parameter space-definition
 
-# Para Young
-Eu_min = 100
-Eu_max = 200
-N_E = 10
-
-# Para Area
-A_min = 0.1
-A_max = 10
-N_A = 10
-
-if BiPara:
-    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E],[Eu_min,Eu_max,N_A]])
-else:
-    ParameterHypercube = torch.tensor([[Eu_min,Eu_max,N_E]])
-
-# Boundary conditions
-u_0 = DirichletDictionryList[0]['Value']           #Left BC
-u_L = DirichletDictionryList[1]['Value']           #Right BCF
-BCs = [u_0,u_L]
-# BeamROM = NeuROM(Beam_mesh, n_modes, ParameterHypercube)
-name_model = 'ROM_1Para_np_'+str(np)+'_order_'+str(order)+'_nmodes_'\
-            +str(n_modes)+'_npara_'+str(ParameterHypercube.shape[0])
-
-
-
-#%% Load coarser model  
-PreviousFullModel = 'TrainedModels/FullModel_np_100'
-if LoadPreviousModel and os.path.isfile(PreviousFullModel):
-    # torch.save(BeamROM, 'TrainedModels/FullModel') # To save a full coarse model
-    BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-    # BeamROM_coarse_dict = torch.load('TrainedModels/ROM_1Para_np_50_order_1_nmodes_1_npara_1')
-    # BeamROM_coarse_dic['Space_modes.0.NodalValues_uu']
-    newcoordinates = [coord for coord in BeamROM.Space_modes[0].coordinates]
-    newcoordinates = torch.cat(newcoordinates,dim=0)
-    Nb_modes_fine = len(BeamROM.Space_modes)
-    Nb_modes_coarse = len(BeamROM_coarse.Space_modes)
-    IndexesNon0BCs = [i for i, BC in enumerate(BCs) if BC != 0]
-    if IndexesNon0BCs and BeamROM_coarse.Space_modes[0].u_0 == 0 and BeamROM_coarse.Space_modes[0].u_L == 0:
-        NewNodalValues = BeamROM_coarse.Space_modes[0](newcoordinates) 
-        BeamROM.Space_modes[1].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-        BeamROM.Para_modes[1][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[0][0].InterpoLayer.weight.data.clone().detach()
-        BeamROM.Space_modes[1].Freeze_FEM()
-        BeamROM.Para_modes[1][0].Freeze_FEM()
-    else :
-        for mode in range(Nb_modes_coarse):
-            NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-            BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-            BeamROM.Para_modes[mode][0].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][0].InterpoLayer.weight.data.clone().detach()
-        if Nb_modes_coarse<Nb_modes_fine:
-            for mode in range(Nb_modes_coarse,Nb_modes_fine):
-                # print(mode)
-                BeamROM.Space_modes[mode].InterpoLayer_uu.weight.data = 0*NewNodalValues[2:,0]
-                BeamROM.Para_modes[mode][0].InterpoLayer.weight.data.fill_(0)
-elif not os.path.isfile(PreviousFullModel):
-    print('******** WARNING LEARNING FROM SCRATCH ********\n')
-
-#%% Training 
-if not ParametricStudy:
-
-    if TrainingStrategy == 'Integral':
-        # Training loop (Non parametric model, Integral loss)
-        print("Training loop (Non parametric model, Integral loss)")
-        optimizer = torch.optim.SGD(BeamModel.parameters(), lr=learning_rate)
-        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,30*BeamModel.NElem)], dtype=torch.float64, requires_grad=True)
-        
-        TestCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,200)], dtype=torch.float64, requires_grad=True)
-        
-        BeamModel.Freeze_Mesh()
-        BeamModel.UnFreeze_Mesh()
-
-        # If GPU
-        if BoolGPU:
-            BeamModel.to(mps_device)
-            TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
-                                        dtype=torch.float64, requires_grad=True).to(mps_device)
-
-        # Pplot.PlotShapeFunctions(BeamModel, TestCoordinates)
-      
-
-        n_epochs = 1
-        # Training initial stage
-        error, error2, InitialCoordinates, Coord_trajectories, BeamModel = Training_InitialStage(BeamModel, A, E, L, 
-                                                                                                TrialCoordinates, optimizer, n_epochs,
-                                                                                                BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData,
-                                                                                                TestCoordinates)
-        
-        # error, error2, Coord_trajectories, InitialCoordinates = [],[],[], []
-        
-        n_epochs = 1
-        # Training final stage
-        Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, 
-                                TrialCoordinates, n_epochs, BoolCompareNorms,
-                                nn.MSELoss(), BoolFilterTrainingData,
-                                TestCoordinates,
-                                error, error2, Coord_trajectories)
-
-
-
-    if TrainingStrategy == 'Mixed':
-
-        BeamModel_u = BeamModel
-
-        #np = 15
-        order_du = 1
-        if order_du ==1:
-            MaxElemSize_du = L/(np-1)                         # Compute element size
-        elif order ==2:
-            n_elem = 0.5*(np-1)
-            MaxElemSize_du = L/n_elem  
-
-        if dimension ==1:
-            Beam_mesh_du = pre.Mesh('Beam',MaxElemSize_du, order_du, dimension)    # Create the mesh object
-        if dimension ==2:
-            Beam_mesh_du = pre.Mesh('Rectangle',MaxElemSize_du, order_du, dimension)    # Create the mesh object
-
-        Volume_element = 100                               # Volume element correspond to the 1D elem in 1D
-        Beam_mesh_du.AddBCs(Volume_element,Excluded,
-                        DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
-        Beam_mesh_du.AddBorders(Borders)
-        Beam_mesh_du.MeshGeo()                                # Mesh the .geo file if .msh does not exist
-        Beam_mesh_du.ReadMesh()                               # Parse the .msh file
-        Beam_mesh_du.AssemblyMatrix()                         # Build the assembly weight matrix
-        BeamModel_du = MeshNN(Beam_mesh_du)     # Create the associated model
-        #BeamModel_du.SetBCs(u_0,u_L)
-        BeamModel_du.UnFreeze_BC()
-
-        # Training loop (Non parametric model, Mixed formulation)
-        print("Training loop (Non parametric model, Mixed formulation)")
-        
-        optimizer = torch.optim.Adam(list(BeamModel_u.parameters())+list(BeamModel_du.parameters()), lr=1.0e-3)
-
-
-        PlotCoordTensor = torch.tensor([[i] for i in torch.linspace(0,L,1000)], dtype=torch.float64, requires_grad=True)
-
-        PlotCoordTensor = FilterTrainingData(BeamModel_u, PlotCoordTensor)
-        PlotCoordTensor = FilterTrainingData(BeamModel_du, PlotCoordTensor)
-
-        # # If GPU
-        if BoolGPU:
-            BeamModel.to(mps_device)
-            TrialCoordinates = torch.tensor([[i/50] for i in range(2,502)], 
-                                        dtype=torch.float64, requires_grad=True).to(mps_device)
-
-
-        CoordinatesDataset = Dataset(torch.tensor([[i] for i in torch.linspace(0,L,30*BeamModel_u.NElem)], dtype=torch.float64, requires_grad=True))
-        CoordinatesBatchSet = torch.utils.data.DataLoader(CoordinatesDataset, batch_size=30*BeamModel_u.NElem, shuffle=True)
-        print("Number of batches per epoch = ", len(CoordinatesBatchSet))
-
-
-        BeamModel_du.Freeze_Mesh()
-        BeamModel_u.Freeze_Mesh()   
-        # BeamModel_u.UnFreeze_Mesh()
-        # BeamModel_du.UnFreeze_Mesh()
-
-
-        n_epochs = 8000
-        error_pde, error_constit, error2, InitialCoordinates_u, InitialCoordinates_du, Coord_trajectories = Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, 
-                                                                                        CoordinatesBatchSet, PlotCoordTensor, 
-                                                                                        optimizer, n_epochs, 
-                                                                                        BoolCompareNorms, nn.MSELoss(), BoolFilterTrainingData, 
-                                                                                        L,1)
-        n_epochs = 100
-        
-        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,30*BeamModel_u.NElem)], dtype=torch.float64, requires_grad=True)
-
-        # Second stage on 500 points only.
-        Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCoordinates_u, InitialCoordinates_du,
-                                TrialCoordinates, PlotCoordTensor, n_epochs, BoolCompareNorms, 
-                                nn.MSELoss(), BoolFilterTrainingData,
-                                error_pde, error_constit, error2, Coord_trajectories,
-                                L,1) 
-        
-
-else:
-    BeamROM.Freeze_Mesh()
-    BeamROM.Freeze_MeshPara()
-    TrialCoordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara = torch.linspace(mu_min,mu_max,50, 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara = TrialPara[:,None] # Add axis so that dimensions match
-
-    TrialPara2 = torch.linspace(mu_min,mu_max,50, 
-                                    dtype=torch.float32, requires_grad=True)
-    TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
-
-    if BiPara:
-        Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
+if config["solver"]["ParametricStudy"]:
+    if config["solver"]["BiPara"]:
+        ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                config["parameters"]["N_para_1"]],
+                                            [   config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                config["parameters"]["N_para_2"]]])
     else:
-        Para_coord_list = [TrialPara]
+        ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                config["parameters"]["N_para_1"]]])
 
-    if not TrainingRequired:
-        if IndexesNon0BCs:
-            name_model+='_BCs'
-        # Load pre trained model
-        if os.path.isfile('TrainedModels/'+name_model):
-            BeamROM.load_state_dict(torch.load('TrainedModels/'+name_model))
-            print('************ LOADING MODEL COMPLETE ***********\n')
-        else: 
-            TrainingRequired = True
-            print('**** WARNING NO PRE TRAINED MODEL WAS FOUND ***\n')
+    ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
+                                                Mesh_object, 
+                                                ParameterHypercube, 
+                                                config,
+                                                config["solver"]["n_modes_ini"],
+                                                config["solver"]["n_modes_max"]
+                    )
+
+    #%% Load coarser model  
+
+    match config["solver"]["BiPara"]:
+        case True:
+            PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+        case False:
+            PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+
+    if config["training"]["LoadPreviousModel"]:
+        ROM_model.Init_from_previous(PreviousFullModel)
+
+    #%% Training 
+    ROM_model.Freeze_Mesh()                                                     # Set space mesh cordinates as untrainable
+    ROM_model.Freeze_MeshPara()                                                 # Set parameters mesh cordinates as untrainable
+
+if config["solver"]["ParametricStudy"]: 
+    if not config["solver"]["FrozenMesh"]:
+        ROM_model.UnFreeze_Mesh()                                             # Set space mesh cordinates as trainable
+    if not config["solver"]["FrozenParaMesh"]:
+        ROM_model.UnFreeze_MeshPara()                                         # Set parameters mesh cordinates as trainable
+
+    ROM_model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
+                                    
+    if config["training"]["TrainingRequired"]:
+        ROM_model.train()
+        optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
+        match config["interpolation"]["dimension"]:
+            case 1:
+                Training_NeuROM(ROM_model,config,optimizer)                 # First stage of training (ADAM)
+
+                Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
+            case 2:
+                Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
+        ROM_model.eval()
+else:
+     match config["interpolation"]["dimension"]:
+        case 1:
+            InitialCoordinates = [Model_FEM.coordinates[i].data.item() for i in range(len(Model_FEM.coordinates))]
+
+            Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                            Max_epochs = config["training"]["n_epochs"], 
+                                            learning_rate = config["training"]["learning_rate"])
+            Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+
+        case 2:
+            Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                            Max_epochs = config["training"]["n_epochs"], 
+                                            learning_rate = config["training"]["learning_rate"])
+            Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
 
 
-    if TrainingRequired:
-        # prof = torch.profiler.profile(
-        # on_trace_ready=torch.profiler.tensorboard_trace_handler('.logs/NeuROM'),
-        # record_shapes=True)
+
+#%% Post-processing # # # # # # # # # # # # # # # # # # # # # # 
+
+print("*************** POST-PROCESSING ***************\n")
+if config["solver"]["ParametricStudy"]:
+    Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
+                    dtype=torch.float32, 
+                    requires_grad=True)
+    IDs_plot = torch.tensor(Mesh_object.GetCellIds(Training_coordinates),dtype=torch.int)
+    E = torch.tensor([150])
+    E = E[:,None] # Add axis so that dimensions match
+    ROM_model(Training_coordinates, [E])
+    if config["postprocess"]["Plot_loss_mode"]:
+        Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],'Loss_ModesNeg13',True)
+    if config["postprocess"]["Plot_loss_decay_mode"]:
+        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],'Loss_ModesNeg13',True)
+    match config["solver"]["BiPara"]:
+        case True:
+            Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+        case False:  
+            ROM_model.eval()
+
+            Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
+else:
+    match config["interpolation"]["dimension"]:
+        case 2:
+            if config["postprocess"]["exportVTK"]:
+                Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+                Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
         
-        # prof.start()
-        BeamROM.train()
-        if BoolGPU:
-            BeamROM.to(mps_device)
-            TrialCoordinates = TrialCoordinates.to(mps_device)
-            TrialPara = TrialPara.to(mps_device)
-            BeamROM(TrialCoordinates,TrialPara)
-
-        if BoolCompile:
-            BeamROM_compiled = torch.compile(BeamROM, backend="inductor", mode = 'max-autotune-no-cudagraphs',dynamic=True)
-            optimizer = torch.optim.Adam(BeamROM_compiled.parameters(), lr=learning_rate)
-            u_copm = BeamROM_compiled(TrialCoordinates,Para_coord_list)
-            Loss_vect, L2_error, training_time, Mode_vect, Loss_decrease_vect =  Training_NeuROM(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs,BiPara)
-            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM_compiled, A, L, TrialCoordinates,TrialPara, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
-
-        else:
-            optimizer = torch.optim.Adam([p for p in BeamROM.parameters() if p.requires_grad], lr=learning_rate)
-            Loss_vect, L2_error, training_time, Mode_vect,Loss_decrease_vect =  Training_NeuROM(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs,BiPara)
-            Loss_vect, L2_error =  Training_NeuROM_FinalStageLBFGS(BeamROM, A, L, TrialCoordinates,Para_coord_list, optimizer, n_epochs, 10,Loss_vect,L2_error,training_time,BiPara)
-        BeamROM.eval()
-    
-        # Save model
-        if SaveModel:
-            torch.save(BeamROM.state_dict(), 'TrainedModels/'+name_model)
-
-# prof.stop()
+        case 1:
+            Pplot.Plot_Eval_1d(Model_FEM,config,Mat,Mesh_object)
 
 
-    #%% Post-processing
+            
 
-    if BoolPlotPost:
-        Pplot.Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-        Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-        Pplot.PlotModes(BeamROM,TrialCoordinates,TrialPara,A,AnalyticSolution,name_model)
-        Pplot.Plot_Compare_Loss2l2norm(Loss_vect,L2_error,'2StageTraining')
-
-    if False:
-        Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
-        u_i = torch.cat(Space_modes,dim=1) 
-    if Visualisatoin_only:
-        Space_modes = [BeamROM.Space_modes[l](TrialCoordinates) for l in range(BeamROM.n_modes)]
-        u_i = torch.cat(Space_modes,dim=1) 
-
-    # Pplot.Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model)
-    # Pplot.AppInteractive(BeamROM,TrialCoordinates,A,AnalyticSolution)
-
-    u_eval = BeamROM(TrialCoordinates,Para_coord_list)
-    import matplotlib.pyplot as plt
-    # Pplot.PlotModesBi(BeamROM,TrialCoordinates,Para_coord_list,A,AnalyticSolution,name_model)
-    # BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
+                
 
 
-    if Visualisatoin_only:
-        TrialCoordinates = torch.tensor([[i/10] for i in range(2,100)], 
-                                        dtype=torch.float32, requires_grad=True)
-        TrialPara = torch.linspace(mu_min,mu_max,50, 
-                                        dtype=torch.float32, requires_grad=True)
-        TrialPara = TrialPara[:,None] # Add axis so that dimensions match
-
-        TrialPara2 = torch.linspace(mu_min,mu_max,50, 
-                                        dtype=torch.float32, requires_grad=True)
-        TrialPara2 = TrialPara2[:,None] # Add axis so that dimensions match
-
-        if BiPara:
-            Para_coord_list = nn.ParameterList((TrialPara,TrialPara2))
-        else:
-            Para_coord_list = [TrialPara]
-        BeamROM = torch.load('TrainedModels/FullModel_BiParametric')
-        BeamROM = torch.load('TrainedModels/FullModel_BiParametric_np100')
-
-        Pplot.Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model)
-        Pplot.Plot_Loss_Modes(Mode_vect,Loss_vect,'Loss_Modes')
-
-
+       
 # %%

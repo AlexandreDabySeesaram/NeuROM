@@ -66,6 +66,20 @@ class Material():
             self.lmbda = (self.E*self.nu)/((1+self.nu)*(1-2*self.nu))                            # First Lamé's coefficient
             self.mu = self.E/(2*(1+self.nu))                                           # Second Lamé's coefficient
                                                                                                                                     
+def ElementSize(dimension, **kwargs):
+    if dimension ==1:
+        L = kwargs['L']
+        order = kwargs['order']
+        np = kwargs['np']
+        if order ==1:
+            MaxElemSize = L/(np-1)                         # Compute element size
+        elif order ==2:
+            n_elem = 0.5*(np-1)
+            MaxElemSize = L/n_elem                         # Compute element size
+    else:
+        MaxElemSize = kwargs['MaxElemSize2D']
+    return MaxElemSize
+    
 class Mesh:
     def __init__(self, name, h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
@@ -271,31 +285,7 @@ class Mesh:
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
 
-
     def ExportMeshVtk1D(self,flag_update = False):
-
-        msh_name = 'Geometries/'+self.name_mesh
-        meshBeam = meshio.read(msh_name)
-
-        if flag_update:
-            points = np.array(self.Nodes)[:,1:]
-        else:
-            points = meshBeam.points
-
-        # crete meshio mesh based on points and cells from .msh file
-
-        if self.order =='1':
-            mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-               
-        reader = vtk.vtkUnstructuredGridReader()
-        reader.SetFileName(msh_name[0:-4]+".vtk",)  
-        reader.Update()
-        self.vtk_mesh = reader.GetOutput()
-
-
-
-    def ReWriteMeshVtk1D(self,new_points):
 
         msh_name = 'Geometries/'+self.name_mesh
         meshBeam = meshio.read(msh_name)
@@ -400,20 +390,25 @@ class Mesh:
         ids = []
 
         for coord in TrialCoordinates:
-            point = [coord[0], coord[1], 0]
+            match self.dimension:
+                case '1':
+                    point = [coord, 0, 0]
+                case '2':
+                    point = [coord[0], coord[1], 0]
             ids.append(locator.FindCell(point))
 
         return ids
 
-    def GetCellIds1D(self, TrialCoordinates):
-        locator = vtk.vtkCellLocator()
-        locator.SetDataSet(self.vtk_mesh)
-        locator.Update()
 
-        ids = []
+    # def GetCellIds1D(self, TrialCoordinates):
+    #     locator = vtk.vtkCellLocator()
+    #     locator.SetDataSet(self.vtk_mesh)
+    #     locator.Update()
 
-        for coord in TrialCoordinates:
-            point = [coord, 0, 0]
-            ids.append(locator.FindCell(point))
+    #     ids = []
 
-        return ids
+    #     for coord in TrialCoordinates:
+    #         point = [coord, 0, 0]
+    #         ids.append(locator.FindCell(point))
+
+    #     return ids

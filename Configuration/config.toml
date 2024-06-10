@@ -1,0 +1,148 @@
+####################################################
+###                                              ###
+###                   GEOMETRY                   ###
+###                                              ###
+####################################################
+
+[geometry]
+Name                    = 'Hole'
+L                       = 10                                        # Length of the Beam
+A                       = 1                                         # Section of the beam
+Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
+
+####################################################
+###                                              ###
+###              Boundary Conditions             ###
+###                                              ###
+####################################################
+
+[Borders]
+Borders                 = [111,112,113,114,115]                     # List of the structure's boundaries
+
+[[DirichletDictionryList]]
+Entity                  = 111                                       # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 0                                         # prescribed component (0=x,1=y,2=z)
+Relation                = false
+Constitutive            = false
+
+[[DirichletDictionryList]]
+Entity                  = 111                                       # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
+Relation                = false
+Constitutive            = false
+
+[[DirichletDictionryList]]
+Entity                  = 113                                       # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
+Relation                = false
+Constitutive            = false
+
+[[DirichletDictionryList]]
+Entity                  = 113                                       # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 0                                         # prescribed component (0=x,1=y,2=z)
+Relation                = false
+Constitutive            = false
+
+####################################################
+###                                              ###
+###                   MATERIAL                   ###
+###                                              ###
+####################################################
+
+[material]
+E                       = 1                                         # Young's modulus (175 if 1D 5*1e-3 if 2D, 1 if 2D parametric (mult coeff for parameters))
+nu                      = 0.3                                       # Poisson's ration
+
+####################################################
+###                                              ###
+###                 INTERPOLATION                ###
+###                                              ###
+####################################################
+
+[interpolation]
+dimension               = 2                                         # Dimension of the study (1D or 2D)
+order                   = 1                                         # Order of the shape functions
+np                      = 10                                        # Number of Nodes in the Mesh in 1D
+MaxElemSize2D           = 5                                         # Maximum element size in the 2D mesh
+
+####################################################
+###                                              ###
+###                    SOLVER                    ###
+###                                              ###
+####################################################
+
+[solver]
+TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
+ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
+BiPara = true                                                       # Enable bi-stifness beam in 1D
+n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
+n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
+
+####################################################
+###                                              ###
+###                   HARDWARE                   ###
+###                                              ###
+####################################################
+
+[hardware]
+BoolGPU                 = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
+BoolCompile             = false                                     # Enable compilation of the model
+
+####################################################
+###                                              ###
+###                   TRAINING                   ###
+###                                              ###
+####################################################
+
+[training]
+TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
+n_epochs                = 3000                                      # Maximum number of iterations for the training stage
+learning_rate           = 0.001                                     # optimizer learning rate
+LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
+BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
+loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
+Stagnation_threshold    = 1e-7
+
+####################################################
+###                                              ###
+###                     POST                     ###
+###                                              ###
+####################################################
+
+[postprocess]
+BoolPlot                = false                                     # Boolean for plots used for gif
+BoolPlotPost            = false                                     # Boolean for plots used for Post
+BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm
+SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
+Visualisatoin_only      = false
+
+####################################################
+###                                              ###
+###                  Parameters                  ###
+###                                              ###
+####################################################
+
+[parameters]
+#%% 2D
+# Stiffness
+para_1_min                  = 1e-3                                  # Minimum value for the 1st parameter
+para_1_max                  = 10e-3                                 # Maximum value for the 1st parameter
+N_para_1                    = 10                                    # Discretisation of the 1D parametric space
+# Angle
+para_2_min                  = 0                                     # Minimum value for the 2nd parameter
+para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
+N_para_2                    = 30                                    # Discretisation of the 1D parametric space
+
+#%% 1D
+# # Stiffness
+# para_1_min            = 100                                       # Minimum value for the 1st parameter
+# para_1_max            = 200                                       # Maximum value for the 1st parameter
+# N_para_1              = 10                                        # Discretisation of the 1D parametric space
+
+# para_2_min            = 100                                       # Minimum value for the 2nd parameter
+# para_2_max            = 200                                       # Minimum value for the 2nd parameter
+# N_para_2              = 10                                        # Discretisation of the 1D parametric space

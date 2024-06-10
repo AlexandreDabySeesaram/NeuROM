@@ -209,9 +209,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
         du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes_truncated,lambda_i[0].shape[1]),
                                 lambda_i[1].view(model.n_modes_truncated,lambda_i[1].shape[1]))
-
         du_dx_E_tensor = (du_dx**2)*E_tensor
-
         # Vectorised calculation of the integral terms
         int_term1 = 0.25 * A * dx[:,None] * (du_dx_E_tensor[1:] + du_dx_E_tensor[:-1])
         int_term2 = 0.5 * dx[:,None] * (u[1:] * b[1:,None] + u[:-1] * b[:-1,None])
@@ -219,11 +217,9 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         # Vectorised calculation of the integral using the trapezoidal rule
         integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
     else:
-
         F = torch.cat((f_1,f_2),dim = 1)
         E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
         E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
-
         term1_contributions = 0.25 * A *(
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
@@ -339,9 +335,6 @@ def WeakEquilibrium_1D(u, u_test, du_test_dx, x, A, E):
     return prod
 
 
-
-
-
 def InternalEnergy_2D(u,x,lmbda, mu):
 
     eps =  Strain(u,x)
@@ -352,9 +345,15 @@ def InternalEnergy_2D(u,x,lmbda, mu):
     
     return W_e
 
-def Gravity(theta,rho = 1):
+def Gravity(theta,rho = 1e-9):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
+
+def Gravity_vect(theta,rho = 1e-9):
+    """Should be unified with Gravity defined above, require chaging torch.tensor(0*torch.pi/2) to torch.tensor([0*torch.pi/2]) in 
+    functions referencing the latter."""
+    g = 9.81*1e3                            #m/s^2
+    return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
 
 def VolumeForcesEnergy_2D(u,theta, rho):
     fv = Gravity(theta,rho)
@@ -376,11 +375,15 @@ def VonMises(sigma, lmbda, mu):
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
 
-    # two = torch.tensor(2,dtype=torch.float64)
-    # VM = torch.tensor([[2/3, -1/3, 0],[-1/3, 2/3, 0],[0, 0, torch.sqrt(two)]],dtype=torch.float64)
-    # sigma_dev = torch.einsum('ij,ej->ei',VM,sigma) # in voigt notation
-    # sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
-    # return torch.sqrt((3/2)*sigma_VM)
+def VonMises_plain_strain(sigma, lmbda, mu):
+    # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
+    two = torch.tensor(2,dtype=torch.float64)
+    two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=torch.float64)
+    sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=torch.float64)
+    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 
+    sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
+    return torch.sqrt((3/2)*sigma_VM)
 
 def Stress_tensor(eps, lmbda, mu):
     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
@@ -437,11 +440,8 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
             for l in range(model.n_para)
         ]    
-    lambda_debug = 1+0*lambda_i[0].to(torch.float64)
-    E_debug = (E[0][:,0]/E[0][:,0]).to(torch.float64)*5e-3
     E_float = E[0][:,0].to(torch.float64)
 
-    # W_int = torch.einsum('ij,ejm,eim,em,mp...,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_debug,lambda_debug,E_debug)
     W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
 
     # W_int = torch.einsum('ij,ejm,eim,em,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0].to(torch.float64),E[0][:,0].to(torch.float64))
@@ -450,6 +450,125 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
     W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
+
+def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            for l in range(model.n_para)
+        ]    
+    E_float = E[0][:,0].to(torch.float64)
+    theta_float = E[1][:,0].to(torch.float64)
+
+    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
+
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
+    W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
+    # return (0.5*W_int)/(E[0].shape[0])
+
+def PotentialEnergyVectorisedParametric_Gauss(model,A, E):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1) 
+    b = RHS(xg_modes[0])
+    E = E[0] # From the multi-parametric version to the simple parameter one
+    for mode in range(model.n_modes_truncated):
+        Para_mode_List = [model.Para_modes[mode][l](E)[:,None] for l in range(model.n_para)]
+        if mode == 0:
+            lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+        else:
+            New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+            lambda_i = torch.vstack((lambda_i,New_mode))
+    
+    du_dx = [torch.autograd.grad(Space_modes[i], xg_modes[i], grad_outputs=torch.ones_like(Space_modes[i]), create_graph=True)[0] for i in range(model.n_modes_truncated)]
+    du_dx = torch.stack(du_dx,dim=2)  
+    Wint = 0.5*A*torch.einsum('egm,egk,emg,mp...,kp...,p...->', du_dx, du_dx, torch.abs(detJ_i),lambda_i.to(torch.float64),lambda_i.to(torch.float64),E.to(torch.float64) )
+    Wext = torch.einsum('egm,mp...,emg,eg->', u_i,lambda_i.to(torch.float64),torch.abs(detJ_i),b)
+    integral = (Wint-Wext)/(E.shape[0])
+    return integral
+
+def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+    with torch.no_grad(): #No derivatino of the heavyside function
+        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+
+        # HERE x DEPENDS ON THE MODES SO F_xg additional dimension m 
+
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]
+ 
+    du_dx = [torch.autograd.grad(Space_modes[i], xg_modes[i], grad_outputs=torch.ones_like(Space_modes[i]), create_graph=True)[0] for i in range(model.n_modes_truncated)]
+    du_dx = torch.stack(du_dx,dim=2)  
+
+    # Calculate dx
+    F = torch.cat((f_1,f_2),dim = 1)
+    E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
+    E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
+    term1_contributions = 0.25 * A *(
+        torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
+        torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
+                                    )
+    term2_contributions = 0.5 * (torch.einsum('im...,mj...,mk...,i...,i...->',u_i[1:],lambda_i[0][:],lambda_i[1][:],dx,b[1:]) +
+        torch.einsum('im...,mj...,mk...,i...,i...->',u_i[:-1],lambda_i[0][:],lambda_i[1][:],dx,b[:-1]) )
+    integral = (term1_contributions-term2_contributions)/(E[0].shape[0]*E[1].shape[0])
+
+    return integral
 
 def Strain_sqrt(u,x):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""

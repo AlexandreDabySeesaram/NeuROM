@@ -18,8 +18,6 @@ matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "14"
 from matplotlib.ticker import MaxNLocator
 
-from Bin.PDE_Library import Stress
-
 import tikzplotlib
 
 from matplotlib.legend import Legend
@@ -29,6 +27,16 @@ from matplotlib.lines import Line2D
 
 Line2D._us_dashSeq    = property(lambda self: self._dash_pattern[1])
 Line2D._us_dashOffset = property(lambda self: self._dash_pattern[0])
+
+
+from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain, AnalyticSolution, AnalyticGradientSolution
+
+def export_csv(Name,y, x='None'):
+    import pandas as pd
+    x_values = list(range(1,len(y)))
+    a = np.stack((y,x_values),axis=1)
+    df = pd.DataFrame(a, columns=['y', 'x'])
+    df.to_csv('Results/'+Name+'.csv')
 
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
@@ -102,6 +110,35 @@ def PlotTrajectories(Coord_trajectories,name):
     #plt.show()
     plt.clf()
 
+def Plot_NegLoss_Modes(Modes_flag,error,name,tikz = False):
+    # from matplotlib.legend import Legend
+    # Legend._ncol = property(lambda self: self._ncols)
+    # Legend._ncol = property(lambda self: self._ncols)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    g1 = ax.plot(Modes_flag, color='#247ab5ff')
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
+    ax2 = ax.twinx()
+    ax2.invert_yaxis()
+    g2 = ax2.semilogy(-torch.tensor(error), color='#d95319ff')
+    # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+
+    lns = g1+g2
+    labs = [l.get_label() for l in lns]
+    # ax.legend(lns, labs, loc="upper center")
+    ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
+    plt.clf() 
+
 def Plot_Loss_Modes(Modes_flag,error,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
@@ -120,7 +157,7 @@ def Plot_Loss_Modes(Modes_flag,error,name):
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
-def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
+def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold,tikz = False):
     # Lift to be able to use semilogy
     plt.plot(Modes_flag,color='#247ab5ff')
     ax = plt.gca()
@@ -138,6 +175,9 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold):
     ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
     plt.axhline(threshold,color = 'k')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
@@ -159,6 +199,23 @@ def Plot_Compare_Loss2l2norm(error,error2,name):
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
+def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
+    # Lift to be able to use semilogy
+    #error_pde = error_pde-np.min(error_pde)
+    #error_constit = error_constit-np.min(error_constit)
+
+    plt.semilogy(error2)
+    plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
+    #plt.ylabel(r'$\Xi$')
+    #plt.ylim((0.01,20))
+    ax2 = plt.gca().twinx()
+    ax2.semilogy(error_pde,color='#F39C12', label = "PDE")
+    ax2.semilogy(error_constit,color='#741B47', label = "Constitutive")
+
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$')
+    plt.savefig('Results/'+name+'.pdf', transparent=True) 
+    plt.legend()
+    plt.clf()
 
 def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
     # Lift to be able to use semilogy
@@ -178,7 +235,6 @@ def Plot_Compare_Loss2l2norm_Mixed(error_pde, error_constit, error2,name):
     plt.legend()
     plt.clf()
 
-
 def Plot_end(error,error2):
     # Lift to be able to use semilogy
     #error3 = error-np.min(error)
@@ -193,7 +249,6 @@ def Plot_end(error,error2):
     plt.savefig('Results/Loss_end.pdf', transparent=True)  
     plt.clf()
 
-
 def Plot_LearningRate(Learning_Rate):
     plt.ylabel(r'Learning rate')
     plt.xlabel(r'Epochs')
@@ -201,7 +256,6 @@ def Plot_LearningRate(Learning_Rate):
     plt.legend()
     plt.savefig('Results/Learning rate.pdf')  
     plt.clf()
-
 
 def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     shape_function = model(TrialCoordinates)[1]
@@ -298,8 +352,15 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
     from ipywidgets import interact, widgets
     import torch
     def interactive_plot(E):
-        u0 = BeamROM.Space_modes[0].u_0
-        uL = BeamROM.Space_modes[0].u_L
+        match BeamROM.config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                u0                      = BeamROM.Space_modes[0].u_0                      # Left BC
+                uL                      = BeamROM.Space_modes[0].u_L                      # Right BC
+            case "Gaussian_quad":
+                u0 = BeamROM.Space_modes[0].ListOfDirichletsBCsValues[0]
+                uL = BeamROM.Space_modes[0].ListOfDirichletsBCsValues[1]
+        # u0 = BeamROM.Space_modes[0].u_0
+        # uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data,u0,uL)
         Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]
@@ -523,7 +584,6 @@ def AppInteractive(BeamROM, TrialCoordinates, A, AnalyticSolution):
     interactive_plot(100)
     tk.mainloop()
 
-
 def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialCoordinates,Force,model,Derivative,name):
     pred = model(TrialCoordinates)
     
@@ -538,7 +598,6 @@ def PlotGradSolution_Coordinates_Force(A,E,InitialCoordinates,Coordinates,TrialC
     plt.savefig('Results/'+name+'.pdf', transparent=True) 
 
     plt.clf()
-
 
 def Plot_Rectangle_2Dresults(u_predicted, n_train_x, n_train_y, name):
 
@@ -563,7 +622,6 @@ def Plot_Rectangle_2Dresults(u_predicted, n_train_x, n_train_y, name):
     fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
 
     plt.close()
-
 
 def Plot_Rectangle_2Dresults_Derivative(u_predicted, e11, e22, e12, n_train_x, n_train_y, name):
 
@@ -610,7 +668,6 @@ def Plot_Rectangle_2Dresults_Derivative(u_predicted, e11, e22, e12, n_train_x, n
     fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
     plt.close()
 
-
 def Plot2DLoss(loss):
 
     plt.plot(loss[0],color='#F39C12', label = "$\mathrm{Loss_{PDE}}$")
@@ -647,8 +704,6 @@ def Plot1DSection(u_predicted, n_train_x, n_train_y, name):
     plt.legend()
     plt.savefig('Results/1D_Section_y_'+name+'.pdf', transparent=True) 
     plt.clf()
-
-
 
 def Plot2Dresults(u_predicted, x, name):
 
@@ -726,109 +781,118 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
     fig.savefig('Results/2D_'+name+'.pdf', transparent=True) 
     plt.close()
 
+def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
+        import meshio
+        # Get nodal values from the trained model
+        u_x = [u for u in Model_FEM.nodal_values_x]
+        u_y = [u for u in Model_FEM.nodal_values_y]
 
-def Export_Displacement_to_vtk(mesh_name, Model_u, ep ):
+        # Compute the strain 
+        List_elems = torch.arange(0,Model_FEM.NElem,dtype=torch.int)
+        Model_FEM.train()
+        _,xg,detJ = Model_FEM()
+        Model_FEM.eval()
+        eps =  Strain(Model_FEM(xg, List_elems),xg)
+        sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
+        sigma_VM = VonMises(sigma)
+        sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
+        X_interm_tot = Model_FEM.training_recap["X_interm_tot"]
 
-    u_x = [u for u in Model_u.nodal_values[0]]
-    u_y = [u for u in Model_u.nodal_values[1]]
+        X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
+        u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
+        import numpy as np
+        Coord_converged = np.array([[Model_FEM.coordinates[i][0][0].item(),Model_FEM.coordinates[i][0][1].item(),0] for i in range(len(Model_FEM.coordinates))])
+        Connect_converged = Model_FEM.connectivity
+        sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
+        point_data={"U":u.data}, 
+        cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
+        sol.write(
+            "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
+        )
 
-    meshBeam = meshio.read('geometries/'+mesh_name)
-    u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
+        import meshio
+        X_interm_tot        = Model_FEM.training_recap["X_interm_tot"]
+        U_interm_tot        = Model_FEM.training_recap["U_interm_tot"]
+        Gen_interm_tot      = Model_FEM.training_recap["Gen_interm_tot"]
+        detJ_tot            = Model_FEM.training_recap["detJ_tot"]
+        Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
 
-    coordinates = [coord for coord in Model_u.coordinates]
-    coordinates = torch.cat(coordinates,dim=0)
+        # Add 3-rd dimension
+        X_interm_tot    = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
+        U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
 
-    sol = meshio.Mesh(coordinates.data, {"triangle6":meshBeam.cells_dict["triangle6"]},
-                        point_data={"U":u.data})
+        for timestep in range(len(U_interm_tot)):
+            sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
+            point_data={"U":U_interm_tot[timestep]}, 
+            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
 
-    sol.write('Results/Paraview/Displacement_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
-
-def Export_Displacement1_to_vtk(mesh_name, Model_u, ep ):
-
-    u_x = [u for u in Model_u.nodal_values[0]]
-    u_y = [u for u in Model_u.nodal_values[1]]
-
-    meshBeam = meshio.read('geometries/'+mesh_name)
-    u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
-
-    coordinates = [coord for coord in Model_u.coordinates]
-    coordinates = torch.cat(coordinates,dim=0)
-
-    sol = meshio.Mesh(coordinates.data, {"triangle":meshBeam.cells_dict["triangle"]},
-                        point_data={"U":u.data})
-
-    sol.write('Results/Paraview/Displacement_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
-
-def Export_Stress_to_vtk(Mesh, Model, ep ):
-
-    mesh_name = Mesh.name_mesh
-
-    stress_all_coord = [(Model.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model.coordinates))]
-    stress_all_cell_IDs = torch.tensor([torch.tensor(Mesh.GetCellIds(i),dtype=torch.int)[0] for i in stress_all_coord])
-    stress_all_coord = (torch.cat(stress_all_coord)).clone().detach().requires_grad_(True)
-
-    stress = Model(stress_all_coord, stress_all_cell_IDs)
-
-    # s11 = [u for u in Model.nodal_values[0]]
-    # s22 = [u for u in Model.nodal_values[1]]
-    # s12 = [u for u in Model.nodal_values[2]]
-
-    meshBeam = meshio.read('geometries/'+mesh_name)
-    u = torch.stack([stress[0,:],stress[1,:], stress[2,:]],dim=1)
-
-    coordinates = [coord for coord in Model.coordinates]
-    coordinates = torch.cat(coordinates,dim=0)
-
-    sol = meshio.Mesh(coordinates.data, {"triangle":meshBeam.cells_dict["triangle"]},
-                        point_data={"stress":u.data})
-
-    sol.write('Results/Paraview/Stress_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
+            sol.write(
+                f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
+            )
 
 
-def PlotShapeFunctions(model, coord, ids = []):
+
+def Plot_Eval_1d(model, config, Mat, mesh):
+
+    new_coord = [coord for coord in model.coordinates]
+    new_coord = torch.cat(new_coord,dim=0)
+
+    L = config["geometry"]["L"]
+    A = config["material"]["A"]
+    E = config["material"]["E"]
+
+    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+        mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(mesh.Nodes))]
+        mesh.ExportMeshVtk1D(flag_update = True)
+
+
+    n_visu = 1000
+    PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+    IDs_plot = torch.tensor(mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
 
     model.eval()
-    name = 'shape_functions'
+    u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+    analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm
+    print(f'* Final l2 loss : {np.format_float_scientific(l2_loss, precision=4)}')
 
+    du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
+    print(f'* Final l2 loss grad : {np.format_float_scientific(l2_loss_grad, precision=4)}')
+
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+        
+    plt.plot(new_coord,[coord*0 for coord in new_coord],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
+    plt.plot(PlotCoordinates.data,u_predicted.data,'--', label = 'Predicted solution')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    # plt.title('Displacement')
+    plt.savefig('Results/Displacement.pdf', transparent=True) 
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
+    #plt.show()
+    plt.clf()
 
     fig = matplotlib.pyplot.gcf()
     fig.set_size_inches(9, 7)
 
-    values = [0.5, 0.8, 0.2, 1.0, 0.45, 0.2]
-    x_values = [0, 2,4,6,8,10]
-
-    # for j in range(5):
-
-    #     coord_1 = coord[torch.where(ids==j)]
-    #     ids_1 = ids[torch.where(ids==j)]
-    #     out = model(coord_1,ids_1)
-
-    #     for k in range(out.shape[1]):
-    #         print("j = ", j, "  k = ", k)
-    #         plt.plot(coord_1.data,out.data[:,k]*values[j+k], label = r'$\tilde N$')
-
-    plt.scatter(x_values, values, label = "Nodal values")
-
-
-    plt.xlim([-0.2, 10.2])
-    plt.ylim([-0.02, 1.02])
-
-
-
-    # for j in range(out.shape[1]):
-    #     plt.plot(coord.data,out.data[:,j], label = r'$\tilde N$')
-
-    # plt.plot(coord.data,out.data[:,5], color = "brown", label = r'$\tilde N$')
-    # plt.plot(coord.data,out.data[:,4], color = "purple", label = r'$\tilde N$')
-    # plt.plot(coord.data,out.data[:,3], color = "red", label = r'$\tilde N$')
-
-
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+        
+    plt.plot(new_coord,[coord*0 for coord in new_coord],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
+    plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
     plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
-    
-    plt.savefig('Results/'+name+'.pdf', transparent=True,  bbox_inches="tight")  
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    # plt.title('Displacement')
+    plt.savefig('Results/Gradient.pdf', transparent=True)  
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     #plt.show()
     plt.clf()

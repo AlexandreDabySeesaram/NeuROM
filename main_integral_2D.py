@@ -35,7 +35,7 @@ order = 1
 n_integration_points = 1
                                                    # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 0.125                                             # Maximum element size of the mesh
+MaxElemSize = 2.0                              # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -60,8 +60,8 @@ Domain_mesh.ExportMeshVtk()
 n_component = 2                                                 # Number of components of the interpolated field
 Model_2D = MeshNN_2D(Domain_mesh, n_component, n_integration_points)                  # Create the associated model (with 2 components)
 Model_2D.UnFreeze_FEM()
-# Model_2D.UnFreeze_Mesh()
 Model_2D.Freeze_Mesh()
+# Model_2D.UnFreeze_Mesh()
 
 
 # Get plotcoordinates 
@@ -80,13 +80,13 @@ learning_rate = 0.001                                           # optimizer lear
 Model_2D.RefinementParameters(  MaxGeneration = 2, 
                                 Jacobian_threshold = 0.5)
                                 
-Model_2D.TrainingParameters(    Stagnation_threshold = 1e-8, 
+Model_2D.TrainingParameters(    Stagnation_threshold = 1e-7, 
                                 Max_epochs = 12000, 
                                 learning_rate = 0.001)
 
 #%% Training 
 # Fisrt stage
-max_refinment = 1
+max_refinment = 3
 n_refinement = 0
 stagnation = False
 Loss_tot = []
@@ -110,7 +110,13 @@ while n_refinement < max_refinment and not stagnation:
     n_epochs = 3000
     if n_refinement>4:
         n_epochs = 1000
+
     # Loss_vect, Duration = Training_2D_Integral(Model_2D, optimizer, n_epochs,List_elems,Mat)
+
+    # optimizer = torch.optim.LBFGS(Model_2D.parameters(),line_search_fn="strong_wolfe")
+    # Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, optimizer, n_epochs,List_elems,Mat)
+    
+    # Model_2D.UnFreeze_Mesh()
 
     optimizer = torch.optim.LBFGS(Model_2D.parameters(),line_search_fn="strong_wolfe")
     Loss_vect, Duration = Training_2D_Integral_LBFGS(Model_2D, optimizer, n_epochs,List_elems,Mat)
@@ -144,7 +150,9 @@ while n_refinement < max_refinment and not stagnation:
     if n_refinement < max_refinment and not stagnation:
         # Refine mesh
         # MaxElemSize = MaxElemSize/coeff_refinement
-        MaxElemSize = MaxElemSize/4
+        MaxElemSize = MaxElemSize/2
+        print("MaxElemSize = ", MaxElemSize)
+        print()
 
         Domain_mesh_2 = pre.Mesh(Name,MaxElemSize, order, dimension)    # Create the mesh object
         Domain_mesh_2.AddBCs(Volume_element, Excluded_elements, DirichletDictionryList)           # Include Boundary physical domains infos (BCs+volume)
@@ -188,7 +196,7 @@ while n_refinement < max_refinment and not stagnation:
         Model_2D = Model_2D_2
         Model_2D.UnFreeze_FEM()
         Model_2D.Freeze_Mesh()
-        # Model_2D.UnFreeze_Mesh()
+        Model_2D.UnFreeze_Mesh()
         Model_2D.train()
         Model_2D.RefinementParameters(  MaxGeneration = 3, 
                                 Jacobian_threshold = 0.2)
@@ -213,7 +221,7 @@ _,xg,detJ = Model_2D(EvalCoordinates, List_elems)
 Model_2D.eval()
 eps =  Strain(Model_2D(xg, List_elems),xg)
 sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
-sigma_VM = VonMises(sigma)
+sigma_VM = VonMises(sigma, Mat.lmbda, Mat.mu)
 X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
 u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
 
@@ -242,7 +250,9 @@ sol.write(
 #     )
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-
+Domain_mesh.Nodes = [[i+1,Model_2D.coordinates[i][0][0].item(),Model_2D.coordinates[i][0][1].item(),0] for i in range(len(Model_2D.coordinates))]
+# Domain_mesh.Connectivity = Model_2D.connectivity
+Domain_mesh.ExportMeshVtk(flag_update = True)
 
 coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)
 List_elems = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
@@ -250,9 +260,17 @@ List_elems = torch.tensor(Domain_mesh.GetCellIds(coord),dtype=torch.int)
 u = Model_2D(coord, List_elems)
 eps =  Strain(Model_2D(coord, List_elems),coord)
 sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
-sigma_VM = VonMises(sigma)
+sigma_VM = VonMises(sigma, Mat.lmbda, Mat.mu)
 
-np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_u.npy", np.array(u.detach()))
-np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_sigma.npy", np.array(sigma.detach()))
-np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_sigma_VM.npy", np.array(sigma_VM.detach()))
+param = Model_2D.coordinates[-1]
+if param.requires_grad == True:
 
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_u.npy", np.array(u.detach()))
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma.npy", np.array(sigma.detach()))
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
+
+else:
+
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_u.npy", np.array(u.detach()))
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma.npy", np.array(sigma.detach()))
+    np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))

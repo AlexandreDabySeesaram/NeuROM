@@ -40,6 +40,7 @@ class LinearBlock(nn.Module):
         
         mid = self.relu(-x + x_b.T)
         mid = self.relu(1 - mid/(x_b.T-x_a.T))
+        
         if y_a.dim() ==2:
             mid = mid*((y_b-y_a).T)  + y_a.T
         elif y_b.dim() ==2:
@@ -189,7 +190,6 @@ class MeshNN(nn.Module):
         out_dd = self.ElementBlock_BC(x,self.coordinates,torch.tensor(-1))
 
         joined_vector = torch.cat((out_uu,out_dd),dim=1)      
-
         recomposed_vector_u = self.AssemblyLayer(joined_vector) #-1
 
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
@@ -204,8 +204,8 @@ class MeshNN(nn.Module):
         Args:
             u_d (Float list): The left and right BCs"""
 
-        self.u_0 = torch.tensor(u_d[0], dtype=torch.float32)
-        self.u_L = torch.tensor(u_d[1], dtype=torch.float32)
+        self.u_0 = torch.tensor(u_d[0], dtype=torch.float64)
+        self.u_L = torch.tensor(u_d[1], dtype=torch.float64)
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -615,6 +615,7 @@ class ElementBlock2D_Lin(nn.Module):
         """
         super(ElementBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
+
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
 
@@ -1025,7 +1026,7 @@ class MeshNN_2D(nn.Module):
                     self.nodal_values[1][-(3-i)].requires_grad = False
         return Removed_elem_list
 
-    def forward(self,x = 'NaN', el_id = 'NaN'):
+    def forward(self, x = 'NaN', el_id = 'NaN'):
         if self.training:
             el_id = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
@@ -1382,11 +1383,10 @@ class MeshNN_1D(nn.Module):
             frozen = self.frozen_BC_node_IDs[j]
             self.nodal_values[frozen].requires_grad = False
 
+
     def SetFixedValues(self, node, val_inter):
         """Set the coordinates as trainable parameters """
         # print("Unfreeze values")
-
-
         for val in self.nodal_values:
             val.data = torch.tensor([0])
         ids = []
@@ -1426,4 +1426,5 @@ class MeshNN_1D(nn.Module):
             shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
             interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
 
+            # return shape_functions
             return interpol

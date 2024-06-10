@@ -115,7 +115,7 @@ def Collision_Check(model, coord_old, proximity_limit):
 
     detJ = (node2_coord - node1_coord)/2
 
-    idx = torch.where(detJ[:,0]<1.0e-4)[0]
+    idx = torch.where(detJ[:,0]<proximity_limit)[0]
     if len(idx)>0:
         for l in range(len(idx)):
 
@@ -249,7 +249,7 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
 
         # predict = forward pass with our model
         start_time = time.time()
-        u_predicted = BeamModel(TrialCoordinates) 
+        u_predicted = (TrialCoordinates) 
         evaluation_time += time.time() - start_time
         start_time = time.time()
         # loss 
@@ -1143,43 +1143,45 @@ def Training_2D_Integral(model, optimizer, n_epochs,List_elems,Mat):
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
                 D_detJ = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)
-                if torch.max(D_detJ)>model.Jacobian_threshold:
-                    indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
-                    # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
-                    model.detJ_0[indices] = detJ[indices]
-                    Removed_elem_list = []
-                    old_generation = model.elements_generation
-                    for i in range(indices.shape[0]):
-                        el_id = indices[i]  
-                        if model.elements_generation[el_id.item()]<model.MaxGeneration:
-                            model.MaxGeneration_elements=1
-                        if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
-                            el_id = torch.tensor([el_id],dtype=torch.int)
-                            new_coordinate = xg[el_id]
-                            model.eval()
-                            newvalue = model(new_coordinate,el_id) 
-                            model.train()
-                            Removed_elems = model.SplitElemNonLoc(el_id)
-                            Removed_elems[0] = Removed_elems[0].numpy()
-                            # Update indexes 
-                            for j in range(indices.shape[0]):
-                                number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
-                                indices[j] = indices[j] - number_elems_above
-                            # Update indexes of Removed_elem_list
-                            for j in range(len(Removed_elem_list)):
-                                number_elems_above = len([e for e in Removed_elems if e < Removed_elem_list[j]])
-                                Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
 
-                            # Add newly removed elems to list
-                            Removed_elem_list += Removed_elems
-                            # List_elems = torch.arange(0,model.NElem,dtype=torch.int)
-                            optimizer.add_param_group({'params': model.coordinates[-3:]})
-                            optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
-                            optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
-                    _,_,detJ = model(PlotCoordinates, List_elems)
-                    # model.detJ = detJ
 
-                    # model.Freeze_Mesh()
+                # if torch.max(D_detJ)>model.Jacobian_threshold:
+                #     indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
+                #     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
+                #     model.detJ_0[indices] = detJ[indices]
+                #     Removed_elem_list = []
+                #     old_generation = model.elements_generation
+                #     for i in range(indices.shape[0]):
+                #         el_id = indices[i]  
+                #         if model.elements_generation[el_id.item()]<model.MaxGeneration:
+                #             model.MaxGeneration_elements=1
+                #         if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
+                #             el_id = torch.tensor([el_id],dtype=torch.int)
+                #             new_coordinate = xg[el_id]
+                #             model.eval()
+                #             newvalue = model(new_coordinate,el_id) 
+                #             model.train()
+                #             Removed_elems = model.SplitElemNonLoc(el_id)
+                #             Removed_elems[0] = Removed_elems[0].numpy()
+                #             # Update indexes 
+                #             for j in range(indices.shape[0]):
+                #                 number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
+                #                 indices[j] = indices[j] - number_elems_above
+                #             # Update indexes of Removed_elem_list
+                #             for j in range(len(Removed_elem_list)):
+                #                 number_elems_above = len([e for e in Removed_elems if e < Removed_elem_list[j]])
+                #                 Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
+
+                #             # Add newly removed elems to list
+                #             Removed_elem_list += Removed_elems
+                #             # List_elems = torch.arange(0,model.NElem,dtype=torch.int)
+                #             optimizer.add_param_group({'params': model.coordinates[-3:]})
+                #             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
+                #             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
+                #     _,_,detJ = model(PlotCoordinates, List_elems)
+                #     # model.detJ = detJ
+
+                #     # model.Freeze_Mesh()
                 
                 if d_loss < model.Stagnation_threshold:
                     stagnation = True
@@ -1238,6 +1240,7 @@ def Training_2D_Integral_LBFGS(model, optimizer, n_epochs,List_elems,Mat):
 
             loss.backward(retain_graph=True)
             return loss
+
         optimizer.step(closure)
         loss = closure()
         # loss_previous = torch.sum((0.5*InternalEnergy_2D(u_predicted,xg,Mat.lmbda, Mat.mu)-1*VolumeForcesEnergy_2D(u_predicted,xg,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
@@ -1258,41 +1261,43 @@ def Training_2D_Integral_LBFGS(model, optimizer, n_epochs,List_elems,Mat):
                 d_loss = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))
                 loss_old = loss.data
                 D_detJ = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)
-                if torch.max(D_detJ)>model.Jacobian_threshold:
-                    indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
-                    # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
-                    model.detJ_0[indices] = detJ[indices]
-                    Removed_elem_list = []
-                    old_generation = model.elements_generation
-                    for i in range(indices.shape[0]):
-                        el_id = indices[i]  
-                        if model.elements_generation[el_id.item()]<model.MaxGeneration:
-                            model.MaxGeneration_elements=1
-                        if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
-                            el_id = torch.tensor([el_id],dtype=torch.int)
-                            new_coordinate = xg[el_id]
-                            model.eval()
-                            newvalue = model(new_coordinate,el_id) 
-                            model.train()
-                            Removed_elems = model.SplitElemNonLoc(el_id)
-                            Removed_elems[0] = Removed_elems[0].numpy()
-                            # Update indexes 
-                            for j in range(indices.shape[0]):
-                                number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
-                                indices[j] = indices[j] - number_elems_above
-                            # Update indexes of Removed_elem_list
-                            for j in range(len(Removed_elem_list)):
-                                number_elems_above = len([e for e in Removed_elems if e < Removed_elem_list[j]])
-                                Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
 
-                            # Add newly removed elems to list
-                            Removed_elem_list += Removed_elems
-                            # List_elems = torch.arange(0,model.NElem,dtype=torch.int)
-                            optimizer.add_param_group({'params': model.coordinates[-3:]})
-                            optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
-                            optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
-                    _,_,detJ = model(PlotCoordinates, List_elems)
-                    # model.detJ = detJ
+
+                # if torch.max(D_detJ)>model.Jacobian_threshold:
+                #     indices = torch.nonzero(D_detJ > model.Jacobian_threshold)
+                #     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
+                #     model.detJ_0[indices] = detJ[indices]
+                #     Removed_elem_list = []
+                #     old_generation = model.elements_generation
+                #     for i in range(indices.shape[0]):
+                #         el_id = indices[i]  
+                #         if model.elements_generation[el_id.item()]<model.MaxGeneration:
+                #             model.MaxGeneration_elements=1
+                #         if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
+                #             el_id = torch.tensor([el_id],dtype=torch.int)
+                #             new_coordinate = xg[el_id]
+                #             model.eval()
+                #             newvalue = model(new_coordinate,el_id) 
+                #             model.train()
+                #             Removed_elems = model.SplitElemNonLoc(el_id)
+                #             Removed_elems[0] = Removed_elems[0].numpy()
+                #             # Update indexes 
+                #             for j in range(indices.shape[0]):
+                #                 number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
+                #                 indices[j] = indices[j] - number_elems_above
+                #             # Update indexes of Removed_elem_list
+                #             for j in range(len(Removed_elem_list)):
+                #                 number_elems_above = len([e for e in Removed_elems if e < Removed_elem_list[j]])
+                #                 Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
+
+                #             # Add newly removed elems to list
+                #             Removed_elem_list += Removed_elems
+                #             # List_elems = torch.arange(0,model.NElem,dtype=torch.int)
+                #             optimizer.add_param_group({'params': model.coordinates[-3:]})
+                #             optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
+                #             optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
+                #     _,_,detJ = model(PlotCoordinates, List_elems)
+                #     # model.detJ = detJ
 
                     # model.Freeze_Mesh()
                 if d_loss < model.Stagnation_threshold:
@@ -1963,13 +1968,11 @@ def Training_1D_WeakEQ(model, model_test, optimizer, n_epochs, PlotCoordinates, 
             nonzeros = torch.where((u_predicted_test!=0))
             list_elem = List_elems.repeat(u_predicted_test.shape[1],1)
             
-        
             xg = xg[nonzeros]
             detJ = detJ[nonzeros]
             u_predicted_test = u_predicted_test[nonzeros]
             du_test_dx = du_test_dx[nonzeros]
             list_elem = torch.transpose(list_elem,0,1)[nonzeros]
-
 
             u_predicted = model(xg, list_elem)[:,0]
 
@@ -2034,7 +2037,6 @@ def Training_1D_WeakEQ(model, model_test, optimizer, n_epochs, PlotCoordinates, 
             #     if p.requires_grad:
             #         print(p, p.grad.view(-1))
             # print()
-
 
             Pplot.Plot_Compare_Loss2l2norm(error,error2,'Loss_Comaprison')
 

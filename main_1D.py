@@ -16,6 +16,15 @@ from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
 
 import matplotlib.pyplot as plt
 import matplotlib
+import tikzplotlib
+
+from matplotlib.legend import Legend
+Legend._ncol = property(lambda self: self._ncols)
+
+from matplotlib.lines import Line2D
+
+Line2D._us_dashSeq    = property(lambda self: self._dash_pattern[1])
+Line2D._us_dashOffset = property(lambda self: self._dash_pattern[0])
 
 #Import post processing libraries
 import Post.Plots as Pplot
@@ -43,14 +52,14 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 18                                             # Number of Nodes in the Mesh
+np = 6                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175  
 
 alpha = 0.0                                       # Weight for the Mesh regularisation 
 order = 1                                          # Order of the shape functions
 dimension = 1
-n_integr_points = 4
+n_integr_points = 5
 
                                            # Young's Modulus (should be 175)
 # User defines all boundary conditions 
@@ -72,7 +81,7 @@ elif order ==2:
 Excluded = []
 
 if dimension ==1:
-    Beam_mesh = pre.Mesh('Beam',MaxElemSize, MaxElemSize/2, order, dimension)    # Create the mesh object
+    Beam_mesh = pre.Mesh('Beam',MaxElemSize, order, dimension)    # Create the mesh object
 
 
 Borders = [1,2]
@@ -88,7 +97,7 @@ Beam_mesh.ExportMeshVtk1D()
 #%% Options & Hyperparameters
 
 learning_rate = 1.0e-5                            # optimizer learning rate
-n_visu = 1000
+n_visu = 500
 
 #%% Application of the Space HiDeNN
 BeamModel = MeshNN_1D(Beam_mesh, n_integr_points)                # Create the associated model
@@ -113,12 +122,16 @@ optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)   #, beta
 
 print("BeamModel.train()")
 
-n_epochs = 1                              # Maximum number of iterations for the training stage
-error, error2, Coord_trajectories = Training_1D_Integral(BeamModel, optimizer, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E)
+
+Pplot.PlotShapeFunctions(BeamModel, PlotCoordinates, IDs_plot)
 
 
-n_epochs = 100                             # Maximum number of iterations for the training stage
-Training_1D_Integral_LBFGS(BeamModel, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E, error, error2, Coord_trajectories)
+# n_epochs = 1                              # Maximum number of iterations for the training stage
+# error, error2, Coord_trajectories = Training_1D_Integral(BeamModel, optimizer, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E)
+
+
+# n_epochs = 100                             # Maximum number of iterations for the training stage
+# Training_1D_Integral_LBFGS(BeamModel, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E, error, error2, Coord_trajectories)
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
@@ -165,7 +178,8 @@ plt.xlabel(r'$\underline{x}$ [m]')
 plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement')
-plt.savefig('Results/Displacement.pdf', transparent=True)  
+plt.savefig('Results/Displacement.pdf', transparent=True) 
+tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
 #plt.show()
 plt.clf()
 
@@ -181,9 +195,11 @@ plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, labe
 plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Ground Truth')
 plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'HiDeNN')
 plt.xlabel(r'$\underline{x}$ [m]')
-plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
 plt.legend(loc="upper left")
 # plt.title('Displacement')
 plt.savefig('Results/Gradient.pdf', transparent=True)  
+tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
+
 #plt.show()
 plt.clf()

@@ -20,6 +20,16 @@ from matplotlib.ticker import MaxNLocator
 
 from Bin.PDE_Library import Stress
 
+import tikzplotlib
+
+from matplotlib.legend import Legend
+Legend._ncol = property(lambda self: self._ncols)
+
+from matplotlib.lines import Line2D
+
+Line2D._us_dashSeq    = property(lambda self: self._dash_pattern[1])
+Line2D._us_dashOffset = property(lambda self: self._dash_pattern[0])
+
 
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
@@ -40,6 +50,8 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+
     #plt.show()
     plt.clf()
 
@@ -62,6 +74,7 @@ def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,T
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
     #plt.show()
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     plt.clf()
 
 def PlotEnergyLoss(error,zoom,name):
@@ -75,10 +88,17 @@ def PlotEnergyLoss(error,zoom,name):
 
 def PlotTrajectories(Coord_trajectories,name):
     """Plots the trajectories of the coordinates during training"""
-    plt.plot(Coord_trajectories)
+    
+    if len(Coord_trajectories)>5000:
+        x = np.arange(len(Coord_trajectories))
+        plt.plot(x[0::500], Coord_trajectories[0::500])
+    else:
+        plt.plot(Coord_trajectories)
+
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     #plt.show()
     plt.clf()
 
@@ -763,3 +783,52 @@ def Export_Stress_to_vtk(Mesh, Model, ep ):
                         point_data={"stress":u.data})
 
     sol.write('Results/Paraview/Stress_'+mesh_name[0:-4]+'_ep_'+str(ep)+'.vtk')
+
+
+def PlotShapeFunctions(model, coord, ids = []):
+
+    model.eval()
+    name = 'shape_functions'
+
+
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    values = [0.5, 0.8, 0.2, 1.0, 0.45, 0.2]
+    x_values = [0, 2,4,6,8,10]
+
+    # for j in range(5):
+
+    #     coord_1 = coord[torch.where(ids==j)]
+    #     ids_1 = ids[torch.where(ids==j)]
+    #     out = model(coord_1,ids_1)
+
+    #     for k in range(out.shape[1]):
+    #         print("j = ", j, "  k = ", k)
+    #         plt.plot(coord_1.data,out.data[:,k]*values[j+k], label = r'$\tilde N$')
+
+    plt.scatter(x_values, values, label = "Nodal values")
+
+
+    plt.xlim([-0.2, 10.2])
+    plt.ylim([-0.02, 1.02])
+
+
+
+    # for j in range(out.shape[1]):
+    #     plt.plot(coord.data,out.data[:,j], label = r'$\tilde N$')
+
+    # plt.plot(coord.data,out.data[:,5], color = "brown", label = r'$\tilde N$')
+    # plt.plot(coord.data,out.data[:,4], color = "purple", label = r'$\tilde N$')
+    # plt.plot(coord.data,out.data[:,3], color = "red", label = r'$\tilde N$')
+
+
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    
+    plt.savefig('Results/'+name+'.pdf', transparent=True,  bbox_inches="tight")  
+    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+
+    #plt.show()
+    plt.clf()

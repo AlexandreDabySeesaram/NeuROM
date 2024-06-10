@@ -44,7 +44,7 @@ class Dataset(torch.utils.data.Dataset):
 #%% Pre-processing (could be put in config file later)
 # Defintition of the structure and meterial
 L = 10                                              # Length of the Beam
-np = 20                                             # Number of Nodes in the Mesh
+np = 40                                             # Number of Nodes in the Mesh
 A = 1                                               # Section of the beam
 E = 175  
 
@@ -73,7 +73,7 @@ elif order ==2:
 Excluded = []
 
 if dimension ==1:
-    Beam_mesh = pre.Mesh('Beam',MaxElemSize, MaxElemSize/2, order, dimension)    # Create the mesh object
+    Beam_mesh = pre.Mesh('Beam',MaxElemSize, order, dimension)    # Create the mesh object
 
 
 Borders = [1,2]
@@ -121,7 +121,7 @@ optimizer = torch.optim.Adam(BeamModel.parameters(), lr=learning_rate)
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
 
-n_epochs = 8000                             # Maximum number of iterations for the training stage
+n_epochs = 20000                             # Maximum number of iterations for the training stage
 error, error2, Coord_trajectories = Training_1D_WeakEQ(BeamModel, BeamModelTest, optimizer, n_epochs, PlotCoordinates, IDs_plot, List_elems,A,E)
 
 # error, error2, Coord_trajectories = [],[],[]

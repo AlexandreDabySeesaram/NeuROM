@@ -204,6 +204,10 @@ class MeshNN(nn.Module):
         NewNodalValues = previous_model(newcoordinates)
         self.InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
 
+    def ZeroOut(self):
+        self.InterpoLayer_uu.weight.data = 0*self.NodalValues_uu
+
+
     def SetBCs(self,u_d):
         """Set the two Dirichlet boundary conditions
         Args:
@@ -383,7 +387,8 @@ class NeuROM(nn.Module):
         self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
         self.FreezeAll()
         self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
-        self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
+        self.Space_modes[self.n_modes_truncated-1].ZeroOut()
+        # self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
 
         for j in range(self.n_para):
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
@@ -745,6 +750,13 @@ class MeshNN_2D(nn.Module):
         # set parameters 
         self.RefinementParameters()
         self.TrainingParameters()
+
+    def ZeroOut(self):
+        self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+        self.new_nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
+        self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
+        self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+
 
     def Init_from_previous(self,CoarseModel):
         newcoordinates = [coord for coord in self.coordinates]
@@ -1310,6 +1322,10 @@ class MeshNN_1D(nn.Module):
             self.frozen_BC_node_IDs.append(IDs)
             self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
             self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+
+    def ZeroOut(self):
+        self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+
 
     def UnFreeze_FEM(self):
         """Set the coordinates as trainable parameters """

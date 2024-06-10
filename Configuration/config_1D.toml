@@ -52,7 +52,7 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 10                                            # Number of Nodes in the Mesh in 1D
+np                      = 40                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 n_integr_points         = 5                                             # Number of integration points per element
 
@@ -70,7 +70,7 @@ IntegralMethod          = 'Gaussian_quad'                               # Type o
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = false                                          # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 4                                             # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
 ####################################################
 ###                                              ###
@@ -94,7 +94,7 @@ n_epochs                = 3000                                          # Maximu
 learning_rate           = 0.001                                         # optimizer learning rate
 LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-15                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
+loss_decrease_c         = 1e-7                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
 
 ####################################################

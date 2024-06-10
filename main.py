@@ -196,10 +196,6 @@ if config["solver"]["ParametricStudy"]:
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
                     dtype=torch.float32, 
                     requires_grad=True)
-    IDs_plot = torch.tensor(Mesh_object.GetCellIds(Training_coordinates),dtype=torch.int)
-    E = torch.tensor([150])
-    E = E[:,None] # Add axis so that dimensions match
-    ROM_model(Training_coordinates, [E])
     if config["postprocess"]["Plot_loss_mode"]:
         Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],'Loss_ModesNeg13',True)
     if config["postprocess"]["Plot_loss_decay_mode"]:

@@ -15,7 +15,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
-                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress
+                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -395,8 +395,13 @@ def Training_NeuROM(model, config, optimizer):
     Loss_vect               = []                                            # Initialise vector of loss values
     L2_error                = []                                            # Initialise vector of L2 error
     # BCs used for the analytical comparison 
-    u0                      = model.Space_modes[0].u_0                      # Left BC
-    uL                      = model.Space_modes[0].u_L                      # Right BC
+    match config["solver"]["IntegralMethod"]:
+        case "Trapezoidal":
+            u0                      = model.Space_modes[0].u_0                      # Left BC
+            uL                      = model.Space_modes[0].u_L                      # Right BC
+        case "Gaussian_quad":
+            u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
+            uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("**************** START TRAINING ***************\n")
     time_start              = time.time()
     epoch                   = 0                                             # Initial epoch number
@@ -422,7 +427,11 @@ def Training_NeuROM(model, config, optimizer):
         # Compute loss
         loss_time_start             = time.time()
         if not BiPara:
-            loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+            match config["solver"]["IntegralMethod"]:   
+                case "Gaussian_quad":
+                    loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                case "Trapezoidal":
+                    loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
         else:
             loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
         eval_time                   += time.time() - loss_time_start
@@ -487,7 +496,11 @@ def Training_NeuROM(model, config, optimizer):
             Loss_vect.append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
-                L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                match config["solver"]["IntegralMethod"]:   
+                    case "Trapezoidal":
+                        L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                    case "Gaussian_quad":
+                        L2_error.append(1)
         if (epoch+1) % 100 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
@@ -568,8 +581,13 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
     # model.UnFreeze_Mesh()
     loss_old = model.training_recap["Loss_vect"][-1]
     # BCs used for the analytical comparison 
-    u0                          = model.Space_modes[0].u_0
-    uL                          = model.Space_modes[0].u_L
+    match config["solver"]["IntegralMethod"]:
+        case "Trapezoidal":
+            u0                      = model.Space_modes[0].u_0                      # Left BC
+            uL                      = model.Space_modes[0].u_L                      # Right BC
+        case "Gaussian_quad":
+            u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
+            uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("************** START SECOND PAHSE *************\n")
     time_start = time.time()
     while  epoch<n_epochs and stagnancy_counter < 5:
@@ -578,7 +596,11 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
         def closure():
             optim.zero_grad()
             if not BiPara:
-                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                match config["solver"]["IntegralMethod"]:   
+                    case "Gaussian_quad":
+                        loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                    case "Trapezoidal":
+                        loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
             else:
                 loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
             loss.backward()
@@ -599,7 +621,11 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
             model.training_recap["Loss_vect"].append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
-                model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                match config["solver"]["IntegralMethod"]:   
+                    case "Trapezoidal":
+                        model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                    case "Gaussian_quad":
+                        model.training_recap["L2_error"].append(1)
         if (epoch+1) % 5 == 0:
             if not BiPara:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}%')

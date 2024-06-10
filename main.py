@@ -141,6 +141,7 @@ else:
 ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
                                             Mesh_object, 
                                             ParameterHypercube, 
+                                            config,
                                             config["solver"]["n_modes_ini"],
                                             config["solver"]["n_modes_max"]
                 )
@@ -191,11 +192,14 @@ else:
 #%% Post-processing
 
 print("*************** POST-PROCESSING ***************\n")
-
 if config["solver"]["ParametricStudy"]:
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
                     dtype=torch.float32, 
                     requires_grad=True)
+    IDs_plot = torch.tensor(Mesh_object.GetCellIds(Training_coordinates),dtype=torch.int)
+    E = torch.tensor([150])
+    E = E[:,None] # Add axis so that dimensions match
+    ROM_model(Training_coordinates, [E])
     if config["postprocess"]["Plot_loss_mode"]:
         Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],'Loss_ModesNeg13',True)
     if config["postprocess"]["Plot_loss_decay_mode"]:
@@ -204,6 +208,8 @@ if config["solver"]["ParametricStudy"]:
         case True:
             Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
         case False:  
+            ROM_model.eval()
+
             Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
 else:
     if config["postprocess"]["exportVTK"]:

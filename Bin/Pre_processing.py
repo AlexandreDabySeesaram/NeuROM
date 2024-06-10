@@ -382,7 +382,25 @@ class Mesh:
         ids = []
 
         for coord in TrialCoordinates:
-            point = [coord[0], coord[1], 0]
+            match self.dimension:
+                case '1':
+                    point = [coord[0], 0, 0]
+                case '2':
+                    point = [coord[0], coord[1], 0]
             ids.append(locator.FindCell(point))
 
         return ids
+
+
+    # def GetCellIds1D(self, TrialCoordinates):
+    #     locator = vtk.vtkCellLocator()
+    #     locator.SetDataSet(self.vtk_mesh)
+    #     locator.Update()
+
+    #     ids = []
+
+    #     for coord in TrialCoordinates:
+    #         point = [coord, 0, 0]
+    #         ids.append(locator.FindCell(point))
+
+    #     return ids

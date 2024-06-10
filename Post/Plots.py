@@ -315,8 +315,15 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
     from ipywidgets import interact, widgets
     import torch
     def interactive_plot(E):
-        u0 = BeamROM.Space_modes[0].u_0
-        uL = BeamROM.Space_modes[0].u_L
+        match BeamROM.config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                u0                      = BeamROM.Space_modes[0].u_0                      # Left BC
+                uL                      = BeamROM.Space_modes[0].u_L                      # Right BC
+            case "Gaussian_quad":
+                u0 = BeamROM.Space_modes[0].ListOfDirichletsBCsValues[0]
+                uL = BeamROM.Space_modes[0].ListOfDirichletsBCsValues[1]
+        # u0 = BeamROM.Space_modes[0].u_0
+        # uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticSolution(A,E,TrialCoordinates.data,u0,uL)
         Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]

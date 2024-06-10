@@ -482,7 +482,7 @@ class NeuROM(nn.Module):
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
                             IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
-                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            u_k = self.Space_modes[i](x,IDs_elems)
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=1)
                         P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)

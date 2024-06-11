@@ -82,7 +82,7 @@ TrainingStrategy        = 'Integral'                                # 'Integral'
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara = true                                                       # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
 # MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################
@@ -103,7 +103,7 @@ BoolCompile             = false                                     # Enable com
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 300                                      # Maximum number of iterations for the training stage
+n_epochs                = 3000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
@@ -129,6 +129,9 @@ SaveModel               = false                                     # Boolean le
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
 Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
+Plot_loss_mode          = true
+Plot_loss_decay_mode    = true
+Interactive_pltot       = false
 
 ####################################################
 ###                                              ###

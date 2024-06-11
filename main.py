@@ -212,16 +212,19 @@ if config["solver"]["ParametricStudy"]:
                     dtype=torch.float32, 
                     requires_grad=True)
     if config["postprocess"]["Plot_loss_mode"]:
-        Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],'Loss_ModesNeg13',True)
+        Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
+                                    'Loss_Modes'+"_"+config["postprocess"]["Name_export"]+"_"+config["postprocess"]["Name_export"],True)
     if config["postprocess"]["Plot_loss_decay_mode"]:
-        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],'Loss_ModesNeg13',True)
-    match config["solver"]["BiPara"]:
-        case True:
-            Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
-        case False:  
-            ROM_model.eval()
-
-            Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
+        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],
+                                    'Loss_rate_Modes'+"_"+config["postprocess"]["Name_export"]+"_"+config["postprocess"]["Name_export"],True)
+    
+    if config["postprocess"]["Interactive_pltot"]:
+        match config["solver"]["BiPara"]:
+            case True:
+                Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
+            case False:  
+                ROM_model.eval()
+                Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
 else:
     if config["postprocess"]["exportVTK"]:
         Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+

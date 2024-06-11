@@ -752,7 +752,7 @@ class MeshNN_2D(nn.Module):
         self.TrainingParameters()
 
     def ZeroOut(self):
-        self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+        # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
         self.new_nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
         self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]

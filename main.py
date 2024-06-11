@@ -40,8 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-# Default_config_file = 'Configuration/config_2D_ROM.toml'
-Default_config_file = 'Configuration/config_1D.toml'
+Default_config_file = 'Configuration/config_2D_ROM.toml'
+# Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -213,30 +213,224 @@ if config["solver"]["ParametricStudy"]:
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
                     dtype=torch.float32, 
                     requires_grad=True)
-    if config["postprocess"]["Plot_loss_mode"]:
-        if min(ROM_model.training_recap["Loss_vect"]) > 0:
-            sign = "Positive"
-        else:
-            sign = "Negative"
-        if config["solver"]["BiPara"]:
-            Study = "_BiPara"
-        else: 
-            Study = "_MonoPara"
-        val = str(np.format_float_scientific(1e15, precision=2))
+
+    if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
+        sign = "Positive"
+    else:
+        sign = "Negative"
+    if config["solver"]["BiPara"]:                                      # define type of parametric study for saving files
+        Study = "_BiPara"
+    else: 
+        Study = "_MonoPara" 
+    val = str(np.format_float_scientific(1e15, precision=2))            # Convergence criterion
+
+    if config["postprocess"]["Plot_loss_mode"]:                         # Plot loss and modes
         Pplot.Plot_PosNegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
                                     'Loss_Modes'+"_"+config["geometry"]["Name"]+Study+"_"+val
                                     , sign = sign,tikz = True)
-    if config["postprocess"]["Plot_loss_decay_mode"]:
+    if config["postprocess"]["Plot_loss_decay_mode"]:                   # Plot loss rate and modes
         Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],
                                     'Loss_rate_Modes'+"_"+config["geometry"]["Name"]+"_"+val,True)
     
     if config["postprocess"]["Interactive_pltot"]:
-        match config["solver"]["BiPara"]:
-            case True:
-                Pplot.Plot_BiParametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticBiParametricSolution,'name_model')
-            case False:  
-                ROM_model.eval()
-                Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
+
+        match config["interpolation"]["dimension"]:
+            case 1:
+                if config["solver"]["BiPara"]:
+                    Pplot.Plot_BiParametric_Young_Interactive(  ROM_model,
+                                                Training_coordinates,
+                                                config["geometry"]["A"],
+                                                AnalyticBiParametricSolution,
+                                                'name_model')
+                else:
+                    ROM_model.eval()
+                    Pplot.Plot_Parametric_Young_Interactive(    ROM_model,
+                                                Training_coordinates,
+                                                config["geometry"]["A"],
+                                                AnalyticSolution,
+                                                'name_model')                                
+            case 2:
+                import pyvista as pv
+                import vtk
+                import meshio
+                filename = 'Geometries/'+Mesh_object.name_mesh
+                mesh = pv.read(filename)
+                Nodes = np.stack(Mesh_object.Nodes)
+
+                match config["postprocess"]["PyVista_Type"]:
+                    case "Frame":
+                        parameter = 5e-3
+                        E = torch.tensor([parameter],dtype=torch.float32)
+                        E = E[:,None] # Add axis so that dimensions match
+                        theta = torch.tensor([torch.pi/3],dtype=torch.float32)
+                        theta = theta[:,None] # Add axis so that dimensions match
+
+                        Para_coord_list = nn.ParameterList((E,theta))
+                        ROM_model.eval()
+                        u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+
+                        match ROM_model.n_para:
+                            case 1:
+                                u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                            case 2:
+                                u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                        # Plot the mesh
+                        scalar_field_name = 'Ux'
+                        mesh.point_data['U'] = u.data
+                        mesh.point_data['Ux'] = u[:,0].data
+                        mesh.point_data['Uy'] = u[:,1].data
+                        mesh.point_data['Uz'] = u[:,2].data
+
+                        plotter = pv.Plotter()
+                        plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
+                        plotter.show()
+                    case "Static":
+
+                        plotter = pv.Plotter(shape=(1, 2))
+
+                        plotter.subplot(0, 0)
+                        filename = 'Geometries/'+Mesh_object.name_mesh
+                        mesh3 = pv.read(filename)
+                        # Define the parameter to adjust and its initial value
+                        parameter = 1e-3
+
+                        Param_trial = torch.tensor([parameter],dtype=torch.float32)
+                        Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+                        Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+
+                        ROM_model.eval()
+                        u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                        match ROM_model.n_para:
+                            case 1:
+                                u3 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                            case 2:
+                                u3 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                        mesh3.point_data['U'] = u3.data
+                        mesh3.point_data['Ux'] = u3[:,0].data
+                        mesh3.point_data['Uy'] = u3[:,1].data
+                        mesh3.point_data['Uz'] = u3[:,2].data
+                        u3[:,2]+=0
+                        plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars='Uy', cmap='viridis', scalar_bar_args={r'title': 'Uy, theta = 0', 'vertical': False}, show_edges=True)
+
+                        # Function to update the solution based on the parameter
+                        def update_solution_E(value):
+                            # plotter.clear()
+                            parameter = value
+                            stiffness = torch.tensor([parameter],dtype=torch.float32)
+                            stiffness = stiffness[:,None] # Add axis so that dimensions match
+                            Param_trial = torch.tensor([0],dtype=torch.float32)
+                            Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+                            Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                            u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                            match ROM_model.n_para:
+                                case 1:
+                                    u3 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                                case 2:
+                                    u3 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                            mesh3 = pv.read(filename)
+                            u3[:,2]+=200*value
+                            # mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
+                            mesh3.point_data['U'] = u3.data
+                            mesh3.point_data['Ux'] = u3[:,0].data
+                            mesh3.point_data['Uy'] = u3[:,1].data
+                            mesh3.point_data['Uz'] = u3[:,2].data
+                            plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars='Uy', cmap='viridis', scalar_bar_args={r'title': 'Uy, theta = 0', 'vertical': False}, show_edges=True)
+                            return
+                        labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
+
+                        parameters_vect = [2e-3,3e-3,4e-3,5e-3,6e-3,7e-3,8e-3,9e-3,10e-3]
+
+                        for param in parameters_vect:
+                            update_solution_E(param)
+                        plotter.show_grid(
+                            color='gray',
+                            location='outer',
+                            grid='back',
+                            ticks='outside',
+                            xtitle='x (mm)',
+                            ytitle='y (mm)',
+                            ztitle='E (MPa)',
+                            font_size=10,
+                        )
+                        plotter.add_text("theta = 0", font_size=10)
+
+                        plotter.add_axes(**labels)
+                        # plotter.show()
+
+
+
+
+                        plotter.subplot(0, 1)
+
+                        filename = 'Geometries/'+Mesh_object.name_mesh
+                        mesh2 = pv.read(filename)
+                        # Define the parameter to adjust and its initial value
+                        parameter = 1e-3
+
+                        Param_trial = torch.tensor([parameter],dtype=torch.float32)
+                        Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+                        Para_coord_list = nn.ParameterList((Param_trial,Param_trial))
+
+                        ROM_model.eval()
+                        u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                        match ROM_model.n_para:
+                            case 1:
+                                u2 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                            case 2:
+                                u2 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                        mesh2.point_data['U'] = u2.data
+                        mesh2.point_data['Ux'] = u2[:,0].data
+                        mesh2.point_data['Uy'] = u2[:,1].data
+                        mesh2.point_data['Uz'] = u2[:,2].data
+                        u2[:,2]+=0
+                        # plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+
+                        # Function to update the solution based on the parameter
+                        def update_solution_t(value):
+                            # plotter.clear()
+                            parameter = value
+                            stiffness = torch.tensor([3e-3],dtype=torch.float32)
+                            stiffness = stiffness[:,None] # Add axis so that dimensions match
+                            Param_trial = torch.tensor([parameter],dtype=torch.float32)
+                            Param_trial = Param_trial[:,None] # Add axis so that dimensions match
+                            Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                            u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                            match ROM_model.n_para:
+                                case 1:
+                                    u2 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                                case 2:
+                                    u2 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                            mesh2 = pv.read(filename)
+                            u2[:,2]+=0.25*value
+                            # mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
+                            mesh2.point_data['U'] = u2.data
+                            mesh2.point_data['Ux'] = u2[:,0].data
+                            mesh2.point_data['Uy'] = u2[:,1].data
+                            mesh2.point_data['Uz'] = u2[:,2].data
+                            plotter.add_mesh(mesh2.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars='Uy', cmap='viridis', scalar_bar_args={r'title': 'Uy, E = 5e-3', 'vertical': False}, show_edges=True)
+                            return
+                        labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
+
+                        parameters_vect = [0,torch.pi/4,torch.pi/2,3*torch.pi/4,torch.pi,5*torch.pi/4,3*torch.pi/2,7*torch.pi/4,2*torch.pi]
+
+                        for param in parameters_vect:
+                            update_solution_t(param)
+                        plotter.show_grid(
+                            color='gray',
+                            location='outer',
+                            grid='back',
+                            ticks='outside',
+                            xtitle='x (mm)',
+                            ytitle='y (mm)',
+                            ztitle='theta (rad)',
+                            font_size=10,
+                        )
+                        plotter.add_axes(**labels)
+                        plotter.add_text("E = 5e-3", font_size=10)
+
+                        plotter.show()
+
+           
 else:
     if config["postprocess"]["exportVTK"]:
         Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+

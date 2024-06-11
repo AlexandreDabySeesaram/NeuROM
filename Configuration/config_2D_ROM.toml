@@ -35,7 +35,7 @@ Constitutive            = false
 
 [[DirichletDictionryList]]
 Entity                  = 113                                       # Physical tag of the boundary
-Value                   = 1                                         # numerical value
+Value                   = 0                                         # numerical value
 Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
@@ -67,7 +67,7 @@ nu                      = 0.3                                       # Poisson's 
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 5                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 1                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -81,8 +81,8 @@ FrozenParaMesh          = true                                      # Nodal coor
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara = true                                                       # Enable bi-stifness beam in 1D
-n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
+n_modes_max             = 5                                       # Maximum number of modes in the Tensor Decomposition
+n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
 # MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################
@@ -103,7 +103,7 @@ BoolCompile             = false                                     # Enable com
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 3000                                      # Maximum number of iterations for the training stage
+n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
@@ -131,7 +131,8 @@ exportVTK               = true                                      # Enables VT
 Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
-Interactive_pltot       = false
+Interactive_pltot       = true
+PyVista_Type            = "Static"
 
 ####################################################
 ###                                              ###

@@ -76,7 +76,11 @@ def PlotTrajectories(Coord_trajectories,name):
     #plt.show()
     plt.clf()
 
-def Plot_NegLoss_Modes(Modes_flag,error,name,tikz = False):
+def Plot_NegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
+    """To keep back compatibility with previous verions"""
+    Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = tikz)
+
+def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
     # from matplotlib.legend import Legend
     # Legend._ncol = property(lambda self: self._ncols)
     # Legend._ncol = property(lambda self: self._ncols)
@@ -89,15 +93,22 @@ def Plot_NegLoss_Modes(Modes_flag,error,name,tikz = False):
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     plt.xlabel(r'Epochs')
     ax2 = ax.twinx()
-    ax2.invert_yaxis()
-    g2 = ax2.semilogy(-torch.tensor(error), color='#d95319ff')
+    match sign:
+        case "Positive":
+            g2 = ax2.semilogy(torch.tensor(error), color='#d95319ff')
+            ax2.set_ylabel(r'$ + J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
+        case "Negative":
+            ax2.invert_yaxis()
+            g2 = ax2.semilogy(-torch.tensor(error), color='#d95319ff')
+            ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
     # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
     ax2.tick_params(axis='y', colors='#d95319ff')
 
     lns = g1+g2
     labs = [l.get_label() for l in lns]
     # ax.legend(lns, labs, loc="upper center")
-    ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
 
     if tikz:

@@ -22,6 +22,7 @@ mps_device = torch.device("mps")
 from importlib import reload  # Python 3.4+
 from Bin import MyHeaders
 import tomllib
+import numpy as np
 
 
 ####################################################
@@ -39,7 +40,8 @@ import tomllib
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_2D_ROM.toml'
+# Default_config_file = 'Configuration/config_2D_ROM.toml'
+Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -212,11 +214,21 @@ if config["solver"]["ParametricStudy"]:
                     dtype=torch.float32, 
                     requires_grad=True)
     if config["postprocess"]["Plot_loss_mode"]:
-        Pplot.Plot_NegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
-                                    'Loss_Modes'+"_"+config["postprocess"]["Name_export"]+"_"+config["postprocess"]["Name_export"],True)
+        if min(ROM_model.training_recap["Loss_vect"]) > 0:
+            sign = "Positive"
+        else:
+            sign = "Negative"
+        if config["solver"]["BiPara"]:
+            Study = "_BiPara"
+        else: 
+            Study = "_MonoPara"
+        val = str(np.format_float_scientific(1e15, precision=2))
+        Pplot.Plot_PosNegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
+                                    'Loss_Modes'+"_"+config["geometry"]["Name"]+Study+"_"+val
+                                    , sign = sign,tikz = True)
     if config["postprocess"]["Plot_loss_decay_mode"]:
         Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],
-                                    'Loss_rate_Modes'+"_"+config["postprocess"]["Name_export"]+"_"+config["postprocess"]["Name_export"],True)
+                                    'Loss_rate_Modes'+"_"+config["geometry"]["Name"]+"_"+val,True)
     
     if config["postprocess"]["Interactive_pltot"]:
         match config["solver"]["BiPara"]:

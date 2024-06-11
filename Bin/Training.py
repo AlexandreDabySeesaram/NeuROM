@@ -353,7 +353,7 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
-def Training_NeuROM(model, config, optimizer):
+def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     A                   = config["geometry"]["A"]
     L                   = config["geometry"]["L"]
     n_epochs            = config["training"]["n_epochs"]
@@ -395,13 +395,14 @@ def Training_NeuROM(model, config, optimizer):
     Loss_vect               = []                                            # Initialise vector of loss values
     L2_error                = []                                            # Initialise vector of L2 error
     # BCs used for the analytical comparison 
-    match config["solver"]["IntegralMethod"]:
-        case "Trapezoidal":
-            u0                      = model.Space_modes[0].u_0                      # Left BC
-            uL                      = model.Space_modes[0].u_L                      # Right BC
-        case "Gaussian_quad":
-            u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
-            uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
+    if config["interpolation"]["dimension"] == 1:
+        match config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                u0                      = model.Space_modes[0].u_0                      # Left BC
+                uL                      = model.Space_modes[0].u_L                      # Right BC
+            case "Gaussian_quad":
+                u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
+                uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("**************** START TRAINING ***************\n")
     time_start              = time.time()
     epoch                   = 0                                             # Initial epoch number
@@ -427,13 +428,21 @@ def Training_NeuROM(model, config, optimizer):
         # Compute loss
         loss_time_start             = time.time()
         if not BiPara:
-            match config["solver"]["IntegralMethod"]:   
-                case "Gaussian_quad":
-                    loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
-                case "Trapezoidal":
-                    loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+            match config["interpolation"]["dimension"]:
+                case 1:
+                    match config["solver"]["IntegralMethod"]:   
+                        case "Gaussian_quad":
+                            loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                        case "Trapezoidal":
+                            loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                case 2:
+                        loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
         else:
-            loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+            match config["interpolation"]["dimension"]:
+                case 1:
+                    loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                case 2:  
+                    loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -496,14 +505,15 @@ def Training_NeuROM(model, config, optimizer):
             Loss_vect.append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
-                match config["solver"]["IntegralMethod"]:   
-                    case "Trapezoidal":
-                        L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
-                    case "Gaussian_quad":
-                        L2_error.append(1)
+                if config["interpolation"]["dimension"] == 1:
+                    match config["solver"]["IntegralMethod"]:   
+                        case "Trapezoidal":
+                            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                        case "Gaussian_quad":
+                            L2_error.append(1)
         if (epoch+1) % 100 == 0:
-            if not BiPara:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}%')
+            if not BiPara and config["interpolation"]["dimension"] == 1:
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} modes = {model.n_modes_truncated}')
 

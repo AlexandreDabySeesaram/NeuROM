@@ -30,7 +30,7 @@ import tomllib
 ###      import vtkmodules.util.pickle_support   ###
 ###         in serialization.py of poytorch      ###
 ###                                              ###
-##################################################### 
+#################################################### 
 #%% Specify default configuratoin file
 
 ####################################################
@@ -39,7 +39,7 @@ import tomllib
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_1D.toml'
+Default_config_file = 'Configuration/config_2D_ROM.toml'
 
 ####################################################
 ###                                              ###
@@ -194,7 +194,8 @@ if config["solver"]["ParametricStudy"]:
 
                 Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
             case 2:
-                Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
+                # Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
+                Training_NeuROM(ROM_model, config, optimizer, Mat)                # First stage of training (ADAM)
         ROM_model.eval()
 else:
     Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
@@ -223,7 +224,9 @@ if config["solver"]["ParametricStudy"]:
             Pplot.Plot_Parametric_Young_Interactive(ROM_model,Training_coordinates,config["geometry"]["A"],AnalyticSolution,'name_model')
 else:
     if config["postprocess"]["exportVTK"]:
-        Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
-        Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+        Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+
+        "_"+config["geometry"]["Name"])
+        Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+
+        "_"+config["geometry"]["Name"])
        
 # %%

@@ -261,7 +261,8 @@ if config["solver"]["ParametricStudy"]:
                                 theta = config["postprocess"]["Default_theta"], 
                                 scalar_field_name = config["postprocess"]["scalar_field_name"], 
                                 scaling_factor = config["postprocess"]["scaling_factor"], 
-                                Interactive_parameter = config["postprocess"]["Interactive_parameter"])
+                                Interactive_parameter = config["postprocess"]["Interactive_parameter"],
+                                color_map = 'viridis')
            
 else:
     if config["postprocess"]["exportVTK"]:

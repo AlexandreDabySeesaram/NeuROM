@@ -802,7 +802,7 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
                 f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
             )
 
-def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta'):
+def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta', color_map = 'viridis'):
     import pyvista as pv                                                            # Import PyVista
     import torch.nn as nn
 
@@ -833,7 +833,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh.point_data['Uz'] = u[:,2].data
 
             plotter = pv.Plotter()
-            plotter.add_mesh(mesh, scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': True})
+            plotter.add_mesh(mesh, scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': True})
             plotter.show()
         case "Static":
 
@@ -859,7 +859,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh3.point_data['Uy'] = u3[:,1].data
             mesh3.point_data['Uz'] = u3[:,2].data
             u3[:,2]+=0
-            plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
+            plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
 
             # Function to update the solution based on the parameter
             def update_solution_E(value):
@@ -883,7 +883,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 mesh3.point_data['Ux'] = u3[:,0].data
                 mesh3.point_data['Uy'] = u3[:,1].data
                 mesh3.point_data['Uz'] = u3[:,2].data
-                plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
+                plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
                 return
             labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
 
@@ -926,7 +926,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh2.point_data['Uy'] = u2[:,1].data
             mesh2.point_data['Uz'] = u2[:,2].data
             u2[:,2]+=0
-            # plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+            # plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
 
             # Function to update the solution based on the parameter
             def update_solution_t(value):
@@ -950,7 +950,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 mesh2.point_data['Ux'] = u2[:,0].data
                 mesh2.point_data['Uy'] = u2[:,1].data
                 mesh2.point_data['Uz'] = u2[:,2].data
-                plotter.add_mesh(mesh2.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={r'title': scalar_field_name+', E = '+str(E), 'vertical': False}, show_edges=True)
+                plotter.add_mesh(mesh2.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', E = '+str(E), 'vertical': False}, show_edges=True)
                 return
             labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
 
@@ -1002,7 +1002,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh.point_data['Uy'] = u[:,1].data
             mesh.point_data['Uz'] = u[:,2].data
             plotter = pv.Plotter()
-            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
 
             # Function to update the solution based on the parameter
             def update_solution2(value):

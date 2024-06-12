@@ -29,7 +29,7 @@ import numpy as np
 ###                                              ###
 ###             /!\   WARNING   /!\              ###
 ###      import vtkmodules.util.pickle_support   ###
-###         in serialization.py of poytorch      ###
+###         in serialization.py of pytorch       ###
 ###                                              ###
 #################################################### 
 #%% Specify default configuratoin file

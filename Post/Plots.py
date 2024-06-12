@@ -1035,7 +1035,10 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 mesh.point_data['Ux'] = u[:,0].data
                 mesh.point_data['Uy'] = u[:,1].data
                 mesh.point_data['Uz'] = u[:,2].data
+                # print(mesh.get_data_range(scalar_field_name))
+                plotter.mapper.scalar_range = mesh.get_data_range(scalar_field_name)
                 mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True)
+
                 # plotter.render()
                 return
             match Interactive_parameter:

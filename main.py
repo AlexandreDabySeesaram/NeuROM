@@ -29,7 +29,7 @@ import numpy as np
 ###                                              ###
 ###             /!\   WARNING   /!\              ###
 ###      import vtkmodules.util.pickle_support   ###
-###         in serialization.py of poytorch      ###
+###         in serialization.py of pytorch       ###
 ###                                              ###
 #################################################### 
 #%% Specify default configuratoin file
@@ -158,13 +158,14 @@ ROM_model = NeuROM(                                                         # Bu
 
 #%% Load coarser model  
 
-match config["solver"]["BiPara"]:
+match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibility and name should be read from config file
     case True:
         match config["interpolation"]["dimension"]:
             case 1:
                 PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
             case 2:
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
+                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
+                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
     case False:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":
@@ -176,7 +177,7 @@ match config["solver"]["BiPara"]:
 
 if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)
-
+    ROM_model.UnfreezeTruncated()
 #%% Training 
 ROM_model.Freeze_Mesh()                                                     # Set space mesh cordinates as untrainable
 ROM_model.Freeze_MeshPara()                                                 # Set parameters mesh cordinates as untrainable
@@ -218,10 +219,11 @@ if config["solver"]["ParametricStudy"]:
                     dtype=torch.float32, 
                     requires_grad=True)
 
-    if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
-        sign = "Positive"
-    else:
-        sign = "Negative"
+    if config["training"]["TrainingRequired"]:
+        if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
+            sign = "Positive"
+        else:
+            sign = "Negative"
     if config["solver"]["BiPara"]:                                      # define type of parametric study for saving files
         Study = "_BiPara"
     else: 
@@ -257,10 +259,12 @@ if config["solver"]["ParametricStudy"]:
                 Pplot.Plot_2D_PyVista(ROM_model, 
                                 Mesh_object, 
                                 config, 
-                                E = 5e-3, 
-                                theta = 0, 
-                                scalar_field_name = 'Uy', 
-                                scaling_factor = 20)
+                                E = config["postprocess"]["Default_E"], 
+                                theta = config["postprocess"]["Default_theta"], 
+                                scalar_field_name = config["postprocess"]["scalar_field_name"], 
+                                scaling_factor = config["postprocess"]["scaling_factor"], 
+                                Interactive_parameter = config["postprocess"]["Interactive_parameter"],
+                                color_map = 'viridis')
            
 else:
     if config["postprocess"]["exportVTK"]:

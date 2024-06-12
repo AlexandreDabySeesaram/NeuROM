@@ -432,7 +432,7 @@ class NeuROM(nn.Module):
 
     def UnFreeze_Space(self):
         """Set the spatial modes as trainable """
-        for i in range(self.n_modes):
+        for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_FEM()   
 
     def Freeze_MeshPara(self):

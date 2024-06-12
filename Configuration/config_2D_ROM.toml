@@ -67,7 +67,7 @@ nu                      = 0.3                                       # Poisson's 
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 1                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.5                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -102,11 +102,11 @@ BoolCompile             = false                                     # Enable com
 ####################################################
 
 [training]
-TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired        = false                                      # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
-LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
+LoadPreviousModel       = true                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
@@ -129,10 +129,15 @@ SaveModel               = false                                     # Boolean le
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
 Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
-Plot_loss_mode          = true
-Plot_loss_decay_mode    = true
+Plot_loss_mode          = false
+Plot_loss_decay_mode    = false
 Interactive_pltot       = true
-PyVista_Type            = "Static"
+PyVista_Type            = "DualSliders"                                  # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
+Default_E = 5e-3 
+Default_theta = 0                                                   # Default value of the gravity angle in plots
+scalar_field_name = 'Uy'                                            # Plotted field
+scaling_factor = 20                                                 # Wrap by vector scaling factor
+Interactive_parameter = 'theta'                                     # Interactive parameter
 
 ####################################################
 ###                                              ###

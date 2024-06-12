@@ -158,13 +158,14 @@ ROM_model = NeuROM(                                                         # Bu
 
 #%% Load coarser model  
 
-match config["solver"]["BiPara"]:
+match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibility and name should be read from config file
     case True:
         match config["interpolation"]["dimension"]:
             case 1:
                 PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
             case 2:
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
+                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
+                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
     case False:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":

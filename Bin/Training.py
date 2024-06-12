@@ -467,6 +467,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                         save_start  = time.time()
                         loss_min_saved = loss_current
                         # Current_best = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
+                        # TODO: account for changinf number of mode,i.e., change in number of parameters     
                         save_stop   = time.time()
                         save_time   +=(save_stop-save_start)
                     loss_counter    = 0                                     # breaks series of non decreasing loss

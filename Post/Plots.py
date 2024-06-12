@@ -1030,14 +1030,14 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                     case 2:
                         u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
                 # u[:,2]+=200*value
-                mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
+                mesh.warp_by_vector(vectors="U",factor=-scaling_factor,inplace=True)
                 mesh.point_data['U'] = u.data
                 mesh.point_data['Ux'] = u[:,0].data
                 mesh.point_data['Uy'] = u[:,1].data
                 mesh.point_data['Uz'] = u[:,2].data
                 # print(mesh.get_data_range(scalar_field_name))
                 plotter.mapper.scalar_range = mesh.get_data_range(scalar_field_name)
-                mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True)
+                mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True)
 
                 # plotter.render()
                 return
@@ -1051,4 +1051,83 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                     Slider_min = config["parameters"]["para_2_min"]
                     Slider_max = config["parameters"]["para_2_max"]
                     plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
+            plotter.show()
+
+        case "DualSliders":
+
+
+            stiffness = torch.tensor([E],dtype=torch.float32)
+            stiffness = stiffness[:,None] 
+            Param_trial = torch.tensor([theta],dtype=torch.float32)             # Use given or default value of second parameter
+            Param_trial = Param_trial[:,None] 
+            Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+
+            ROM_model.eval()
+            u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+            match ROM_model.n_para:
+                case 1:
+                    u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                case 2:
+                    u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+            mesh.point_data['U'] = u.data
+            mesh.point_data['Ux'] = u[:,0].data
+            mesh.point_data['Uy'] = u[:,1].data
+            mesh.point_data['Uz'] = u[:,2].data
+            plotter = pv.Plotter()
+            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+
+            class UpdateSliders:
+                def __init__(self):
+                    self.kwargs = {
+                        'E': E,
+                        'theta': theta,
+                    }
+                def __call__(self, param, value):
+                    self.kwargs[param] = value
+                    self.update()
+
+                def update(self):
+                    stiffness = torch.tensor([self.kwargs['E']],dtype=torch.float32)
+                    stiffness = stiffness[:,None] 
+                    Param_trial = torch.tensor([self.kwargs['theta']],dtype=torch.float32)         # Use given or default value of second parameter
+                    Param_trial = Param_trial[:,None] 
+                    Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                    u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                    match ROM_model.n_para:
+                        case 1:
+                            u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                        case 2:
+                            u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                    # u[:,2]+=200*value
+                    mesh.warp_by_vector(vectors="U",factor=-scaling_factor,inplace=True)
+                    mesh.point_data['U'] = u.data
+                    mesh.point_data['Ux'] = u[:,0].data
+                    mesh.point_data['Uy'] = u[:,1].data
+                    mesh.point_data['Uz'] = u[:,2].data
+                    # print(mesh.get_data_range(scalar_field_name))
+                    plotter.mapper.scalar_range = mesh.get_data_range(scalar_field_name)
+                    mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True)
+
+
+
+            Slider_min_E = config["parameters"]["para_1_min"]
+            Slider_max_E = config["parameters"]["para_1_max"]
+
+            Slider_min_t = config["parameters"]["para_2_min"]
+            Slider_max_t = config["parameters"]["para_2_max"]
+
+            engine = UpdateSliders()
+
+            plotter.add_slider_widget(  callback=lambda value: engine('E', value),
+                                        rng = [Slider_min_E, Slider_max_E], 
+                                        title='E (MPa)',
+                                        pointa=(0.3, 0.9),
+                                        pointb=(0.6, 0.9))
+
+            plotter.add_slider_widget(  callback=lambda value: engine('theta', value),
+                                        rng = [Slider_min_t, Slider_max_t], 
+                                        title='theta (rad)',
+                                        pointa=(0.64, 0.9),
+                                        pointb=(0.94, 0.9))
+
             plotter.show()

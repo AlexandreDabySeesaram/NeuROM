@@ -257,11 +257,11 @@ if config["solver"]["ParametricStudy"]:
                 Pplot.Plot_2D_PyVista(ROM_model, 
                                 Mesh_object, 
                                 config, 
-                                E = 5e-3, 
-                                theta = 0, 
-                                scalar_field_name = 'Uy', 
-                                scaling_factor = 20, 
-                                Interactive_parameter = 'theta')
+                                E = config["posprocess"]["Default_E"], 
+                                theta = config["posprocess"]["Default_theta"], 
+                                scalar_field_name = config["posprocess"]["scalar_field_name"], 
+                                scaling_factor = config["posprocess"]["scaling_factor"], 
+                                Interactive_parameter = config["posprocess"]["Interactive_parameter"])
            
 else:
     if config["postprocess"]["exportVTK"]:

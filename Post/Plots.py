@@ -1042,9 +1042,10 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 case 'E':
                     Slider_min = config["parameters"]["para_1_min"]
                     Slider_max = config["parameters"]["para_1_max"]
+                    plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='E (MPa)')
+
                 case 'theta':
                     Slider_min = config["parameters"]["para_2_min"]
                     Slider_max = config["parameters"]["para_2_max"]
-                    
-            plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
+                    plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
             plotter.show()

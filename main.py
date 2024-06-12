@@ -260,7 +260,8 @@ if config["solver"]["ParametricStudy"]:
                                 E = 5e-3, 
                                 theta = 0, 
                                 scalar_field_name = 'Uy', 
-                                scaling_factor = 20)
+                                scaling_factor = 20, 
+                                Interactive_parameter = 'theta')
            
 else:
     if config["postprocess"]["exportVTK"]:

@@ -802,10 +802,8 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
                 f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
             )
 
-def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20):
+def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta'):
     import pyvista as pv                                                            # Import PyVista
-    # import vtk
-    # import meshio
     import torch.nn as nn
 
     filename = 'Geometries/'+Mesh_object.name_mesh                                  # Load mesh (used for projecting the solution only) 
@@ -973,4 +971,80 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             plotter.add_axes(**labels)
             plotter.add_text("E ="+str(E), font_size=10)
 
+            plotter.show()
+        case "Interactive":
+
+            match Interactive_parameter:
+                case 'E':
+                    parameter = config["parameters"]["para_1_min"]
+                    stiffness = torch.tensor([parameter],dtype=torch.float32)
+                    stiffness = stiffness[:,None] 
+                    Param_trial = torch.tensor([theta],dtype=torch.float32)             # Use given or default value of second parameter
+                    Param_trial = Param_trial[:,None] 
+                    Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                case 'theta':
+                    parameter = config["parameters"]["para_2_min"]
+                    stiffness = torch.tensor([E],dtype=torch.float32)
+                    stiffness = stiffness[:,None] 
+                    Param_trial = torch.tensor([parameter],dtype=torch.float32)         # Use given or default value of second parameter
+                    Param_trial = Param_trial[:,None] 
+                    Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+
+            ROM_model.eval()
+            u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+            match ROM_model.n_para:
+                case 1:
+                    u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                case 2:
+                    u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+            mesh.point_data['U'] = u.data
+            mesh.point_data['Ux'] = u[:,0].data
+            mesh.point_data['Uy'] = u[:,1].data
+            mesh.point_data['Uz'] = u[:,2].data
+            plotter = pv.Plotter()
+            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap='viridis', scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+
+            # Function to update the solution based on the parameter
+            def update_solution2(value):
+                # plotter.clear()
+                parameter = value
+                match Interactive_parameter:
+                    case 'E':
+                        parameter = config["parameters"]["para_1_min"]
+                        stiffness = torch.tensor([value],dtype=torch.float32)
+                        stiffness = stiffness[:,None] 
+                        Param_trial = torch.tensor([theta],dtype=torch.float32)             # Use given or default value of second parameter
+                        Param_trial = Param_trial[:,None] 
+                        Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                    case 'theta':
+                        parameter = config["parameters"]["para_2_min"]
+                        stiffness = torch.tensor([E],dtype=torch.float32)
+                        stiffness = stiffness[:,None] 
+                        Param_trial = torch.tensor([value],dtype=torch.float32)         # Use given or default value of second parameter
+                        Param_trial = Param_trial[:,None] 
+                        Para_coord_list = nn.ParameterList((stiffness,Param_trial))
+                u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
+                match ROM_model.n_para:
+                    case 1:
+                        u = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                    case 2:
+                        u = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+                # u[:,2]+=200*value
+                mesh.warp_by_vector(vectors="U",factor=-20.0,inplace=True)
+                mesh.point_data['U'] = u.data
+                mesh.point_data['Ux'] = u[:,0].data
+                mesh.point_data['Uy'] = u[:,1].data
+                mesh.point_data['Uz'] = u[:,2].data
+                mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True)
+                # plotter.render()
+                return
+            match Interactive_parameter:
+                case 'E':
+                    Slider_min = config["parameters"]["para_1_min"]
+                    Slider_max = config["parameters"]["para_1_max"]
+                case 'theta':
+                    Slider_min = config["parameters"]["para_2_min"]
+                    Slider_max = config["parameters"]["para_2_max"]
+                    
+            plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
             plotter.show()

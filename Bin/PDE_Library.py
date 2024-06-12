@@ -209,9 +209,7 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         E_tensor = f_1_E_1[:,:,None]+f_2_E_2[:,None,:]
         du_dx = torch.einsum('ik,kj,kl->ijl',du_dx,lambda_i[0].view(model.n_modes_truncated,lambda_i[0].shape[1]),
                                 lambda_i[1].view(model.n_modes_truncated,lambda_i[1].shape[1]))
-
         du_dx_E_tensor = (du_dx**2)*E_tensor
-
         # Vectorised calculation of the integral terms
         int_term1 = 0.25 * A * dx[:,None] * (du_dx_E_tensor[1:] + du_dx_E_tensor[:-1])
         int_term2 = 0.5 * dx[:,None] * (u[1:] * b[1:,None] + u[:-1] * b[:-1,None])
@@ -219,11 +217,9 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         # Vectorised calculation of the integral using the trapezoidal rule
         integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
     else:
-
         F = torch.cat((f_1,f_2),dim = 1)
         E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
         E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
-
         term1_contributions = 0.25 * A *(
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
@@ -330,7 +326,6 @@ def VolumeForcesEnergy_2D(u,theta, rho):
 def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
-
 
 def VonMises(sigma):
     two = torch.tensor(2,dtype=torch.float64)
@@ -452,6 +447,87 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
+
+def PotentialEnergyVectorisedParametric_Gauss(model,A, E):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1) 
+    b = RHS(xg_modes[0])
+    E = E[0] # From the multi-parametric version to the simple parameter one
+    for mode in range(model.n_modes_truncated):
+        Para_mode_List = [model.Para_modes[mode][l](E)[:,None] for l in range(model.n_para)]
+        if mode == 0:
+            lambda_i = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+        else:
+            New_mode = torch.unsqueeze(torch.cat(Para_mode_List,dim=1), dim=0)
+            lambda_i = torch.vstack((lambda_i,New_mode))
+    
+    du_dx = [torch.autograd.grad(Space_modes[i], xg_modes[i], grad_outputs=torch.ones_like(Space_modes[i]), create_graph=True)[0] for i in range(model.n_modes_truncated)]
+    du_dx = torch.stack(du_dx,dim=2)  
+    Wint = 0.5*A*torch.einsum('egm,egk,emg,mp...,kp...,p...->', du_dx, du_dx, torch.abs(detJ_i),lambda_i.to(torch.float64),lambda_i.to(torch.float64),E.to(torch.float64) )
+    Wext = torch.einsum('egm,mp...,emg,eg->', u_i,lambda_i.to(torch.float64),torch.abs(detJ_i),b)
+    integral = (Wint-Wext)/(E.shape[0])
+    return integral
+
+def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
+    """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
+    with torch.no_grad(): #No derivatino of the heavyside function
+        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+
+        # HERE x DEPENDS ON THE MODES SO F_xg additional dimension m 
+
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]
+ 
+    du_dx = [torch.autograd.grad(Space_modes[i], xg_modes[i], grad_outputs=torch.ones_like(Space_modes[i]), create_graph=True)[0] for i in range(model.n_modes_truncated)]
+    du_dx = torch.stack(du_dx,dim=2)  
+
+    # Calculate dx
+    F = torch.cat((f_1,f_2),dim = 1)
+    E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
+    E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
+    term1_contributions = 0.25 * A *(
+        torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
+        torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
+                                    )
+    term2_contributions = 0.5 * (torch.einsum('im...,mj...,mk...,i...,i...->',u_i[1:],lambda_i[0][:],lambda_i[1][:],dx,b[1:]) +
+        torch.einsum('im...,mj...,mk...,i...,i...->',u_i[:-1],lambda_i[0][:],lambda_i[1][:],dx,b[:-1]) )
+    integral = (term1_contributions-term2_contributions)/(E[0].shape[0]*E[1].shape[0])
+
+    return integral
 
 def Strain_sqrt(u,x):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""

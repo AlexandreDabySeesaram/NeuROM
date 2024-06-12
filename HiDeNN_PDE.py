@@ -141,6 +141,8 @@ class MeshNN(nn.Module):
     is equivqlent to solving the PDE. """
     def __init__(self, mesh):
         super(MeshNN, self).__init__()
+        self.version = "Trapezoidal"
+
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
@@ -196,6 +198,16 @@ class MeshNN(nn.Module):
  
         return self.SumLayer(u)
     
+    def Init_from_previous(self,previous_model):
+        newcoordinates = [coord for coord in self.coordinates]
+        newcoordinates = torch.cat(newcoordinates,dim=0)
+        NewNodalValues = previous_model(newcoordinates)
+        self.InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+
+    def ZeroOut(self):
+        self.InterpoLayer_uu.weight.data = 0*self.NodalValues_uu
+
+
     def SetBCs(self,u_d):
         """Set the two Dirichlet boundary conditions
         Args:
@@ -300,9 +312,14 @@ class InterpPara(nn.Module):
         """Set the nodale values as untrainable parameters """
         self.InterpoLayer.weight.requires_grad = False
 
+    def Init_from_previous(self,previous_model):
+        newparacoordinates = [coord for coord in self.coordinates]
+        newparacoordinates = torch.cat(newparacoordinates,dim=0)
+        self.InterpoLayer.weight.data = previous_model(newparacoordinates).T
+
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
-    def __init__(self, mesh, ParametersList, n_modes_ini = 1, n_modes_max = 100):
+    def __init__(self, mesh, ParametersList, config, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes_max==1: #If non homogeneous BCs, add mode for relevement
@@ -313,11 +330,15 @@ class NeuROM(nn.Module):
         self.dimension = mesh.dimension
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
-
+        self.config = config
         self.n_para = len(ParametersList)
         match mesh.dimension:
             case '1':
-                self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
+                match config["solver"]["IntegralMethod"]:   
+                    case  "Trapezoidal":
+                        self.Space_modes = nn.ModuleList([MeshNN(mesh) for i in range(self.n_modes)])
+                    case "Gaussian_quad":
+                        self.Space_modes = nn.ModuleList([MeshNN_1D(mesh, config["interpolation"]["n_integr_points"]) for i in range(self.n_modes)])
             case '2':
                 self.Space_modes = nn.ModuleList([MeshNN_2D(mesh, n_components= 2) for i in range(self.n_modes)])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
@@ -349,7 +370,7 @@ class NeuROM(nn.Module):
             self.Space_modes[i].eval()  
 
     def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
-        self.loss_decrease_c = Stagnation_threshold
+        self.loss_decrease_c = loss_decrease_c
         self.Max_epochs = Max_epochs
         self.learning_rate = learning_rate
 
@@ -366,7 +387,8 @@ class NeuROM(nn.Module):
         self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
         self.FreezeAll()
         self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
-        self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
+        self.Space_modes[self.n_modes_truncated-1].ZeroOut()
+        # self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
 
         for j in range(self.n_para):
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
@@ -400,7 +422,7 @@ class NeuROM(nn.Module):
 
     def UnFreeze_Mesh(self):
         """Set the space coordinates as trainable parameters"""
-        for i in range(self.n_modes):
+        for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_Mesh()
 
     def Freeze_Space(self):
@@ -451,17 +473,27 @@ class NeuROM(nn.Module):
 
         match self.dimension:
             case '1':
-                Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
-                Space_modes = torch.cat(Space_modes,dim=1)
-
-
-
-                if len(mu)==1:
-                    out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
-                elif len(mu)==2:
-                    out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
-                                    Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+                match self.config["solver"]["IntegralMethod"]:
+                    case "Trapezoidal":
+                        Space_modes = [self.Space_modes[l](x) for l in range(self.n_modes_truncated)]
+                        Space_modes = torch.cat(Space_modes,dim=1)
+                        if len(mu)==1:
+                            out = torch.einsum('ik,kj->ij',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                        elif len(mu)==2:
+                            out = torch.einsum('ik,kj,kl->ijl',Space_modes,Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]),
+                                            Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
             
+                    case "Gaussian_quad":
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            u_k = self.Space_modes[i](x,IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=1)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        out = torch.einsum('em...,mp->ep',u_i,P1)
+
+
             case '2':
                 match self.n_para:
                     case 1:
@@ -488,20 +520,22 @@ class NeuROM(nn.Module):
         import os
         if os.path.isfile(PreviousFullModel):
             BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            self.n_modes_truncated = min(BeamROM_coarse.n_modes_truncated-1,self.n_modes)
+            self.n_modes_truncated = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
             Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
             Nb_parameters_fine = len(self.Para_modes[0])
             Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
-            self.n_modes_truncated
+            # self.n_modes_truncated
             for mode in range(self.n_modes_truncated):
-                newcoordinates = [coord for coord in self.Space_modes[mode].coordinates]
-                newcoordinates = torch.cat(newcoordinates,dim=0)
-                NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-                self.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
+                self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
+                # newcoordinates = [coord for coord in self.Space_modes[mode].coordinates]
+                # newcoordinates = torch.cat(newcoordinates,dim=0)
+                # NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
+                # self.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
                 for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
-                    newparacoordinates = [coord for coord in self.Para_modes[mode][para].coordinates]
-                    newparacoordinates = torch.cat(newparacoordinates,dim=0)
-                    self.Para_modes[mode][para].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][para](newparacoordinates).T
+                    self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
+                    # newparacoordinates = [coord for coord in self.Para_modes[mode][para].coordinates]
+                    # newparacoordinates = torch.cat(newparacoordinates,dim=0)
+                    # self.Para_modes[mode][para].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][para](newparacoordinates).T
         elif not os.path.isfile(PreviousFullModel):
             print('******** WARNING LEARNING FROM SCRATCH ********\n')
 
@@ -716,6 +750,13 @@ class MeshNN_2D(nn.Module):
         # set parameters 
         self.RefinementParameters()
         self.TrainingParameters()
+
+    def ZeroOut(self):
+        # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+        self.new_nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
+        self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
+        self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+
 
     def Init_from_previous(self,CoarseModel):
         newcoordinates = [coord for coord in self.coordinates]
@@ -1075,3 +1116,295 @@ def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
     x_extended = x_extended.unsqueeze(1)
 
     return torch.matmul(x_extended, inverse_matrix).squeeze(1)
+
+
+def GetRefCoord_1D(x,x1,x2):
+
+    return 2*(x-x1)/(x2-x1)-1
+
+
+def GetRealCoord_1D(xi,x1,x2):
+
+    return x1 + (xi+1)*(x2-x1)/2
+
+
+class InterpolationBlock1D_Lin(nn.Module):
+    
+    def __init__(self, connectivity):
+       
+        super(InterpolationBlock1D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+    
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
+
+    def forward(self, x, cell_id, nodal_values, shape_functions):
+
+        cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+        node1_value = torch.cat([nodal_values[row] for row in cell_nodes_IDs[:,0]]) 
+        node2_value = torch.cat([nodal_values[row] for row in cell_nodes_IDs[:,1]]) 
+
+        prod = [shape_functions[:,0,k]*node1_value + shape_functions[:,1,k]*node2_value for k in range(shape_functions.shape[2])]
+        prod = torch.stack(prod, dim=1)
+
+        # print("shape_functions = ", shape_functions.shape)
+        # print("prod = ", prod.shape)
+        # print("__________________________________")
+        # print()
+
+        return prod
+
+
+
+class ElementBlock1D_Lin(nn.Module):
+    """
+    Returns:
+         N_i(x)'s for each nodes within each element"""
+    def __init__(self, connectivity, n_integr_points):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 1D mesh
+        """
+        super(ElementBlock1D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+        self.n_integr_points = n_integr_points
+
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
+
+    def GP(self, n_integr_points):
+        if n_integr_points ==1:
+            return torch.tensor([[0.0]],dtype=torch.float64, requires_grad=True) # coordinates in ref. element
+        elif n_integr_points ==2:
+            return torch.tensor([[-1/np.sqrt(3.0),1/np.sqrt(3.0)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==3:
+            return torch.tensor([[-np.sqrt(3/5), 0, np.sqrt(3/5)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==4:
+            return torch.tensor([[  -np.sqrt((3+2*np.sqrt(6/5))/7), 
+                                    -np.sqrt((3-2*np.sqrt(6/5))/7), 
+                                    np.sqrt((3-2*np.sqrt(6/5))/7),
+                                    np.sqrt((3+2*np.sqrt(6/5))/7)]],dtype=torch.float64, requires_grad=True)
+        elif n_integr_points ==5:
+            return torch.tensor([[  0,
+                                    -1/3*np.sqrt(5-2*np.sqrt(10/7)), 
+                                    1/3*np.sqrt(5-2*np.sqrt(10/7)), 
+                                    -1/3*np.sqrt(5+2*np.sqrt(10/7)),
+                                    1/3*np.sqrt(5+2*np.sqrt(10/7))]],dtype=torch.float64, requires_grad=True)
+
+
+    def forward(self, x, cell_id, coordinates, nodal_values,flag_training):
+        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
+        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
+        Those phantom elements are flagged with index -1
+        """
+
+        cell_nodes_IDs = self.connectivity[cell_id,:]
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+        node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
+        node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
+        
+        if flag_training:
+            refCoordg = self.GP(self.n_integr_points).repeat(cell_id.shape[0],1)
+                                   # Gauss weight
+            if self.n_integr_points ==1:
+                w_g = torch.tensor([2]).repeat(cell_id.shape[0],1)
+            elif self.n_integr_points ==2:   
+                w_g = torch.tensor([1,1]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==3:   
+                w_g = torch.tensor([5/9,8/9,5/9]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==4:   
+                w_g = torch.tensor([(18-np.sqrt(30))/36, (18+np.sqrt(30))/36, (18+np.sqrt(30))/36, (18-np.sqrt(30))/36]).repeat(cell_id.shape[0],1) 
+            elif self.n_integr_points ==5:    
+                w_g = torch.tensor([128/225,
+                                    (322+13*np.sqrt(70))/900, (322+13*np.sqrt(70))/900, 
+                                    (322-13*np.sqrt(70))/900,(322-13*np.sqrt(70))/900]).repeat(cell_id.shape[0],1)                                                                                          
+
+            x_g = GetRealCoord_1D(refCoordg,node1_coord,node2_coord)
+            refCoord = GetRefCoord_1D(x_g, node1_coord,node2_coord)
+            N = torch.stack((-0.5*refCoord + 0.5, 0.5*refCoord + 0.5),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            detJ = (node2_coord - node1_coord)/2
+
+            # print("refCoordg = ", refCoordg.shape)
+            # print("x_g = ", x_g.shape, x_g[2])
+            # print("nodes = ", node1_coord[-1], node2_coord[-1])
+            # print("refCoord = ", refCoord[-1])
+            # print("N = ", N.shape, N[2,0,:], N[2,1,:])
+            # print("detJ = ", detJ[-1])
+            # print()
+            # print("detJ*w_g = ",  (detJ*w_g).shape)
+
+            # print()
+
+            return N, x_g, detJ*w_g
+
+        else:
+            if len(x.shape)==1:
+                refCoord = GetRefCoord_1D(x.unsqueeze(1), node1_coord,node2_coord)
+            else: 
+                refCoord = GetRefCoord_1D(x, node1_coord,node2_coord)
+
+            N = torch.stack((-0.5*refCoord + 0.5, 0.5*refCoord + 0.5),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            
+            # print("cell_id = ", cell_id[-2])
+            # print("x = ", x.shape, x[-2])
+            # print("nodes = ", node1_coord[-2], node2_coord[-2])
+            # print("refCoord = ", refCoord.shape, refCoord[-2])
+            # print("N = ", N.shape, N[2,0,:], N[2,1,:])
+            # print()
+            return N
+
+class MeshNN_1D(nn.Module):
+    """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
+    The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
+    Updating those parameters correspond to r-adaptativity
+    The Interpolation layer weights correspond to the nodal values. Updating them 
+    is equivqlent to solving the PDE. """
+
+
+    def __init__(self, mesh, n_integr_points):
+        super(MeshNN_1D, self).__init__()
+        self.version = "Gauss_quadrature"
+        self.mesh = mesh
+        self.n_integr_points = n_integr_points
+        # if self.n_integr_points == 0:
+        #     self.Mixed = True
+        n_components = 1
+
+        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+                                             for i in range(len(mesh.Nodes))])
+
+        print("mesh.NNodes = ", mesh.NNodes)
+        # self.values = 0.001*torch.randint(low=-10, high=10, size=(mesh.NNodes,1))
+        # self.values =0.01*torch.ones((mesh.NNodes,1))
+
+        self.values =0.1*torch.ones((mesh.NNodes,1))
+
+        self.connectivity = mesh.Connectivity
+        self.borders_nodes = mesh.borders_nodes
+
+        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem = mesh.NElem
+        self.order = mesh.order
+        print("self.order = ", self.order)
+        self.frozen_BC_node_IDs = []
+        self.frozen_BC_component_IDs = []
+        self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes
+        self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
+
+        self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
+        print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
+
+        if mesh.NoBC==False:
+            for i in range(len(mesh.ListOfDirichletsBCsValues)):
+                IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                print("IDs = ", IDs)
+                self.frozen_BC_node_IDs.append(IDs)
+                self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
+                self.values[IDs,0] = mesh.ListOfDirichletsBCsValues[i]
+
+
+        self.nodal_values = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
+
+        if self.order == '1':
+            self.ElementBlock = ElementBlock1D_Lin(mesh.Connectivity, self.n_integr_points)
+            self.Interpolation = InterpolationBlock1D_Lin(mesh.Connectivity)
+
+    def SetBCs(self, ListOfDirichletsBCsValues):
+        for i in range(len(ListOfDirichletsBCsValues)):
+            IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+            IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+            self.frozen_BC_node_IDs.append(IDs)
+            self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
+            self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+
+    def ZeroOut(self):
+        self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+
+
+    def UnFreeze_FEM(self):
+        """Set the coordinates as trainable parameters """
+        # print("Unfreeze values")
+
+        for val in self.nodal_values:
+            val.requires_grad = True
+
+        for j in range(len(self.frozen_BC_node_IDs)):
+            frozen = self.frozen_BC_node_IDs[j]
+            self.nodal_values[frozen].requires_grad = False
+
+    def SetFixedValues(self, node, val_inter):
+        """Set the coordinates as trainable parameters """
+        # print("Unfreeze values")
+
+
+        for val in self.nodal_values:
+            val.data = torch.tensor([0])
+        ids = []
+        for i in range(self.NElem+1):
+            if i not in self.frozen_BC_node_IDs:
+                ids.append(i)
+        self.nodal_values[ids[node]].data = torch.tensor([val_inter])
+
+
+
+    def Freeze_FEM(self):
+        """Set the coordinates as untrainable parameters"""
+        for val in self.nodal_values:
+            val.requires_grad = False
+
+    def Freeze_Mesh(self):
+        """Set the coordinates as untrainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = False
+    
+    def UnFreeze_Mesh(self):
+        """Set the coordinates as trainable parameters"""
+        for param in self.coordinates:
+            param.requires_grad = True
+
+        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+        for node in border_nodes:
+            self.coordinates[node].requires_grad = False
+
+    def Init_from_previous(self,CoarseModel):
+        newcoordinates = [coord for coord in self.coordinates]
+        newcoordinates = torch.cat(newcoordinates,dim=0)
+        IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
+        NewNodalValues = CoarseModel(newcoordinates,IDs_newcoord)
+        # check if a cell ID was not found for some new nodes 
+        if -1 in IDs_newcoord:
+            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
+            oldcoordinates = [coord for coord in CoarseModel.coordinates]
+            oldcoordinates = torch.cat(oldcoordinates,dim=0)
+            for ind_neg in index_neg:
+                not_found_coordinates = newcoordinates[ind_neg]
+                dist_vect = not_found_coordinates - oldcoordinates
+                dist = torch.norm(dist_vect, dim=1)
+                closest_old_nodal_value = dist.topk(1, largest=False)[1]
+                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].type(torch.float64)
+                # NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues])
+        # new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
+        # new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+        self.nodal_values = new_nodal_values_x
+        # self.nodal_values_y = new_nodal_values_y
+        # self.nodal_values = new_nodal_values
+    
+    def forward(self,x = 'NaN', el_id = 'NaN'):
+        if self.training:
+            el_id = torch.arange(0,self.NElem,dtype=torch.int)
+            shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
+            interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions)
+
+            return interpol, x_g, detJ
+        else:
+            shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
+            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
+
+            return interpol

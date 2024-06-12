@@ -176,7 +176,7 @@ match config["solver"]["BiPara"]:
 
 if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)
-
+    ROM_model.UnfreezeTruncated()
 #%% Training 
 ROM_model.Freeze_Mesh()                                                     # Set space mesh cordinates as untrainable
 ROM_model.Freeze_MeshPara()                                                 # Set parameters mesh cordinates as untrainable
@@ -218,10 +218,11 @@ if config["solver"]["ParametricStudy"]:
                     dtype=torch.float32, 
                     requires_grad=True)
 
-    if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
-        sign = "Positive"
-    else:
-        sign = "Negative"
+    if config["training"]["TrainingRequired"]:
+        if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
+            sign = "Positive"
+        else:
+            sign = "Negative"
     if config["solver"]["BiPara"]:                                      # define type of parametric study for saving files
         Study = "_BiPara"
     else: 

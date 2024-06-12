@@ -466,7 +466,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                     if (epoch+1) % 300 == 0:                                # Update saved model only every 300 iterations to save saving time
                         save_start  = time.time()
                         loss_min_saved = loss_current
-                        Current_best = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
+                        # Current_best = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
                         save_stop   = time.time()
                         save_time   +=(save_stop-save_start)
                     loss_counter    = 0                                     # breaks series of non decreasing loss
@@ -530,7 +530,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     # Final loss evaluation - Revert to minimal-loss state if needed
     if loss_min_saved < loss_current:
         print("*************** REVERT TO BEST  ***************\n")
-        model.load_state_dict(Current_best) # Load from variable instead of written file
+        # model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
     
     model.training_recap = {"Loss_vect":Loss_vect,

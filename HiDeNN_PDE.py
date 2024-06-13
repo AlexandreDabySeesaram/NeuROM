@@ -804,21 +804,15 @@ class MeshNN_2D(nn.Module):
     is equivqlent to solving the PDE. """
 
 
-    def __init__(self, mesh, n_components, n_integr_points):
+    def __init__(self, mesh, n_components):
         super(MeshNN_2D, self).__init__()
-
-        self.n_integr_points = n_integr_points
-        if self.n_integr_points == 0:
-            self.Mixed = True
-        else:
-            self.Mixed = False
-
 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
 
-        self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
-        # self.values =0.5*torch.ones((mesh.NNodes,n_components))
+        # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
+        self.values =0.5*torch.ones((mesh.NNodes,n_components))
+
         self.frozen_BC_node_IDs = []
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []

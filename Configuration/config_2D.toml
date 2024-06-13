@@ -5,7 +5,7 @@
 ####################################################
 
 [geometry]
-Name                    = 'Hole_3'
+Name                    = 'Square'
 L                       = 10                                        # Length of the Beam
 A                       = 1                                         # Section of the beam
 Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
@@ -56,6 +56,8 @@ Constitutive            = false
 [material]
 E                       = 1                                         # Young's modulus (175 if 1D 5*1e-3 if 2D, 1 if 2D parametric (mult coeff for parameters))
 nu                      = 0.3                                       # Poisson's ration
+lmbda                   = 1.25
+mu                      = 1.0
 
 ####################################################
 ###                                              ###
@@ -67,7 +69,7 @@ nu                      = 0.3                                       # Poisson's 
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 5                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 1.0                                     # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -80,10 +82,10 @@ FrozenMesh              = false                                      # Nodal coo
 FrozenParaMesh          = true                                  # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
-BiPara = true                                                       # Enable bi-stifness beam in 1D
+BiPara                  = true                                       # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
-# MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
+# MultiScale            = false                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################
 ###                                              ###
@@ -103,17 +105,18 @@ BoolCompile             = false                                     # Enable com
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 300                                      # Maximum number of iterations for the training stage
+n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
-multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
+multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 1                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 3                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
+optimizer               = 'lbfgs'                                     # 'adam', 'lbfgs'
 
 ####################################################
 ###                                              ###

@@ -1187,26 +1187,51 @@ def Training_2D_Integral(model, optimizer, n_epochs,Mat):
     
     model.Initresults()                                       # Initialise the structure for saving training history
     stagnation                          = False               # Stagnation of loss decay
-    while epoch<model.Max_epochs and not stagnation:
-        # Compute loss
-        loss_time_start                 = time.time()
-        u_predicted,xg,detJ             = model()
-        loss                            = torch.sum((
-                                                    0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-
-                                                    10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9)
-                                                    )*torch.abs(detJ))
 
-        eval_time                       = time.time() - loss_time_start
-        loss_current                    = loss.item()
-        backward_time_start             = time.time()
-        loss.backward()
-        back_time                       += time.time() - backward_time_start
-        # update weights
-        update_time_start               = time.time()
-        optimizer.step()
-        update_time                     += time.time() - update_time_start
-        optimizer.zero_grad()                           # zero the gradients after updating
+    while epoch<model.Max_epochs and not stagnation:
+
+        # Compute loss
+        # loss_time_start                 = time.time()
+        # u_predicted,xg,detJ             = model()
+        # loss                            = torch.sum((
+        #                                             0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-
+        #                                             10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9)
+        #                                             )*torch.abs(detJ))
+
+        # eval_time                       = time.time() - loss_time_start
+        # loss_current                    = loss.item()
+        # backward_time_start             = time.time()
+        # loss.backward()
+        # back_time                       += time.time() - backward_time_start
+        # # update weights
+        # update_time_start               = time.time()
+        # optimizer.step()
+        # update_time                     += time.time() - update_time_start
+        # optimizer.zero_grad()                           # zero the gradients after updating
+
+        detJ_new = []
+        xg_new = []
+
+        def closure():
+
+            optimizer.zero_grad()
+            u_predicted,xg,detJ = model()
+
+            xg_new.append(xg)
+            detJ_new.append(detJ)
+
+            loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+            loss.backward(retain_graph=True)
+            return loss
+
+        optimizer.step(closure)
+        loss = closure()
+
+
         with torch.no_grad():
+            detJ = detJ_new[0]
+            xg = xg_new[0]
+
             epoch+=1
             if epoch >1:
                 d_loss                  = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))     # Relative loss decay
@@ -1254,9 +1279,14 @@ def Training_2D_Integral(model, optimizer, n_epochs,Mat):
                 model.detJ_0 = detJ
             Loss_vect.append(loss.item())
 
-        if (epoch+1) % 200 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+        if (epoch+1) % 5 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
             model.StoreResults()
             print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+
+        # print("len = ", len(optimizer.param_groups))
+        # print("_________________________")
+        # print()
+
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")
@@ -1696,7 +1726,12 @@ def Training_2D_FEM(model, config, Mat):
     while n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
         print(f"* Refinement level: {n_refinement}\n")
         n_refinement        +=1
-        optimizer           = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+
+        if config["training"]["optimizer"] == "adam":
+            optimizer           = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+        elif config["training"]["optimizer"] == "lbfgs":
+            optimizer           =     optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+
 
         # Call the mono-scale training routine
         match config["solver"]["TrainingStrategy"]:
@@ -1756,13 +1791,17 @@ def Training_2D_FEM(model, config, Mat):
             model = model_2                                                             # model is now the fine 
             model.UnFreeze_FEM()
             model.Freeze_Mesh()
-            model.UnFreeze_Mesh()
+            if not config["solver"]["FrozenMesh"]:
+                model.UnFreeze_Mesh()
             model.train()
-            model.RefinementParameters( MaxGeneration = 3, 
-                                        Jacobian_threshold = 0.2)
-            model.TrainingParameters(   loss_decrease_c = 1e-7, 
-                                        Max_epochs = 500, 
-                                        learning_rate = 0.001)
+
+
+            model.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
+                                        Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
+
+            model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
         else:
             model.train()
             model.training_recap = {"Loss_tot":Loss_tot,

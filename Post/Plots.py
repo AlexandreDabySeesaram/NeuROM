@@ -794,7 +794,7 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
         Model_FEM.eval()
         eps =  Strain(Model_FEM(xg, List_elems),xg)
         sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
-        sigma_VM = VonMises(sigma)
+        # sigma_VM = VonMises(sigma)
         sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
         X_interm_tot = Model_FEM.training_recap["X_interm_tot"]
 
@@ -805,7 +805,7 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
         Connect_converged = Model_FEM.connectivity
         sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
         point_data={"U":u.data}, 
-        cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
+        cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
         sol.write(
             "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
         )
@@ -916,3 +916,31 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
 
     #plt.show()
     plt.clf()
+
+
+
+def ExportSamplesforEval(model,Mat,config):
+
+    MaxElemSize = config["interpolation"]["MaxElemSize2D"]
+
+    model.mesh.Nodes = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+    model.mesh.ExportMeshVtk(flag_update = True)
+
+    coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)
+    List_elems = torch.tensor(model.mesh.GetCellIds(coord),dtype=torch.int)
+
+    u = model(coord, List_elems)
+    eps =  Strain(model(coord, List_elems),coord)
+    sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
+    sigma_VM = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
+
+    if config["solver"]["FrozenMesh"] == False:
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
+
+    else:
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
+

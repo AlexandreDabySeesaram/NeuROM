@@ -12,7 +12,8 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_1D_FEM_LBFGS
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_1D_FEM_LBFGS,\
+     Training_1D_FEM_Gradient_Descent
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -109,11 +110,19 @@ if int(Mesh_object.dim) != int(Mesh_object.dimension):
 #%% Application of the Space HiDeNN
 match config["interpolation"]["dimension"]:
     case 1:
-        match config["solver"]["IntegralMethod"]:                           # Build the model
-            case "Gaussian_quad":
-                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
-            case "Trapezoidal":
-                Model_FEM = MeshNN(Mesh_object)
+        if config["solver"]["TrainingStrategy"]=="Integral":
+            match config["solver"]["IntegralMethod"]:                           # Build the model
+                case "Gaussian_quad":
+                    Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                case "Trapezoidal":
+                    Model_FEM = MeshNN(Mesh_object)
+
+        if config["solver"]["TrainingStrategy"]=="Mixed":
+            if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])
+                Model_test = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                Model_test.Freeze_Mesh()
+
     case 2:
         Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
@@ -184,7 +193,6 @@ if config["solver"]["ParametricStudy"]:
         match config["interpolation"]["dimension"]:
             case 1:
                 Training_NeuROM(ROM_model,config,optimizer)                 # First stage of training (ADAM)
-
                 Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
             case 2:
                 Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
@@ -195,15 +203,27 @@ else:
 
     match config["interpolation"]["dimension"]:
         case 1:
-            Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                            Max_epochs = config["training"]["n_epochs"], 
-                                            learning_rate = config["training"]["learning_rate"])
-            Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+            if config["training"]["TwoStageTraining"] == True:
+                if config["solver"]["TrainingStrategy"]=="Mixed":
+                    if config["solver"]["IntegralMethod"] == "None":
+                        Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat)     
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+                    else:
+                        Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat, Model_test)     
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat, Model_test)
+                else:
+                    Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat)     
+                    Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+            else: 
+                if config["solver"]["TrainingStrategy"]=="Mixed":
+                    if config["solver"]["IntegralMethod"] == "None":
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+                    else:
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat, Model_test)
+                else:
+                    Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
 
         case 2:
-            Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                            Max_epochs = config["training"]["n_epochs"], 
-                                            learning_rate = config["training"]["learning_rate"])
             Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
 
 

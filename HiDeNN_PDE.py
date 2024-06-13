@@ -143,7 +143,6 @@ class MeshNN(nn.Module):
     def __init__(self, mesh):
         super(MeshNN, self).__init__()
         self.version = "Trapezoidal"
-
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
@@ -164,8 +163,8 @@ class MeshNN(nn.Module):
 
         # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
-        self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
+        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  
@@ -184,7 +183,9 @@ class MeshNN(nn.Module):
         self.SumLayer.weight.data.fill_(1)
         self.SumLayer.weight.requires_grad = False
         self.ElemList = torch.arange(self.NElem)
-        self.SetBCs(mesh.ListOfDirichletsBCsValues)
+
+        if self.NBCs>0:
+            self.SetBCs(mesh.ListOfDirichletsBCsValues)
 
     def forward(self,x):
         # Compute shape functions 
@@ -193,7 +194,6 @@ class MeshNN(nn.Module):
 
         joined_vector = torch.cat((out_uu,out_dd),dim=1)      
         recomposed_vector_u = self.AssemblyLayer(joined_vector) #-1
-
         u_u = self.InterpoLayer_uu(recomposed_vector_u[:,2:])
         u_d = self.InterpoLayer_dd(recomposed_vector_u[:,:2])
 
@@ -224,6 +224,8 @@ class MeshNN(nn.Module):
 
     def UnFreeze_Mesh(self):
         """Set the coordinates as trainable parameters """
+        self.original_coordinates = [self.coordinates[i].data.item() for i in range(len(self.coordinates))]
+
         for param in self.coordinates:
             param.requires_grad = True
         #Freeze external coorinates to keep geometry    
@@ -1422,8 +1424,7 @@ class MeshNN_1D(nn.Module):
                                              for i in range(len(mesh.Nodes))])
 
         print("mesh.NNodes = ", mesh.NNodes)
-        # self.values = 0.001*torch.randint(low=-10, high=10, size=(mesh.NNodes,1))
-        # self.values =0.01*torch.ones((mesh.NNodes,1))
+        # self.values = 0.001*torch.randint(low=-100, high=100, size=(mesh.NNodes,1))
 
         self.values =0.1*torch.ones((mesh.NNodes,1))
 
@@ -1446,6 +1447,7 @@ class MeshNN_1D(nn.Module):
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
                 IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
+                print("IDs = ", IDs)
                 IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
                 print("IDs = ", IDs)
                 self.frozen_BC_node_IDs.append(IDs)
@@ -1525,8 +1527,3 @@ class MeshNN_1D(nn.Module):
             interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
 
             return interpol
-
-    def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
-        self.loss_decrease_c = loss_decrease_c
-        self.Max_epochs = Max_epochs
-        self.learning_rate = learning_rate

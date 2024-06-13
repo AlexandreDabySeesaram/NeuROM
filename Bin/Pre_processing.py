@@ -103,24 +103,30 @@ class Mesh:
         self.ExcludeId = Exclude
         NumberOfBCs = len(Dirichlets)
 
-        ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsRelation = [Dirichlets[i]["Relation"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsConstit = [Dirichlets[i]["Constitutive"] for i in range(NumberOfBCs)]
-        
-        self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
-        self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
-        self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
-        self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
-        self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
-
-            # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
-            # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
-        if NumberOfBCs == 0:
-            self.NoBC = True
+        if NumberOfBCs == 1:
+            if len(Dirichlets[0])==0:                        # Empty list : Dirichlets =  [{}] ... len = 1
+                self.NoBC = True
         else:
             self.NoBC = False
+
+        if self.NoBC == False:
+            ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsRelation = [Dirichlets[i]["Relation"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsConstit = [Dirichlets[i]["Constitutive"] for i in range(NumberOfBCs)]
+        
+            self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
+            self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
+            self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
+            self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
+            self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
+        else:
+            self.ListOfDirichletsBCsIds = []
+            self.ListOfDirichletsBCsValues = []
+            self.ListOfDirichletsBCsNormals = []
+            self.ListOfDirichletsBCsRelation = []
+            self.ListOfDirichletsBCsConstit = []
 
         if len(self.ExcludeId)==0:
             self.NoExcl = True

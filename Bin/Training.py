@@ -16,7 +16,7 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
-                            InternalEnergy_1D
+                            InternalEnergy_1D, WeakEquilibrium_1D
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -1777,14 +1777,30 @@ def Training_2D_FEM(model, config, Mat):
     return model 
 
 
-def Training_1D_FEM_LBFGS(model, config, Mat):
+def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 
-    n_epochs = config["training"]["n_epochs"]
+    n_epochs = config["training"]["n_epochs_2"]
     A = config["material"]["A"]
     E = config["material"]["E"]
-    max_stagnation_counter = config["training"]["Stagnation_counter"]
-    stagnation_threshold = config["training"]["Stagnation_threshold"]
+    L = config["geometry"]["L"]
 
+    max_stagnation_counter = config["training"]["Stagnation_counter_2"]
+    stagnation_threshold = config["training"]["Stagnation_threshold_2"]
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        n_points = config["training"]["Points_per_element"]
+
+        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_points*model.NElem)], dtype=torch.float64, requires_grad=True)
+    
+    if config["solver"]["TrainingStrategy"]=="Mixed":
+
+        if config["solver"]["IntegralMethod"] == "None":
+            print("Training data")
+
+        elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
+            model_test.Freeze_FEM()
+            model_test.Freeze_Mesh()
+            List_elems = torch.arange(0,model.NElem,dtype=torch.int)
 
     Coord_trajectories = []
     error = []
@@ -1804,54 +1820,110 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
     optimizer = torch.optim.LBFGS(model.parameters(),
                     line_search_fn="strong_wolfe")
 
+    Coordinates_i = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    Coord_trajectories.append(Coordinates_i)
+
     while epoch<n_epochs and stagnancy_counter < max_stagnation_counter:
 
         coord_old = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
         # Compute loss
 
-        def closure():
-            optimizer.zero_grad()
+        if config["solver"]["TrainingStrategy"]=="Integral":
+            if config["solver"]["IntegralMethod"] == "Trapezoidal":
+                def closure():
+                    optimizer.zero_grad()
+                    u_predicted = model(TrialCoordinates) 
+                    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+                    l.backward()
+                    return l
 
-            model.train()
-            loss_time_start = time.time()
-            u_predicted,xg,detJ = model()
+            elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                def closure():
+                    optimizer.zero_grad()
 
-            loss = torch.sum(InternalEnergy_1D(u_predicted,xg,A, E)*torch.abs(detJ))
+                    model.train()
+                    loss_time_start = time.time()
+                    u_predicted,xg,detJ = model()
 
-            loss.backward()
-            return loss
+                    loss = torch.sum(InternalEnergy_1D(u_predicted,xg,A, E)*torch.abs(detJ))
+
+                    loss.backward()
+                    return loss
+
+        if config["solver"]["TrainingStrategy"]=="Mixed":
+
+            if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                def closure():
+                    loss = 0
+                    optimizer.zero_grad()
+                    model_test.train()
+                    model.eval()
+
+                    for node in range(model.NElem-1):
+
+                        model_test.SetFixedValues(node,1)
+                        model_test.Freeze_FEM()
+
+                        u_predicted_test, xg, detJ = model_test()
+                        du_test_dx = torch.autograd.grad(u_predicted_test, xg, grad_outputs=torch.ones_like(u_predicted_test), create_graph=True)[0]
+                        list_elem = List_elems.repeat(u_predicted_test.shape[1],1)
+
+                        nonzeros = torch.where(u_predicted_test!=0)
+
+                        xg = xg[nonzeros]
+                        detJ = detJ[nonzeros]
+                        u_predicted_test = u_predicted_test[nonzeros]
+                        du_test_dx = du_test_dx[nonzeros]
+                        list_elem = torch.transpose(list_elem,0,1)[nonzeros]
+
+                        u_predicted = model(xg, list_elem)[:,0]
+
+                        loss = loss + torch.pow(torch.sum(WeakEquilibrium_1D(u_predicted,u_predicted_test,du_test_dx,xg,A, E)*torch.abs(detJ)),2)
+
+                    loss.backward()
+                    return loss
+
+            if config["solver"]["IntegralMethod"] == "None":
+
+                def closure():
+                    print("Mixed")
+
+                    return loss
 
         model.train()
 
-
         optimizer.step(closure)
-
         loss = closure()
     
         with torch.no_grad():
-            u_predicted,xg,detJ = model()
-            
-            idx = torch.where(detJ[:,0]<1.0e-4)[0]
+            if config["solver"]["FrozenMesh"] == False:
+                if config["solver"]["IntegralMethod"] == "Trapezoidal":
+                    Collision_Check(model, coord_old, 1.0e-6)
 
-            if len(idx)>0:
-                for l in range(len(idx)):
-                    i = idx[l]
+                elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                    _,_,detJ = model()
+                
+                    idx = torch.where(detJ[:,0]<1.0e-6)[0]
 
-                    cell_nodes_IDs = model.connectivity[i,:] - 1
-                    if cell_nodes_IDs.ndim == 1:
-                        cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
+                    if len(idx)>0:
+                        for l in range(len(idx)):
+                            i = idx[l]
 
-                    print()
-                    print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-                    print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-                    print()
-                    model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
-                    model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
+                            cell_nodes_IDs = model.connectivity[i,:] - 1
+                            if cell_nodes_IDs.ndim == 1:
+                                cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
 
-                    print("After fix")
-                    print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-                    print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-                    print()
+                            print()
+                            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
+                            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
+                            print()
+                            model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
+                            model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
+
+                            print("After fix")
+                            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
+                            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
+                            print()
 
         loss = closure()
         loss_current = loss.item()
@@ -1869,14 +1941,8 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
             stagnancy_counter = 0
 
         with torch.no_grad():
-            # model.eval()
-            # u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
-            # Stores the coordinates trajectories
-          
             Coordinates_i = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
             Coord_trajectories.append(Coordinates_i)
-            # error2.append(torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm)
-            # error2.append(torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm)
 
         if epoch%1 == 0:
             print("epoch = ", epoch)
@@ -1885,9 +1951,280 @@ def Training_1D_FEM_LBFGS(model, config, Mat):
 
 
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
-    # print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
     Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
     return model
+
+
+
+def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
+
+    n_epochs = config["training"]["n_epochs_1"]
+    A = config["material"]["A"]
+    E = config["material"]["E"]
+    L = config["geometry"]["L"]
+
+    learning_rate = config["training"]["learning_rate"]
+
+    max_stagnation_counter = config["training"]["Stagnation_counter_1"]
+    max_loss_counter = config["training"]["Loss_counter"]
+
+    stagnation_threshold = config["training"]["Stagnation_threshold_1"]
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        n_points = config["training"]["Points_per_element"]
+        TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_points*model.NElem)], dtype=torch.float64, requires_grad=True)
+
+    if config["solver"]["TrainingStrategy"]=="Mixed":
+        model_test.Freeze_FEM()
+        model_test.Freeze_Mesh()
+        List_elems = torch.arange(0,model.NElem,dtype=torch.int)
+
+    Coord_trajectories = []
+    error = []
+
+    epoch = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
+
+    loss_min = 1.0e3
+    loss_counter = 0
+
+    loss_old = 1.0
+    stagnancy_counter = 0
+
+    InitialCoordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+    
+    
+    optimizer = torch.optim.Adam(model.parameters(),lr = learning_rate)
+
+    while epoch<n_epochs and stagnancy_counter < max_stagnation_counter:# and loss_counter < max_loss_counter:
+
+        coord_old = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        # Compute loss
+
+        if config["solver"]["TrainingStrategy"]=="Integral":
+
+            if config["solver"]["IntegralMethod"] == "Trapezoidal":
+                def closure():
+                    optimizer.zero_grad()
+                    u_predicted = model(TrialCoordinates) 
+                    l = PotentialEnergyVectorised(A,E,u_predicted,TrialCoordinates,RHS(TrialCoordinates))
+                    l.backward()
+                    return l
+
+            elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                def closure():
+                    optimizer.zero_grad()
+
+                    model.train()
+                    loss_time_start = time.time()
+                    u_predicted,xg,detJ = model()
+
+                    loss = torch.sum(InternalEnergy_1D(u_predicted,xg,A, E)*torch.abs(detJ))
+
+                    loss.backward()
+                    return loss
+
+        if config["solver"]["TrainingStrategy"]=="Mixed":
+
+            if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                def closure():
+                    loss = 0
+                    optimizer.zero_grad()
+                    model_test.train()
+                    model.eval()
+
+                    for node in range(model.NElem-1):
+
+                        model_test.SetFixedValues(node,1)
+                        model_test.Freeze_FEM()
+
+                        u_predicted_test, xg, detJ = model_test()
+                        du_test_dx = torch.autograd.grad(u_predicted_test, xg, grad_outputs=torch.ones_like(u_predicted_test), create_graph=True)[0]
+                        list_elem = List_elems.repeat(u_predicted_test.shape[1],1)
+
+                        nonzeros = torch.where(u_predicted_test!=0)
+
+                        xg = xg[nonzeros]
+                        detJ = detJ[nonzeros]
+                        u_predicted_test = u_predicted_test[nonzeros]
+                        du_test_dx = du_test_dx[nonzeros]
+                        list_elem = torch.transpose(list_elem,0,1)[nonzeros]
+
+                        u_predicted = model(xg, list_elem)[:,0]
+
+                        loss = loss + torch.pow(torch.sum(WeakEquilibrium_1D(u_predicted,u_predicted_test,du_test_dx,xg,A, E)*torch.abs(detJ)),2)
+
+                    loss.backward()
+                    return loss
+
+        model.train()
+
+        optimizer.step(closure)
+
+        loss = closure()
+    
+        with torch.no_grad():
+
+            if config["solver"]["FrozenMesh"] == False:
+
+                if config["solver"]["IntegralMethod"] == "Trapezoidal":
+                    Collision_Check(model, coord_old, 1.0e-6)
+
+                elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                    _,_,detJ = model()
+                
+                    idx = torch.where(detJ[:,0]<1.0e-6)[0]
+
+                    if len(idx)>0:
+                        for l in range(len(idx)):
+                            i = idx[l]
+
+                            cell_nodes_IDs = model.connectivity[i,:] - 1
+                            if cell_nodes_IDs.ndim == 1:
+                                cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
+
+                            model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
+                            model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
+
+            if loss_min > loss:
+                loss_min = loss
+                loss_counter = 0
+            else:
+                loss_counter += 1
+
+        loss = closure()
+        loss_current = loss.item()
+
+        epoch = epoch+1
+
+        error.append(loss.item())
+
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
+
+        if loss_decrease >= 0 and loss_decrease < stagnation_threshold:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        with torch.no_grad():
+            Coordinates_i = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+            Coord_trajectories.append(Coordinates_i)
+
+        if epoch%10 == 0:
+            print("epoch = ", epoch)
+            print("     loss = ", loss_current)
+            print("     loss_decrease = ", loss_decrease)
+
+    print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
+
+    Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+
+    return model
+
+
+
+
+def Training_1D_Mixed_LBFGS(model_u, model_du, config, Mat):
+
+    n_epochs = config["training"]["n_epochs"]
+    A = config["material"]["A"]
+    E = config["material"]["E"]
+    L = config["geometry"]["L"]
+
+    max_stagnation_counter = config["training"]["Stagnation_counter"]
+    stagnation_threshold = config["training"]["Stagnation_threshold"]
+
+    w_pde = config["training"]["w_pde"]
+    w_constit = config["training"]["w_constit"]
+
+    n_points = config["training"]["Points_per_element"]
+
+    TrialCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_points*model_u.NElem)], dtype=torch.float64, requires_grad=True)
+
+
+    Coord_trajectories = []
+    error = []
+
+    epoch = 0
+    eval_time = 0
+    back_time = 0
+    update_time = 0
+
+    loss_old = 1.0
+    stagnancy_counter = 0
+
+    InitialCoordinates = [model_u.coordinates[i].data.item() for i in range(len(model_u.coordinates))]
+    
+    
+    optimizer = torch.optim.LBFGS(list(model_u.parameters())+list(model_du.parameters()),
+                    line_search_fn="strong_wolfe")
+
+    Coordinates_i = [model_u.coordinates[i].data.item() for i in range(len(model_u.coordinates))]
+    Coord_trajectories.append(Coordinates_i)
+
+    while epoch<n_epochs and stagnancy_counter < max_stagnation_counter:
+
+
+        def closure():
+            optimizer.zero_grad()
+
+            u_predicted = model_u(TrialCoordinates) 
+            du_predicted = model_du(TrialCoordinates) 
+
+            l_pde, l_constit  = MixedFormulation_Loss(A, E, u_predicted, du_predicted, TrialCoordinates, RHS(TrialCoordinates))
+            l =  w_pde*l_pde + w_constit*l_constit
+
+            l.backward()
+            return l
+
+      
+        model_u.train()
+        model_du.train()
+
+        optimizer.step(closure)
+        loss = closure()
+    
+        with torch.no_grad():
+            if config["solver"]["FrozenMesh"] == False:
+                if config["solver"]["IntegralMethod"] == "Trapezoidal":
+                    Collision_Check(model, coord_old, 1.0e-6)
+
+        loss = closure()
+        loss_current = loss.item()
+
+        epoch = epoch+1
+
+        error.append(loss.item())
+
+        loss_decrease = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_old = loss_current
+
+        if loss_decrease >= 0 and loss_decrease < stagnation_threshold:
+            stagnancy_counter = stagnancy_counter +1
+        else:
+            stagnancy_counter = 0
+
+        with torch.no_grad():
+            Coordinates_i = [model_u.coordinates[i].data.item() for i in range(len(model_u.coordinates))]
+            Coord_trajectories.append(Coordinates_i)
+
+        if epoch%1 == 0:
+            print("epoch = ", epoch)
+            print("     loss = ", loss_current)
+            print("     loss_decrease = ", loss_decrease)
+
+
+    print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
+    print()
+    Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
+    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+
+    return model_u, model_du

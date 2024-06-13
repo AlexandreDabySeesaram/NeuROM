@@ -833,7 +833,7 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
 
 
 
-def Plot_Eval_1d(model, config, Mat):
+def Plot_Eval_1d(model, config, Mat, model_du = []):
 
     new_coord = [coord for coord in model.coordinates]
     new_coord = torch.cat(new_coord,dim=0)
@@ -843,29 +843,48 @@ def Plot_Eval_1d(model, config, Mat):
     E = config["material"]["E"]
     n_visu = config["postprocess"]["n_visualization"]
 
+
     if config["solver"]["IntegralMethod"] == "Gaussian_quad":
         model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
         model.mesh.ExportMeshVtk1D(flag_update = True)
 
+        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
 
-    PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
-    IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+        model.eval()
+        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
 
-    model.eval()
-    u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = Coordinates
+
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = Coordinates
+
+    if config["solver"]["IntegralMethod"] == "None":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = model_du(PlotCoordinates)
+
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = [model_du.coordinates[i].data.item() for i in range(len(model_du.coordinates))]
+
     analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
     l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm
     print(f'* Final l2 loss : {np.format_float_scientific(l2_loss, precision=4)}')
 
-    du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
     l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
     print(f'* Final l2 loss grad : {np.format_float_scientific(l2_loss_grad, precision=4)}')
 
-    param = model.coordinates[3]
-    if param.requires_grad == True:
+    if config["solver"]["FrozenMesh"] == False:
         plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
 
-    Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
 
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
@@ -882,11 +901,10 @@ def Plot_Eval_1d(model, config, Mat):
     fig = matplotlib.pyplot.gcf()
     fig.set_size_inches(9, 7)
 
-    param = model.coordinates[3]
-    if param.requires_grad == True:
+    if config["solver"]["FrozenMesh"] == False:
         plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
         
-    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(Coordinates_du,[coord*0 for coord in Coordinates_du],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
     plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
     plt.xlabel(r'$\underline{x}$ [m]')

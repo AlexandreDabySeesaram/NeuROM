@@ -970,7 +970,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             )
             plotter.add_axes(**labels)
             plotter.add_text("E ="+str(E), font_size=10)
-
+            plotter.view_xy()
             plotter.show()
         case "Interactive":
 
@@ -1051,6 +1051,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                     Slider_min = config["parameters"]["para_2_min"]
                     Slider_max = config["parameters"]["para_2_max"]
                     plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
+            plotter.view_xy()
             plotter.show()
 
         case "DualSliders":
@@ -1129,5 +1130,5 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                                         title='theta (rad)',
                                         pointa=(0.64, 0.9),
                                         pointb=(0.94, 0.9))
-
+            plotter.view_xy()
             plotter.show()

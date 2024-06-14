@@ -67,7 +67,7 @@ nu                      = 0.3                                       # Poisson's 
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 0.5                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.2                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -155,6 +155,10 @@ N_para_1                    = 10                                    # Discretisa
 para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
 N_para_2                    = 30                                    # Discretisation of the 1D parametric space
+# alpha
+para_3_min                  = 0                                     # Minimum value for the 2nd parameter
+para_3_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
+N_para_3                    = 30                                    # Discretisation of the 1D parametric space
 
 #%% 1D
 # # Stiffness

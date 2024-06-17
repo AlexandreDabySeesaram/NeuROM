@@ -86,6 +86,7 @@ def Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train
 
 def Collision_Check(model, coord_old, proximity_limit):
 
+    correction = False
     cell_id = torch.arange(0,model.NElem,dtype=torch.int)
 
     cell_nodes_IDs = model.connectivity[cell_id,:]
@@ -96,10 +97,11 @@ def Collision_Check(model, coord_old, proximity_limit):
     node1_coord =  torch.cat([model.coordinates[int(row)-1] for row in cell_nodes_IDs[:,0]])
     node2_coord =  torch.cat([model.coordinates[int(row)-1] for row in cell_nodes_IDs[:,1]])    
 
-    detJ = (node2_coord - node1_coord)/2
+    detJ = (node2_coord - node1_coord)
 
     idx = torch.where(detJ[:,0]<proximity_limit)[0]
     if len(idx)>0:
+        correction = True
         for l in range(len(idx)):
 
             i = idx[l]
@@ -108,20 +110,20 @@ def Collision_Check(model, coord_old, proximity_limit):
             if cell_nodes_IDs.ndim == 1:
                 cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
 
-            print(cell_nodes_IDs[:,0])
-            print(cell_nodes_IDs[:,1])
+            # print(cell_nodes_IDs[:,0])
+            # print(cell_nodes_IDs[:,1])
+            # # print()
+            # print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
+            # print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
             # print()
-            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-            print()
             model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
             model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
 
-            print("After fix")
-            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-            print()
-
+            # print("After fix")
+            # print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
+            # print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
+            # print()
+    return correction
 
 
 
@@ -1936,33 +1938,11 @@ def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
     
         with torch.no_grad():
             if config["solver"]["FrozenMesh"] == False:
-                if config["solver"]["IntegralMethod"] == "Trapezoidal":
-                    Collision_Check(model, coord_old, 1.0e-6)
-
-                elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
-                    _,_,detJ = model()
-                
-                    idx = torch.where(detJ[:,0]<1.0e-6)[0]
-
-                    if len(idx)>0:
-                        for l in range(len(idx)):
-                            i = idx[l]
-
-                            cell_nodes_IDs = model.connectivity[i,:] - 1
-                            if cell_nodes_IDs.ndim == 1:
-                                cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
-
-                            print()
-                            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-                            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-                            print()
-                            model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
-                            model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
-
-                            print("After fix")
-                            print(model.coordinates[int(cell_nodes_IDs[:,0].item())])
-                            print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
-                            print()
+                correction = True
+                while correction:
+                    correction = Collision_Check(model, coord_old, 1.0e-6)
+                    if correction:
+                        print("Correction")
 
         loss = closure()
         loss_current = loss.item()
@@ -2111,25 +2091,7 @@ def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
         with torch.no_grad():
 
             if config["solver"]["FrozenMesh"] == False:
-
-                if config["solver"]["IntegralMethod"] == "Trapezoidal":
-                    Collision_Check(model, coord_old, 1.0e-6)
-
-                elif config["solver"]["IntegralMethod"] == "Gaussian_quad":
-                    _,_,detJ = model()
-                
-                    idx = torch.where(detJ[:,0]<1.0e-6)[0]
-
-                    if len(idx)>0:
-                        for l in range(len(idx)):
-                            i = idx[l]
-
-                            cell_nodes_IDs = model.connectivity[i,:] - 1
-                            if cell_nodes_IDs.ndim == 1:
-                                cell_nodes_IDs = numpy.expand_dims(cell_nodes_IDs,0)
-
-                            model.coordinates[int(cell_nodes_IDs[:,0].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,0].item())]]])
-                            model.coordinates[int(cell_nodes_IDs[:,1].item())].data = torch.tensor( [[coord_old[int(cell_nodes_IDs[:,1].item())]]])
+                Collision_Check(model, coord_old, 1.0e-6)
 
             if loss_min > loss:
                 loss_min = loss

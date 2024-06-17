@@ -922,6 +922,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
 def ExportSamplesforEval(model,Mat,config):
 
     MaxElemSize = config["interpolation"]["MaxElemSize2D"]
+    ref = config["training"]["multiscl_max_refinment"]-1
 
     model.mesh.Nodes = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
     model.mesh.ExportMeshVtk(flag_update = True)
@@ -935,12 +936,12 @@ def ExportSamplesforEval(model,Mat,config):
     sigma_VM = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
 
     if config["solver"]["FrozenMesh"] == False:
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_u.npy", np.array(u.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma.npy", np.array(sigma.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
 
     else:
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_u.npy", np.array(u.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma.npy", np.array(sigma.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize)+"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) + "_fixed_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
 

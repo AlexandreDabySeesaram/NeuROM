@@ -32,7 +32,7 @@ import tomllib
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_2D.toml'
+Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -61,8 +61,10 @@ with open(args.cf, mode="rb") as f:
 Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
                                 # coef1     = config["material"]["E"],        # Young Modulus
                                 # coef2     = config["material"]["nu"]        # Poisson's ratio
-                                coef1     = config["material"]["lmbda"],        # Young Modulus
-                                coef2     = config["material"]["mu"]        # Poisson's ratio
+                                #coef1     = config["material"]["lmbda"],        # Young Modulus
+                                #coef2     = config["material"]["mu"]        # Poisson's ratio
+                                coef1     = config["material"]["E"],        # Young Modulus
+                                coef2     = config["material"]["A"]        # Poisson's ratio
                     )
 
 
@@ -203,12 +205,13 @@ else:
     if not config["solver"]["FrozenMesh"]:
         Model_FEM.UnFreeze_Mesh()    
 
-    Model_FEM.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
-                                Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
+    if config["interpolation"]["dimension"]==2:
+        Model_FEM.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
+                                    Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
 
-    Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                    Max_epochs = config["training"]["n_epochs"], 
-                                    learning_rate = config["training"]["learning_rate"])
+        Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                        Max_epochs = config["training"]["n_epochs"], 
+                                        learning_rate = config["training"]["learning_rate"])
 
     match config["interpolation"]["dimension"]:
         case 1:

@@ -69,7 +69,7 @@ mu                      = 1.0
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 1.0                                     # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.5                                     # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -78,7 +78,7 @@ MaxElemSize2D           = 1.0                                     # Maximum elem
 ####################################################
 
 [solver]
-FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenMesh              = true                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                  # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM

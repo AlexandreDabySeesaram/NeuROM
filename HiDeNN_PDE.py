@@ -331,6 +331,14 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
         self.config = config
+        match config["hardware"]["FloatPrecision"]:
+            case "simple":
+                self.tensor_float_type = torch.float32
+            case "double":
+                self.tensor_float_type = torch.float64
+            case "half":
+                self.tensor_float_type = torch.float16
+
         self.n_para = len(ParametersList)
         match mesh.dimension:
             case '1':
@@ -508,8 +516,20 @@ class NeuROM(nn.Module):
                     case 2:
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
-                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
-                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            if self.Space_modes[i].IdStored:
+                                    if x == self.Space_modes[i].Stored_ID["Ids"]:
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                                    else:
+                                        self.Space_modes[i].StoreIdList(x)
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            else:
+                                self.Space_modes[i].StoreIdList(x)
+                                IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            # IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
                         P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
@@ -745,6 +765,8 @@ class MeshNN_2D(nn.Module):
         self.n_components = n_components
         self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
         self.mesh = mesh
+        self.IdStored = False
+
         if mesh.NoBC==False:
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
@@ -769,6 +791,10 @@ class MeshNN_2D(nn.Module):
         self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
+    def StoreIdList(self,x):
+        self.Stored_ID = {"coordinates": x, 
+                          "Ids": self.mesh.GetCellIds(x)}
+        self.IdStored = True
 
     def Init_from_previous(self,CoarseModel):
         newcoordinates = [coord for coord in self.coordinates]

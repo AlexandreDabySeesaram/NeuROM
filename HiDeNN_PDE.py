@@ -517,17 +517,17 @@ class NeuROM(nn.Module):
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
                             if self.Space_modes[i].IdStored:
-                                    if x == self.Space_modes[i].Stored_ID["Ids"]:
+                                    if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
                                         IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
-                                        u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
                                     else:
                                         self.Space_modes[i].StoreIdList(x)
                                         IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
-                                        u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
                             else:
                                 self.Space_modes[i].StoreIdList(x)
                                 IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
-                                u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                                u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
                             # IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
                             # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
@@ -792,7 +792,7 @@ class MeshNN_2D(nn.Module):
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
     def StoreIdList(self,x):
-        self.Stored_ID = {"coordinates": x, 
+        self.Stored_ID = {"coordinates": torch.tensor(x), 
                           "Ids": self.mesh.GetCellIds(x)}
         self.IdStored = True
 

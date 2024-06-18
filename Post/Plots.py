@@ -810,6 +810,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
     pv.global_theme.font.size = 40
     pv.global_theme.font.title_size = 40
     pv.global_theme.font.label_size = 40
+    pv.global_theme.font.fmt = '%.2e'
 
     filename = 'Geometries/'+Mesh_object.name_mesh                                  # Load mesh (used for projecting the solution only) 
     mesh = pv.read(filename)                                                        # Create pyvista mesh    

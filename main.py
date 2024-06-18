@@ -165,7 +165,8 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
                 PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
             case 2:
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
+                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
+                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
     case False:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":

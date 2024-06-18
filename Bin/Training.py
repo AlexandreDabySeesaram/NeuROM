@@ -422,7 +422,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     Usefullness             = 0                                             # Number of iteration in a row during which the last added mode helped the convergence
 
     while epoch<n_epochs and loss_counter<100:
-        if stagnancy_counter>5 and not FlagAddedMode_usefull:               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+        if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
             break 
 
         # Compute loss
@@ -514,9 +514,9 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             L2_error.append(1)
         if (epoch+1) % 100 == 0:
             if not BiPara and config["interpolation"]["dimension"] == 1:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} modes = {model.n_modes_truncated}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")

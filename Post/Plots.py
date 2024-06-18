@@ -1181,15 +1181,20 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                                         pointb=(0.94, 0.925))
             plotter.view_xy()
             def screenshot():
+                print(engine.kwargs["E"])
                 print("Window size ", plotter.window_size)
                 plotter.save_graphic("Results/"+config["geometry"]["Name"]
                                     +"_"+config["postprocess"]["scalar_field_name"]
                                     +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_E_"+"{:.2e}".format(engine.kwargs["E"])
+                                    +"_theta_"+"{:.2e}".format(engine.kwargs["theta"])
                                     +"_"+config["postprocess"]["Name_export"]
                                     +"_PyVista.pdf",raster=False)
                 plotter.screenshot("Results/"+config["geometry"]["Name"]
                                     +"_"+config["postprocess"]["scalar_field_name"]
                                     +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_E_"+"{:.2e}".format(engine.kwargs["E"])
+                                    +"_theta_"+"{:.2e}".format(engine.kwargs["theta"])
                                     +"_"+config["postprocess"]["Name_export"]
                                     +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
                 print("Camera position ", plotter.camera_position)

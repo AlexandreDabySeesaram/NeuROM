@@ -104,7 +104,7 @@ FloatPrecision          = "double"                                  # Enable to 
 ####################################################
 
 [training]
-TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired        = false                                      # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity

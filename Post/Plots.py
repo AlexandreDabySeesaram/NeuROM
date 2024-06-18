@@ -806,6 +806,11 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
     import pyvista as pv                                                            # Import PyVista
     import torch.nn as nn
 
+    pv.global_theme.font.family = 'times'                                           # Arial, courier or times
+    pv.global_theme.font.size = 40
+    pv.global_theme.font.title_size = 40
+    pv.global_theme.font.label_size = 40
+
     filename = 'Geometries/'+Mesh_object.name_mesh                                  # Load mesh (used for projecting the solution only) 
     mesh = pv.read(filename)                                                        # Create pyvista mesh    
     Nodes = np.stack(Mesh_object.Nodes)                                             # Read coordinates where to evaluate the model

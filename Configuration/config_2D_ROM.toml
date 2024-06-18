@@ -67,7 +67,7 @@ nu                      = 0.3                                       # Poisson's 
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 0.2                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.5                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###

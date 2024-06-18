@@ -792,8 +792,12 @@ class MeshNN_2D(nn.Module):
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
     def StoreIdList(self,x):
-        self.Stored_ID = {"coordinates": torch.tensor(x), 
-                          "Ids": self.mesh.GetCellIds(x)}
+        if torch.is_tensor(x):
+            self.Stored_ID = {"coordinates": x, 
+                                "Ids": self.mesh.GetCellIds(x)}
+        else:
+            self.Stored_ID = {"coordinates": torch.tensor(x), 
+                                "Ids": self.mesh.GetCellIds(x)}
         self.IdStored = True
 
     def Init_from_previous(self,CoarseModel):

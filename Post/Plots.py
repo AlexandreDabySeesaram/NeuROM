@@ -1198,5 +1198,14 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                                     +"_"+config["postprocess"]["Name_export"]
                                     +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
                 print("Camera position ", plotter.camera_position)
+            def restart_camera():
+                plotter.view_xy()
+            print("************** Available commands *************\n")
+            print("* Take a screenshot : s\n")
+            print("* Reset the camera  : r\n")
+
             plotter.add_key_event("s", screenshot)
+            plotter.add_key_event("r", restart_camera)
+
+
             plotter.show()

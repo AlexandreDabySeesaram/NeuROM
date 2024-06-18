@@ -264,6 +264,7 @@ if config["solver"]["ParametricStudy"]:
                                 scalar_field_name = config["postprocess"]["scalar_field_name"], 
                                 scaling_factor = config["postprocess"]["scaling_factor"], 
                                 Interactive_parameter = config["postprocess"]["Interactive_parameter"],
+                                Plot_mesh = config["postprocess"]["Plot_mesh"],
                                 color_map = 'viridis')
            
 else:

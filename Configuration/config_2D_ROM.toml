@@ -134,12 +134,13 @@ Name_export             = "UNIFIED_VTK"                             # Name for t
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false
 Interactive_pltot       = true
-PyVista_Type            = "DualSliders"                                  # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
-Default_E = 5e-3 
-Default_theta = 0                                                   # Default value of the gravity angle in plots
-scalar_field_name = 'Uy'                                            # Plotted field
-scaling_factor = 20                                                 # Wrap by vector scaling factor
-Interactive_parameter = 'theta'                                     # Interactive parameter
+PyVista_Type            = "DualSliders"                                   # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
+Default_E               = 5e-3 
+Default_theta           = 0                                         # Default value of the gravity angle in plots
+scalar_field_name       = 'Uy'                                      # Plotted field
+scaling_factor          = 20                                        # Wrap by vector scaling factor
+Interactive_parameter   = 'theta'                                   # Interactive parameter
+Plot_mesh               = true                                     # Show mesh on interactive plots
 
 ####################################################
 ###                                              ###

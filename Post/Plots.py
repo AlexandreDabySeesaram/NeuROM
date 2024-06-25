@@ -115,6 +115,37 @@ def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False)
         tikzplotlib.save('Results/'+name+'.tex')
     plt.clf() 
 
+def Plot_L2error_Modes(Modes_flag,error,name, tikz = False):
+    # from matplotlib.legend import Legend
+    # Legend._ncol = property(lambda self: self._ncols)
+    # Legend._ncol = property(lambda self: self._ncols)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    g1 = ax.plot(Modes_flag, color='#247ab5ff')
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
+    ax2 = ax.twinx()
+
+    g2 = ax2.semilogy(torch.tensor(error), color='#d95319ff')
+    ax2.set_ylabel(r'$\eta$',color='#d95319ff')
+
+
+    # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+
+    lns = g1+g2
+    labs = [l.get_label() for l in lns]
+    # ax.legend(lns, labs, loc="upper center")
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
+    plt.clf() 
+
 def Plot_Loss_Modes(Modes_flag,error,name):
     # Lift to be able to use semilogy
     error3 = error-np.min(error)
@@ -269,14 +300,14 @@ def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model
     u_200 = BeamROM(TrialCoordinates,[PaperPara])
     u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
-    plt.plot(TrialCoordinates.data,u_200.data,'+',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
+    plt.plot(TrialCoordinates.data,u_200.data,'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([100])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_100 = BeamROM(TrialCoordinates,[PaperPara])
     u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
-    plt.plot(TrialCoordinates.data,u_100.data,'+',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
+    plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
     plt.legend(loc="upper left")
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')

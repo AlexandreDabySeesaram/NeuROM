@@ -234,6 +234,10 @@ if config["solver"]["ParametricStudy"]:
         Initialisation_state = "_Initialised_"                                  # Initialised from previous model
     else:
          Initialisation_state = "_Raw_"                                         # Trained from scratch
+    if config["solver"]["FrozenMesh"]:
+        Mesh_state = '_FrozenMesh_'
+    else:
+        Mesh_state = '_FreeMesh_'
 
     val = str(np.format_float_scientific(config["training"]["loss_decrease_c"], precision=2))            # Convergence criterion
 
@@ -243,6 +247,7 @@ if config["solver"]["ParametricStudy"]:
                                     config["geometry"]["Name"]+"_"+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
+                                    Mesh_state+
                                     Initialisation_state+
                                     val
                                     , sign = sign,tikz = True)
@@ -252,12 +257,24 @@ if config["solver"]["ParametricStudy"]:
                                     'Loss_rate_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
                                     str(config["interpolation"]["np"])+"_"+
-                                    Study
+                                    Study+
+                                    Mesh_state
                                     +Initialisation_state+
                                     val,
                                     config["training"]["loss_decrease_c"],
                                     True)
 
+    if config["postprocess"]["Plot_error_mode"]:                           # Plot loss rate and modes
+        Pplot.Plot_L2error_Modes(ROM_model.training_recap["Mode_vect"],
+                                    ROM_model.training_recap["L2_error"],
+                                    'L2_error_Modes'+"_"+
+                                    config["geometry"]["Name"]+"_"+
+                                    str(config["interpolation"]["np"])+"_"+
+                                    Study+
+                                    Mesh_state
+                                    +Initialisation_state+
+                                    val,
+                                    True)
 
     if config["postprocess"]["Plot_ROM_FOM"]:
         match config["interpolation"]["dimension"]:
@@ -269,6 +286,7 @@ if config["solver"]["ParametricStudy"]:
                                                 name_model = 'Plot_ROM_FOM'+"_"+
                                                 str(config["interpolation"]["np"])+"_"+
                                                 Study+
+                                                Mesh_state+
                                                 val,
                                                 tikz=True)
                 else:
@@ -277,6 +295,7 @@ if config["solver"]["ParametricStudy"]:
                                                 AnalyticSolution,
                                                 name_model = 'Plot_ROM_FOM'+"_"+
                                                 str(config["interpolation"]["np"])+"_"+
+                                                Mesh_state+
                                                 Study+
                                                 val,
                                                 tikz=True)                

@@ -408,6 +408,10 @@ class NeuROM(nn.Module):
         Para = self.Para_modes[self.n_modes_truncated-1][:].parameters()
         optim.add_param_group({'params': Space})
         optim.add_param_group({'params': Para})
+    
+    def Freeze_N_1(self):
+        for i in range(self.n_modes_truncated-1):
+            self.Space_modes[i].Freeze_FEM() 
 
     def UnfreezeTruncated(self):
         for i in range(self.n_modes_truncated):

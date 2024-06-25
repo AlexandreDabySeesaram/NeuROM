@@ -52,7 +52,7 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 70                                            # Number of Nodes in the Mesh in 1D
+np                      = 10                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 n_integr_points         = 5                                             # Number of integration points per element
 
@@ -63,12 +63,12 @@ n_integr_points         = 5                                             # Number
 ####################################################
 
 [solver]
-FrozenMesh              = true                                         # Nodal coordinates frozen
+FrozenMesh              = false                                         # Nodal coordinates frozen
 FrozenParaMesh          = true                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                               # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = true                                          # Enable bi-stifness beam in 1D
+BiPara                  = false                                          # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
@@ -93,10 +93,11 @@ FloatPrecision          = "double"                                      # Enable
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 3000                                          # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                         # optimizer learning rate
-LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
+LoadPreviousModel       = true                                          # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
+multi_mode_training     = true                                         # Enables training all the space modes (as opposed to only the lastly added mode)
 
 ####################################################
 ###                                              ###
@@ -112,9 +113,9 @@ SaveModel               = false                                         # Boolea
 Visualisatoin_only      = false
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false
+Plot_error_mode         = false
 Interactive_pltot       = true
-Plot_ROM_FOM            = true
-
+Plot_ROM_FOM            = false
 
 ####################################################
 ###                                              ###

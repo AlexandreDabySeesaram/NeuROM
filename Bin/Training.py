@@ -488,8 +488,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating
         Modes_vect.append(model.n_modes_truncated.detach().clone())
-        # if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
-        if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
@@ -546,6 +546,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     return 
 
 def Training_NeuROM_FinalStageLBFGS(model,config):
+    Current_best_model = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
+    initial_loss = model.training_recap["Loss_vect"][-1]
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 
@@ -649,7 +651,9 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
     time_stop = time.time()
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {model.training_recap["training_time"]+time_stop-time_start}s')
-
+    if model.training_recap["Loss_vect"][-1] > initial_loss:
+        print("*************** REVERT TO 1st STAGE MODEL ***************\n")
+        model.load_state_dict(Current_best_model) 
     return 
 
 def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 

@@ -199,7 +199,7 @@ if config["solver"]["ParametricStudy"]:
         match config["interpolation"]["dimension"]:
             case 1:
                 Training_NeuROM(ROM_model,config,optimizer)                     # First stage of training (ADAM)
-
+                # WARNING: No collision check with free mesh yet
                 Training_NeuROM_FinalStageLBFGS(ROM_model,config)               # Second stage of training (LBFGS)
             case 2:
                 # Training_2D_NeuROM(ROM_model, config, optimizer, Mat)

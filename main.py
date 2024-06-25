@@ -257,7 +257,29 @@ if config["solver"]["ParametricStudy"]:
                                     val,
                                     config["training"]["loss_decrease_c"],
                                     True)
-    
+
+
+    if config["postprocess"]["Plot_ROM_FOM"]:
+        match config["interpolation"]["dimension"]:
+            case 1:
+                if config["solver"]["BiPara"]:
+                    Pplot.Plot_BiParametric_Young(ROM_model,
+                                                Training_coordinates,config["geometry"]["A"],
+                                                AnalyticBiParametricSolution,
+                                                name_model = 'Plot_ROM_FOM'+"_"+
+                                                str(config["interpolation"]["np"])+"_"+
+                                                Study+
+                                                val,
+                                                tikz=True)
+                else:
+                    Pplot.Plot_Parametric_Young(ROM_model,
+                                                Training_coordinates,config["geometry"]["A"],
+                                                AnalyticSolution,
+                                                name_model = 'Plot_ROM_FOM'+"_"+
+                                                str(config["interpolation"]["np"])+"_"+
+                                                Study+
+                                                val,
+                                                tikz=True)                
     if config["postprocess"]["Interactive_pltot"]:
 
         match config["interpolation"]["dimension"]:

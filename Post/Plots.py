@@ -26,7 +26,6 @@ def export_csv(Name,y, x='None'):
     df = pd.DataFrame(a, columns=['y', 'x'])
     df.to_csv('Results/'+Name+'.csv')
 
-
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
@@ -250,7 +249,7 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
 
-def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
+def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp',tikz = False):
     import torch
     matplotlib.rcParams["text.usetex"] = True
     matplotlib.rcParams["font.family"] = "serif"
@@ -270,22 +269,25 @@ def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model
     u_200 = BeamROM(TrialCoordinates,[PaperPara])
     u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
-    plt.plot(TrialCoordinates.data,u_200.data,'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
+    plt.plot(TrialCoordinates.data,u_200.data,'+',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([100])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_100 = BeamROM(TrialCoordinates,[PaperPara])
     u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
-    plt.plot(TrialCoordinates.data,u_100.data,'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
+    plt.plot(TrialCoordinates.data,u_100.data,'+',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
     plt.legend(loc="upper left")
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')
     plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/Para_displacements'+name_model+'.tex')
     plt.show()
     plt.clf()
 
-def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
+def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model = 'tmp',tikz = False):
     import torch
     matplotlib.rcParams["text.usetex"] = True
     matplotlib.rcParams["font.family"] = "serif"
@@ -297,28 +299,31 @@ def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_mod
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     Paper150 = torch.tensor([150])
     Paper150 = Paper150[:,None] # Add axis so that dimensions match
-    u_150 = BeamROM(TrialCoordinates,[PaperPara,PaperPara])
-    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_150 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
+    u_analytical_150 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A", label = r'$E = 150~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_150.data.view(-1),'--', color="#01426A", label = r'$E = 150~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([200])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_200 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
-    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_analytical_200 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_200.data.view(-1),'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([100])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_100 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
-    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_analytical_100 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_100.data.view(-1),'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
     plt.legend(loc="upper left")
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')
     plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/Para_displacements'+name_model+'.tex')
     plt.show()
     plt.clf()
 

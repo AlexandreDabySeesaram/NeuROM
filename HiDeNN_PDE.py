@@ -562,6 +562,8 @@ class NeuROM(nn.Module):
         if os.path.isfile(PreviousFullModel):
             BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
             self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
+            if self.n_modes_truncated_coarse > self.n_modes_truncated:
+                self.n_modes_truncated = self.n_modes_truncated_coarse
             Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
             Nb_parameters_fine = len(self.Para_modes[0])
             Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])

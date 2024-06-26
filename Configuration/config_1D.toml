@@ -6,9 +6,9 @@
 
 [geometry]
 Name                    = 'Beam'
-L                       = 10                                        # Length of the Beam
-A                       = 1                                         # Section of the beam
-Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
+L                       = 10                                            # Length of the Beam
+A                       = 1                                             # Section of the beam
+Volume_element          = 100                                           # Volume element correspond to the 1D elem in 1D
 
 ####################################################
 ###                                              ###
@@ -17,12 +17,12 @@ Volume_element          = 100                                       # Volume ele
 ####################################################
 
 [Borders]
-Borders                 = [1,2]                                     # List of the structure's boundaries
+Borders                 = [1,2]                                         # List of the structure's boundaries
 
 [[DirichletDictionryList]]
-Entity                  = 3                                         # Physical tag of the boundary
-Value                   = 0                                         # numerical value
-Normal                  = 0                                          # prescribed component (0=x,1=y,2=z)
+Entity                  = 3                                             # Physical tag of the boundary
+Value                   = 0                                             # numerical value
+Normal                  = 0                                             # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
@@ -66,9 +66,9 @@ n_integr_points         = 5                                             # Number
 FrozenMesh              = false                                         # Nodal coordinates frozen
 FrozenParaMesh          = true                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
-IntegralMethod          = 'Trapezoidal'                               # Type of integration (Gaussian_quad, Trapezoidal)
+IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = false                                          # Enable bi-stifness beam in 1D
+BiPara                  = false                                         # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
@@ -97,7 +97,7 @@ LoadPreviousModel       = true                                          # Boolea
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
-multi_mode_training     = true                                         # Enables training all the space modes (as opposed to only the lastly added mode)
+multi_mode_training     = true                                          # Enables training all the space modes (as opposed to only the lastly added mode)
 
 ####################################################
 ###                                              ###

@@ -389,6 +389,11 @@ class NeuROM(nn.Module):
         self.Freeze_Space()
         self.Freeze_MeshPara()
         self.Freeze_Para()
+
+    def SaveCoordinates(self):
+        for m in range(self.n_modes_truncated):
+            self.Space_modes[m].coord_old = [self.Space_modes[m].coordinates[i].data.item() for i in range(len(self.Space_modes[m].coordinates))]
+
     
     def AddMode(self):
         """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""

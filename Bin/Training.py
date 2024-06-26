@@ -494,8 +494,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating
         Modes_vect.append(model.n_modes_truncated.detach().clone())
-        # if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
-        if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch

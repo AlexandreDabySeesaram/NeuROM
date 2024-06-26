@@ -70,7 +70,7 @@ IntegralMethod          = 'Trapezoidal'                                 # Type o
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = false                                         # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 2                                             # Initial number of modes in the Tensor Decomposition
 
 ####################################################
 ###                                              ###

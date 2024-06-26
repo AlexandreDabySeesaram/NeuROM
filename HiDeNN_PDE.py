@@ -561,22 +561,17 @@ class NeuROM(nn.Module):
         import os
         if os.path.isfile(PreviousFullModel):
             BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            self.n_modes_truncated = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
+            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
             Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
             Nb_parameters_fine = len(self.Para_modes[0])
             Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
-            # self.n_modes_truncated
-            for mode in range(self.n_modes_truncated):
+            if self.n_modes_truncated_coarse<self.n_modes_truncated:
+                for mode in range(self.n_modes_truncated):
+                    self.Space_modes[mode].ZeroOut()
+            for mode in range(self.n_modes_truncated_coarse):
                 self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
-                # newcoordinates = [coord for coord in self.Space_modes[mode].coordinates]
-                # newcoordinates = torch.cat(newcoordinates,dim=0)
-                # NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-                # self.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
                 for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
                     self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
-                    # newparacoordinates = [coord for coord in self.Para_modes[mode][para].coordinates]
-                    # newparacoordinates = torch.cat(newparacoordinates,dim=0)
-                    # self.Para_modes[mode][para].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][para](newparacoordinates).T
         elif not os.path.isfile(PreviousFullModel):
             print('******** WARNING LEARNING FROM SCRATCH ********\n')
 

@@ -487,9 +487,9 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             model.SaveCoordinates()                                             # Save coordinates to check for collisions
         update_time_start           = time.time()
         optimizer.step()                                                    # Update parameters
-        # if config["interpolation"]["dimension"] ==1:
-        #     for m in range(model.n_modes_truncated):                            # Check for collisions
-        #         Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
+        if config["interpolation"]["dimension"] ==1:
+            for m in range(model.n_modes_truncated):                            # Check for collisions
+                Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
 
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating

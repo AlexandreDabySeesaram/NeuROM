@@ -499,6 +499,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
+            loss_counter            = 0 
             FlagAddedMode           = True
             FlagAddedMode_usefull   = False                                 # Flag stating that the new mode did help speeding-up the convergence
             stagnancy_counter       = 0

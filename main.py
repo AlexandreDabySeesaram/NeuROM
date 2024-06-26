@@ -171,6 +171,7 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+                # PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100_legacy'
             case "Gaussian_quad":
                 # PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_40'
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'

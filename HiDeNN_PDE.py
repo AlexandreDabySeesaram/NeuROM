@@ -428,8 +428,8 @@ class NeuROM(nn.Module):
                 for j in range(self.n_para):
                     self.Para_modes[i][j].UnFreeze_FEM()
         else:
-            for i in range(1,self.n_modes_truncated):
-                for j in range(self.n_para):
+            for i in range(self.n_modes_truncated):  
+                for j in range(self.n_para): 
                     self.Para_modes[i][j].UnFreeze_FEM()
 
     def Freeze_Mesh(self):

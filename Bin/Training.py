@@ -487,15 +487,15 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             model.SaveCoordinates()                                             # Save coordinates to check for collisions
         update_time_start           = time.time()
         optimizer.step()                                                    # Update parameters
-        if config["interpolation"]["dimension"] ==1:
-            for m in range(model.n_modes_truncated):                            # Check for collisions
-                Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
+        # if config["interpolation"]["dimension"] ==1:
+        #     for m in range(model.n_modes_truncated):                            # Check for collisions
+        #         Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
 
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating
         Modes_vect.append(model.n_modes_truncated.detach().clone())
-        if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
-        # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        # if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
@@ -554,7 +554,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 def Training_NeuROM_FinalStageLBFGS(model,config):
     Current_best_model = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
     initial_loss = model.training_recap["Loss_vect"][-1]
-    model.Freeze_Mesh()
+    # model.Freeze_Mesh()
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 

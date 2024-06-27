@@ -392,8 +392,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     else:
         Training_para_coordinates_list = [Training_para_coordinates_1]
 
-    Loss_vect               = []                                            # Initialise vector of loss values
-    L2_error                = []                                            # Initialise vector of L2 error
+
     # BCs used for the analytical comparison 
     if config["interpolation"]["dimension"] == 1:
         match config["solver"]["IntegralMethod"]:
@@ -417,8 +416,15 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     stagnancy_counter       = 0                                             # Stagnancy since last additoin of a mode
     local_stagnancy_counter = 0
     FlagAddedMode           = False                                         # Flag activated when a new mode has been added
-    Modes_vect              = []                                            # List of number of modes through the iterations
-    Loss_decrease_vect      = []                                            # Loss decrease rate through the iterations
+    try:
+        loss_init = model.training_recap["Loss_vect"]                       # Test if model.training_recap exists
+    except:
+        model.training_recap = {"Loss_vect":[],
+                            "L2_error":[],                                  # Init L2 error
+                            "training_time":0,                              # Init Training duration
+                            "Mode_vect":[],                                 # Size ROB
+                            "Loss_decrease_vect":[]                         # Init loss decrease rate
+                            }
     Usefullness             = 0                                             # Number of iteration in a row during which the last added mode helped the convergence
 
     while epoch<n_epochs and loss_counter<100:
@@ -448,7 +454,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
          # check for new minimal loss - Update the state for revert
         if epoch >1:
             loss_decrease           = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
-            Loss_decrease_vect.append(loss_decrease)
+            model.training_recap["Loss_decrease_vect"].append(loss_decrease)
             loss_old                = loss_current
             if numpy.abs(loss_decrease) < loss_decrease_c:                  # Check for stagnation of the loss
                 stagnancy_counter   = stagnancy_counter +1                  # Increment stagnation
@@ -493,7 +499,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating
-        Modes_vect.append(model.n_modes_truncated.detach().clone())
+        model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
         if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
         # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
@@ -513,15 +519,15 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
         with torch.no_grad():
             epoch+=1
-            Loss_vect.append(loss.item())
+            model.training_recap["Loss_vect"].append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 if config["interpolation"]["dimension"] == 1:
                     match config["solver"]["IntegralMethod"]:   
                         case "Trapezoidal":
-                            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                            model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
                         case "Gaussian_quad":
-                            L2_error.append(1)
+                            model.training_recap["L2_error"].append(1)
         if (epoch+1) % 100 == 0:
             if not BiPara and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
@@ -544,17 +550,21 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         # model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
     
-    model.training_recap = {"Loss_vect":Loss_vect,
-                            "L2_error":L2_error,
-                            "training_time":(time_stop-time_start),
-                            "Mode_vect":Modes_vect,
-                            "Loss_decrease_vect":Loss_decrease_vect
-                            }
+    model.training_recap["training_time"] += (time_stop-time_start)
     return 
 
 def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
     Current_best_model = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
-    initial_loss = model.training_recap["Loss_vect"][-1]
+    try:
+        initial_loss = model.training_recap["Loss_vect"][-1]
+    except:
+        initial_loss = 1
+        model.training_recap = {"Loss_vect":[],
+                                "L2_error":[],
+                                "training_time":0,
+                                "Mode_vect":[],
+                                "Loss_decrease_vect":[]
+                                }    
     # model.Freeze_Mesh()
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
@@ -603,7 +613,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
     epoch                       = 0
     stagnancy_counter           = 0
     # model.UnFreeze_Mesh()
-    loss_old = model.training_recap["Loss_vect"][-1]
+    loss_old = initial_loss
     # BCs used for the analytical comparison 
     if config["interpolation"]["dimension"] == 1:
         match config["solver"]["IntegralMethod"]:
@@ -680,8 +690,9 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
+    model.training_recap["training_time"]+time_stop-time_start
     print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {model.training_recap["training_time"]+time_stop-time_start}s')
+    print(f'* Training time: {model.training_recap["training_time"]}s')
     if model.training_recap["Loss_vect"][-1] > initial_loss:
         print("*************** REVERT TO 1st STAGE MODEL ***************\n")
         model.load_state_dict(Current_best_model) 

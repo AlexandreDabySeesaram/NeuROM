@@ -499,7 +499,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
-            loss_counter            = 0 
+            # loss_counter            = 0 loss_counter>99
             FlagAddedMode           = True
             FlagAddedMode_usefull   = False                                 # Flag stating that the new mode did help speeding-up the convergence
             stagnancy_counter       = 0
@@ -552,7 +552,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             }
     return 
 
-def Training_NeuROM_FinalStageLBFGS(model,config):
+def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
     Current_best_model = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
     initial_loss = model.training_recap["Loss_vect"][-1]
     # model.Freeze_Mesh()
@@ -605,13 +605,14 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
     # model.UnFreeze_Mesh()
     loss_old = model.training_recap["Loss_vect"][-1]
     # BCs used for the analytical comparison 
-    match config["solver"]["IntegralMethod"]:
-        case "Trapezoidal":
-            u0                      = model.Space_modes[0].u_0                      # Left BC
-            uL                      = model.Space_modes[0].u_L                      # Right BC
-        case "Gaussian_quad":
-            u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
-            uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
+    if config["interpolation"]["dimension"] == 1:
+        match config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                u0                      = model.Space_modes[0].u_0                      # Left BC
+                uL                      = model.Space_modes[0].u_L                      # Right BC
+            case "Gaussian_quad":
+                u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
+                uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("************** START SECOND PAHSE *************\n")
     time_start = time.time()
     while  epoch<n_epochs and stagnancy_counter < 5:
@@ -619,14 +620,31 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
 
         def closure():
             optim.zero_grad()
+            # if not BiPara:
+            #     match config["solver"]["IntegralMethod"]:   
+            #         case "Gaussian_quad":
+            #             loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+            #         case "Trapezoidal":
+            #             loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+            # else:
+            #     loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
             if not BiPara:
-                match config["solver"]["IntegralMethod"]:   
-                    case "Gaussian_quad":
-                        loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
-                    case "Trapezoidal":
-                        loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        match config["solver"]["IntegralMethod"]:   
+                            case "Gaussian_quad":
+                                loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                            case "Trapezoidal":
+                                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                    case 2:
+                            loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
             else:
-                loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                    case 2:  
+                        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+            
             loss.backward()
             return loss
 

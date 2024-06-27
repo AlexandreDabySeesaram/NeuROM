@@ -205,6 +205,8 @@ if config["solver"]["ParametricStudy"]:
             case 2:
                 # Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
                 Training_NeuROM(ROM_model, config, optimizer, Mat)              # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(ROM_model,config, Mat)               # Second stage of training (LBFGS)
+
         ROM_model.eval()
 else:
     Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 

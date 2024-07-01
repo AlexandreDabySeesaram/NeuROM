@@ -301,8 +301,8 @@ class InterpPara(nn.Module):
         for param in self.coordinates:
             param.requires_grad = True
         #Freeze external coorinates to keep geometry    
-        self.coordinates[0].requires_grad = False
-        self.coordinates[1].requires_grad = False
+        # self.coordinates[0].requires_grad = False
+        # self.coordinates[1].requires_grad = False
 
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
@@ -434,11 +434,13 @@ class NeuROM(nn.Module):
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""
+        self.Frozen_mesh = True
         for i in range(self.n_modes):
             self.Space_modes[i].Freeze_Mesh()
 
     def UnFreeze_Mesh(self):
         """Set the space coordinates as trainable parameters"""
+        self.Frozen_mesh = False
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_Mesh()
 
@@ -790,6 +792,7 @@ class MeshNN_2D(nn.Module):
         # set parameters 
         self.RefinementParameters()
         self.TrainingParameters()
+        self.UnFreeze_FEM()
 
     def ZeroOut(self):
         # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])

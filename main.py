@@ -130,7 +130,7 @@ Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 Model_FEM.Freeze_Mesh()
 if not config["solver"]["FrozenMesh"]:
-    Model_FEM.UnFreeze_FEM()
+    Model_FEM.UnFreeze_Mesh()
 
 
 #%% Application of NeuROM

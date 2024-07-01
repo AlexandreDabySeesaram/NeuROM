@@ -105,11 +105,11 @@ FloatPrecision          = "double"                                  # Enable to 
 ####################################################
 
 [training]
-TrainingRequired        = false                                      # Boolean leading to Loading pre trained model or retraining from scratch
+TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
-LoadPreviousModel       = true                                     # Boolean to enable reusing a previously trained model
+LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
@@ -132,7 +132,7 @@ BoolCompareNorms        = true                                      # Boolean fo
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
-Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
+Name_export             = "Test_VTK_2"                             # Name for the VTK results files
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false 
 Plot_error_mode         = false

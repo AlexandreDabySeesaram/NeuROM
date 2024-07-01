@@ -530,14 +530,16 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             model.training_recap["L2_error"].append(1)
         if (epoch+1) % 100 == 0:
             if not BiPara and config["interpolation"]["dimension"] == 1:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
+    model.training_recap["training_time"] += (time_stop-time_start)
+
     # print("*************** END OF TRAINING ***************\n")
     print("*************** END FIRST PHASE ***************\n")
-    print(f'* Training time: {time_stop-time_start}s')
+    print(f'* Training time: {model.training_recap["training_time"]}s')
     print(f'* Saving time: {save_time}s')
     print(f'* Evaluation time: {eval_time}s')
     print(f'* Backward time: {back_time}s')
@@ -550,7 +552,6 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         # model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
     
-    model.training_recap["training_time"] += (time_stop-time_start)
     return 
 
 def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
@@ -690,7 +691,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
-    model.training_recap["training_time"]+time_stop-time_start
+    model.training_recap["training_time"]+=time_stop-time_start
     print("*************** END OF TRAINING ***************\n")
     print(f'* Training time: {model.training_recap["training_time"]}s')
     if model.training_recap["Loss_vect"][-1] > initial_loss:

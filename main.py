@@ -40,8 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_2D_ROM.toml'
-# Default_config_file = 'Configuration/config_1D.toml'
+# Default_config_file = 'Configuration/config_2D_ROM.toml'
+Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###

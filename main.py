@@ -40,8 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-# Default_config_file = 'Configuration/config_2D_ROM.toml'
-Default_config_file = 'Configuration/config_1D.toml'
+Default_config_file = 'Configuration/config_2D_ROM.toml'
+# Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -162,7 +162,9 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
     case True:
         match config["interpolation"]["dimension"]:
             case 1:
-                PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+                # PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+                PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10_new'
+
             case 2:
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
@@ -248,17 +250,19 @@ if config["solver"]["ParametricStudy"]:
         Pplot.Plot_PosNegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
                                     'Loss_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state+
                                     Initialisation_state+
                                     val
-                                    , sign = sign,tikz = True)
+                                    , sign = sign,tikz = True, Zoom_required = True)
     if config["postprocess"]["Plot_loss_decay_mode"]:                           # Plot loss rate and modes
         Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],
                                     ROM_model.training_recap["Loss_decrease_vect"],
                                     'Loss_rate_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state
@@ -272,6 +276,7 @@ if config["solver"]["ParametricStudy"]:
                                     ROM_model.training_recap["L2_error"],
                                     'L2_error_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state
@@ -287,6 +292,7 @@ if config["solver"]["ParametricStudy"]:
                                                 Training_coordinates,config["geometry"]["A"],
                                                 AnalyticBiParametricSolution,
                                                 name_model = 'Plot_ROM_FOM'+"_"+
+                                                config["postprocess"]["Plot_name"]+
                                                 str(config["interpolation"]["np"])+"_"+
                                                 Study+
                                                 Mesh_state+
@@ -297,6 +303,7 @@ if config["solver"]["ParametricStudy"]:
                                                 Training_coordinates,config["geometry"]["A"],
                                                 AnalyticSolution,
                                                 name_model = 'Plot_ROM_FOM'+"_"+
+                                                config["postprocess"]["Plot_name"]+
                                                 str(config["interpolation"]["np"])+"_"+
                                                 Mesh_state+
                                                 Study+

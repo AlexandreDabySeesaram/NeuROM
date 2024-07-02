@@ -566,7 +566,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 "Mode_vect":[],
                                 "Loss_decrease_vect":[]
                                 }    
-    # model.Freeze_Mesh()
+    model.Freeze_Mesh()
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 

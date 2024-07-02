@@ -112,7 +112,7 @@ r_adapt                 = false                                     # Enables r-
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
-multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
+multi_mode_training     = true                                         # Enables training all the space modes (as opposed to only the lastly added mode)
 multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
 h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
@@ -133,8 +133,8 @@ SaveModel               = false                                     # Boolean le
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
 Name_export             = "Test_VTK_2"                             # Name for the VTK results files
-Plot_loss_mode          = false
-Plot_loss_decay_mode    = false 
+Plot_loss_mode          = true
+Plot_loss_decay_mode    = true 
 Plot_error_mode         = false
 Plot_ROM_FOM            = false
 Interactive_pltot       = true
@@ -145,6 +145,7 @@ scalar_field_name       = 'Uy'                                      # Plotted fi
 scaling_factor          = 20                                        # Wrap by vector scaling factor
 Interactive_parameter   = 'theta'                                   # Interactive parameter
 Plot_mesh               = true                                     # Show mesh on interactive plots
+Plot_name               = 'paper_'
 
 ####################################################
 ###                                              ###

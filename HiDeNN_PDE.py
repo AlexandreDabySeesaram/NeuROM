@@ -398,11 +398,15 @@ class NeuROM(nn.Module):
     def AddMode(self):
         """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""
         self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
+        Mesh_status = self.Mesh_status  # Remember Mesh status
         self.FreezeAll()
-        self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
+        self.Mesh_status = Mesh_status  # Revert tocorrect  Mesh status
         self.Space_modes[self.n_modes_truncated-1].ZeroOut()
+        self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
         # self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
 
+        if self.Mesh_status == 'Free':
+            self.UnFreeze_Mesh()
         for j in range(self.n_para):
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
 
@@ -434,13 +438,13 @@ class NeuROM(nn.Module):
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""
-        self.Frozen_mesh = True
+        self.Mesh_status = 'Frozen'
         for i in range(self.n_modes):
             self.Space_modes[i].Freeze_Mesh()
 
     def UnFreeze_Mesh(self):
         """Set the space coordinates as trainable parameters"""
-        self.Frozen_mesh = False
+        self.Mesh_status = 'Free'
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_Mesh()
 
@@ -796,8 +800,8 @@ class MeshNN_2D(nn.Module):
 
     def ZeroOut(self):
         # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
-        self.new_nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
-        self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
+        self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
+        self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
     def StoreIdList(self,x):

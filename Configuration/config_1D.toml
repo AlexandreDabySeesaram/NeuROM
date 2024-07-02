@@ -63,12 +63,12 @@ n_integr_points         = 5                                             # Number
 ####################################################
 
 [solver]
-FrozenMesh              = false                                         # Nodal coordinates frozen
+FrozenMesh              = true                                         # Nodal coordinates frozen
 FrozenParaMesh          = true                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = true                                         # Enable bi-stifness beam in 1D
+BiPara                  = false                                         # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
@@ -93,7 +93,7 @@ FloatPrecision          = "double"                                      # Enable
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 3000                                          # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                         # optimizer learning rate
-LoadPreviousModel       = true                                          # Boolean to enable reusing a previously trained model
+LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
@@ -111,12 +111,12 @@ BoolPlotPost            = false                                         # Boolea
 BoolCompareNorms        = true                                          # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                         # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
-Plot_loss_mode          = false
-Plot_loss_decay_mode    = false
+Plot_loss_mode          = true
+Plot_loss_decay_mode    = true
 Plot_error_mode         = false
 Interactive_pltot       = true
 Plot_ROM_FOM            = false
-
+Plot_name               = 'paper_'
 ####################################################
 ###                                              ###
 ###                  Parameters                  ###

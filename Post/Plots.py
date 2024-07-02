@@ -79,7 +79,7 @@ def Plot_NegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
     """To keep back compatibility with previous verions"""
     Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = tikz)
 
-def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
+def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False, Zoom_required = False):
     # from matplotlib.legend import Legend
     # Legend._ncol = property(lambda self: self._ncols)
     # Legend._ncol = property(lambda self: self._ncols)
@@ -108,12 +108,57 @@ def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False)
     lns = g1+g2
     labs = [l.get_label() for l in lns]
     # ax.legend(lns, labs, loc="upper center")
-    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
-
     if tikz:
         import tikzplotlib
         tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+
     plt.clf() 
+
+    if Modes_flag[0] == Modes_flag[-1]:
+        Zoom_required = False
+
+    if Zoom_required:
+        import numpy as np
+        Zoom_depth = np.min(np.where(np.array(Modes_flag) == np.array(Modes_flag)[0]+1))
+        Zoom_start_index = int(np.floor(0.9*Zoom_depth))
+        second_stages_epochs = len(error) - len(Modes_flag)
+        Modes_flag.extend([Modes_flag[-1]]*second_stages_epochs)
+        x_indexes = np.arange(len(Modes_flag[Zoom_start_index:]))+Zoom_start_index
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        g1 = ax.plot(x_indexes,Modes_flag[Zoom_start_index:], color='#247ab5ff')
+        ax.tick_params(axis='y', colors='#247ab5ff')
+        plt.ylabel(r'$m$',color='#247ab5ff')
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.xlabel(r'Epochs')
+        ax2 = ax.twinx()
+        match sign:
+            case "Positive":
+                g2 = ax2.semilogy(x_indexes,torch.tensor(error[Zoom_start_index:]), color='#d95319ff')
+                ax2.set_ylabel(r'$ + J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
+            case "Negative":
+                ax2.invert_yaxis()
+                g2 = ax2.semilogy(x_indexes,-torch.tensor(error[Zoom_start_index:]), color='#d95319ff')
+                ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
+        # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+        ax2.tick_params(axis='y', colors='#d95319ff')
+
+        lns = g1+g2
+        labs = [l.get_label() for l in lns]
+        # ax.legend(lns, labs, loc="upper center")
+        if tikz:
+            import tikzplotlib
+            tikzplotlib.save('Results/'+name+'_zoom.tex')
+        plt.savefig('Results/'+name+'_zoom.pdf', transparent=True, bbox_inches = "tight")
+
+
+        plt.clf() 
+
+
 
 def Plot_L2error_Modes(Modes_flag,error,name, tikz = False):
     # from matplotlib.legend import Legend
@@ -139,11 +184,12 @@ def Plot_L2error_Modes(Modes_flag,error,name, tikz = False):
     lns = g1+g2
     labs = [l.get_label() for l in lns]
     # ax.legend(lns, labs, loc="upper center")
-    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
-
     if tikz:
         import tikzplotlib
         tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+
     plt.clf() 
 
 def Plot_Loss_Modes(Modes_flag,error,name):
@@ -181,10 +227,11 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold,tikz = False):
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
     plt.axhline(threshold,color = 'k')
-    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     if tikz:
         import tikzplotlib
         tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):

@@ -218,7 +218,8 @@ else:
 
 
 #%% Post-processing
-
+with open(args.cf, mode="rb") as f:
+    config = tomllib.load(f)
 print("*************** POST-PROCESSING ***************\n")
 if config["solver"]["ParametricStudy"]:
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 

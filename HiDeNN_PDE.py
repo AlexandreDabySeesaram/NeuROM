@@ -567,7 +567,10 @@ class NeuROM(nn.Module):
         import os
         if os.path.isfile(PreviousFullModel):
             BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
+            if self.config["training"]["RemoveLastMode"]:
+                self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated-1,self.n_modes)
+            else:
+                self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
             if self.n_modes_truncated_coarse > self.n_modes_truncated:
                 self.n_modes_truncated = self.n_modes_truncated_coarse
             Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
@@ -576,6 +579,7 @@ class NeuROM(nn.Module):
             if self.n_modes_truncated_coarse<self.n_modes_truncated:
                 for mode in range(self.n_modes_truncated):
                     self.Space_modes[mode].ZeroOut()
+                    self.Space_modes[mode].UnFreeze_FEM()
             for mode in range(self.n_modes_truncated_coarse):
                 self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
                 for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):

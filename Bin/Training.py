@@ -667,7 +667,9 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
         loss                    = closure()
 
         loss_current            = loss.item()
-        loss_decrease           = (loss_old - loss_current)/numpy.abs(loss_old)
+        # loss_decrease           = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_decrease           = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
+        model.training_recap["Loss_decrease_vect"].append(loss_decrease)
         loss_old = loss_current
         if loss_decrease >= 0 and loss_decrease < 1.0e-7:
             stagnancy_counter   = stagnancy_counter +1

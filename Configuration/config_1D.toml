@@ -68,7 +68,7 @@ FrozenParaMesh          = true                                          # Nodal 
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = false                                         # Enable bi-stifness beam in 1D
+BiPara                  = true                                         # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
@@ -94,10 +94,13 @@ TrainingRequired        = true                                          # Boolea
 n_epochs                = 3000                                          # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                         # optimizer learning rate
 LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
+RemoveLastMode          = true                                      # Boolean enabling to remove the last mode that is by construction useless (to avoid increasing the ROB with multi level training)
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
 multi_mode_training     = true                                          # Enables training all the space modes (as opposed to only the lastly added mode)
+multiscl_max_refinment  = 3                                             # Multiscale maximum number of refinement
+multiscl_refinment_cf   = 2                                             # Multiscale homogeneous refinement coefficient
 
 ####################################################
 ###                                              ###

@@ -563,29 +563,35 @@ class NeuROM(nn.Module):
                         out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
 
         return out
-    def Init_from_previous(self,PreviousFullModel):
+    def Init_from_previous(self,PreviousFullModel,Model_provided = False):
         import os
-        if os.path.isfile(PreviousFullModel):
-            BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            if self.config["training"]["RemoveLastMode"]:
-                self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated-1,self.n_modes)
-            else:
-                self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
-            if self.n_modes_truncated_coarse > self.n_modes_truncated:
-                self.n_modes_truncated = self.n_modes_truncated_coarse
-            Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
-            Nb_parameters_fine = len(self.Para_modes[0])
-            Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
-            if self.n_modes_truncated_coarse<self.n_modes_truncated:
-                for mode in range(self.n_modes_truncated):
-                    self.Space_modes[mode].ZeroOut()
-                    self.Space_modes[mode].UnFreeze_FEM()
-            for mode in range(self.n_modes_truncated_coarse):
-                self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
-                for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
-                    self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
-        elif not os.path.isfile(PreviousFullModel):
-            print('******** WARNING LEARNING FROM SCRATCH ********\n')
+
+        if Model_provided:
+            BeamROM_coarse = PreviousFullModel
+        else:
+            if os.path.isfile(PreviousFullModel):
+                BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
+            elif not os.path.isfile(PreviousFullModel):
+                print('******** WARNING LEARNING FROM SCRATCH ********\n')
+                return
+
+        if self.config["training"]["RemoveLastMode"]:
+            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated-1,self.n_modes)
+        else:
+            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
+        if self.n_modes_truncated_coarse > self.n_modes_truncated:
+            self.n_modes_truncated = self.n_modes_truncated_coarse
+        Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
+        Nb_parameters_fine = len(self.Para_modes[0])
+        Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
+        if self.n_modes_truncated_coarse<self.n_modes_truncated:
+            for mode in range(self.n_modes_truncated):
+                self.Space_modes[mode].ZeroOut()
+                self.Space_modes[mode].UnFreeze_FEM()
+        for mode in range(self.n_modes_truncated_coarse):
+            self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
+            for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
+                self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
 
 class InterpolationBlock2D_Lin(nn.Module):
     

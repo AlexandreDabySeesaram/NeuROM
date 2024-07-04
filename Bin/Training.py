@@ -1711,3 +1711,101 @@ def Training_2D_FEM(model, config, Mat):
                                     "eps_max_vect":eps_max_vect,
                                     "detJ_tot":detJ_tot}
     return model 
+
+def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
+    n_refinement                = 0
+    MaxElemSize                 = pre.ElementSize(
+                                dimension     = config["interpolation"]["dimension"],
+                                L             = config["geometry"]["L"],
+                                order         = config["interpolation"]["order"],
+                                np            = config["interpolation"]["np"],
+                                MaxElemSize2D = config["interpolation"]["MaxElemSize2D"]
+                            )
+    Excluded = []
+    try:
+        loss_init               = model.training_recap["Loss_vect"]         # Test if model.training_recap exists
+    except:
+        model.training_recap    = {"Loss_vect":[],
+                                "L2_error":[],                              # Init L2 error
+                                "training_time":0,                          # Init Training duration
+                                "Mode_vect":[],                             # Size ROB
+                                "Loss_decrease_vect":[]                     # Init loss decrease rate
+                                }
+    import meshio
+    while n_refinement < config["training"]["multiscl_max_refinment"]:
+        print(f"* Refinement level: {n_refinement}\n")
+        n_refinement            +=1
+        optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
+        match config["interpolation"]["dimension"]:
+            case 1:
+                Training_NeuROM(model,config,optimizer)                 # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config)           # Second stage of training (LBFGS)
+            case 2:
+                Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+
+        if n_refinement < config["training"]["multiscl_max_refinment"]:
+            MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
+        Mesh_object_fine = pre.Mesh( 
+                                config["geometry"]["Name"],                 # Create the mesh object
+                                MaxElemSize, 
+                                config["interpolation"]["order"], 
+                                config["interpolation"]["dimension"]
+                        )
+        Mesh_object_fine.AddBorders(config["Borders"]["Borders"])
+        Mesh_object_fine.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
+                                        config["geometry"]["Volume_element"],
+                                        Excluded,
+                                        config["DirichletDictionryList"]
+                            )                   
+        Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
+        Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
+        match config["interpolation"]["dimension"]:
+            case 1:
+                if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                    Mesh_object_fine.ExportMeshVtk1D()
+            case 2:
+                Mesh_object_fine.ExportMeshVtk()
+        if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
+            Mesh_object_fine.AssemblyMatrix() 
+        if config["solver"]["BiPara"]:
+            ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]],
+                                                [   config["parameters"]["para_2_min"],
+                                                    config["parameters"]["para_2_max"],
+                                                    config["parameters"]["N_para_2"]]])
+        else:
+            ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]]])
+
+        model_2 = NeuROM(                                                         # Build the surrogate (reduced-order) model
+                                                    Mesh_object_fine, 
+                                                    ParameterHypercube, 
+                                                    config,
+                                                    config["solver"]["n_modes_ini"],
+                                                    config["solver"]["n_modes_max"]
+                        )
+        model.eval()
+        model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
+
+        # model_2.train()
+        model_2.training_recap = model.training_recap
+        model = model_2
+        model.UnfreezeTruncated()
+        model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
+        model.Freeze_MeshPara()  
+        if not config["solver"]["FrozenMesh"]:
+            model.UnFreeze_Mesh()                                               # Set space mesh cordinates as trainable
+        if not config["solver"]["FrozenParaMesh"]:
+            model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
+
+        model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
+        model.train()
+    try:
+        return model, Mesh_object_fine
+    except:
+        return model, Mesh_object

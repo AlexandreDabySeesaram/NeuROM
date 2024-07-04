@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_NeuROM_multi_level
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -167,8 +167,8 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
 
             case 2:
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
-                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
+                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
+                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
     case False:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":
@@ -201,14 +201,14 @@ if config["solver"]["ParametricStudy"]:
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:
-                Training_NeuROM(ROM_model,config,optimizer)                     # First stage of training (ADAM)
-                # WARNING: No collision check with free mesh yet
-                Training_NeuROM_FinalStageLBFGS(ROM_model,config)               # Second stage of training (LBFGS)
+                # Training_NeuROM(ROM_model,config,optimizer)                     # First stage of training (ADAM)
+                # # WARNING: No collision check with free mesh yet
+                # Training_NeuROM_FinalStageLBFGS(ROM_model,config)               # Second stage of training (LBFGS)
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
             case 2:
-                # Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
-                Training_NeuROM(ROM_model, config, optimizer, Mat)              # First stage of training (ADAM)
-                Training_NeuROM_FinalStageLBFGS(ROM_model,config, Mat)               # Second stage of training (LBFGS)
-
+                # Training_NeuROM(ROM_model, config, optimizer, Mat)              # First stage of training (ADAM)
+                # Training_NeuROM_FinalStageLBFGS(ROM_model,config, Mat)               # Second stage of training (LBFGS)
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
         ROM_model.eval()
 else:
     Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
@@ -252,6 +252,7 @@ if config["solver"]["ParametricStudy"]:
                                     'Loss_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
                                     config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state+
@@ -264,6 +265,7 @@ if config["solver"]["ParametricStudy"]:
                                     'Loss_rate_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
                                     config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state
@@ -278,6 +280,7 @@ if config["solver"]["ParametricStudy"]:
                                     'L2_error_Modes'+"_"+
                                     config["geometry"]["Name"]+"_"+
                                     config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
                                     str(config["interpolation"]["np"])+"_"+
                                     Study+
                                     Mesh_state
@@ -337,7 +340,7 @@ if config["solver"]["ParametricStudy"]:
                                 scaling_factor = config["postprocess"]["scaling_factor"], 
                                 Interactive_parameter = config["postprocess"]["Interactive_parameter"],
                                 Plot_mesh = config["postprocess"]["Plot_mesh"],
-                                color_map = 'viridis')
+                                color_map = config["postprocess"]["colormap"])
            
 else:
     if config["postprocess"]["exportVTK"]:

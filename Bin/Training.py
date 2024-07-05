@@ -679,6 +679,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
         with torch.no_grad():
             epoch+=1
             model.training_recap["Loss_vect"].append(loss.item())
+            model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 match config["solver"]["IntegralMethod"]:   

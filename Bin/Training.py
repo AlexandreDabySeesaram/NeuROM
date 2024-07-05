@@ -15,7 +15,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
-                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss
+                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
+                            InternalEnergy_2D_einsum_BiStiffness
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -448,7 +449,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 case 1:
                     loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
                 case 2:  
-                    loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                    if config["solver"]["Angle_study"]:
+                        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                    else:
+                        loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -654,8 +658,10 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                     case 1:
                         loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
                     case 2:  
-                        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-            
+                        if config["solver"]["Angle_study"]:
+                            loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        else:
+                            loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
             loss.backward()
             return loss
 

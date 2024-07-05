@@ -81,8 +81,9 @@ FrozenParaMesh          = true                                      # Nodal coor
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
-BiPara = true                                                       # Enable bi-stifness beam in 1D
-n_modes_max             = 5                                       # Maximum number of modes in the Tensor Decomposition
+BiPara                  = true                                      # Enable bi-stifness beam in 1D
+Angle_study             = false                                    # switch between angle or bistiffness
+n_modes_max             = 50                                       # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
 # MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
@@ -114,7 +115,7 @@ RemoveLastMode          = true                                      # Boolean en
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = true                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 5                                         # Multiscale maximum number of refinement
+multiscl_max_refinment  = 2                                         # Multiscale maximum number of refinement
 h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
@@ -134,8 +135,8 @@ SaveModel               = false                                     # Boolean le
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export 
 Name_export             = "Test_VTK_2"                             # Name for the VTK results files
-Plot_loss_mode          = true
-Plot_loss_decay_mode    = true 
+Plot_loss_mode          = false
+Plot_loss_decay_mode    = false 
 Plot_error_mode         = false
 Plot_ROM_FOM            = false
 Interactive_pltot       = true
@@ -164,13 +165,13 @@ para_1_min                  = 1e-3                                  # Minimum va
 para_1_max                  = 10e-3                                 # Maximum value for the 1st parameter
 N_para_1                    = 10                                    # Discretisation of the 1D parametric space
 # Angle
-para_2_min                  = 0                                     # Minimum value for the 2nd parameter
-para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
-N_para_2                    = 60                                    # Discretisation of the 1D parametric space
+# para_2_min                  = 0                                     # Minimum value for the 2nd parameter
+# para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
+# N_para_2                    = 60                                    # Discretisation of the 1D parametric space
 # alpha
-para_3_min                  = 0                                     # Minimum value for the 2nd parameter
-para_3_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
-N_para_3                    = 30                                    # Discretisation of the 1D parametric space
+para_2_min                  = 0                                     # Minimum value for the 2nd parameter
+para_2_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
+N_para_2                    = 30                                    # Discretisation of the 1D parametric space
 
 #%% 1D
 # # Stiffness

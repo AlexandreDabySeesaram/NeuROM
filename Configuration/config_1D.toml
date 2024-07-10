@@ -52,7 +52,7 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 10                                            # Number of Nodes in the Mesh in 1D
+np                      = 70                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 n_integr_points         = 5                                             # Number of integration points per element
 
@@ -116,10 +116,10 @@ SaveModel               = false                                         # Boolea
 Visualisatoin_only      = false
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
-Plot_error_mode         = false
+Plot_error_mode         = true
 Interactive_pltot       = true
 Plot_ROM_FOM            = false
-Plot_name               = 'paper_'
+Plot_name               = 'paper_sequential'
 ####################################################
 ###                                              ###
 ###                  Parameters                  ###

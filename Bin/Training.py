@@ -517,8 +517,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         if FlagAddedMode:
             if epoch == Addition_epoch_index+2:
                 model.UnfreezeTruncated()
-                # if not config["training"]["multi_mode_training"]:
-                #     model.Freeze_N_1()
+                if not config["training"]["multi_mode_training"]:
+                    model.Freeze_N_1()
                 stagnancy_counter   = 0
 
         with torch.no_grad():

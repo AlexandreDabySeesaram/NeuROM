@@ -477,9 +477,9 @@ def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
         ]    
 
     # To be replaced with the decoder in the full auto-encoder framework
-    support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
-    # with torch.no_grad(): #No derivatino of the heavyside function
-    #     support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
+    # support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
+    with torch.no_grad(): #No derivatino of the heavyside function
+        support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
 
 
     E_1 = E[0][0,0].to(torch.float64)

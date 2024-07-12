@@ -40,12 +40,16 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 
 There are two level of modelling involved. The space interpolation in itself can be trained to get a solution for a given problem. Such interpolation is achieved using the model `MeshNN`. Building on that interpolation model and using a similar interpolation for the parametric space, a reduced-order model can e trained as well using the `NeuROM` class.
 
+### Data entry
+
+A `Config` file needs to be filled with the job parameters (name of the geometry, solvers' parameters, post-precessing required, etc.) A default file is specified at the top the `main.py` script but any other file can be passed as an argument when running the main script as `python main.py -cf 'Configuration/CONFIG_FILE.toml'`.
 
 ### Pre-processing
-`Mesh` class that build the Geometry and mesh from the 
+`Mesh` class that builds the Geometry and the `Mesh_object` from the 
 Inputs:
-* Name of the geometry, 
-* Max element size of the mesh
+* `config["geometry"]["Name"]`:
+* `config["interpolation"]["order"]`, 
+* `config["interpolation"]["dimension"]`
 
 The method `.AddBCs` then allows to define Dirichlet boundary conditions and specify the volume element of the structure that should be considered.
 Inputs:
@@ -55,7 +59,7 @@ Inputs:
 Then the methods 
 * `.MeshGeo()`                         
 * `.ReadMesh()`                      
-* `.AssemblyMatrix()` 
+* `.AssemblyMatrix()` (if 1D)
 respectively mesh the geometry (if the mesh does not already exist), parse the mesh file, assemble the matrix later used for the assembly of each shape functions
 
 ### Space interpolation
@@ -63,21 +67,19 @@ respectively mesh the geometry (if the mesh does not already exist), parse the m
 Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space interpolation of the quantity of interest using first or second order FE shape functions.
 
    * MeshNN class that, given a mesh, "assemble" the shape functions accordingly
-        * `model = MeshNN(Beam_mesh,alpha)` Creates an interpolation model
-        * Beam_mesh being a previously created mesh
-   * The Dirichlet boudary conditions (BCs) are set by calling
-        * `model.setBCs(u_0,u_L)` 
-        * with $u_0$ and $u_L$ being the prescribed displacement at $x=0$ and $x=L$ respectivly
+        * `model = MeshNN_2D(Mesh_object)` (or `model = MeshNN_1D(Mesh_object)` in 1D) Creates an interpolation model
+        * Mesh_object being the previously created mesh
+
 
 ### Reduced-order modelling
 
 Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the number of requested mode, a reduced-order model od the parametric field is built
 
-`modelROM = NeuROM(Beam_mesh, BCs, n_modes, ParameterHypercube)`
+`ROM_model = NeuROM(Mesh_object,ParameterHypercube,ConfigFile)`
 
 #### Illustration of the ROM parametric solution
 
-![](Illustrations/NeuROM_1D.gif)
+![](Illustrations/NeuROM_2D.gif)
 
 ## Training the NN 
 
@@ -98,16 +100,16 @@ The Volumic forces are accounted for in the loss function through the right hand
 
 The trainable parameters can be changed on the fly. 
 
-* `modelROM.Freeze_Mesh()` Freezes the space mesh so that only the nodale values are trained
-* `modelROM.UnFreeze_Mesh()` Unfreezes the space mesh so that the coordinates values can be trained
+* `ROM_model.Freeze_Mesh()` Freezes the space mesh so that only the nodale values are trained
+* `ROM_model.UnFreeze_Mesh()` Unfreezes the space mesh so that the coordinates values can be trained
 
-* `modelROM.Freeze_Space()` Freezes the space nodale values so that only the coordinates are trained
-* `modelROM.UnFreeze_Space()` Unfreezes the space nodale so that FEM problem can be solved
-* `modelROM.Freeze_MeshPara()` Freezes the parametric mesh so that only the nodale values are trained
-* `modelROM.UnFreeze_MeshPara()` Unfreezes the parametric mesh so that the coordinates values can be trained
+* `ROM_model.Freeze_Space()` Freezes the space nodale values so that only the coordinates are trained
+* `ROM_model.UnFreeze_Space()` Unfreezes the space nodale so that FEM problem can be solved
+* `ROM_model.Freeze_MeshPara()` Freezes the parametric mesh so that only the nodale values are trained
+* `ROM_model.UnFreeze_MeshPara()` Unfreezes the parametric mesh so that the coordinates values can be trained
 
-* `modelROM.Freeze_Para()` Freezes the parametric nodale values so that only the coordinates are trained
-* `modelROM.UnFreeze_Para()` Unfreezes the parametric nodale so that FEM problem can be solved
+* `ROM_model.Freeze_Para()` Freezes the parametric nodale values so that only the coordinates are trained
+* `ROM_model.UnFreeze_Para()` Unfreezes the parametric nodale so that FEM problem can be solved
 
 
 ## Licensing

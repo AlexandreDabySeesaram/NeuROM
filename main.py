@@ -56,17 +56,20 @@ if __name__ == "__main__":
 # Add possibility to specify name of config file with argparse
 with open(args.cf, mode="rb") as f:
     config = tomllib.load(f)
-    
-#%% Initialise material
-Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
-                                # coef1     = config["material"]["E"],        # Young Modulus
-                                # coef2     = config["material"]["nu"]        # Poisson's ratio
-                                #coef1     = config["material"]["lmbda"],        # Young Modulus
-                                #coef2     = config["material"]["mu"]        # Poisson's ratio
-                                coef1     = config["material"]["E"],        # Young Modulus
-                                coef2     = config["material"]["A"]        # Poisson's ratio
-                    )
 
+if config["interpolation"]["dimension"] == 1:
+    #%% Initialise material
+    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
+                                    coef1     = config["material"]["E"],        # Young Modulus
+                                    coef2     = config["material"]["A"]        # Poisson's ratio
+                        )
+elif config["interpolation"]["dimension"] == 2:
+    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
+                                    # coef1     = config["material"]["E"],        # Young Modulus
+                                    # coef2     = config["material"]["nu"]        # Poisson's ratio
+                                    coef1     = config["material"]["lmbda"],        # Young Modulus
+                                    coef2     = config["material"]["mu"]        # Poisson's ratio
+                        )
 
 #%% Create mesh object
 # Definition of the (initial) element size of the mesh
@@ -236,8 +239,9 @@ else:
                     Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
 
         case 2:
+            time_start = time.time()
             Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
-
+            time_end = time.time()
 
 
 #%% Post-processing # # # # # # # # # # # # # # # # # # # # # # 
@@ -267,8 +271,9 @@ else:
         case 2:
             if config["postprocess"]["exportVTK"]:
                 Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
-                # Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
                 Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
+            if config["postprocess"]["exportVTK_history"]:
+                Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
 
         case 1:
             Pplot.Plot_Eval_1d(Model_FEM,config,Mat)

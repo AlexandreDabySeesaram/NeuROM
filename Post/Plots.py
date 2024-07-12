@@ -925,6 +925,7 @@ def ExportSamplesforEval(model,Mat,config):
     ref = config["training"]["multiscl_max_refinment"]-1
 
     model.mesh.Nodes = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+    model.mesh.Connectivity = model.connectivity
     model.mesh.ExportMeshVtk(flag_update = True)
 
     coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)

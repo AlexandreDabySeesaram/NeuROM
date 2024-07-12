@@ -54,7 +54,7 @@ A                       = 1.0
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 320                                            # Number of Nodes in the Mesh in 1D
+np                      = 640                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 n_integr_points         = 5                                            # Number of integration points per element
 
@@ -67,8 +67,8 @@ n_integr_points         = 5                                            # Number 
 [solver]
 FrozenMesh              = false                                         # Nodal coordinates frozen
 FrozenParaMesh          = false                                          # Nodal coordinates frozen
-TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
-IntegralMethod          = 'Gaussian_quad'                                        # Type of integration (Gaussian_quad, Trapezoidal)
+TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed' = weak formulation
+IntegralMethod          = 'Gaussian_quad'                                # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = false                                          # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = false                                          # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition

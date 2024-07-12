@@ -69,17 +69,23 @@ with open(args.cf, mode="rb") as f:
 
 if config["interpolation"]["dimension"] == 1:
     #%% Initialise material
-    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
+    Mat = pre.Material(             flag_lame = True,                           # If True should input lmbda and mu instead of E and nu
                                     coef1     = config["material"]["E"],        # Young Modulus
-                                    coef2     = config["material"]["A"]        # Poisson's ratio
+                                    coef2     = config["material"]["A"]         # Section area of the 1D bar
                         )
 elif config["interpolation"]["dimension"] == 2:
-    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
-                                    # coef1     = config["material"]["E"],        # Young Modulus
-                                    # coef2     = config["material"]["nu"]        # Poisson's ratio
-                                    coef1     = config["material"]["lmbda"],        # Young Modulus
-                                    coef2     = config["material"]["mu"]        # Poisson's ratio
+    try:
+        Mat = pre.Material(         flag_lame = False,                          # If True should input lmbda and mu instead of E and nu
+                                    coef1     = config["material"]["E"],        # Young Modulus
+                                    coef2     = config["material"]["nu"]        # Poisson's ratio
                         )
+    except:
+        Mat = pre.Material(         flag_lame = True,                           # If True should input lmbda and mu instead of E and nu
+                                    coef1     = config["material"]["lmbda"],    # First Lame's coef
+                                    coef2     = config["material"]["mu"]        # Second Lame's coef
+                        )
+
+    
 
 #%% Create mesh object
 # Definition of the (initial) element size of the mesh

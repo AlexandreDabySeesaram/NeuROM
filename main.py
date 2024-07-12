@@ -12,7 +12,8 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_NeuROM_multi_level
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_NeuROM_multi_level, Training_1D_FEM_LBFGS,\
+     Training_1D_FEM_Gradient_Descent
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -20,7 +21,7 @@ import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
 from importlib import reload  # Python 3.4+
-from Bin import MyHeaders
+# from Bin import MyHeaders
 import tomllib
 import numpy as np
 
@@ -52,7 +53,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-cf',type=str, help = 'path to the desired configuration file', default=Default_config_file, action = 'store')
-    jupyter = MyHeaders.is_notebook()
+    
+    jupyter = False
+    # jupyter = MyHeaders.is_notebook()
     if jupyter:
         args = parser.parse_args('')
     else:
@@ -63,13 +66,20 @@ if __name__ == "__main__":
 # Add possibility to specify name of config file with argparse
 with open(args.cf, mode="rb") as f:
     config = tomllib.load(f)
-    
-#%% Initialise material
-Mat = pre.Material(             flag_lame = False,                          # If True should input lmbda and mu instead of E and nu
-                                coef1     = config["material"]["E"],        # Young Modulus
-                                coef2     = config["material"]["nu"]        # Poisson's ratio
-                    )
 
+if config["interpolation"]["dimension"] == 1:
+    #%% Initialise material
+    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
+                                    coef1     = config["material"]["E"],        # Young Modulus
+                                    coef2     = config["material"]["A"]        # Poisson's ratio
+                        )
+elif config["interpolation"]["dimension"] == 2:
+    Mat = pre.Material(             flag_lame = True,                          # If True should input lmbda and mu instead of E and nu
+                                    # coef1     = config["material"]["E"],        # Young Modulus
+                                    # coef2     = config["material"]["nu"]        # Poisson's ratio
+                                    coef1     = config["material"]["lmbda"],        # Young Modulus
+                                    coef2     = config["material"]["mu"]        # Poisson's ratio
+                        )
 
 #%% Create mesh object
 # Definition of the (initial) element size of the mesh
@@ -117,11 +127,19 @@ if int(Mesh_object.dim) != int(Mesh_object.dimension):
 #%% Application of the Space HiDeNN
 match config["interpolation"]["dimension"]:
     case 1:
-        match config["solver"]["IntegralMethod"]:                           # Build the model
-            case "Gaussian_quad":
-                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
-            case "Trapezoidal":
-                Model_FEM = MeshNN(Mesh_object)
+        if config["solver"]["TrainingStrategy"]=="Integral":
+            match config["solver"]["IntegralMethod"]:                           # Build the model
+                case "Gaussian_quad":
+                    Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                case "Trapezoidal":
+                    Model_FEM = MeshNN(Mesh_object)
+
+        if config["solver"]["TrainingStrategy"]=="Mixed":
+            if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])
+                Model_test = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                Model_test.Freeze_Mesh()
+
     case 2:
         Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
@@ -131,32 +149,35 @@ Model_FEM.UnFreeze_Mesh()
 Model_FEM.Freeze_Mesh()
 if not config["solver"]["FrozenMesh"]:
     Model_FEM.UnFreeze_Mesh()
-
+Model_FEM.UnFreeze_FEM()
+# if not config["solver"]["FrozenMesh"]:
+#     Model_FEM.UnFreeze_FEM()
 
 #%% Application of NeuROM
 # Parameter space-definition
 
-if config["solver"]["BiPara"]:
-    ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
-                                            config["parameters"]["para_1_max"],
-                                            config["parameters"]["N_para_1"]],
-                                        [   config["parameters"]["para_2_min"],
-                                            config["parameters"]["para_2_max"],
-                                            config["parameters"]["N_para_2"]]])
-else:
-    ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
-                                            config["parameters"]["para_1_max"],
-                                            config["parameters"]["N_para_1"]]])
+if config["solver"]["ParametricStudy"]:
+    if config["solver"]["BiPara"]:
+        ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                config["parameters"]["N_para_1"]],
+                                            [   config["parameters"]["para_2_min"],
+                                                config["parameters"]["para_2_max"],
+                                                config["parameters"]["N_para_2"]]])
+    else:
+        ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                config["parameters"]["para_1_max"],
+                                                config["parameters"]["N_para_1"]]])
 
-ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
-                                            Mesh_object, 
-                                            ParameterHypercube, 
-                                            config,
-                                            config["solver"]["n_modes_ini"],
-                                            config["solver"]["n_modes_max"]
-                )
+    ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
+                                                Mesh_object, 
+                                                ParameterHypercube, 
+                                                config,
+                                                config["solver"]["n_modes_ini"],
+                                                config["solver"]["n_modes_max"]
+                    )
 
-#%% Load coarser model  
+    #%% Load coarser model  
 
 match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibility and name should be read from config file
     case True:
@@ -211,10 +232,43 @@ if config["solver"]["ParametricStudy"]:
                 ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
         ROM_model.eval()
 else:
-    Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                    Max_epochs = config["training"]["n_epochs"], 
-                                    learning_rate = config["training"]["learning_rate"])
-    Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
+    if not config["solver"]["FrozenMesh"]:
+        Model_FEM.UnFreeze_Mesh()    
+
+    if config["interpolation"]["dimension"]==2:
+        Model_FEM.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
+                                    Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
+
+        Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                        Max_epochs = config["training"]["n_epochs"], 
+                                        learning_rate = config["training"]["learning_rate"])
+
+    match config["interpolation"]["dimension"]:
+        case 1:
+            if config["training"]["TwoStageTraining"] == True:
+                if config["solver"]["TrainingStrategy"]=="Mixed":
+                    if config["solver"]["IntegralMethod"] == "None":
+                        Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat)     
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+                    else:
+                        Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat, Model_test)     
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat, Model_test)
+                else:
+                    Model_FEM = Training_1D_FEM_Gradient_Descent(Model_FEM, config, Mat)     
+                    Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+            else: 
+                if config["solver"]["TrainingStrategy"]=="Mixed":
+                    if config["solver"]["IntegralMethod"] == "None":
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+                    else:
+                        Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat, Model_test)
+                else:
+                    Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
+
+        case 2:
+            time_start = time.time()
+            Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
+            time_end = time.time()
 
 
 #%% Post-processing
@@ -343,10 +397,22 @@ if config["solver"]["ParametricStudy"]:
                                 color_map = config["postprocess"]["colormap"])
            
 else:
-    if config["postprocess"]["exportVTK"]:
-        Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+
-        "_"+config["geometry"]["Name"])
-        Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"]+
-        "_"+config["geometry"]["Name"])
+    match config["interpolation"]["dimension"]:
+        case 2:
+            if config["postprocess"]["exportVTK"]:
+                Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+                Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
+            if config["postprocess"]["exportVTK_history"]:
+                Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+
+        case 1:
+            Pplot.Plot_Eval_1d(Model_FEM,config,Mat)
+
+
+            
+
+                
+
+
        
 # %%

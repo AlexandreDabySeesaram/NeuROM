@@ -3,7 +3,7 @@ L=10;
 r = L/4;
 
 dh = L; // Minimum size is the length of the beam
-//Mesh.Algorithm = 8;
+Mesh.Algorithm = 5;
 
 Point(1) = {0, 0, 0, dh};
 Point(2) = {L, 0, 0, dh};
@@ -41,7 +41,7 @@ Physical Line (114) = {4} ;
 
 Physical Curve (115) = {5,6,7,8} ;
 
-Physical Point (200) = {1,2};
+Physical Point (200) = {1,2,3,4};
 
 
 

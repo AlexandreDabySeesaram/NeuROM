@@ -81,14 +81,15 @@ def ElementSize(dimension, **kwargs):
     return MaxElemSize
     
 class Mesh:
-    def __init__(self,name,h_max, order, dimension):
+    def __init__(self, name, h_max, order, dimension):
         """inputs the name of the geometry and the maximum size of the element"""
         PrintWelcome()
-        self.h_str = str(np.around(h_max, decimals=3))
+        self.h_max_str = str(np.around(h_max, decimals=3))
+
         self.order = str(order)
         self.dimension = str(dimension)
         self.name = name
-        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_str+'.msh'
+        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
         self.borders_exist = False
     
@@ -102,24 +103,30 @@ class Mesh:
         self.ExcludeId = Exclude
         NumberOfBCs = len(Dirichlets)
 
-        ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsRelation = [Dirichlets[i]["Relation"] for i in range(NumberOfBCs)]
-        ListOfDirichletsBCsConstit = [Dirichlets[i]["Constitutive"] for i in range(NumberOfBCs)]
-        
-        self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
-        self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
-        self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
-        self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
-        self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
-
-            # ListOfPhysicisBCs.append(Dirichlets[i]["Entity"])
-            # self.ListOfPhysicisBCs = list(set(ListOfPhysicisBCs))
-        if NumberOfBCs == 0:
-            self.NoBC = True
+        if NumberOfBCs == 1:
+            if len(Dirichlets[0])==0:                        # Empty list : Dirichlets =  [{}] ... len = 1
+                self.NoBC = True
         else:
             self.NoBC = False
+
+        if self.NoBC == False:
+            ListOfDirichletsBCsIds = [Dirichlets[i]["Entity"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsValues = [Dirichlets[i]["Value"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsNormals = [Dirichlets[i]["Normal"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsRelation = [Dirichlets[i]["Relation"] for i in range(NumberOfBCs)]
+            ListOfDirichletsBCsConstit = [Dirichlets[i]["Constitutive"] for i in range(NumberOfBCs)]
+        
+            self.ListOfDirichletsBCsIds = ListOfDirichletsBCsIds
+            self.ListOfDirichletsBCsValues = ListOfDirichletsBCsValues
+            self.ListOfDirichletsBCsNormals = ListOfDirichletsBCsNormals
+            self.ListOfDirichletsBCsRelation = ListOfDirichletsBCsRelation
+            self.ListOfDirichletsBCsConstit = ListOfDirichletsBCsConstit
+        else:
+            self.ListOfDirichletsBCsIds = []
+            self.ListOfDirichletsBCsValues = []
+            self.ListOfDirichletsBCsNormals = []
+            self.ListOfDirichletsBCsRelation = []
+            self.ListOfDirichletsBCsConstit = []
 
         if len(self.ExcludeId)==0:
             self.NoExcl = True
@@ -135,8 +142,9 @@ class Mesh:
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
             mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
-                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+' -clmax '+self.h_str
-                    #'- algo delquad'
+                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                    ' -clmax '+self.h_max_str  
+                    ##' -clmin '+self.h_min_str + '- algo delquad'
             os.system(mesh_command)        
          
     
@@ -200,14 +208,16 @@ class Mesh:
                                 self.node_per_elem = 6
                         flagType = False  
                     self.Connectivity.append(ElemList[-self.node_per_elem:])  
-                if self.borders_exist:
-                    if ElemList[3] in self.borders: 
-                        match ElemList[1]:
-                            case 1:
-                                node_per_elem = 2
-                            case 8:
-                                node_per_elem = 3
-                        self.borders_nodes.append(ElemList[-node_per_elem:])  
+
+                if ElemList[3] in self.borders: 
+                    match ElemList[1]:
+                        case 1:
+                            node_per_elem = 2
+                        case 8:
+                            node_per_elem = 3
+                        case 15:
+                            node_per_elem = 1
+                    self.borders_nodes.append(ElemList[-node_per_elem:])  
 
                 if self.NoBC == False:
                     for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
@@ -269,8 +279,6 @@ class Mesh:
 
             mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
             meshio.write(msh_name[0:-4]+".xml", mesh)
-
-
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()
@@ -350,6 +358,7 @@ class Mesh:
                 self.weights_assembly_total = np.concatenate((weights_assembly,weights_assembly_phantom),axis=1)
                 idx = np.where(np.sum((self.weights_assembly_total),axis=1)==2)
                 self.assembly_vector[idx]=-1
+                
         if self.dimension =='2':
             if self.order =='1':
                 weights_assembly = torch.zeros(self.dim*self.NNodes,self.node_per_elem*self.Connectivity.shape[0])
@@ -384,7 +393,7 @@ class Mesh:
         for coord in TrialCoordinates:
             match self.dimension:
                 case '1':
-                    point = [coord[0], 0, 0]
+                    point = [coord, 0, 0]
                 case '2':
                     point = [coord[0], coord[1], 0]
             ids.append(locator.FindCell(point))

@@ -6,9 +6,9 @@
 
 [geometry]
 Name                    = 'Beam'
-L                       = 10                                            # Length of the Beam
-A                       = 1                                             # Section of the beam
-Volume_element          = 100                                           # Volume element correspond to the 1D elem in 1D
+L                       = 10                                        # Length of the Beam
+A                       = 1                                         # Section of the beam
+Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
 
 ####################################################
 ###                                              ###
@@ -16,22 +16,30 @@ Volume_element          = 100                                           # Volume
 ###                                              ###
 ####################################################
 
-[Borders]
-Borders                 = [1,2]                                         # List of the structure's boundaries
+[Borders_u]
+Borders                 = [3,4]                                     # List of the structure's boundaries
 
-[[DirichletDictionryList]]
-Entity                  = 3                                             # Physical tag of the boundary
-Value                   = 0                                             # numerical value
-Normal                  = 0                                             # prescribed component (0=x,1=y,2=z)
+[[DirichletDictionryList_u]]
+Entity                  = 3                                         # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 0                                          # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
-[[DirichletDictionryList]]
+[[DirichletDictionryList_u]]
 Entity                  = 4 
 Value                   = 0.005 
 Normal                  = 0 
 Relation                = false
 Constitutive            = false
+
+# # # # # # # # # # # #  # # # # # # # # # #
+
+[Borders_du]
+Borders                 = [3,4]                                     # List of the structure's boundaries
+
+[[DirichletDictionryList_du]]
+
 
 ####################################################
 ###                                              ###
@@ -53,10 +61,10 @@ A                       = 1.0
 
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
-order                   = 1                                             # Order of the shape functions
-np                      = 70                                            # Number of Nodes in the Mesh in 1D
+order_u                 = 2                                             # Order of the shape functions
+order_du                = 1                                             # Order of the shape functions
+np                      = 20                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
-n_integr_points         = 5                                            # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -66,13 +74,8 @@ n_integr_points         = 5                                            # Number 
 
 [solver]
 FrozenMesh              = true                                         # Nodal coordinates frozen
-FrozenParaMesh          = true                                          # Nodal coordinates frozen
-TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
-IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
-ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = true                                         # Enable bi-stifness beam in 1D
-n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
+TrainingStrategy        = 'Mixed'                                    # 'Integral' or 'Mixed'
+IntegralMethod          = 'None'                                        
 
 ####################################################
 ###                                              ###
@@ -83,7 +86,6 @@ n_modes_ini             = 1                                             # Initia
 [hardware]
 BoolGPU                 = false                                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                         # Enable compilation of the model
-FloatPrecision          = "double"                                      # Enable to switch between simple (float32) or double (float64)
 
 ####################################################
 ###                                              ###
@@ -93,19 +95,14 @@ FloatPrecision          = "double"                                      # Enable
 
 [training]
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
-TwoStageTraining        = false                                          # 2 stages = Gradient descend + LBFGS, 1 stage = LBFGS
-n_epochs_1                = 1000                                          # Maximum number of iterations for the training stage
-n_epochs_2                = 100                                          # Maximum number of iterations for the training stage
+n_epochs                = 1000                                          # Maximum number of iterations for the training stage
 learning_rate           = 1.0e-3                                         # optimizer learning rate
-LoadPreviousModel       = false                                         # Boolean to enable reusing a previously trained model
-BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-15                                         # Stagnation criterion for the loss decay rate (mode addition criterion)
-Stagnation_threshold_1    = 1e-2
-Stagnation_threshold_2    = 1e-7
-Stagnation_counter_1      = 5
-Stagnation_counter_2      = 5
+Stagnation_threshold    = 1e-7
+Stagnation_counter      = 5
 Loss_counter            = 1000
-Points_per_element      = 20                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
+Points_per_element      = 10                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
+w_pde                   = 10
+w_constit               = 1   
 
 ####################################################
 ###                                              ###
@@ -121,10 +118,9 @@ SaveModel               = false                                         # Boolea
 Visualisatoin_only      = false
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
-Plot_error_mode         = true
-Interactive_pltot       = true
-Plot_ROM_FOM            = false
-Plot_name               = 'paper_sequential'
+n_visualization         = 1000                                          # Number of points used to plot the results 
+
+
 ####################################################
 ###                                              ###
 ###                  Parameters                  ###

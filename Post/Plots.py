@@ -26,7 +26,6 @@ def export_csv(Name,y, x='None'):
     df = pd.DataFrame(a, columns=['y', 'x'])
     df.to_csv('Results/'+Name+'.csv')
 
-
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
@@ -80,7 +79,7 @@ def Plot_NegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
     """To keep back compatibility with previous verions"""
     Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = tikz)
 
-def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
+def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False, Zoom_required = False):
     # from matplotlib.legend import Legend
     # Legend._ncol = property(lambda self: self._ncols)
     # Legend._ncol = property(lambda self: self._ncols)
@@ -109,11 +108,88 @@ def Plot_PosNegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False)
     lns = g1+g2
     labs = [l.get_label() for l in lns]
     # ax.legend(lns, labs, loc="upper center")
-    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
-
     if tikz:
         import tikzplotlib
         tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+
+    plt.clf() 
+
+    if Modes_flag[0] == Modes_flag[-1]:
+        Zoom_required = False
+
+    if Zoom_required:
+        import numpy as np
+        Zoom_depth = np.min(np.where(np.array(Modes_flag) == np.array(Modes_flag)[0]+1))
+        Zoom_start_index = int(np.floor(0.9*Zoom_depth))
+        second_stages_epochs = len(error) - len(Modes_flag)
+        Modes_flag.extend([Modes_flag[-1]]*second_stages_epochs)
+        x_indexes = np.arange(len(Modes_flag[Zoom_start_index:]))+Zoom_start_index
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        g1 = ax.plot(x_indexes,Modes_flag[Zoom_start_index:], color='#247ab5ff')
+        ax.tick_params(axis='y', colors='#247ab5ff')
+        plt.ylabel(r'$m$',color='#247ab5ff')
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.xlabel(r'Epochs')
+        ax2 = ax.twinx()
+        match sign:
+            case "Positive":
+                g2 = ax2.semilogy(x_indexes,torch.tensor(error[Zoom_start_index:]), color='#d95319ff')
+                ax2.set_ylabel(r'$ + J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
+            case "Negative":
+                ax2.invert_yaxis()
+                g2 = ax2.semilogy(x_indexes,-torch.tensor(error[Zoom_start_index:]), color='#d95319ff')
+                ax2.set_ylabel(r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+
+        # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+        ax2.tick_params(axis='y', colors='#d95319ff')
+
+        lns = g1+g2
+        labs = [l.get_label() for l in lns]
+        # ax.legend(lns, labs, loc="upper center")
+        if tikz:
+            import tikzplotlib
+            tikzplotlib.save('Results/'+name+'_zoom.tex')
+        plt.savefig('Results/'+name+'_zoom.pdf', transparent=True, bbox_inches = "tight")
+
+
+        plt.clf() 
+
+
+
+def Plot_L2error_Modes(Modes_flag,error,name, tikz = False):
+    # from matplotlib.legend import Legend
+    # Legend._ncol = property(lambda self: self._ncols)
+    # Legend._ncol = property(lambda self: self._ncols)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    g1 = ax.plot(Modes_flag, color='#247ab5ff')
+    ax.tick_params(axis='y', colors='#247ab5ff')
+    plt.ylabel(r'$m$',color='#247ab5ff')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xlabel(r'Epochs')
+    ax2 = ax.twinx()
+
+    g2 = ax2.semilogy(torch.tensor(error), color='#d95319ff')
+    ax2.set_ylabel(r'$\eta$',color='#d95319ff')
+
+
+    # g2 = ax2.semilogy(-torch.tensor(error),label = r'$ - J\left(\underline{u}\left(\underline{x}\right)\right)$', color='#d95319ff')
+    ax2.tick_params(axis='y', colors='#d95319ff')
+
+    lns = g1+g2
+    labs = [l.get_label() for l in lns]
+    # ax.legend(lns, labs, loc="upper center")
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
+
     plt.clf() 
 
 def Plot_Loss_Modes(Modes_flag,error,name):
@@ -151,10 +227,11 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold,tikz = False):
     ax2.tick_params(axis='y', colors='#d95319ff')
     ax2.set_ylabel(r'd log($J\left(\underline{u}\left(\underline{x}\right)\right)$)',color='#d95319ff')
     plt.axhline(threshold,color = 'k')
-    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     if tikz:
         import tikzplotlib
         tikzplotlib.save('Results/'+name+'.tex')
+    plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
+
     plt.clf()
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
@@ -250,7 +327,7 @@ def Plot_ShapeFuctions(TrialCoordinates, model, InitCoord, ProjectWeight):
     plt.savefig('Results/ShapeFunctions.pdf')
     plt.close()
 
-def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
+def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp',tikz = False):
     import torch
     matplotlib.rcParams["text.usetex"] = True
     matplotlib.rcParams["font.family"] = "serif"
@@ -282,10 +359,13 @@ def Plot_Parametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')
     plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/Para_displacements'+name_model+'.tex')
     plt.show()
     plt.clf()
 
-def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_model = 'tmp'):
+def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticBiParametricSolution,name_model = 'tmp',tikz = False):
     import torch
     matplotlib.rcParams["text.usetex"] = True
     matplotlib.rcParams["font.family"] = "serif"
@@ -297,28 +377,31 @@ def Plot_BiParametric_Young(BeamROM,TrialCoordinates,A,AnalyticSolution,name_mod
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     Paper150 = torch.tensor([150])
     Paper150 = Paper150[:,None] # Add axis so that dimensions match
-    u_150 = BeamROM(TrialCoordinates,[PaperPara,PaperPara])
-    u_analytical_150 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_150 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
+    u_analytical_150 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_150, color="#01426A", label = r'$E = 150~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_150.data.view(-1),'--', color="#01426A", label = r'$E = 150~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([200])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_200 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
-    u_analytical_200 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_analytical_200 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_200, color="#00677F", label = r'$E = 200~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_200.data.view(-1),'--',color="#00677F", label = r'$E = 200~$MPa HiDeNN solution')
 
     PaperPara = torch.tensor([100])
     PaperPara = PaperPara[:,None] # Add axis so that dimensions match
     u_100 = BeamROM(TrialCoordinates,[Paper150,PaperPara])
-    u_analytical_100 = AnalyticSolution(A,PaperPara.item(),TrialCoordinates.data,u0,uL)
+    u_analytical_100 = AnalyticBiParametricSolution(A,[PaperPara.item(),Paper150[0][0].item()],TrialCoordinates.data,u0,uL)
     plt.plot(TrialCoordinates.data,u_analytical_100,color="#A92021", label = r'$E = 100~$MPa Analytical solution')
     plt.plot(TrialCoordinates.data,u_100.data.view(-1),'--',color="#A92021", label = r'$E = 100~$MPa HiDeNN solution')
     plt.legend(loc="upper left")
     plt.xlabel('x (mm)')
     plt.ylabel('u (mm)')
     plt.savefig('Results/Para_displacements'+name_model+'.pdf', transparent=True)  
+    if tikz:
+        import tikzplotlib
+        tikzplotlib.save('Results/Para_displacements'+name_model+'.tex')
     plt.show()
     plt.clf()
 
@@ -802,9 +885,15 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
                 f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
             )
 
-def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta', color_map = 'viridis'):
+def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta', Plot_mesh = True, color_map = 'viridis'):
     import pyvista as pv                                                            # Import PyVista
     import torch.nn as nn
+
+    pv.global_theme.font.family = 'times'                                           # Arial, courier or times
+    pv.global_theme.font.size = 40
+    pv.global_theme.font.title_size = 40
+    pv.global_theme.font.label_size = 40
+    pv.global_theme.font.fmt = '%.2e'
 
     filename = 'Geometries/'+Mesh_object.name_mesh                                  # Load mesh (used for projecting the solution only) 
     mesh = pv.read(filename)                                                        # Create pyvista mesh    
@@ -834,6 +923,21 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
 
             plotter = pv.Plotter()
             plotter.add_mesh(mesh, scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': True})
+            plotter.view_xy()
+            def screenshot():
+                print("Window size ", plotter.window_size)
+                plotter.save_graphic("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.pdf",raster=False)
+                plotter.screenshot("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
+                print("Camera position ", plotter.camera_position)
+            plotter.add_key_event("s", screenshot)
             plotter.show()
         case "Static":
 
@@ -859,7 +963,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh3.point_data['Uy'] = u3[:,1].data
             mesh3.point_data['Uz'] = u3[:,2].data
             u3[:,2]+=0
-            plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
+            plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=Plot_mesh)
 
             # Function to update the solution based on the parameter
             def update_solution_E(value):
@@ -883,7 +987,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 mesh3.point_data['Ux'] = u3[:,0].data
                 mesh3.point_data['Uy'] = u3[:,1].data
                 mesh3.point_data['Uz'] = u3[:,2].data
-                plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=True)
+                plotter.add_mesh(mesh3.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', theta ='+str(theta) , 'vertical': False}, show_edges=Plot_mesh)
                 return
             labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
 
@@ -926,7 +1030,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh2.point_data['Uy'] = u2[:,1].data
             mesh2.point_data['Uz'] = u2[:,2].data
             u2[:,2]+=0
-            # plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+            # plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=20.0,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=Plot_mesh)
 
             # Function to update the solution based on the parameter
             def update_solution_t(value):
@@ -950,7 +1054,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                 mesh2.point_data['Ux'] = u2[:,0].data
                 mesh2.point_data['Uy'] = u2[:,1].data
                 mesh2.point_data['Uz'] = u2[:,2].data
-                plotter.add_mesh(mesh2.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', E = '+str(E), 'vertical': False}, show_edges=True)
+                plotter.add_mesh(mesh2.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={r'title': scalar_field_name+', E = '+str(E), 'vertical': False}, show_edges=Plot_mesh)
                 return
             labels = dict(zlabel='E (MPa)', xlabel='x (mm)', ylabel='y (mm)')
 
@@ -970,7 +1074,21 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             )
             plotter.add_axes(**labels)
             plotter.add_text("E ="+str(E), font_size=10)
-
+            plotter.view_xy()
+            def screenshot():
+                print("Window size ", plotter.window_size)
+                plotter.save_graphic("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.pdf",raster=False)
+                plotter.screenshot("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
+                print("Camera position ", plotter.camera_position)
+            plotter.add_key_event("s", screenshot)
             plotter.show()
         case "Interactive":
 
@@ -1002,7 +1120,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh.point_data['Uy'] = u[:,1].data
             mesh.point_data['Uz'] = u[:,2].data
             plotter = pv.Plotter()
-            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=Plot_mesh)
 
             # Function to update the solution based on the parameter
             def update_solution2(value):
@@ -1051,6 +1169,21 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
                     Slider_min = config["parameters"]["para_2_min"]
                     Slider_max = config["parameters"]["para_2_max"]
                     plotter.add_slider_widget(update_solution2, [Slider_min, Slider_max], title='theta (rad)')
+            plotter.view_xy()
+            def screenshot():
+                print("Window size ", plotter.window_size)
+                plotter.save_graphic("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.pdf",raster=False)
+                plotter.screenshot("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
+                print("Camera position ", plotter.camera_position)
+            plotter.add_key_event("s", screenshot)
             plotter.show()
 
         case "DualSliders":
@@ -1074,7 +1207,7 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             mesh.point_data['Uy'] = u[:,1].data
             mesh.point_data['Uz'] = u[:,2].data
             plotter = pv.Plotter()
-            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=True)
+            plotter.add_mesh(mesh.warp_by_vector(vectors="U",factor=scaling_factor,inplace=True), scalars=scalar_field_name, cmap=color_map, scalar_bar_args={'title': 'Displacement', 'vertical': False}, show_edges=Plot_mesh)
 
             class UpdateSliders:
                 def __init__(self):
@@ -1121,13 +1254,41 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             plotter.add_slider_widget(  callback=lambda value: engine('E', value),
                                         rng = [Slider_min_E, Slider_max_E], 
                                         title='E (MPa)',
-                                        pointa=(0.3, 0.9),
-                                        pointb=(0.6, 0.9))
+                                        pointa=(0.3, 0.925),
+                                        pointb=(0.6, 0.925))
 
             plotter.add_slider_widget(  callback=lambda value: engine('theta', value),
                                         rng = [Slider_min_t, Slider_max_t], 
                                         title='theta (rad)',
-                                        pointa=(0.64, 0.9),
-                                        pointb=(0.94, 0.9))
+                                        pointa=(0.64, 0.925),
+                                        pointb=(0.94, 0.925))
+            plotter.view_xy()
+            def screenshot():
+                print(engine.kwargs["E"])
+                print("Window size ", plotter.window_size)
+                plotter.save_graphic("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_E_"+"{:.2e}".format(engine.kwargs["E"])
+                                    +"_theta_"+"{:.2e}".format(engine.kwargs["theta"])
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.pdf",raster=False)
+                plotter.screenshot("Results/"+config["geometry"]["Name"]
+                                    +"_"+config["postprocess"]["scalar_field_name"]
+                                    +"_"+config["postprocess"]["PyVista_Type"]
+                                    +"_E_"+"{:.2e}".format(engine.kwargs["E"])
+                                    +"_theta_"+"{:.2e}".format(engine.kwargs["theta"])
+                                    +"_"+config["postprocess"]["Name_export"]
+                                    +"_PyVista.png", transparent_background=True, window_size=[2560,int(2560*plotter.window_size[1]/plotter.window_size[0])])
+                print("Camera position ", plotter.camera_position)
+            def restart_camera():
+                plotter.view_xy()
+            print("************** Available commands *************\n")
+            print("* Take a screenshot : s\n")
+            print("* Reset the camera  : r\n")
+
+            plotter.add_key_event("s", screenshot)
+            plotter.add_key_event("r", restart_camera)
+
 
             plotter.show()

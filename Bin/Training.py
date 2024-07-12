@@ -15,7 +15,8 @@ from Bin.PDE_Library import RHS, PotentialEnergy, \
                 PotentialEnergyVectorisedBiParametric, MixedFormulation_Loss,\
                 Mixed_2D_loss, Neumann_BC_rel, Constitutive_BC, GetRealCoord, Mixed_2D_loss_Displacement_based,\
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
-                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss
+                        InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
+                            InternalEnergy_2D_einsum_BiStiffness
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -392,8 +393,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     else:
         Training_para_coordinates_list = [Training_para_coordinates_1]
 
-    Loss_vect               = []                                            # Initialise vector of loss values
-    L2_error                = []                                            # Initialise vector of L2 error
+
     # BCs used for the analytical comparison 
     if config["interpolation"]["dimension"] == 1:
         match config["solver"]["IntegralMethod"]:
@@ -417,12 +417,19 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     stagnancy_counter       = 0                                             # Stagnancy since last additoin of a mode
     local_stagnancy_counter = 0
     FlagAddedMode           = False                                         # Flag activated when a new mode has been added
-    Modes_vect              = []                                            # List of number of modes through the iterations
-    Loss_decrease_vect      = []                                            # Loss decrease rate through the iterations
+    try:
+        loss_init = model.training_recap["Loss_vect"]                       # Test if model.training_recap exists
+    except:
+        model.training_recap = {"Loss_vect":[],
+                            "L2_error":[],                                  # Init L2 error
+                            "training_time":0,                              # Init Training duration
+                            "Mode_vect":[],                                 # Size ROB
+                            "Loss_decrease_vect":[]                         # Init loss decrease rate
+                            }
     Usefullness             = 0                                             # Number of iteration in a row during which the last added mode helped the convergence
 
     while epoch<n_epochs and loss_counter<100:
-        if stagnancy_counter>5 and not FlagAddedMode_usefull:               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+        if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
             break 
 
         # Compute loss
@@ -442,13 +449,16 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 case 1:
                     loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
                 case 2:  
-                    loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                    if config["solver"]["Angle_study"]:
+                        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                    else:
+                        loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
         if epoch >1:
             loss_decrease           = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
-            Loss_decrease_vect.append(loss_decrease)
+            model.training_recap["Loss_decrease_vect"].append(loss_decrease)
             loss_old                = loss_current
             if numpy.abs(loss_decrease) < loss_decrease_c:                  # Check for stagnation of the loss
                 stagnancy_counter   = stagnancy_counter +1                  # Increment stagnation
@@ -483,15 +493,23 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         loss.backward()
         back_time += time.time() - backward_time_start
         # update weights
+        if config["interpolation"]["dimension"] ==1:
+            model.SaveCoordinates()                                             # Save coordinates to check for collisions
         update_time_start           = time.time()
         optimizer.step()                                                    # Update parameters
+        if config["interpolation"]["dimension"] ==1:
+            for m in range(model.n_modes_truncated):                            # Check for collisions
+                Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
+
         update_time                 += time.time() - update_time_start
         optimizer.zero_grad()                                               # zero the gradients after updating
-        Modes_vect.append(model.n_modes_truncated.detach().clone())
-        if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
+        if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
             Addition_epoch_index = epoch
+            # loss_counter            = 0 loss_counter>99
             FlagAddedMode           = True
             FlagAddedMode_usefull   = False                                 # Flag stating that the new mode did help speeding-up the convergence
             stagnancy_counter       = 0
@@ -499,29 +517,33 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         if FlagAddedMode:
             if epoch == Addition_epoch_index+2:
                 model.UnfreezeTruncated()
+                if not config["training"]["multi_mode_training"]:
+                    model.Freeze_N_1()
                 stagnancy_counter   = 0
 
         with torch.no_grad():
             epoch+=1
-            Loss_vect.append(loss.item())
+            model.training_recap["Loss_vect"].append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 if config["interpolation"]["dimension"] == 1:
                     match config["solver"]["IntegralMethod"]:   
                         case "Trapezoidal":
-                            L2_error.append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                            model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
                         case "Gaussian_quad":
-                            L2_error.append(1)
+                            model.training_recap["L2_error"].append(1)
         if (epoch+1) % 100 == 0:
             if not BiPara and config["interpolation"]["dimension"] == 1:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*L2_error[-1], precision=4)}% modes = {model.n_modes_truncated}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} modes = {model.n_modes_truncated}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
+    model.training_recap["training_time"] += (time_stop-time_start)
+
     # print("*************** END OF TRAINING ***************\n")
     print("*************** END FIRST PHASE ***************\n")
-    print(f'* Training time: {time_stop-time_start}s')
+    print(f'* Training time: {model.training_recap["training_time"]}s')
     print(f'* Saving time: {save_time}s')
     print(f'* Evaluation time: {eval_time}s')
     print(f'* Backward time: {back_time}s')
@@ -534,15 +556,21 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         # model.load_state_dict(Current_best) # Load from variable instead of written file
         print("* Minimal loss = ", loss_min)
     
-    model.training_recap = {"Loss_vect":Loss_vect,
-                            "L2_error":L2_error,
-                            "training_time":(time_stop-time_start),
-                            "Mode_vect":Modes_vect,
-                            "Loss_decrease_vect":Loss_decrease_vect
-                            }
     return 
 
-def Training_NeuROM_FinalStageLBFGS(model,config):
+def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
+    Current_best_model = copy.deepcopy(model.state_dict())    # Store in variable instead of writing file
+    try:
+        initial_loss = model.training_recap["Loss_vect"][-1]
+    except:
+        initial_loss = 1
+        model.training_recap = {"Loss_vect":[],
+                                "L2_error":[],
+                                "training_time":0,
+                                "Mode_vect":[],
+                                "Loss_decrease_vect":[]
+                                }    
+    model.Freeze_Mesh()
     optim = torch.optim.LBFGS([p for p in model.parameters() if p.requires_grad],
                     #history_size=5, 
                     #max_iter=15, 
@@ -590,15 +618,16 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
     epoch                       = 0
     stagnancy_counter           = 0
     # model.UnFreeze_Mesh()
-    loss_old = model.training_recap["Loss_vect"][-1]
+    loss_old = initial_loss
     # BCs used for the analytical comparison 
-    match config["solver"]["IntegralMethod"]:
-        case "Trapezoidal":
-            u0                      = model.Space_modes[0].u_0                      # Left BC
-            uL                      = model.Space_modes[0].u_L                      # Right BC
-        case "Gaussian_quad":
-            u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
-            uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
+    if config["interpolation"]["dimension"] == 1:
+        match config["solver"]["IntegralMethod"]:
+            case "Trapezoidal":
+                u0                      = model.Space_modes[0].u_0                      # Left BC
+                uL                      = model.Space_modes[0].u_L                      # Right BC
+            case "Gaussian_quad":
+                u0 = model.Space_modes[0].ListOfDirichletsBCsValues[0]
+                uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("************** START SECOND PAHSE *************\n")
     time_start = time.time()
     while  epoch<n_epochs and stagnancy_counter < 5:
@@ -606,21 +635,47 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
 
         def closure():
             optim.zero_grad()
+            # if not BiPara:
+            #     match config["solver"]["IntegralMethod"]:   
+            #         case "Gaussian_quad":
+            #             loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+            #         case "Trapezoidal":
+            #             loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+            # else:
+            #     loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
             if not BiPara:
-                match config["solver"]["IntegralMethod"]:   
-                    case "Gaussian_quad":
-                        loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
-                    case "Trapezoidal":
-                        loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        match config["solver"]["IntegralMethod"]:   
+                            case "Gaussian_quad":
+                                loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                            case "Trapezoidal":
+                                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                    case 2:
+                            loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
             else:
-                loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                    case 2:  
+                        if config["solver"]["Angle_study"]:
+                            loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        else:
+                            loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
             loss.backward()
             return loss
+
+        # model.SaveCoordinates()                                             # Save coordinates to check for collisions
         optim.step(closure)
+        # for m in range(model.n_modes_truncated):                            # Check for collisions
+        #     Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
+
         loss                    = closure()
 
         loss_current            = loss.item()
-        loss_decrease           = (loss_old - loss_current)/numpy.abs(loss_old)
+        # loss_decrease           = (loss_old - loss_current)/numpy.abs(loss_old)
+        loss_decrease           = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
+        model.training_recap["Loss_decrease_vect"].append(loss_decrease)
         loss_old = loss_current
         if loss_decrease >= 0 and loss_decrease < 1.0e-7:
             stagnancy_counter   = stagnancy_counter +1
@@ -630,6 +685,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
         with torch.no_grad():
             epoch+=1
             model.training_recap["Loss_vect"].append(loss.item())
+            model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
             numel_E = Training_para_coordinates_list[0].shape[0]
             if not BiPara:
                 match config["solver"]["IntegralMethod"]:   
@@ -644,9 +700,12 @@ def Training_NeuROM_FinalStageLBFGS(model,config):
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
     time_stop = time.time()
+    model.training_recap["training_time"]+=time_stop-time_start
     print("*************** END OF TRAINING ***************\n")
-    print(f'* Training time: {model.training_recap["training_time"]+time_stop-time_start}s')
-
+    print(f'* Training time: {model.training_recap["training_time"]}s')
+    if model.training_recap["Loss_vect"][-1] > initial_loss:
+        print("*************** REVERT TO 1st STAGE MODEL ***************\n")
+        model.load_state_dict(Current_best_model) 
     return 
 
 def Mixed_Training_InitialStage(BeamModel_u, BeamModel_du, A, E, L, CoordinatesBatchSet, PlotData, 
@@ -1659,3 +1718,101 @@ def Training_2D_FEM(model, config, Mat):
                                     "eps_max_vect":eps_max_vect,
                                     "detJ_tot":detJ_tot}
     return model 
+
+def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
+    n_refinement                = 0
+    MaxElemSize                 = pre.ElementSize(
+                                dimension     = config["interpolation"]["dimension"],
+                                L             = config["geometry"]["L"],
+                                order         = config["interpolation"]["order"],
+                                np            = config["interpolation"]["np"],
+                                MaxElemSize2D = config["interpolation"]["MaxElemSize2D"]
+                            )
+    Excluded = []
+    try:
+        loss_init               = model.training_recap["Loss_vect"]         # Test if model.training_recap exists
+    except:
+        model.training_recap    = {"Loss_vect":[],
+                                "L2_error":[],                              # Init L2 error
+                                "training_time":0,                          # Init Training duration
+                                "Mode_vect":[],                             # Size ROB
+                                "Loss_decrease_vect":[]                     # Init loss decrease rate
+                                }
+    import meshio
+    while n_refinement < config["training"]["multiscl_max_refinment"]:
+        print(f"* Refinement level: {n_refinement}\n")
+        n_refinement            +=1
+        optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
+        match config["interpolation"]["dimension"]:
+            case 1:
+                Training_NeuROM(model,config,optimizer)                 # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config)           # Second stage of training (LBFGS)
+            case 2:
+                Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+
+        if n_refinement < config["training"]["multiscl_max_refinment"]:
+            MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
+        Mesh_object_fine = pre.Mesh( 
+                                config["geometry"]["Name"],                 # Create the mesh object
+                                MaxElemSize, 
+                                config["interpolation"]["order"], 
+                                config["interpolation"]["dimension"]
+                        )
+        Mesh_object_fine.AddBorders(config["Borders"]["Borders"])
+        Mesh_object_fine.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
+                                        config["geometry"]["Volume_element"],
+                                        Excluded,
+                                        config["DirichletDictionryList"]
+                            )                   
+        Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
+        Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
+        match config["interpolation"]["dimension"]:
+            case 1:
+                if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                    Mesh_object_fine.ExportMeshVtk1D()
+            case 2:
+                Mesh_object_fine.ExportMeshVtk()
+        if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
+            Mesh_object_fine.AssemblyMatrix() 
+        if config["solver"]["BiPara"]:
+            ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]],
+                                                [   config["parameters"]["para_2_min"],
+                                                    config["parameters"]["para_2_max"],
+                                                    config["parameters"]["N_para_2"]]])
+        else:
+            ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]]])
+
+        model_2 = NeuROM(                                                         # Build the surrogate (reduced-order) model
+                                                    Mesh_object_fine, 
+                                                    ParameterHypercube, 
+                                                    config,
+                                                    config["solver"]["n_modes_ini"],
+                                                    config["solver"]["n_modes_max"]
+                        )
+        model.eval()
+        model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
+
+        # model_2.train()
+        model_2.training_recap = model.training_recap
+        model = model_2
+        model.UnfreezeTruncated()
+        model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
+        model.Freeze_MeshPara()  
+        if not config["solver"]["FrozenMesh"]:
+            model.UnFreeze_Mesh()                                               # Set space mesh cordinates as trainable
+        if not config["solver"]["FrozenParaMesh"]:
+            model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
+
+        model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                    Max_epochs = config["training"]["n_epochs"], 
+                                    learning_rate = config["training"]["learning_rate"])
+        model.train()
+    try:
+        return model, Mesh_object_fine
+    except:
+        return model, Mesh_object

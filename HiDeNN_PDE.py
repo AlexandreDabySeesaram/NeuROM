@@ -301,8 +301,8 @@ class InterpPara(nn.Module):
         for param in self.coordinates:
             param.requires_grad = True
         #Freeze external coorinates to keep geometry    
-        self.coordinates[0].requires_grad = False
-        self.coordinates[1].requires_grad = False
+        # self.coordinates[0].requires_grad = False
+        # self.coordinates[1].requires_grad = False
 
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
@@ -331,6 +331,14 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
         self.config = config
+        match config["hardware"]["FloatPrecision"]:
+            case "simple":
+                self.tensor_float_type = torch.float32
+            case "double":
+                self.tensor_float_type = torch.float64
+            case "half":
+                self.tensor_float_type = torch.float16
+
         self.n_para = len(ParametersList)
         match mesh.dimension:
             case '1':
@@ -381,15 +389,24 @@ class NeuROM(nn.Module):
         self.Freeze_Space()
         self.Freeze_MeshPara()
         self.Freeze_Para()
+
+    def SaveCoordinates(self):
+        for m in range(self.n_modes_truncated):
+            self.Space_modes[m].coord_old = [self.Space_modes[m].coordinates[i].data.item() for i in range(len(self.Space_modes[m].coordinates))]
+
     
     def AddMode(self):
         """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""
         self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
+        Mesh_status = self.Mesh_status  # Remember Mesh status
         self.FreezeAll()
-        self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
+        self.Mesh_status = Mesh_status  # Revert tocorrect  Mesh status
         self.Space_modes[self.n_modes_truncated-1].ZeroOut()
+        self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
         # self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
 
+        if self.Mesh_status == 'Free':
+            self.UnFreeze_Mesh()
         for j in range(self.n_para):
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
 
@@ -400,6 +417,10 @@ class NeuROM(nn.Module):
         Para = self.Para_modes[self.n_modes_truncated-1][:].parameters()
         optim.add_param_group({'params': Space})
         optim.add_param_group({'params': Para})
+    
+    def Freeze_N_1(self):
+        for i in range(self.n_modes_truncated-1):
+            self.Space_modes[i].Freeze_FEM() 
 
     def UnfreezeTruncated(self):
         for i in range(self.n_modes_truncated):
@@ -411,17 +432,19 @@ class NeuROM(nn.Module):
                 for j in range(self.n_para):
                     self.Para_modes[i][j].UnFreeze_FEM()
         else:
-            for i in range(1,self.n_modes_truncated):
-                for j in range(self.n_para):
+            for i in range(self.n_modes_truncated):  
+                for j in range(self.n_para): 
                     self.Para_modes[i][j].UnFreeze_FEM()
 
     def Freeze_Mesh(self):
         """Set the space coordinates as untrainable parameters"""
+        self.Mesh_status = 'Frozen'
         for i in range(self.n_modes):
             self.Space_modes[i].Freeze_Mesh()
 
     def UnFreeze_Mesh(self):
         """Set the space coordinates as trainable parameters"""
+        self.Mesh_status = 'Free'
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_Mesh()
 
@@ -508,36 +531,67 @@ class NeuROM(nn.Module):
                     case 2:
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
+                            if self.Space_modes[i].IdStored:
+                                    if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                                    else:
+                                        self.Space_modes[i].StoreIdList(x)
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            else:
+                                self.Space_modes[i].StoreIdList(x)
+                                IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            # IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=2)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
+                    case 3:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
                             IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
                             u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
                         P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
+                        P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
+
         return out
-    def Init_from_previous(self,PreviousFullModel):
+    def Init_from_previous(self,PreviousFullModel,Model_provided = False):
         import os
-        if os.path.isfile(PreviousFullModel):
-            BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
-            self.n_modes_truncated = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
-            Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
-            Nb_parameters_fine = len(self.Para_modes[0])
-            Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
-            # self.n_modes_truncated
+
+        if Model_provided:
+            BeamROM_coarse = PreviousFullModel
+        else:
+            if os.path.isfile(PreviousFullModel):
+                BeamROM_coarse = torch.load(PreviousFullModel) # To load a full coarse model
+            elif not os.path.isfile(PreviousFullModel):
+                print('******** WARNING LEARNING FROM SCRATCH ********\n')
+                return
+
+        if self.config["training"]["RemoveLastMode"]:
+            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated-1,self.n_modes)
+        else:
+            self.n_modes_truncated_coarse = min(BeamROM_coarse.n_modes_truncated,self.n_modes)
+        if self.n_modes_truncated_coarse > self.n_modes_truncated:
+            self.n_modes_truncated = self.n_modes_truncated_coarse
+        Nb_modes_coarse = BeamROM_coarse.n_modes_truncated
+        Nb_parameters_fine = len(self.Para_modes[0])
+        Nb_parameters_coarse = len(BeamROM_coarse.Para_modes[0])
+        if self.n_modes_truncated_coarse<self.n_modes_truncated:
             for mode in range(self.n_modes_truncated):
-                self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
-                # newcoordinates = [coord for coord in self.Space_modes[mode].coordinates]
-                # newcoordinates = torch.cat(newcoordinates,dim=0)
-                # NewNodalValues = BeamROM_coarse.Space_modes[mode](newcoordinates)
-                # self.Space_modes[mode].InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
-                for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
-                    self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
-                    # newparacoordinates = [coord for coord in self.Para_modes[mode][para].coordinates]
-                    # newparacoordinates = torch.cat(newparacoordinates,dim=0)
-                    # self.Para_modes[mode][para].InterpoLayer.weight.data = BeamROM_coarse.Para_modes[mode][para](newparacoordinates).T
-        elif not os.path.isfile(PreviousFullModel):
-            print('******** WARNING LEARNING FROM SCRATCH ********\n')
+                self.Space_modes[mode].ZeroOut()
+                self.Space_modes[mode].UnFreeze_FEM()
+        for mode in range(self.n_modes_truncated_coarse):
+            self.Space_modes[mode].Init_from_previous(BeamROM_coarse.Space_modes[mode])
+            for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
+                self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
 
 class InterpolationBlock2D_Lin(nn.Module):
     
@@ -733,6 +787,8 @@ class MeshNN_2D(nn.Module):
         self.n_components = n_components
         self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
         self.mesh = mesh
+        self.IdStored = False
+
         if mesh.NoBC==False:
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
@@ -750,13 +806,22 @@ class MeshNN_2D(nn.Module):
         # set parameters 
         self.RefinementParameters()
         self.TrainingParameters()
+        self.UnFreeze_FEM()
 
     def ZeroOut(self):
         # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
-        self.new_nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
-        self.new_nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
+        self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
+        self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
+    def StoreIdList(self,x):
+        if torch.is_tensor(x):
+            self.Stored_ID = {"coordinates": x, 
+                                "Ids": self.mesh.GetCellIds(x)}
+        else:
+            self.Stored_ID = {"coordinates": torch.tensor(x), 
+                                "Ids": self.mesh.GetCellIds(x)}
+        self.IdStored = True
 
     def Init_from_previous(self,CoarseModel):
         newcoordinates = [coord for coord in self.coordinates]

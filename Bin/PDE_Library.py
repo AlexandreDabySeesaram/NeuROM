@@ -448,6 +448,54 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
+def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            for l in range(model.n_para)
+        ]    
+
+    # To be replaced with the decoder in the full auto-encoder framework
+    # support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
+    with torch.no_grad(): #No derivatino of the heavyside function
+        support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
+
+
+    E_1 = E[0][0,0].to(torch.float64)
+    Delta_E_float = E[0][:,0].to(torch.float64)
+
+    W_int = E_1*torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1]) +  \
+            torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
+
+    # Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
+    Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9)
+
+    W_ext = torch.einsum('iem,i,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
+    # return (0.5*W_int)/(E[0].shape[0])
+
 def PotentialEnergyVectorisedParametric_Gauss(model,A, E):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
 

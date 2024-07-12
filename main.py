@@ -12,7 +12,7 @@ from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
 # Import Training funcitons
 from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
-     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM
+     Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_NeuROM_multi_level
 #Import post processing libraries
 import Post.Plots as Pplot
 import time
@@ -40,8 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_2D_ROM.toml'
-# Default_config_file = 'Configuration/config_1D.toml'
+# Default_config_file = 'Configuration/config_2D_ROM.toml'
+Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -130,7 +130,7 @@ Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
 Model_FEM.Freeze_Mesh()
 if not config["solver"]["FrozenMesh"]:
-    Model_FEM.UnFreeze_FEM()
+    Model_FEM.UnFreeze_Mesh()
 
 
 #%% Application of NeuROM
@@ -162,14 +162,18 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
     case True:
         match config["interpolation"]["dimension"]:
             case 1:
-                PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+                # PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
+                PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10_new'
+
             case 2:
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
+                # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
+                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
     case False:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+                # PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100_legacy'
             case "Gaussian_quad":
                 # PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_40'
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'
@@ -179,14 +183,14 @@ if config["training"]["LoadPreviousModel"]:
     ROM_model.Init_from_previous(PreviousFullModel)
     ROM_model.UnfreezeTruncated()
 #%% Training 
-ROM_model.Freeze_Mesh()                                                     # Set space mesh cordinates as untrainable
-ROM_model.Freeze_MeshPara()                                                 # Set parameters mesh cordinates as untrainable
+ROM_model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
+ROM_model.Freeze_MeshPara()                                                     # Set parameters mesh cordinates as untrainable
 
 if config["solver"]["ParametricStudy"]: 
     if not config["solver"]["FrozenMesh"]:
-        ROM_model.UnFreeze_Mesh()                                             # Set space mesh cordinates as trainable
+        ROM_model.UnFreeze_Mesh()                                               # Set space mesh cordinates as trainable
     if not config["solver"]["FrozenParaMesh"]:
-        ROM_model.UnFreeze_MeshPara()                                         # Set parameters mesh cordinates as trainable
+        ROM_model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
 
     ROM_model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
                                     Max_epochs = config["training"]["n_epochs"], 
@@ -197,12 +201,14 @@ if config["solver"]["ParametricStudy"]:
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:
-                Training_NeuROM(ROM_model,config,optimizer)                 # First stage of training (ADAM)
-
-                Training_NeuROM_FinalStageLBFGS(ROM_model,config)           # Second stage of training (LBFGS)
+                # Training_NeuROM(ROM_model,config,optimizer)                     # First stage of training (ADAM)
+                # # WARNING: No collision check with free mesh yet
+                # Training_NeuROM_FinalStageLBFGS(ROM_model,config)               # Second stage of training (LBFGS)
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
             case 2:
-                # Training_2D_NeuROM(ROM_model, config, optimizer, Mat)
-                Training_NeuROM(ROM_model, config, optimizer, Mat)                # First stage of training (ADAM)
+                # Training_NeuROM(ROM_model, config, optimizer, Mat)              # First stage of training (ADAM)
+                # Training_NeuROM_FinalStageLBFGS(ROM_model,config, Mat)               # Second stage of training (LBFGS)
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
         ROM_model.eval()
 else:
     Model_FEM.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
@@ -212,7 +218,8 @@ else:
 
 
 #%% Post-processing
-
+with open(args.cf, mode="rb") as f:
+    config = tomllib.load(f)
 print("*************** POST-PROCESSING ***************\n")
 if config["solver"]["ParametricStudy"]:
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
@@ -220,24 +227,92 @@ if config["solver"]["ParametricStudy"]:
                     requires_grad=True)
 
     if config["training"]["TrainingRequired"]:
-        if min(ROM_model.training_recap["Loss_vect"]) > 0:                  # Find sign of the converged loss
+        if min(ROM_model.training_recap["Loss_vect"]) > 0:                      # Find sign of the converged loss
             sign = "Positive"
         else:
             sign = "Negative"
-    if config["solver"]["BiPara"]:                                      # define type of parametric study for saving files
+    if config["solver"]["BiPara"]:                                              # define type of parametric study for saving files
         Study = "_BiPara"
     else: 
         Study = "_MonoPara" 
-    val = str(np.format_float_scientific(1e15, precision=2))            # Convergence criterion
-
-    if config["postprocess"]["Plot_loss_mode"]:                         # Plot loss and modes
-        Pplot.Plot_PosNegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
-                                    'Loss_Modes'+"_"+config["geometry"]["Name"]+Study+"_"+val
-                                    , sign = sign,tikz = True)
-    if config["postprocess"]["Plot_loss_decay_mode"]:                   # Plot loss rate and modes
-        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_decrease_vect"],
-                                    'Loss_rate_Modes'+"_"+config["geometry"]["Name"]+"_"+val,True)
     
+    if config["training"]["LoadPreviousModel"]:
+        Initialisation_state = "_Initialised_"                                  # Initialised from previous model
+    else:
+         Initialisation_state = "_Raw_"                                         # Trained from scratch
+    if config["solver"]["FrozenMesh"]:
+        Mesh_state = '_FrozenMesh_'
+    else:
+        Mesh_state = '_FreeMesh_'
+
+    val = str(np.format_float_scientific(config["training"]["loss_decrease_c"], precision=2))            # Convergence criterion
+
+    if config["postprocess"]["Plot_loss_mode"]:                                 # Plot loss and modes
+        Pplot.Plot_PosNegLoss_Modes(ROM_model.training_recap["Mode_vect"],ROM_model.training_recap["Loss_vect"],
+                                    'Loss_Modes'+"_"+
+                                    config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
+                                    str(config["interpolation"]["np"])+"_"+
+                                    Study+
+                                    Mesh_state+
+                                    Initialisation_state+
+                                    val
+                                    , sign = sign,tikz = True, Zoom_required = True)
+    if config["postprocess"]["Plot_loss_decay_mode"]:                           # Plot loss rate and modes
+        Pplot.Plot_Lossdecay_Modes(ROM_model.training_recap["Mode_vect"],
+                                    ROM_model.training_recap["Loss_decrease_vect"],
+                                    'Loss_rate_Modes'+"_"+
+                                    config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
+                                    str(config["interpolation"]["np"])+"_"+
+                                    Study+
+                                    Mesh_state
+                                    +Initialisation_state+
+                                    val,
+                                    config["training"]["loss_decrease_c"],
+                                    True)
+
+    if config["postprocess"]["Plot_error_mode"]:                           # Plot loss rate and modes
+        Pplot.Plot_L2error_Modes(ROM_model.training_recap["Mode_vect"],
+                                    ROM_model.training_recap["L2_error"],
+                                    'L2_error_Modes'+"_"+
+                                    config["geometry"]["Name"]+"_"+
+                                    config["postprocess"]["Plot_name"]+
+                                    'sub_levels_'+str(config["training"]["multiscl_max_refinment"])+'_'+
+                                    str(config["interpolation"]["np"])+"_"+
+                                    Study+
+                                    Mesh_state
+                                    +Initialisation_state+
+                                    val,
+                                    True)
+
+    if config["postprocess"]["Plot_ROM_FOM"]:
+        match config["interpolation"]["dimension"]:
+            case 1:
+                if config["solver"]["BiPara"]:
+                    Pplot.Plot_BiParametric_Young(ROM_model,
+                                                Training_coordinates,config["geometry"]["A"],
+                                                AnalyticBiParametricSolution,
+                                                name_model = 'Plot_ROM_FOM'+"_"+
+                                                config["postprocess"]["Plot_name"]+
+                                                str(config["interpolation"]["np"])+"_"+
+                                                Study+
+                                                Mesh_state+
+                                                val,
+                                                tikz=True)
+                else:
+                    Pplot.Plot_Parametric_Young(ROM_model,
+                                                Training_coordinates,config["geometry"]["A"],
+                                                AnalyticSolution,
+                                                name_model = 'Plot_ROM_FOM'+"_"+
+                                                config["postprocess"]["Plot_name"]+
+                                                str(config["interpolation"]["np"])+"_"+
+                                                Mesh_state+
+                                                Study+
+                                                val,
+                                                tikz=True)                
     if config["postprocess"]["Interactive_pltot"]:
 
         match config["interpolation"]["dimension"]:
@@ -264,7 +339,8 @@ if config["solver"]["ParametricStudy"]:
                                 scalar_field_name = config["postprocess"]["scalar_field_name"], 
                                 scaling_factor = config["postprocess"]["scaling_factor"], 
                                 Interactive_parameter = config["postprocess"]["Interactive_parameter"],
-                                color_map = 'viridis')
+                                Plot_mesh = config["postprocess"]["Plot_mesh"],
+                                color_map = config["postprocess"]["colormap"])
            
 else:
     if config["postprocess"]["exportVTK"]:

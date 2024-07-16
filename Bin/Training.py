@@ -1842,6 +1842,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                                     config["solver"]["n_modes_max"]
                         )
         model.eval()
+        model_2.to(torch.float64)
         model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
 
         # model_2.train()

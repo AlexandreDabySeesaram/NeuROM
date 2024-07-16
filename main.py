@@ -21,7 +21,7 @@ import os
 import torch._dynamo as dynamo
 mps_device = torch.device("mps")
 from importlib import reload  # Python 3.4+
-# from Bin import MyHeaders
+from Bin import MyHeaders
 import tomllib
 import numpy as np
 
@@ -54,8 +54,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-cf',type=str, help = 'path to the desired configuration file', default=Default_config_file, action = 'store')
     
-    jupyter = False
-    # jupyter = MyHeaders.is_notebook()
+    # jupyter = False
+    jupyter = MyHeaders.is_notebook()
     if jupyter:
         args = parser.parse_args('')
     else:
@@ -67,8 +67,9 @@ if __name__ == "__main__":
 with open(args.cf, mode="rb") as f:
     config = tomllib.load(f)
 
+#%% Initialise material
+
 if config["interpolation"]["dimension"] == 1:
-    #%% Initialise material
     Mat = pre.Material(             flag_lame = True,                           # If True should input lmbda and mu instead of E and nu
                                     coef1     = config["material"]["E"],        # Young Modulus
                                     coef2     = config["material"]["A"]         # Section area of the 1D bar
@@ -183,7 +184,7 @@ if config["solver"]["ParametricStudy"]:
                                                 config["solver"]["n_modes_max"]
                     )
 
-    #%% Load coarser model  
+#%% Load coarser model  
 
 match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibility and name should be read from config file
     case True:
@@ -225,6 +226,7 @@ if config["solver"]["ParametricStudy"]:
                                     
     if config["training"]["TrainingRequired"]:
         ROM_model.train()
+        ROM_model.to(torch.float64)
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:

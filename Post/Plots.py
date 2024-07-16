@@ -460,7 +460,7 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
         Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]
         Nodal_coordinates = torch.cat(Nodal_coordinates)
         u_analytical_E_discrete = AnalyticSolution(A,E,Nodal_coordinates.data,u0,uL)
-        E = torch.tensor([E])
+        E = torch.tensor([E],dtype=u0.dtype)
         E = E[:,None] # Add axis so that dimensions match
         u_E = BeamROM(TrialCoordinates,[E])
         u_NN_discrete = BeamROM(Nodal_coordinates,[E])
@@ -499,9 +499,9 @@ def Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiPar
         uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticBiParametricSolution(A,[E2,E1],TrialCoordinates.data,u0,uL).view(-1)
-        E1 = torch.tensor([E1])
+        E1 = torch.tensor([E1],dtype=u0.dtype)
         E1 = E1[:,None] # Add axis so that dimensions match
-        E2 = torch.tensor([E2])
+        E2 = torch.tensor([E2],dtype=u0.dtype)
         E2 = E2[:,None] # Add axis so that dimensions match        
         E = [E1,E2]
         u_E = BeamROM(TrialCoordinates,E).view(-1)

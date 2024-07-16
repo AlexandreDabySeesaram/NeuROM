@@ -74,16 +74,16 @@ class ElementBlock_Bar_Quadr(nn.Module):
             x_left = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
             x_right = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
             x_mid = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
-
-        sh_mid_1 = self.LinearBlock(x, x_left, x_right, torch.tensor([0]), x_right - x_left)
-        sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, torch.tensor([0]))    
+        self.register_buffer('zero', torch.tensor([0]))
+        sh_mid_1 = self.LinearBlock(x, x_left, x_right, self.zero, x_right - x_left)
+        sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, self.zero)    
         sh_mid = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right)).T
 
         sh_R_1 = self.LinearBlock(x, x_left, x_right, x_mid - x_left, x_mid - x_right)
-        sh_R_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left,  torch.tensor([0])) 
+        sh_R_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left,  self.zero) 
         sh_R = (sh_R_1*sh_R_2)/((x_left-x_mid)*(x_left - x_right)).T
 
-        sh_L_1 = self.LinearBlock(x, x_left, x_right,  torch.tensor([0]), x_right - x_left)
+        sh_L_1 = self.LinearBlock(x, x_left, x_right,  self.zero, x_right - x_left)
         sh_L_2 = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
         sh_L = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid)).T
 
@@ -110,6 +110,8 @@ class ElementBlock_Bar_Lin(nn.Module):
         super(ElementBlock_Bar_Lin, self).__init__()
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
+        self.register_buffer('zero', torch.tensor([0], dtype = torch.float32))
+        self.register_buffer('one', torch.tensor([1], dtype = torch.float32))
         
     def forward(self, x, coordinates, i):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
@@ -128,8 +130,8 @@ class ElementBlock_Bar_Lin(nn.Module):
             x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
             x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([0]), torch.tensor([1]))
-        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), torch.tensor([1]), torch.tensor([0]))
+        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
+        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
         out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
         return out
 
@@ -163,8 +165,10 @@ class MeshNN(nn.Module):
 
         # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
-        self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
+        self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
+        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        # self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
+        # self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  
@@ -216,8 +220,12 @@ class MeshNN(nn.Module):
         Args:
             u_d (Float list): The left and right BCs"""
 
-        self.u_0 = torch.tensor(u_d[0], dtype=torch.float64)
-        self.u_L = torch.tensor(u_d[1], dtype=torch.float64)
+        # self.u_0 = torch.tensor(u_d[0], dtype=torch.float64)
+        # self.u_L = torch.tensor(u_d[1], dtype=torch.float64)
+        self.register_buffer('u_0', torch.tensor(u_d[0], dtype=torch.float64))
+        self.register_buffer('u_L', torch.tensor(u_d[1], dtype=torch.float64))
+
+
         self.InterpoLayer_dd.weight.data = torch.tensor([self.u_0,self.u_L], requires_grad=False)
         self.InterpoLayer_dd.weight.requires_grad = False
 
@@ -737,7 +745,7 @@ class ElementBlock2D_Lin(nn.Module):
         """
         super(ElementBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
-
+        self.register_buffer('GaussPoint',self.GP())
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
 
@@ -758,7 +766,7 @@ class ElementBlock2D_Lin(nn.Module):
         node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
 
         if flag_training:
-            refCoordg = self.GP().repeat(cell_id.shape[0],1)
+            refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1)
 
             w_g = 0.5                           # Gauss weight
             Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle

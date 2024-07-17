@@ -25,7 +25,6 @@ from Bin import MyHeaders
 import tomllib
 import numpy as np
 
-
 ####################################################
 ###                                              ###
 ###             /!\   WARNING   /!\              ###
@@ -41,8 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-# Default_config_file = 'Configuration/config_2D_ROM.toml'
-Default_config_file = 'Configuration/config_1D.toml'
+Default_config_file = 'Configuration/config_2D_ROM.toml'
+# Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
 ###                                              ###
@@ -72,7 +71,7 @@ with open(args.cf, mode="rb") as f:
 if config["interpolation"]["dimension"] == 1:
     Mat = pre.Material(             flag_lame = True,                           # If True should input lmbda and mu instead of E and nu
                                     coef1     = config["material"]["E"],        # Young Modulus
-                                    coef2     = config["material"]["A"]         # Section area of the 1D bar
+                                    coef2     = config["geometry"]["A"]         # Section area of the 1D bar
                         )
 elif config["interpolation"]["dimension"] == 2:
     try:
@@ -227,6 +226,7 @@ if config["solver"]["ParametricStudy"]:
     if config["training"]["TrainingRequired"]:
         ROM_model.train()
         ROM_model.to(torch.float64)
+        # ROM_model.to(mps_device)
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:

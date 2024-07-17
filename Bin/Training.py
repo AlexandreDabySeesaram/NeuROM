@@ -419,22 +419,25 @@ def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordi
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
 def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
-    A                   = config["geometry"]["A"]
-    L                   = config["geometry"]["L"]
+    if config["interpolation"]["dimension"] == 1:
+        A                   = config["geometry"]["A"]
+        L                   = config["geometry"]["L"]
     n_epochs            = config["training"]["n_epochs"]
     BiPara              = config["solver"]["BiPara"]
     loss_decrease_c     = config["training"]["loss_decrease_c"]
     ### Generate training points coordinates
     # In space
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                        dtype=torch.float32, 
+                                        dtype=model.float_config.dtype, 
+                                        device = model.float_config.device,
                                         requires_grad=True)
     # In the parameters space
     Training_para_coordinates_1 = torch.linspace(
                                                 config["parameters"]["para_1_min"],
                                                 config["parameters"]["para_1_max"],
                                                 5*config["parameters"]["N_para_1"], 
-                                                dtype=torch.float32, 
+                                                dtype=model.float_config.dtype, 
+                                                device = model.float_config.device,
                                                 requires_grad=True
                                                 )
 
@@ -444,7 +447,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                                 config["parameters"]["para_2_min"],
                                                 config["parameters"]["para_2_max"],
                                                 5*config["parameters"]["N_para_2"], 
-                                                dtype=torch.float32, 
+                                                dtype=model.float_config.dtype, 
+                                                device = model.float_config.device,
                                                 requires_grad=True
                                                 )
 
@@ -649,14 +653,16 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
     ### Generate training points coordinates
     # In space
     Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
-                                        dtype=torch.float32, 
+                                        dtype=model.float_config.dtype, 
+                                        device = model.float_config.device,
                                         requires_grad=True)
     # In the parameters space
     Training_para_coordinates_1 = torch.linspace(
                                                 config["parameters"]["para_1_min"],
                                                 config["parameters"]["para_1_max"],
                                                 5*config["parameters"]["N_para_1"], 
-                                                dtype=torch.float32, 
+                                                dtype=model.float_config.dtype, 
+                                                device = model.float_config.device,
                                                 requires_grad=True
                                                 )
 
@@ -666,7 +672,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                                 config["parameters"]["para_2_min"],
                                                 config["parameters"]["para_2_max"],
                                                 5*config["parameters"]["N_para_2"], 
-                                                dtype=torch.float32, 
+                                                dtype=model.float_config.dtype, 
+                                                device = model.float_config.device,
                                                 requires_grad=True
                                                 )
 
@@ -1011,7 +1018,6 @@ def Training_FinalStageLBFGS_Mixed(BeamModel_u, BeamModel_du, A, E, L, InitialCo
     # du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
     l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
     print(f'* Final l2 loss grad : {numpy.format_float_scientific(l2_loss_grad, precision=4)}')
-
 
 def LBFGS_Stage2_2D(Model_u, Model_du, Mesh_u, Mesh_du, IDs_u, IDs_du, PlotCoordinates, 
                         #TrainCoordinates, TrainIDs_u, TrainIDs_du,
@@ -1367,8 +1373,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
 
     return Loss_vect, (time_stop-time_start)
     
-
-
 def Training_2D_NeuROM(model, config, optimizer,Mat):
     n_epochs = model.Max_epochs
     # In the parameters space
@@ -1841,25 +1845,29 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                                     config["solver"]["n_modes_ini"],
                                                     config["solver"]["n_modes_max"]
                         )
-        model.eval()
-        model_2.to(torch.float64)
-        model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
+        if n_refinement < config["training"]["multiscl_max_refinment"]:
+            model.eval()
+            if model_2.float_config.dtype != model.float_config.dtype:
+                model_2.to(model.float_config.dtype)
+            if model_2.float_config.device != model.float_config.device:
+                model_2.to(model.float_config.device)
+            model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
 
-        # model_2.train()
-        model_2.training_recap = model.training_recap
-        model = model_2
-        model.UnfreezeTruncated()
-        model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
-        model.Freeze_MeshPara()  
-        if not config["solver"]["FrozenMesh"]:
-            model.UnFreeze_Mesh()                                               # Set space mesh cordinates as trainable
-        if not config["solver"]["FrozenParaMesh"]:
-            model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
+            # model_2.train()
+            model_2.training_recap = model.training_recap
+            model = model_2
+            model.UnfreezeTruncated()
+            model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
+            model.Freeze_MeshPara()  
+            if not config["solver"]["FrozenMesh"]:
+                model.UnFreeze_Mesh()                                               # Set space mesh cordinates as trainable
+            if not config["solver"]["FrozenParaMesh"]:
+                model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
 
-        model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                    Max_epochs = config["training"]["n_epochs"], 
-                                    learning_rate = config["training"]["learning_rate"])
-        model.train()
+            model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
+                                        Max_epochs = config["training"]["n_epochs"], 
+                                        learning_rate = config["training"]["learning_rate"])
+            model.train()
     try:
         return model, Mesh_object_fine
     except:

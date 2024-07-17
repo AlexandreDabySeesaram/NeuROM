@@ -167,8 +167,8 @@ def GramSchmidt_test(B):
 def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     with torch.no_grad(): #No derivatino of the heavyside function
-        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
-        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = model.float_config.dtype, device = model.float_config.device))
+        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = model.float_config.dtype, device = model.float_config.device))
 
     ###### Enables orthogonalisation process #######
     Orthgonality = False                                    # Enable othogonality constraint of the space modes
@@ -218,8 +218,8 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
     else:
         F = torch.cat((f_1,f_2),dim = 1)
-        E1 = torch.cat((E[0],torch.ones(E[0].shape,dtype = E[0].dtype)),dim = 1)
-        E2 = torch.cat((torch.ones(E[1].shape,dtype = E[1].dtype),E[1]),dim = 1)
+        E1 = torch.cat((E[0],torch.ones(E[0].shape, dtype = model.float_config.dtype, device = model.float_config.device)),dim = 1)
+        E2 = torch.cat((torch.ones(E[1].shape, dtype = model.float_config.dtype, device = model.float_config.device),E[1]),dim = 1)
         term1_contributions = 0.25 * A *(
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)

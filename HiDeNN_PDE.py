@@ -144,6 +144,8 @@ class MeshNN(nn.Module):
     is equivqlent to solving the PDE. """
     def __init__(self, mesh):
         super(MeshNN, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+
         self.version = "Trapezoidal"
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
@@ -167,6 +169,7 @@ class MeshNN(nn.Module):
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
         self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        #TODO: trace why mesh.borders_nodes is not populated in 1D NeuROM
         # self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
         # self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
@@ -207,8 +210,12 @@ class MeshNN(nn.Module):
     
     def Init_from_previous(self,previous_model):
         newcoordinates = [coord for coord in self.coordinates]
-        newcoordinates = torch.cat(newcoordinates,dim=0)
-        NewNodalValues = previous_model(newcoordinates)
+        try:
+             previous_model.float_config.dtype
+        except:
+            previous_model.float_config = torch.tensor([0],dtype = torch.float64)
+        newcoordinates = torch.cat(newcoordinates,dim=0).to(previous_model.float_config.dtype)
+        NewNodalValues = previous_model(newcoordinates).to(self.float_config.dtype)
         self.InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
 
     def ZeroOut(self):
@@ -261,7 +268,8 @@ class InterpPara(nn.Module):
     def __init__(self, mu_min, mu_max,N_mu):
         super(InterpPara, self).__init__()
         import numpy as np
-        super(InterpPara, self).__init__()
+        # super(InterpPara, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.N_mu = N_mu.int()
@@ -328,12 +336,17 @@ class InterpPara(nn.Module):
     def Init_from_previous(self,previous_model):
         newparacoordinates = [coord for coord in self.coordinates]
         newparacoordinates = torch.cat(newparacoordinates,dim=0)
-        self.InterpoLayer.weight.data = previous_model(newparacoordinates).T
+        try:
+             previous_model.float_config.dtype
+        except:
+            previous_model.float_config = torch.tensor([0],dtype = torch.float64)
+        self.InterpoLayer.weight.data = (previous_model(newparacoordinates).to(previous_model.float_config.dtype).T).to(self.float_config.dtype)
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
     def __init__(self, mesh, ParametersList, config, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes_max==1: #If non homogeneous BCs, add mode for relevement
             n_modes_max+=1
@@ -873,6 +886,7 @@ class MeshNN_2D(nn.Module):
 
     def __init__(self, mesh, n_components):
         super(MeshNN_2D, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
@@ -940,10 +954,14 @@ class MeshNN_2D(nn.Module):
         self.IdStored = True
 
     def Init_from_previous(self,CoarseModel):
+        try:
+             CoarseModel.float_config.dtype
+        except:
+            CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
         newcoordinates = [coord for coord in self.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
         IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
-        NewNodalValues = CoarseModel(newcoordinates,IDs_newcoord)
+        NewNodalValues = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype)
         # check if a cell ID was not found for some new nodes 
         if -1 in IDs_newcoord:
             index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
@@ -954,8 +972,8 @@ class MeshNN_2D(nn.Module):
                 dist_vect = not_found_coordinates - oldcoordinates
                 dist = torch.norm(dist_vect, dim=1)
                 closest_old_nodal_value = dist.topk(1, largest=False)[1]
-                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].type(torch.float64)
-                NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].type(torch.float64)
+                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
+                NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].to(self.float_config.dtype)
         new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
         new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
         new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
@@ -1492,6 +1510,8 @@ class MeshNN_1D(nn.Module):
 
     def __init__(self, mesh, n_integr_points):
         super(MeshNN_1D, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+
         self.version = "Gauss_quadrature"
         self.mesh = mesh
         self.n_integr_points = n_integr_points
@@ -1599,10 +1619,14 @@ class MeshNN_1D(nn.Module):
             self.coordinates[node].requires_grad = False
 
     def Init_from_previous(self,CoarseModel):
+        try:
+             CoarseModel.float_config.dtype
+        except:
+            CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
         newcoordinates = [coord for coord in self.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
         IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
-        NewNodalValues = CoarseModel(newcoordinates,IDs_newcoord)
+        NewNodalValues = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype)
         # check if a cell ID was not found for some new nodes 
         if -1 in IDs_newcoord:
             index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
@@ -1613,7 +1637,7 @@ class MeshNN_1D(nn.Module):
                 dist_vect = not_found_coordinates - oldcoordinates
                 dist = torch.norm(dist_vect, dim=1)
                 closest_old_nodal_value = dist.topk(1, largest=False)[1]
-                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].type(torch.float64)
+                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
                 # NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].type(torch.float64)
         new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues])
         # new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])

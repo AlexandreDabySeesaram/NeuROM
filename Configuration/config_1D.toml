@@ -28,7 +28,7 @@ Constitutive            = false
 
 [[DirichletDictionryList]]
 Entity                  = 4 
-Value                   = 0.00 
+Value                   = 0 
 Normal                  = 0 
 Relation                = false
 Constitutive            = false
@@ -42,8 +42,6 @@ Constitutive            = false
 [material]
 E                       = 175                                           # Young's modulus (175 if 1D 5*1e-3 if 2D)
 nu                      = 0.3                                           # Poisson's ration
-A                       = 1.0
-
 
 ####################################################
 ###                                              ###
@@ -56,7 +54,7 @@ dimension               = 1                                             # Dimens
 order                   = 1                                             # Order of the shape functions
 np                      = 10                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
-n_integr_points         = 5                                            # Number of integration points per element
+n_integr_points         = 5                                             # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -70,9 +68,9 @@ FrozenParaMesh          = true                                          # Nodal 
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = false                                         # Enable bi-stifness beam in 1D
+BiPara                  = true                                         # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 3                                             # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
 
 ####################################################
 ###                                              ###
@@ -93,25 +91,16 @@ FloatPrecision          = "double"                                      # Enable
 
 [training]
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
-TwoStageTraining        = false                                          # 2 stages = Gradient descend + LBFGS, 1 stage = LBFGS
-n_epochs                = 1000                                          # Maximum number of iterations 
-n_epochs_1                = 1000                                          # Maximum number of iterations for the training stage
-n_epochs_2                = 100                                          # Maximum number of iterations for the training stage
-learning_rate           = 1.0e-3                                         # optimizer learning rate
-LoadPreviousModel       = false                                         # Boolean to enable reusing a previously trained model
+n_epochs                = 3000                                          # Maximum number of iterations for the training stage
+learning_rate           = 0.001                                         # optimizer learning rate
+LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
 RemoveLastMode          = true                                      # Boolean enabling to remove the last mode that is by construction useless (to avoid increasing the ROB with multi level training)
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-15                                         # Stagnation criterion for the loss decay rate (mode addition criterion)
+loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
 Stagnation_threshold    = 1e-7
-Stagnation_threshold_2    = 1e-7
-Stagnation_counter_1      = 5
-Stagnation_counter_2      = 5
-Loss_counter            = 1000
-Points_per_element      = 20                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
 multi_mode_training     = true                                          # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 2                                             # Multiscale maximum number of refinement
-multiscl_refinment_cf   = 2   
-
+multiscl_max_refinment  = 3                                             # Multiscale maximum number of refinement
+multiscl_refinment_cf   = 2                                             # Multiscale homogeneous refinement coefficient
 
 ####################################################
 ###                                              ###
@@ -122,7 +111,7 @@ multiscl_refinment_cf   = 2
 [postprocess]
 BoolPlot                = false                                         # Boolean for plots used for gif
 BoolPlotPost            = false                                         # Boolean for plots used for Post
-BoolCompareNorms        = false                                          # Boolean for comparing energy norm to L2 norm
+BoolCompareNorms        = true                                          # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                         # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
 Plot_loss_mode          = false

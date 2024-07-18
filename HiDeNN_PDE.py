@@ -374,13 +374,7 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
         self.config = config
-        match config["hardware"]["FloatPrecision"]:
-            case "simple":
-                self.tensor_float_type = torch.float32
-            case "double":
-                self.tensor_float_type = torch.float64
-            case "half":
-                self.tensor_float_type = torch.float16
+
 
         self.n_para = len(ParametersList)
         match mesh.dimension:

@@ -66,6 +66,29 @@ if __name__ == "__main__":
 with open(args.cf, mode="rb") as f:
     config = tomllib.load(f)
 
+#%% Initialise hardware
+
+match config["hardware"]["FloatPrecision"]:
+    case "simple":
+        tensor_float_type = torch.float32
+    case "double":
+        tensor_float_type = torch.float64
+    case "half":
+        tensor_float_type = torch.float16
+
+match config["hardware"]["device"]:
+    case 'mps':
+        device = torch.device("mps")
+        if tensor_float_type != torch.float32:
+            print('***** WARNING: Changing float precision to simple for mps compatibility')
+            tensor_float_type = torch.float32
+    case 'cuda':
+        device = torch.device("cuda")
+    case 'cpu':
+        device = torch.device("cpu")
+        
+
+
 #%% Initialise material
 
 if config["interpolation"]["dimension"] == 1:
@@ -225,8 +248,8 @@ if config["solver"]["ParametricStudy"]:
                                     
     if config["training"]["TrainingRequired"]:
         ROM_model.train()
-        ROM_model.to(torch.float64)
-        # ROM_model.to(mps_device)
+        ROM_model.to(tensor_float_type)
+        ROM_model.to(device)
         optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:
@@ -238,6 +261,7 @@ if config["solver"]["ParametricStudy"]:
                 # Training_NeuROM(ROM_model, config, optimizer, Mat)              # First stage of training (ADAM)
                 # Training_NeuROM_FinalStageLBFGS(ROM_model,config, Mat)               # Second stage of training (LBFGS)
                 ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
+        ROM_model.to(torch.device("cpu"))
         ROM_model.eval()
 else:
     if not config["solver"]["FrozenMesh"]:

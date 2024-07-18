@@ -27,7 +27,10 @@ $EndPhysicalNames
 https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
 def get_git_tag() -> str:
-    return subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+    try:
+        return subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+    except:
+        return 'unknown version'
 
 def PrintWelcome():
     version = get_git_tag()

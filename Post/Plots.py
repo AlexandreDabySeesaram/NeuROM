@@ -17,9 +17,10 @@ matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "14"
 from matplotlib.ticker import MaxNLocator
-
-import tikzplotlib
-
+try:
+    import tikzplotlib
+except:
+    print('* WARNING: could not load tikzplotlib')
 from matplotlib.legend import Legend
 Legend._ncol = property(lambda self: self._ncols)
 

@@ -1851,6 +1851,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 model_2.to(model.float_config.dtype)
             if model_2.float_config.device != model.float_config.device:
                 model_2.to(model.float_config.device)
+                print(f'Finer model passed to device {model.float_config.device}')
             model_2.Init_from_previous(model, Model_provided=True)                                           # Initialise fine model with coarse one
 
             # model_2.train()

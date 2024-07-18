@@ -56,7 +56,8 @@ class ElementBlock_Bar_Quadr(nn.Module):
         super(ElementBlock_Bar_Quadr, self).__init__()
         self.LinearBlock = LinearBlock()
         self.connectivity = connectivity.astype(int)
-        
+        self.register_buffer('zero', torch.tensor([0]))
+
     def forward(self, x, coordinates, i):
         # i = self.i
         # For the outter Nodes, phantom elements are created 
@@ -74,7 +75,6 @@ class ElementBlock_Bar_Quadr(nn.Module):
             x_left = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
             x_right = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
             x_mid = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
-        self.register_buffer('zero', torch.tensor([0]))
         sh_mid_1 = self.LinearBlock(x, x_left, x_right, self.zero, x_right - x_left)
         sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, self.zero)    
         sh_mid = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right)).T
@@ -118,21 +118,38 @@ class ElementBlock_Bar_Lin(nn.Module):
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
         """
+        try:
+            if -1  in i:
+                x_left_0 = coordinates[0]-coordinates[1]/100
+                x_right_0 = coordinates[0]  
+                x_left_2 = coordinates[1]
+                x_right_2 = coordinates[1]*(1+1/100)
+                x_left = [x_left_0,x_left_2]
+                x_right = [x_right_0,x_right_2]
+            else:
+                x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
+                x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-        if -1  in i:
-            x_left_0 = coordinates[0]-coordinates[1]/100
-            x_right_0 = coordinates[0]  
-            x_left_2 = coordinates[1]
-            x_right_2 = coordinates[1]*(1+1/100)
-            x_left = [x_left_0,x_left_2]
-            x_right = [x_right_0,x_right_2]
-        else:
-            x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
-            x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
+            left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
+            right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
+            out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+        except:
+            self.register_buffer('zero', torch.tensor([0], dtype = torch.float32))
+            self.register_buffer('one', torch.tensor([1], dtype = torch.float32))
+            if -1  in i:
+                x_left_0 = coordinates[0]-coordinates[1]/100
+                x_right_0 = coordinates[0]  
+                x_left_2 = coordinates[1]
+                x_right_2 = coordinates[1]*(1+1/100)
+                x_left = [x_left_0,x_left_2]
+                x_right = [x_right_0,x_right_2]
+            else:
+                x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
+                x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-        left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
-        right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
-        out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+            left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
+            right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
+            out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
         return out
 
 

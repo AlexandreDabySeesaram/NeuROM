@@ -141,11 +141,18 @@ class Mesh:
             print('*************** Mesh Geometry  ****************\n' )
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
-            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
-                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
-                    ' -clmax '+self.h_max_str  
-                    ##' -clmin '+self.h_min_str + '- algo delquad'
-            os.system(mesh_command)        
+            try:
+                mesh_command = 'gmsh Geometries/'+self.name_geo+ \
+                        ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                        ' -clmax '+self.h_max_str  
+                        ##' -clmin '+self.h_min_str + '- algo delquad'
+                os.system(mesh_command)
+            except:
+                mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
+                        ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                        ' -clmax '+self.h_max_str  
+                        ##' -clmin '+self.h_min_str + '- algo delquad'
+                os.system(mesh_command)
          
     
     def ReadMesh(self):

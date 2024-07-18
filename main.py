@@ -32,7 +32,7 @@ import tomllib
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_1D.toml'
+Default_config_file = 'Configuration/config_2D.toml'
 
 ####################################################
 ###                                              ###
@@ -105,8 +105,6 @@ match config["interpolation"]["dimension"]:
     case 2:
         Mesh_object.ExportMeshVtk()
 
-# if config["interpolation"]["dimension"] ==2:
-#     Mesh_object.ExportMeshVtk()
 
 if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
     Mesh_object.AssemblyMatrix()                                            # Build the assembly weight matrix
@@ -134,9 +132,8 @@ match config["interpolation"]["dimension"]:
         Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
 # Set the coordinates as trainable
-Model_FEM.UnFreeze_Mesh()
+# Model_FEM.UnFreeze_Mesh()
 # Set the coordinates as untrainable
-Model_FEM.Freeze_Mesh()
 Model_FEM.Freeze_Mesh()
 
 # Make nodal values trainable (except the BC). Default choice 
@@ -239,9 +236,7 @@ else:
                     Model_FEM = Training_1D_FEM_LBFGS(Model_FEM, config, Mat)
 
         case 2:
-            time_start = time.time()
             Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
-            time_end = time.time()
 
 
 #%% Post-processing # # # # # # # # # # # # # # # # # # # # # # 

@@ -54,9 +54,9 @@ A                       = 1.0
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 640                                            # Number of Nodes in the Mesh in 1D
+np                      = 320                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
-n_integr_points         = 5                                            # Number of integration points per element
+n_integr_points         = 5                                           # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -65,7 +65,7 @@ n_integr_points         = 5                                            # Number 
 ####################################################
 
 [solver]
-FrozenMesh              = false                                         # Nodal coordinates frozen
+FrozenMesh              = true                                         # Nodal coordinates frozen
 FrozenParaMesh          = false                                          # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed' = weak formulation
 IntegralMethod          = 'Gaussian_quad'                                # Type of integration (Gaussian_quad, Trapezoidal)
@@ -104,7 +104,7 @@ Stagnation_threshold_2    = 1e-7
 Stagnation_counter_1      = 5
 Stagnation_counter_2      = 5
 Loss_counter            = 1000
-Points_per_element      = 20                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
+Points_per_element      = 10                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
 
 ####################################################
 ###                                              ###
@@ -121,6 +121,7 @@ Visualisatoin_only      = false
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
 n_visualization         = 1000                                          # Number of points used to plot the results 
+Show_Trajectories       = false
 
 
 ####################################################

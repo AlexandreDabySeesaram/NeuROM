@@ -177,7 +177,8 @@ class MeshNN(nn.Module):
 
         self.InterpoLayer_dd = nn.Linear(2,1,bias=False)
         #self.InterpoLayer_dd.weight.data = 0.1*torch.ones(2)
-        self.InterpoLayer_dd.weight.data = 0.0001*torch.randint(low=-100, high=100, size=(2,))
+        # self.InterpoLayer_dd.weight.data = 0.0001*torch.randint(low=-100, high=100, size=(2,))
+        self.InterpoLayer_dd.weight.data = 0.1*torch.ones(2)
 
         self.SumLayer = nn.Linear(2,1,bias=False)
         self.SumLayer.weight.data.fill_(1)

@@ -1703,6 +1703,7 @@ def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
     A = config["material"]["A"]
     E = config["material"]["E"]
     L = config["geometry"]["L"]
+    Show_trajectories = config["postprocess"]["Show_Trajectories"]
 
     max_stagnation_counter = config["training"]["Stagnation_counter_2"]
     stagnation_threshold = config["training"]["Stagnation_threshold_2"]
@@ -1850,8 +1851,9 @@ def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
 
-    Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
-    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+    # Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
+    if Show_trajectories:
+        Pplot.PlotTrajectories(Coord_trajectories,'Trajectories',Show_trajectories)
 
     return model
 
@@ -2104,7 +2106,7 @@ def Training_1D_Mixed_LBFGS(model_u, model_du, config, Mat):
 
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print()
-    Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
-    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+    # Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
+    # Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
     return model_u, model_du

@@ -94,7 +94,7 @@ def PlotEnergyLoss(error,zoom,name):
     #plt.show()
     plt.clf()
 
-def PlotTrajectories(Coord_trajectories,name):
+def PlotTrajectories(Coord_trajectories,name, show):
     """Plots the trajectories of the coordinates during training"""
     
     if len(Coord_trajectories)>5000:
@@ -107,7 +107,8 @@ def PlotTrajectories(Coord_trajectories,name):
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
     tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
-    #plt.show()
+    if show:
+        plt.show()
     plt.clf()
 
 def Plot_NegLoss_Modes(Modes_flag,error,name,tikz = False):
@@ -842,6 +843,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     A = config["material"]["A"]
     E = config["material"]["E"]
     n_visu = config["postprocess"]["n_visualization"]
+    show = config["postprocess"]["Show_Trajectories"]
 
 
     if config["solver"]["IntegralMethod"] == "Gaussian_quad":
@@ -895,7 +897,8 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     # plt.title('Displacement')
     plt.savefig('Results/Displacement.pdf', transparent=True) 
     tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
-    #plt.show()
+    if show:
+        plt.show()
     plt.clf()
 
     fig = matplotlib.pyplot.gcf()
@@ -913,9 +916,11 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     # plt.title('Displacement')
     plt.savefig('Results/Gradient.pdf', transparent=True)  
     tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
-
-    #plt.show()
+    if show:
+        plt.show()
     plt.clf()
+
+    return l2_loss, l2_loss_grad
 
 
 
@@ -946,3 +951,42 @@ def ExportSamplesforEval(model,Mat,config):
         np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma.npy", np.array(sigma.detach()))
         np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
 
+
+def Normalized_error_1D(model, config, Mat, model_du = []):
+
+    new_coord = [coord for coord in model.coordinates]
+    new_coord = torch.cat(new_coord,dim=0)
+
+    L = config["geometry"]["L"]
+    A = config["material"]["A"]
+    E = config["material"]["E"]
+    n_visu = config["postprocess"]["n_visualization"]
+
+    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
+        model.mesh.ExportMeshVtk1D(flag_update = True)
+
+        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+        model.eval()
+        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+    
+    if config["solver"]["IntegralMethod"] == "None":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = model_du(PlotCoordinates)
+
+
+
+    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
+
+    return l2_loss, l2_loss_grad

@@ -27,7 +27,11 @@ $EndPhysicalNames
 https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
 def get_git_tag() -> str:
-    return subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+    try:
+        val = subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+    except:
+        val = "0.0"
+    return val
 
 def PrintWelcome():
     version = get_git_tag()
@@ -134,6 +138,9 @@ class Mesh:
             self.NoExcl = False
 
     def MeshGeo(self):
+        if not os.path.exists('Geometries'):
+            os.makedirs('Geometries')
+            
         path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):
             pass

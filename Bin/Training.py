@@ -1709,7 +1709,13 @@ def Training_2D_FEM(model, config, Mat):
         _,xg,detJ            = model()
         model.eval()
         List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
-        eps                  =  Strain(model(xg, List_elems),xg)
+
+        if model.float_config.device != torch.device("cpu"):
+            device = model.float_config.device
+            model.to(torch.device("cpu"))
+            xg.to(torch.device("cpu"))
+            eps              =  Strain(model(xg, List_elems),xg)
+            model.to(device)
         max_eps              = torch.max(eps)
 
         if n_refinement > 1:

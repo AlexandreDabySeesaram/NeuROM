@@ -161,7 +161,7 @@ class MeshNN(nn.Module):
     is equivqlent to solving the PDE. """
     def __init__(self, mesh):
         super(MeshNN, self).__init__()
-        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
         self.version = "Trapezoidal"
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
@@ -286,7 +286,7 @@ class InterpPara(nn.Module):
         super(InterpPara, self).__init__()
         import numpy as np
         # super(InterpPara, self).__init__()
-        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
         self.mu_min = mu_min
         self.mu_max = mu_max
         self.N_mu = N_mu.int()
@@ -356,14 +356,14 @@ class InterpPara(nn.Module):
         try:
              previous_model.float_config.dtype
         except:
-            previous_model.float_config = torch.tensor([0],dtype = torch.float64)
+            previous_model.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float64)  )                                                     # Keep track of device and dtype used throughout the model
         self.InterpoLayer.weight.data = (previous_model(newparacoordinates).to(previous_model.float_config.dtype).T).to(self.float_config.dtype)
 
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
     def __init__(self, mesh, ParametersList, config, n_modes_ini = 1, n_modes_max = 100):
         super(NeuROM, self).__init__()
-        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
         if IndexesNon0BCs and n_modes_max==1: #If non homogeneous BCs, add mode for relevement
             n_modes_max+=1
@@ -897,7 +897,7 @@ class MeshNN_2D(nn.Module):
 
     def __init__(self, mesh, n_components):
         super(MeshNN_2D, self).__init__()
-        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
@@ -951,8 +951,8 @@ class MeshNN_2D(nn.Module):
 
     def ZeroOut(self):
         # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
-        self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_x])
-        self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]]))) for i in self.nodal_values_y])
+        self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_x])
+        self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_y])
         self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
     def StoreIdList(self,x):
@@ -1095,8 +1095,9 @@ class MeshNN_2D(nn.Module):
 
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
-        self.detJ_0 = torch.tensor(new_det)
-
+        self.detJ_0 = torch.tensor( new_det, 
+                                    dtype = self.float_config.dtype, 
+                                    device= self.float_config.device)
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
             self.Interpolation.UpdateConnectivity(self.connectivity)
@@ -1192,7 +1193,9 @@ class MeshNN_2D(nn.Module):
 
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
-        self.detJ_0 = torch.tensor(new_det)
+        self.detJ_0 = torch.tensor( new_det, 
+                                    dtype = self.float_config.dtype, 
+                                    device= self.float_config.device)
 
         if self.order =='1':
             self.ElementBlock.UpdateConnectivity(self.connectivity)
@@ -1521,7 +1524,7 @@ class MeshNN_1D(nn.Module):
 
     def __init__(self, mesh, n_integr_points):
         super(MeshNN_1D, self).__init__()
-        self.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float32)  )                                                     # Keep track of device and dtype used throughout the model
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
         self.version = "Gauss_quadrature"
         self.mesh = mesh
@@ -1633,7 +1636,8 @@ class MeshNN_1D(nn.Module):
         try:
              CoarseModel.float_config.dtype
         except:
-            CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
+            CoarseModel.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float64)  )                                                     # Keep track of device and dtype used throughout the model
+            # CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
         newcoordinates = [coord for coord in self.coordinates]
         newcoordinates = torch.cat(newcoordinates,dim=0)
         IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)

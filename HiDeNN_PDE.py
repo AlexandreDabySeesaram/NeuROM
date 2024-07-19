@@ -636,33 +636,40 @@ class InterpolationBlock2D_Lin(nn.Module):
        
         super(InterpolationBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
-    
+        self.updated_connectivity = True
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
-
+        self.updated_connectivity = True
     def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values, flag_training):
 
 
-        cell_nodes_IDs = self.connectivity[cell_id,:] - 1
-        if cell_nodes_IDs.ndim == 1:
-            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+        # cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+        # if cell_nodes_IDs.ndim == 1:
+        #     cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
 
         # ## DEBUG
-        flag_training = True
+        # flag_training = True
 
         if flag_training:
-
-            node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
-            node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
-            node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
-
-            u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
-
+            if self.updated_connectivity:
+                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+                if cell_nodes_IDs.ndim == 1:
+                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+                node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
+                node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
+                node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
+                self.nodes_values = torch.stack([node1_value,node2_value,node3_value])
+                self.updated_connectivity = False
+            # u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+            u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
+            
             return u
 
         else:
-
-            values = torch.ones_like(torch.tensor(nodal_values))
+            cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+            if cell_nodes_IDs.ndim == 1:
+                cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+            values = torch.ones_like(torch.tensor(nodal_values, dtype=nodal_values[0][0].dtype,  device=nodal_values[0][0].device))
 
             for j in range(values.shape[0]):
                 for k in range(values.shape[1]):

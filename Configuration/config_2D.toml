@@ -69,7 +69,7 @@ mu                      = 1.0
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 2                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.5                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -100,7 +100,7 @@ volume_forces           = false
 BoolGPU                 = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                     # Enable compilation of the model
 FloatPrecision          = "simple"                                  # Enable to switch between simple (float32) or double (float64)
-device                  = 'mps'                                     # Device for training (mps, cuda, cpu) 
+device                  = 'cpu'                                     # Device for training (mps, cuda, cpu) 
 
 
 ####################################################

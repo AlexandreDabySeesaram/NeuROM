@@ -647,8 +647,8 @@ class InterpolationBlock2D_Lin(nn.Module):
         if cell_nodes_IDs.ndim == 1:
             cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
 
-        ## DEBUG
-        flag_training = True
+        # ## DEBUG
+        # flag_training = True
 
         if flag_training:
 

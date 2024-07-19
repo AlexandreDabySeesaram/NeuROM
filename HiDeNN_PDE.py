@@ -987,8 +987,8 @@ class MeshNN_2D(nn.Module):
                 closest_old_nodal_value = dist.topk(1, largest=False)[1]
                 NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
                 NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].to(self.float_config.dtype)
-        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()])
-        new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()])
+        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
+        new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
         new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
         self.nodal_values_x = new_nodal_values_x
         self.nodal_values_y = new_nodal_values_y

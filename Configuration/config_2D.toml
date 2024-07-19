@@ -78,7 +78,7 @@ MaxElemSize2D           = 2                                         # Maximum el
 ####################################################
 
 [solver]
-FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenMesh              = true                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
@@ -100,7 +100,7 @@ volume_forces           = false
 BoolGPU                 = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                     # Enable compilation of the model
 FloatPrecision          = "simple"                                  # Enable to switch between simple (float32) or double (float64)
-device                  = 'cpu'                                     # Device for training (mps, cuda, cpu) 
+device                  = 'mps'                                     # Device for training (mps, cuda, cpu) 
 
 
 ####################################################

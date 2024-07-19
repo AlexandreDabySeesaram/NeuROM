@@ -383,27 +383,27 @@ def VonMises_plain_strain(sigma, lmbda, mu):
     return torch.sqrt((3/2)*sigma_VM)
 
 def Stress_tensor(eps, lmbda, mu):
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
 def InternalEnergy_2D_einsum(u,x,lmbda, mu):
     eps =  Strain_sqrt(u,x)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
     return W_e
 
 def InternalResidual(u,x,u_star,x_star,lmbda, mu):
     eps =  Strain_sqrt(u,x)
     eps_star = Strain_sqrt(u_star,x_star)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
 def InternalResidual_precomputed(eps,eps_star,lmbda, mu):
     # eps =  Strain_sqrt(u,x)
     # eps_star = Strain_sqrt(u_star,x_star)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
@@ -466,7 +466,7 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
 
     eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
     eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)

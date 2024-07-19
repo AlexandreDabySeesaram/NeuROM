@@ -40,7 +40,8 @@ import numpy as np
 ###                                              ###
 ####################################################
 
-Default_config_file = 'Configuration/config_2D_ROM.toml'
+# Default_config_file = 'Configuration/config_2D_ROM.toml'
+Default_config_file = 'Configuration/config_2D.toml'
 # Default_config_file = 'Configuration/config_1D.toml'
 
 ####################################################
@@ -154,33 +155,33 @@ if int(Mesh_object.dim) != int(Mesh_object.dimension):
     raise ValueError("The dimension of the provided geometry does not match the job dimension")
 
 #%% Application of the Space HiDeNN
-match config["interpolation"]["dimension"]:
-    case 1:
-        if config["solver"]["TrainingStrategy"]=="Integral":
-            match config["solver"]["IntegralMethod"]:                           # Build the model
-                case "Gaussian_quad":
-                    Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
-                case "Trapezoidal":
-                    Model_FEM = MeshNN(Mesh_object)
+if not config["solver"]["ParametricStudy"]: 
+    match config["interpolation"]["dimension"]:
+        case 1:
+            if config["solver"]["TrainingStrategy"]=="Integral":
+                match config["solver"]["IntegralMethod"]:                           # Build the model
+                    case "Gaussian_quad":
+                        Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                    case "Trapezoidal":
+                        Model_FEM = MeshNN(Mesh_object)
 
-        if config["solver"]["TrainingStrategy"]=="Mixed":
-            if config["solver"]["IntegralMethod"] == "Gaussian_quad":
-                Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])
-                Model_test = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
-                Model_test.Freeze_Mesh()
+            if config["solver"]["TrainingStrategy"]=="Mixed":
+                if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                    Model_FEM = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])
+                    Model_test = MeshNN_1D(Mesh_object, config["interpolation"]["n_integr_points"])  
+                    Model_test.Freeze_Mesh()
 
-    case 2:
-        Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
+        case 2:
+            Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
 
-# Set the coordinates as trainable
-Model_FEM.UnFreeze_Mesh()
-# Set the coordinates as untrainable
-Model_FEM.Freeze_Mesh()
-if not config["solver"]["FrozenMesh"]:
+    # Set the coordinates as trainable
     Model_FEM.UnFreeze_Mesh()
-Model_FEM.UnFreeze_FEM()
-# if not config["solver"]["FrozenMesh"]:
-#     Model_FEM.UnFreeze_FEM()
+    # Set the coordinates as untrainable
+    Model_FEM.Freeze_Mesh()
+    if not config["solver"]["FrozenMesh"]:
+        Model_FEM.UnFreeze_Mesh()
+    Model_FEM.UnFreeze_FEM()
+
 
 #%% Application of NeuROM
 # Parameter space-definition
@@ -229,12 +230,13 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'
 
 
-if config["training"]["LoadPreviousModel"]:
+if config["training"]["LoadPreviousModel"] and config["solver"]["ParametricStudy"]:
     ROM_model.Init_from_previous(PreviousFullModel)
     ROM_model.UnfreezeTruncated()
 #%% Training 
-ROM_model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
-ROM_model.Freeze_MeshPara()                                                     # Set parameters mesh cordinates as untrainable
+if config["solver"]["ParametricStudy"]:
+    ROM_model.Freeze_Mesh()                                                         # Set space mesh cordinates as untrainable
+    ROM_model.Freeze_MeshPara()                                                     # Set parameters mesh cordinates as untrainable
 
 if config["solver"]["ParametricStudy"]: 
     if not config["solver"]["FrozenMesh"]:
@@ -264,6 +266,8 @@ if config["solver"]["ParametricStudy"]:
         ROM_model.to(torch.device("cpu"))
         ROM_model.eval()
 else:
+    Model_FEM.to(tensor_float_type)
+    Model_FEM.to(device)
     if not config["solver"]["FrozenMesh"]:
         Model_FEM.UnFreeze_Mesh()    
 
@@ -433,7 +437,7 @@ else:
         case 2:
             if config["postprocess"]["exportVTK"]:
                 Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
-                Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
+                # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
             if config["postprocess"]["exportVTK_history"]:
                 Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
 

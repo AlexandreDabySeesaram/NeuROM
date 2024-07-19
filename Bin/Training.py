@@ -1741,7 +1741,12 @@ def Training_2D_FEM(model, config, Mat):
             model.mesh.Nodes    = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
             model.mesh.Connectivity = model.connectivity
             model.mesh.ExportMeshVtk(flag_update = True)
-
+            if model_2.float_config.dtype != model.float_config.dtype:
+                model_2.to(model.float_config.dtype)
+                print(f'Finer model passed to dtype {model.float_config.dtype}')
+            if model_2.float_config.device != model.float_config.device:
+                model_2.to(model.float_config.device)
+                print(f'Finer model passed to device {model.float_config.device}')
             model_2.Init_from_previous(model)                                           # Initialise fine model with coarse one
             model = model_2                                                             # model is now the fine 
             model.UnFreeze_FEM()
@@ -1849,6 +1854,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
             model.eval()
             if model_2.float_config.dtype != model.float_config.dtype:
                 model_2.to(model.float_config.dtype)
+                print(f'Finer model passed to dtype {model.float_config.dtype}')
             if model_2.float_config.device != model.float_config.device:
                 model_2.to(model.float_config.device)
                 print(f'Finer model passed to device {model.float_config.device}')
@@ -1873,7 +1879,6 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
         return model, Mesh_object_fine
     except:
         return model, Mesh_object
-
 
 def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 
@@ -2033,8 +2038,6 @@ def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 
     return model
 
-
-
 def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
 
     n_epochs = config["training"]["n_epochs_1"]
@@ -2186,9 +2189,6 @@ def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
     Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
     return model
-
-
-
 
 def Training_1D_Mixed_LBFGS(model_u, model_du, config, Mat):
 

@@ -69,7 +69,7 @@ mu                      = 1.0
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 1                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 2                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -78,15 +78,15 @@ MaxElemSize2D           = 1                                         # Maximum el
 ####################################################
 
 [solver]
-FrozenMesh              = true                                      # Nodal coordinates frozen
+FrozenMesh              = false                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = true                                       # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
-# MultiScale            = false                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
+n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
+MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 regul_term              = false
 volume_forces           = false
 
@@ -99,7 +99,8 @@ volume_forces           = false
 [hardware]
 BoolGPU                 = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                     # Enable compilation of the model
-FloatPrecision          = "double"                                  # Enable to switch between simple (float32) or double (float64)
+FloatPrecision          = "simple"                                  # Enable to switch between simple (float32) or double (float64)
+device                  = 'cpu'                                     # Device for training (mps, cuda, cpu) 
 
 
 ####################################################
@@ -121,7 +122,7 @@ multiscl_max_refinment  = 3                                         # Multiscale
 h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 1.5                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
 optimizer               = 'lbfgs'                                   # 'adam', 'lbfgs'
 
 ####################################################
@@ -137,8 +138,8 @@ BoolCompareNorms        = true                                      # Boolean fo
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export (final)
-exportVTK_history       = false                                      # Enables VTK export (history)
-Name_export             = "Test_VTK_2"                             # Name for the VTK results files
+exportVTK_history       = true                                      # Enables VTK export (history)
+Name_export             = "Test_htop"                             # Name for the VTK results files
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false 
 Plot_error_mode         = false

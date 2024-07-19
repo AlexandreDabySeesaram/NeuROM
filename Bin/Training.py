@@ -1710,14 +1710,14 @@ def Training_2D_FEM(model, config, Mat):
         model.eval()
         List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
 
-        if model.float_config.device != torch.device("cpu"):
-            device = model.float_config.device
-            model.to(torch.device("cpu"))
-            xg = xg.to(torch.device("cpu"))
-            eps              =  Strain(model(xg, List_elems),xg)
-            model.to(device)
-        else:
-            eps              =  Strain(model(xg, List_elems),xg)
+        # if model.float_config.device != torch.device("mps"):
+        #     device = model.float_config.device
+        #     model.to(torch.device("mps"))
+        #     xg = xg.to(torch.device("mps"))
+        #     eps              =  Strain(model(xg, List_elems),xg)
+        #     model.to(device)
+        # else:
+        eps              =  Strain(model(xg, List_elems),xg)
 
         max_eps              = torch.max(eps)
 

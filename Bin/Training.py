@@ -83,8 +83,6 @@ def Plot_all_2D(Model_u, Model_du, IDs_u, IDs_du, PlotCoordinates, loss, n_train
 
     return l
 
-
-
 def Collision_Check(model, coord_old, proximity_limit):
 
     correction = False
@@ -125,10 +123,6 @@ def Collision_Check(model, coord_old, proximity_limit):
             # print(model.coordinates[int(cell_nodes_IDs[:,1].item())])
             # print()
     return correction
-
-
-
-
 
 def RandomSign():
     return 1 if random.random() < 0.5 else -1
@@ -194,7 +188,6 @@ def Test_GenerateShapeFunctions(BeamModel, TrialCoordinates):
 
     pred, ShapeFunctions = BeamModel(TrialCoordinates)
     Pplot.Plot_ShapeFuctions(TrialCoordinates.detach(), BeamModel, InitialCoordinates, False)
-
 
 def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData, TestCoordinates):
 
@@ -336,7 +329,6 @@ def Training_InitialStage(BeamModel, A, E, L, TrialCoordinates, optimizer, n_epo
     print(f'* Final l2 loss : {numpy.format_float_scientific( error2[-1], precision=4)}')
 
     return error, error2, InitialCoordinates, Coord_trajectories, BeamModel
-
 
 def Training_FinalStageLBFGS(BeamModel, A, E, L, InitialCoordinates, TrialCoordinates, n_epochs, BoolCompareNorms, MSE, BoolFilterTrainingData, 
                                 TestCoordinates,
@@ -1280,7 +1272,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
             detJ_new.append(detJ)
 
             detJ_small = detJ[torch.where(torch.abs(detJ)<1.0e-6)]
-            regul = torch.sum(1/torch.abs(detJ_small))
 
             if config["solver"]["volume_forces"] == True:
                 loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
@@ -1288,6 +1279,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
             
             if config["solver"]["regul_term"] == True:
+                regul = torch.sum(1/torch.abs(detJ_small))
                 loss = loss + regul
 
             loss.backward(retain_graph=True)

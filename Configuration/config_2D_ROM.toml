@@ -119,7 +119,7 @@ multiscl_max_refinment  = 3                                         # Multiscale
 h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 3                                         # Multiscale homogeneous refinement coefficient
 
 ####################################################
 ###                                              ###

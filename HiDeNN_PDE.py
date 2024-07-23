@@ -649,27 +649,32 @@ class InterpolationBlock2D_Lin(nn.Module):
 
         # ## DEBUG
         # flag_training = True
-
+        vers = 'new'
         if flag_training:
+            if vers == 'old':
+                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+                if cell_nodes_IDs.ndim == 1:
+                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
             if self.updated_connectivity:
                 cell_nodes_IDs = self.connectivity[cell_id,:] - 1
                 if cell_nodes_IDs.ndim == 1:
                     cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-                # node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
-                # node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
-                # node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
-                # self.nodes_values = torch.stack([node1_value,node2_value,node3_value])
                 self.updated_connectivity = False
-
             ######### Debug     
-                self.Ids = torch.as_tensor(cell_nodes_IDs).t()[:,None,:]
+                self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values[0][0].device).t()[:,None,:]
+            match vers:
+                case 'old':
+                    node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
+                    node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
+                    node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
+                    self.nodes_values = torch.stack([node1_value,node2_value,node3_value])                
+                    u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+                case 'new':
+                    nodal_values_tensor = torch.stack([torch.cat(tuple(val)) for val in nodal_values], dim=0)
+                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
+                    u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
 
-            # nodal_values_tensor = torch.as_tensor(nodal_values)
-            # nodal_values_tensor.requires_grad = True
-
-            nodal_values_tensor = torch.stack([torch.cat(tuple(val)) for val in nodal_values], dim=0)
-
-            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
             #     Ids = torch.as_tensor(cell_nodes_IDs)[None,:,:]
             # nodal_values_tensor = torch.as_tensor(nodal_values)
             # node_value_allInOne =  torch.gather(nodal_values_tensor[:,:,None].repeat(1,1,3),1, Ids.repeat(2,1,1))
@@ -677,7 +682,6 @@ class InterpolationBlock2D_Lin(nn.Module):
 
 
             # u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
-            u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
 
             return u
 
@@ -810,29 +814,89 @@ class ElementBlock2D_Lin(nn.Module):
         cell_nodes_IDs = self.connectivity[cell_id,:]
         if cell_nodes_IDs.ndim == 1:
             cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-        node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
-        node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
-        node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
+        vers = 'new'
+        match vers:
+            case 'old':
+        # t0 = time.time()
+                node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
+                node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
+                node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
+        # tf = time.time()
+        # print(f'duration old (ms) = {1000*(tf-t0)}')
+        # t0 = time.time()
+            case 'new':
+                nodal_coord_tensor = torch.stack([torch.cat(tuple(coor)) for coor in coordinates], dim=0)
+                Ids = torch.as_tensor(cell_nodes_IDs-1).to(nodal_values[0][0].device).t()[:,:,None]
+                nodes_coord =  torch.gather(nodal_coord_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+        # tf = time.time()
+        # print(f'duration new (ms) = {1000*(tf-t0)}')
+
 
         if flag_training:
             refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1)
 
             w_g = 0.5                           # Gauss weight
-            Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            match vers:
+                case 'old':
+                    Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+                case 'new':
+                    Ng = refCoordg
 
-            x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
-            
+            match vers:
+                case 'old':
+                    x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
+                case 'new':
+                    x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
 
-            refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+            match vers:
+                case 'old':
+                    refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+                case 'new':
+                    refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
 
-            N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            match vers:
+                case 'old':
+                    N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+                case 'new':
+                    N = refCoord
 
-            detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
-            
+
+            match vers:
+                case 'old':
+                    detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
+                case 'new':
+                    detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
+
+            # x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
+            # x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
+            # refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+            # refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+            # refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+            # N = refCood
+
+            # N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+
+            # t0 = time.time()
+            # detJ_old = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
+            # tf = time.time()
+            # print(f'duration old (ms) = {1000*(tf-t0)}')
+
+            # t0 = time.time()
+            # detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
+            # tf = time.time()
+            # print(f'duration new (ms) = {1000*(tf-t0)}')
+
             return N,x_g, detJ*w_g
 
         else:
-            refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+            match vers:
+                case 'old':
+                    refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+                case 'new':
+                    refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+
+            # refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+            # refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
             out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
             return out
 
@@ -1370,6 +1434,21 @@ class MeshNN_2D(nn.Module):
 
 
 def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
+    # inverse_matrix2 = torch.ones([int(y.shape[0]), 3, 3], dtype=x.dtype, device=x.device)
+    # denominator = (x1*y2 - x1*y3 - x2*y1 + x2*y3+x3*y1+x3*y2)
+    # denominator = (x1*y2 - x1*y3 - x2*y1 + x2*y3 + x3*y1 - x3*y2)
+    # inverse_matrix2[:,0,0] = (y2 - y3)/denominator
+    # inverse_matrix2[:,1,0] = (x3 - x2)/denominator
+    # inverse_matrix2[:,2,0] = (-x3*y2 + x2*y3)/denominator
+
+    # inverse_matrix2[:,0,1] = (-y1 + y3)/denominator
+    # inverse_matrix2[:,1,1] = (x1 - x3)/denominator
+    # inverse_matrix2[:,2,1]= (x3*y1 - x1*y3)/denominator
+
+    # inverse_matrix2[:,0,2] = (y1 - y2)/denominator
+    # inverse_matrix2[:,1,2] = (-x1 + x2)/denominator
+    # inverse_matrix2[:,2,2] = (-x2*y1 + x1*y2)/denominator
+    # res2 = torch.einsum('eij,ei->ej',inverse_matrix2,x_extended.squeeze(1))
 
     inverse_matrix = torch.ones([int(y.shape[0]), 3, 3], dtype=x.dtype, device=x.device)
 
@@ -1384,7 +1463,6 @@ def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):
     inverse_matrix[:,0,2] = (y1 - y2)/(x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2))
     inverse_matrix[:,1,2] = (x1 - x2)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
     inverse_matrix[:,2,2] = (x2*y1 - x1*y2)/(-x1*y2 + x1*y3 + x2*y1 - x2*y3 - x3*y1 + x3*y2)
-
 
     x_extended = torch.stack((x,y, torch.ones_like(y)),dim=1)
     # print("x_extended = ", x_extended.shape)

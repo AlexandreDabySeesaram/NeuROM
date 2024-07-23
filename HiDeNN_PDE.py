@@ -655,14 +655,30 @@ class InterpolationBlock2D_Lin(nn.Module):
                 cell_nodes_IDs = self.connectivity[cell_id,:] - 1
                 if cell_nodes_IDs.ndim == 1:
                     cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-                node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
-                node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
-                node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
-                self.nodes_values = torch.stack([node1_value,node2_value,node3_value])
+                # node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
+                # node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
+                # node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
+                # self.nodes_values = torch.stack([node1_value,node2_value,node3_value])
                 self.updated_connectivity = False
+
+            ######### Debug     
+                self.Ids = torch.as_tensor(cell_nodes_IDs).t()[:,None,:]
+
+            # nodal_values_tensor = torch.as_tensor(nodal_values)
+            # nodal_values_tensor.requires_grad = True
+
+            nodal_values_tensor = torch.stack([torch.cat(tuple(val)) for val in nodal_values], dim=0)
+
+            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
+            #     Ids = torch.as_tensor(cell_nodes_IDs)[None,:,:]
+            # nodal_values_tensor = torch.as_tensor(nodal_values)
+            # node_value_allInOne =  torch.gather(nodal_values_tensor[:,:,None].repeat(1,1,3),1, Ids.repeat(2,1,1))
+
+
+
             # u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
             u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
-            
+
             return u
 
         else:

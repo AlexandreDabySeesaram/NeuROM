@@ -1259,7 +1259,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
     stagnation                          = False               # Stagnation of loss decay
 
     while epoch<model.Max_epochs and not stagnation:
-
+        t0 = time.time()
         detJ_new = []
         xg_new = []
 
@@ -1287,7 +1287,8 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
 
         optimizer.step(closure)
         loss = closure()
-
+        tf = time.time()
+        # print(f'epoch duration (ms): {1000*(tf-t0)}')
 
         with torch.no_grad():
             detJ = detJ_new[0]
@@ -1345,7 +1346,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
             Loss_vect.append(loss.item())
 
         if optimizer.__class__.__name__ == "Adam":
-            if (epoch+1) % 500 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+            if (epoch+1) % 100 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
         elif optimizer.__class__.__name__ == "LBFGS":
@@ -1697,31 +1698,32 @@ def Training_2D_FEM(model, config, Mat):
         X_interm_tot        += model.X_interm
         Connectivity_tot    += model.Connectivity_interm
 
-        # Compute maximum strain 
-        _,xg,detJ            = model()
-        model.eval()
-        List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
+        if config["training"]["multiscl_max_refinment"] >1:
+            # Compute maximum strain 
+            _,xg,detJ            = model()
+            model.eval()
+            List_elems           = torch.arange(0,model.NElem,dtype=torch.int)
 
-        # if model.float_config.device != torch.device("mps"):
-        #     device = model.float_config.device
-        #     model.to(torch.device("mps"))
-        #     xg = xg.to(torch.device("mps"))
-        #     eps              =  Strain(model(xg, List_elems),xg)
-        #     model.to(device)
-        # else:
-        eps              =  Strain(model(xg, List_elems),xg)
+            # if model.float_config.device != torch.device("mps"):
+            #     device = model.float_config.device
+            #     model.to(torch.device("mps"))
+            #     xg = xg.to(torch.device("mps"))
+            #     eps              =  Strain(model(xg, List_elems),xg)
+            #     model.to(device)
+            # else:
+            eps              =  Strain(model(xg, List_elems),xg)
 
-        max_eps              = torch.max(eps)
+            max_eps              = torch.max(eps)
 
-        if n_refinement > 1:
-            d_eps_max        = 2*torch.abs(max_eps-max_eps_old)/(max_eps_old+max_eps_old)
-            d_eps_max_vect.append(d_eps_max.data)
-            eps_max_vect.append(max_eps.data)
-            max_eps_old      = max_eps
-            if d_eps_max < config["training"]["d_eps_max_threshold"]:
-                stagnation   = True
-        else:
-            max_eps_old      = max_eps
+            if n_refinement > 1:
+                d_eps_max        = 2*torch.abs(max_eps-max_eps_old)/(max_eps_old+max_eps_old)
+                d_eps_max_vect.append(d_eps_max.data)
+                eps_max_vect.append(max_eps.data)
+                max_eps_old      = max_eps
+                if d_eps_max < config["training"]["d_eps_max_threshold"]:
+                    stagnation   = True
+            else:
+                max_eps_old      = max_eps
         if n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
 
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size

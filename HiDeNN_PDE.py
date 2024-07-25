@@ -598,8 +598,8 @@ class NeuROM(nn.Module):
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
-
         return out
+
     def Init_from_previous(self,PreviousFullModel,Model_provided = False):
         import os
 
@@ -640,10 +640,8 @@ class InterpolationBlock2D_Lin(nn.Module):
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
         self.updated_connectivity = True
-    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values, flag_training):
-
-
-        vers = 'new'
+    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values,node_mask_x, node_mask_y, nodal_values_tensor, flag_training):
+        vers = 'new_V2'
         if flag_training:
             if vers == 'old':
                 cell_nodes_IDs = self.connectivity[cell_id,:] - 1
@@ -655,7 +653,10 @@ class InterpolationBlock2D_Lin(nn.Module):
                 if cell_nodes_IDs.ndim == 1:
                     cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
                 self.updated_connectivity = False
-                self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values[0][0].device).t()[:,None,:]
+                if vers == 'new_V2':
+                    self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+                else:
+                    self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values[0][0].device).t()[:,None,:]
             match vers:
                 case 'old':
                     node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
@@ -667,6 +668,15 @@ class InterpolationBlock2D_Lin(nn.Module):
                     nodal_values_tensor = torch.stack([torch.cat(tuple(val)) for val in nodal_values], dim=0)
                     self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
                     u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
+                case 'new_V2':
+                    # For some reason it restest the value when attributin x or y, carefull that problem is not elswhere as well DEBUG
+                    nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+                    nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+                    nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+                    nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,2))
+                    u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
             return u
 
         else:
@@ -701,16 +711,6 @@ class InterpolationBlock2D_Lin(nn.Module):
                         else:
                             values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
                             values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
-
-                        # if np.isclose(normal[0],0.0, atol=1.0e-8):
-                        #     values[2,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
-                        #     values[1,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
-                        # elif np.isclose(normal[1],0.0, atol=1.0e-8):
-                        #     values[0,ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
-                        #     values[2,ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
-                        # else:
-                        #     values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
-                        #     values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
 
                 elif len(value)==1:
                     for j in range(nodes.shape[0]):
@@ -789,7 +789,7 @@ class ElementBlock2D_Lin(nn.Module):
     def GP(self):
         return torch.tensor([[1/3, 1/3, 1/3]],dtype=torch.float64, requires_grad=True) # a1, a2, a3 the 3 area coordinates
 
-    def forward(self, x, cell_id, coordinates, nodal_values,flag_training):
+    def forward(self, x, cell_id, coordinates, nodal_values,coord_mask,coordinates_all,flag_training):
         """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
         phantom elements are used to cancel out the interpolation shape functions outside of the beam.
         Those phantom elements are flagged with index -1
@@ -798,7 +798,7 @@ class ElementBlock2D_Lin(nn.Module):
         cell_nodes_IDs = self.connectivity[cell_id,:]
         if cell_nodes_IDs.ndim == 1:
             cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-        vers = 'new'
+        vers = 'new_V2'
         match vers:
             case 'old':
         # t0 = time.time()
@@ -819,8 +819,16 @@ class ElementBlock2D_Lin(nn.Module):
                 # tf = time.time()
                 # print(f'duration new (ms) = {1000*(tf-t0)}')
 
-                Ids = torch.as_tensor(cell_nodes_IDs-1).to(nodal_values[0][0].device).t()[:,:,None]
+                Ids = torch.as_tensor(cell_nodes_IDs-1).to(nodal_coord_tensor.device).t()[:,:,None]
                 nodes_coord =  torch.gather(nodal_coord_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+            case 'new_V2':
+                # coord_mask = coord_mask[:,None].repeat([1,2])
+                coordinates_all = torch.ones_like(coordinates_all)
+                # coordinates_all = torch.ones(coord_mask[:,None].repeat([1,2]).shape, dtype = coordinates['free'].dtype, device = coordinates['free'].device)
+                coordinates_all[coord_mask] = coordinates['free']
+                coordinates_all[~coord_mask] = coordinates['imposed']
+                Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
+                nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
         # tf = time.time()
         # print(f'duration new (ms) = {1000*(tf-t0)}')
 
@@ -833,32 +841,32 @@ class ElementBlock2D_Lin(nn.Module):
             match vers:
                 case 'old':
                     Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-                case 'new':
+                case 'new' | 'new_V2':
                     Ng = refCoordg
 
             match vers:
                 case 'old':
                     x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
-                case 'new':
+                case 'new' | 'new_V2':
                     x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
 
             match vers:
                 case 'old':
                     refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-                case 'new':
+                case 'new' | 'new_V2':
                     refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
 
             match vers:
                 case 'old':
                     N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-                case 'new':
+                case 'new' | 'new_V2':
                     N = refCoord
 
 
             match vers:
                 case 'old':
                     detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
-                case 'new':
+                case 'new' | 'new_V2':
                     detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
 
             return N,x_g, detJ*w_g
@@ -963,13 +971,29 @@ class MeshNN_2D(nn.Module):
         super(MeshNN_2D, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
-        self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+        vers = 'new_V2'
+        if vers =='new_V2': 
+            self.register_buffer('coordinates_all', torch.cat(tuple([(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+                                                                        for i in range(len(mesh.Nodes))])))                                                     # Keep track of device and dtype used throughout the model
+            # self.coordinates_all = torch.cat(tuple([(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+            #                                                             for i in range(len(mesh.Nodes))]))
+            self.coordinates =nn.ParameterDict({
+                                                'free': self.coordinates_all,
+                                                'imposed': [],
+                                                'mask':[]
+                                                })
+
+        else:
+            self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
 
         # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
-        self.values =0.5*torch.ones((mesh.NNodes,n_components))
+        # self.values =0.5*torch.ones((mesh.NNodes,n_components))
+        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
 
         self.frozen_BC_node_IDs = []
+        self.frozen_BC_node_IDs_x = []             
+        self.frozen_BC_node_IDs_y = []             
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []
         self.relation_BC_values = []
@@ -1061,12 +1085,25 @@ class MeshNN_2D(nn.Module):
         for i in range(len(ListOfDirichletsBCsValues)):
             if self.ListOfDirichletsBCsRelation[i] == False:
                 if self.ListOfDirichletsBCsConstit[i] == False:
-                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                    self.frozen_BC_node_IDs.append(IDs)
-                    self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
-                    self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+                    vers = 'new_V2'
+                    if vers == 'new_V2':
+                        IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                        match self.ListOfDirichletsBCsNormals[i]:
+                            case 0:
+                                self.frozen_BC_node_IDs_x.append(IDs)
+                            case 1:
+                                self.frozen_BC_node_IDs_y.append(IDs)   
+                        self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+                        
+                    else:
+                        IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                        IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                        self.frozen_BC_node_IDs.append(IDs)
+                        self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
+                        self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
 
+                
             else:
                 IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
                 IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
@@ -1094,10 +1131,36 @@ class MeshNN_2D(nn.Module):
                 self.constit_BC_node_IDs.append(IDs)
 
         if self.n_components ==2:
+            if vers == 'new_V2':
+                self.IDs_frozen_BC_node_y = torch.unique(torch.stack(self.frozen_BC_node_IDs_y))
+                self.IDs_frozen_BC_node_x = torch.unique(torch.stack(self.frozen_BC_node_IDs_x))
+                self.dofs_free_x =( torch.ones_like(self.values[:,0])==1)
+                self.dofs_free_x[self.IDs_frozen_BC_node_x] = False
+                self.dofs_free_y =( torch.ones_like(self.values[:,0])==1)
+                self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
+
+                nodal_values_x_imposed = self.values[~self.dofs_free_x,0]
+                nodal_values_y_imposed = self.values[~self.dofs_free_y,0]
+                nodal_values_x_free = self.values[self.dofs_free_x,0]
+                nodal_values_y_free = self.values[self.dofs_free_y,0]
+                self.nodal_values = nn.ParameterDict({
+                                                    'x_free': nodal_values_x_free,
+                                                    'y_free': nodal_values_y_free,
+                                                    'x_imposed': nodal_values_x_imposed,
+                                                    'y_imposed': nodal_values_y_imposed
+                                                    })
+                border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+                Fixed_Ids = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
+                self.coord_free =(torch.ones_like(self.values[:,0])==1)
+                self.coord_free[self.IDs_frozen_BC_node_x] = False
+                self.coordinates['free'] = self.coordinates_all[self.coord_free,:]
+                self.coordinates['imposed'] = self.coordinates_all[~self.coord_free,:]
+
+            else:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
-            self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
-            self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
-            self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+                self.nodal_values_x = nn.ParameterList([nn.Parameter(torch.tensor([i[0]])) for i in self.values])
+                self.nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in self.values])
+                self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
 
         elif self.n_components ==3:
             # nn.ParameterList is supposed to hold a single list of nn.Parameter and cannot contain other nn.ParameterLists
@@ -1182,12 +1245,29 @@ class MeshNN_2D(nn.Module):
         self.Jacobian_interm = []
 
     def StoreResults(self):
-        u_x = [u for u in self.nodal_values_x]
-        u_y = [u for u in self.nodal_values_y]
-        u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
+        vers = "new_V2"
+        if vers == 'new_V2':
+            u = self.values
+            u[self.dofs_free_x,0] = self.nodal_values['x_free']
+            u[self.dofs_free_y,0] = self.nodal_values['y_free']
+            u[~self.dofs_free_x,1] = self.nodal_values['x_imposed']                    
+            u[~self.dofs_free_y,1] = self.nodal_values['y_imposed']
+
+        else:
+            u_x = [u for u in self.nodal_values_x]
+            u_y = [u for u in self.nodal_values_y]
+            u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
         self.U_interm.append(u.data)
-        new_coord = [coord for coord in self.coordinates]
-        new_coord = torch.cat(new_coord,dim=0)
+
+        if vers == 'new_V2':
+            new_coord = self.coordinates_all
+            new_coord[self.coord_free] = self.coordinates['free']
+            new_coord[~self.coord_free] = self.coordinates['imposed']
+
+
+        else:
+            new_coord = [coord for coord in self.coordinates]
+            new_coord = torch.cat(new_coord,dim=0)
         self.X_interm.append(new_coord)
         self.G_interm.append(self.elements_generation)
         self.Connectivity_interm.append(self.connectivity-1)
@@ -1290,8 +1370,8 @@ class MeshNN_2D(nn.Module):
     def forward(self, x = 'NaN', el_id = 'NaN'):
         if self.training:
             el_id = torch.arange(0,self.NElem,dtype=torch.int)
-            shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.training)
-            interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.training)
+            shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
+            interpol = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values,self.training)
         
             return interpol, x_g, detJ
         else:
@@ -1303,21 +1383,27 @@ class MeshNN_2D(nn.Module):
     def UnFreeze_FEM(self):
         """Set the coordinates as trainable parameters """
         # print("Unfreeze values")
-
-        for dim in self.nodal_values:
-            for val in dim:
-                val.requires_grad = True
- 
-        for j in range(len(self.frozen_BC_node_IDs)):
-            # print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
-            # print("excluded : ", self.ExcludeFromDirichlet)
-            values = self.nodal_values[self.frozen_BC_component_IDs[j]]
-            frozen = self.frozen_BC_node_IDs[j]
-            for idf in frozen:
-                if idf not in self.ExcludeFromDirichlet:
-                    values[idf].requires_grad = False
-                else:
-                    values[idf].requires_grad = True
+        vers = 'new'
+        if vers == 'new': 
+            self.nodal_values['x_free'].requires_grad = True
+            self.nodal_values['y_free'].requires_grad = True
+            self.nodal_values['x_imposed'].requires_grad = False
+            self.nodal_values['y_imposed'].requires_grad = False
+        else:
+            for dim in self.nodal_values:
+                for val in dim:
+                    val.requires_grad = True
+    
+            for j in range(len(self.frozen_BC_node_IDs)):
+                # print("component ", self.frozen_BC_component_IDs[j], " : ", self.frozen_BC_node_IDs[j][0:5])
+                # print("excluded : ", self.ExcludeFromDirichlet)
+                values = self.nodal_values[self.frozen_BC_component_IDs[j]]
+                frozen = self.frozen_BC_node_IDs[j]
+                for idf in frozen:
+                    if idf not in self.ExcludeFromDirichlet:
+                        values[idf].requires_grad = False
+                    else:
+                        values[idf].requires_grad = True
 
     def Freeze_FEM(self):
         """Set the coordinates as untrainable parameters """
@@ -1327,16 +1413,28 @@ class MeshNN_2D(nn.Module):
       
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
-        for param in self.coordinates:
-            param.requires_grad = False
+        vers = 'new_V2'
+        if vers == 'new_V2':
+            self.coordinates['free'].requires_grad = False
+            self.coordinates['imposed'].requires_grad = False
+        else:
+            for param in self.coordinates:
+                param.requires_grad = False
     
     def UnFreeze_Mesh(self):
         """Set the coordinates as trainable parameters"""
-        for param in self.coordinates:
-            param.requires_grad = True
-        border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
-        for node in border_nodes:
-            self.coordinates[node].requires_grad = False
+        vers = 'new_V2'
+        if vers == 'new_V2':
+
+            self.coordinates['free'].requires_grad = True
+            self.coordinates['imposed'].requires_grad = False
+
+        else:
+            for param in self.coordinates:
+                param.requires_grad = True
+            border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+            for node in border_nodes:
+                self.coordinates[node].requires_grad = False
 
     def CheckBCValues(self):
         """Set the coordinates as trainable parameters """

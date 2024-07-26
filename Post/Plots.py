@@ -887,7 +887,7 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
             
             u = torch.stack([u_x,u_y,torch.zeros(u_x.shape[0], dtype=u_x.dtype).to(u_x.device)],dim=1)
             import numpy as np
-            Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape)[:,None]])
+            Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape, dtype=u_x.dtype).to(u_x.device)[:,None]])
             Coord_converged = np.array(Coord.to('cpu'))
             Connect_converged = Model_FEM.connectivity
             sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},

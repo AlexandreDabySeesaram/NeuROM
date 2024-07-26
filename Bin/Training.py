@@ -1346,7 +1346,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
             Loss_vect.append(loss.item())
 
         if optimizer.__class__.__name__ == "Adam":
-            if (epoch+1) % 100 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+            if (epoch+1) % 50 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
         elif optimizer.__class__.__name__ == "LBFGS":

@@ -1140,9 +1140,9 @@ class MeshNN_2D(nn.Module):
                 self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
 
                 nodal_values_x_imposed = self.values[~self.dofs_free_x,0]
-                nodal_values_y_imposed = self.values[~self.dofs_free_y,0]
+                nodal_values_y_imposed = self.values[~self.dofs_free_y,1]
                 nodal_values_x_free = self.values[self.dofs_free_x,0]
-                nodal_values_y_free = self.values[self.dofs_free_y,0]
+                nodal_values_y_free = self.values[self.dofs_free_y,1]
                 self.nodal_values = nn.ParameterDict({
                                                     'x_free': nodal_values_x_free,
                                                     'y_free': nodal_values_y_free,
@@ -1249,8 +1249,8 @@ class MeshNN_2D(nn.Module):
         if vers == 'new_V2':
             u = self.values
             u[self.dofs_free_x,0] = self.nodal_values['x_free']
-            u[self.dofs_free_y,0] = self.nodal_values['y_free']
-            u[~self.dofs_free_x,1] = self.nodal_values['x_imposed']                    
+            u[self.dofs_free_y,1] = self.nodal_values['y_free']
+            u[~self.dofs_free_x,0] = self.nodal_values['x_imposed']                    
             u[~self.dofs_free_y,1] = self.nodal_values['y_imposed']
 
         else:

@@ -69,7 +69,7 @@ mu                      = 1.0
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 0.2                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 0.1                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -111,7 +111,7 @@ device                  = 'cpu'                                     # Device for
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 500                                      # Maximum number of iterations for the training stage
+n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = true                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
@@ -123,7 +123,7 @@ h_adapt_MaxGeneration   = 3                                         # Maximum of
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
 multiscl_refinment_cf   = 4                                         # Multiscale homogeneous refinement coefficient
-optimizer               = 'adam'                                   # 'adam', 'lbfgs'
+optimizer               = 'lbfgs'                                   # 'adam', 'lbfgs'
 
 ####################################################
 ###                                              ###
@@ -139,7 +139,7 @@ SaveModel               = false                                     # Boolean le
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export (final)
 exportVTK_history       = true                                      # Enables VTK export (history)
-Name_export             = "Vector"                             # Name for the VTK results files
+Name_export             = "Vector_lbfgs"                             # Name for the VTK results files
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false 
 Plot_error_mode         = false

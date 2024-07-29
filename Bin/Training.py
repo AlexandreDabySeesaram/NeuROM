@@ -1740,8 +1740,19 @@ def Training_2D_FEM(model, config, Mat):
             Mesh_object_fine.ExportMeshVtk()
             List_elems          = torch.arange(0,Mesh_object_fine.NElem,dtype=torch.int)
             model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
-            # Update model's mesh
-            model.mesh.Nodes    = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+            vers = 'New_V2'
+            match vers:
+                case 'old':
+                    # Update model's mesh
+                    model.mesh.Nodes    = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+                case 'New_V2':
+                    coordinates_all = torch.ones_like(model.coordinates_all)
+                    coordinates_all[model.coord_free] = model.coordinates['free']
+                    coordinates_all[~model.coord_free] = model.coordinates['imposed']
+                    Nodes = torch.hstack([torch.linspace(1,coordinates_all.shape[0],coordinates_all.shape[0], dtype = coordinates_all.dtype, device = coordinates_all.device)[:,None],
+                                          coordinates_all])
+                    Nodes = torch.hstack([Nodes,torch.zeros(Nodes.shape[0],1, dtype = Nodes.dtype, device = Nodes.device)])
+                    model.mesh.Nodes = Nodes.detach().cpu().numpy()
             model.mesh.Connectivity = model.connectivity
             model.mesh.ExportMeshVtk(flag_update = True)
             if model_2.float_config.dtype != model.float_config.dtype:

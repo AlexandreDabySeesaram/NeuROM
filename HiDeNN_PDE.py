@@ -738,9 +738,10 @@ class InterpolationBlock2D_Lin(nn.Module):
                     nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
                     nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
                     nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
-                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,2))
-                    u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
+                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']
+                    Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+                    nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+                    u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
             return u
 
 
@@ -1066,8 +1067,15 @@ class MeshNN_2D(nn.Module):
              CoarseModel.float_config.dtype
         except:
             CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
-        newcoordinates = [coord for coord in self.coordinates]
-        newcoordinates = torch.cat(newcoordinates,dim=0)
+        vers = 'New_V2'
+        match vers:
+            case 'old':
+                newcoordinates = [coord for coord in self.coordinates]
+                newcoordinates = torch.cat(newcoordinates,dim=0)
+            case 'New_V2':
+                newcoordinates = torch.ones_like(self.coordinates_all)
+                newcoordinates[self.coord_free] = self.coordinates['free']
+                newcoordinates[~self.coord_free] = self.coordinates['imposed']
         IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
         NewNodalValues = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype)
         # check if a cell ID was not found for some new nodes 
@@ -1082,12 +1090,33 @@ class MeshNN_2D(nn.Module):
                 closest_old_nodal_value = dist.topk(1, largest=False)[1]
                 NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
                 NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].to(self.float_config.dtype)
-        new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
-        new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
-        new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
-        self.nodal_values_x = new_nodal_values_x
-        self.nodal_values_y = new_nodal_values_y
-        self.nodal_values = new_nodal_values
+        vers =  'New_V2'
+        match vers:
+            case 'old':
+                new_nodal_values_x = nn.ParameterList([nn.Parameter((torch.tensor([i[0]]))) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
+                new_nodal_values_y = nn.ParameterList([nn.Parameter(torch.tensor([i[1]])) for i in NewNodalValues.t()]).to(self.float_config.dtype).to(self.float_config.device)
+                new_nodal_values = [new_nodal_values_x,new_nodal_values_y]
+                self.nodal_values_x = new_nodal_values_x
+                self.nodal_values_y = new_nodal_values_y
+                self.nodal_values = new_nodal_values
+            case 'New_V2':
+                NewNodalValues = NewNodalValues.t()
+                self.nodal_values['x_free'] = NewNodalValues[self.dofs_free_x,0]
+                self.nodal_values['x_imposed'] = NewNodalValues[~self.dofs_free_x,0]
+                self.nodal_values['y_free'] = NewNodalValues[self.dofs_free_y,1]
+                self.nodal_values['y_imposed'] = NewNodalValues[~self.dofs_free_y,1]
+
+
+                # nodal_values_x_imposed = NewNodalValues[~self.dofs_free_x,0]
+                # nodal_values_y_imposed = NewNodalValues[~self.dofs_free_y,1]
+                # nodal_values_x_free = NewNodalValues[self.dofs_free_x,0]
+                # nodal_values_y_free = NewNodalValues[self.dofs_free_y,1]
+                # self.nodal_values = nn.ParameterDict({
+                #                                     'x_free': nodal_values_x_free,
+                #                                     'y_free': nodal_values_y_free,
+                #                                     'x_imposed': nodal_values_x_imposed,
+                #                                     'y_imposed': nodal_values_y_imposed
+                #                                     })
  
 
     def SetBCs(self, ListOfDirichletsBCsValues):

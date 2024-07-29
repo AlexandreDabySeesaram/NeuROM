@@ -78,7 +78,7 @@ MaxElemSize2D           = 0.5                                         # Maximum 
 ####################################################
 
 [solver]
-FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenMesh              = true                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
@@ -118,7 +118,7 @@ LoadPreviousModel       = false                                     # Boolean to
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
+multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
 h_adapt_MaxGeneration   = 1                                         # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement

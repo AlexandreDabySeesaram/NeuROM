@@ -669,7 +669,6 @@ class InterpolationBlock2D_Lin(nn.Module):
                     self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
                     u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
                 case 'new_V2':
-                    # For some reason it restest the value when attributin x or y, carefull that problem is not elswhere as well DEBUG
                     nodal_values_tensor = torch.ones_like(nodal_values_tensor)
                     nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
                     nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
@@ -683,11 +682,12 @@ class InterpolationBlock2D_Lin(nn.Module):
             cell_nodes_IDs = self.connectivity[cell_id,:] - 1
             if cell_nodes_IDs.ndim == 1:
                 cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-            values = torch.ones_like(torch.tensor(nodal_values, dtype=nodal_values[0][0].dtype,  device=nodal_values[0][0].device))
+            if vers == 'old':
+                values = torch.ones_like(torch.tensor(nodal_values, dtype=nodal_values[0][0].dtype,  device=nodal_values[0][0].device))
 
-            for j in range(values.shape[0]):
-                for k in range(values.shape[1]):
-                    values[j,k] = nodal_values[j][k]
+                for j in range(values.shape[0]):
+                    for k in range(values.shape[1]):
+                        values[j,k] = nodal_values[j][k]
 
 
             for i in range(len(relation_BC_node_IDs)):
@@ -727,12 +727,21 @@ class InterpolationBlock2D_Lin(nn.Module):
                         else:
                             values[0,ID] = (value[0]*normal[0] - nodal_values[2][ID]*normal[1])/normal[0]
                             values[1,ID] = (value[0]*normal[1] - nodal_values[2][ID]*normal[0])/normal[1]
-
-            node1_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,0]], dim=1)
-            node2_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,1]], dim=1)
-            node3_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,2]], dim=1)
-
-            return shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+            match vers:
+                case 'old':
+                    node1_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,0]], dim=1)
+                    node2_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,1]], dim=1)
+                    node3_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,2]], dim=1)
+                    u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
+                case 'new_V2':
+                    nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+                    nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+                    nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+                    nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,2))
+                    u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
+            return u
 
 
 
@@ -875,7 +884,7 @@ class ElementBlock2D_Lin(nn.Module):
             match vers:
                 case 'old':
                     refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-                case 'new':
+                case 'new'| 'new_V2':
                     refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
 
             # refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
@@ -1375,8 +1384,10 @@ class MeshNN_2D(nn.Module):
         
             return interpol, x_g, detJ
         else:
-            shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
-            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, False)
+            shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
+            # shape_functions = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, False)
+            # interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, False)
+            interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values, False)
 
             return interpol
 

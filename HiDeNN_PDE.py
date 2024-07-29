@@ -1152,7 +1152,7 @@ class MeshNN_2D(nn.Module):
                 border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
                 Fixed_Ids = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
                 self.coord_free =(torch.ones_like(self.values[:,0])==1)
-                self.coord_free[self.IDs_frozen_BC_node_x] = False
+                self.coord_free[Fixed_Ids] = False
                 self.coordinates['free'] = self.coordinates_all[self.coord_free,:]
                 self.coordinates['imposed'] = self.coordinates_all[~self.coord_free,:]
 
@@ -1257,7 +1257,7 @@ class MeshNN_2D(nn.Module):
             u_x = [u for u in self.nodal_values_x]
             u_y = [u for u in self.nodal_values_y]
             u = torch.stack([torch.cat(u_x),torch.cat(u_y)],dim=1)
-        self.U_interm.append(u.data)
+        self.U_interm.append(u.detach().clone())
 
         if vers == 'new_V2':
             new_coord = self.coordinates_all
@@ -1267,11 +1267,11 @@ class MeshNN_2D(nn.Module):
 
         else:
             new_coord = [coord for coord in self.coordinates]
-            new_coord = torch.cat(new_coord,dim=0)
-        self.X_interm.append(new_coord)
+            new_coord = torch.cat(new_coord,dim=0).detach().clone()
+        self.X_interm.append(new_coord.detach().clone())
         self.G_interm.append(self.elements_generation)
         self.Connectivity_interm.append(self.connectivity-1)
-        self.Jacobian_interm.append(self.detJ_0)
+        self.Jacobian_interm.append(self.detJ_0.detach().clone())
 
     def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
         self.MaxGeneration = MaxGeneration

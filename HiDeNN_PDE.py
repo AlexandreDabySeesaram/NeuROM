@@ -1400,11 +1400,11 @@ class MeshNN_2D(nn.Module):
                 self.train()
                 Coordinates_all_new = torch.cat([Coordinates_all,New_coordinates])
                 new_coord_free = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
-                if self.coord_free[nodes][0] ==False and self.coord_free[nodes][1] ==False:
+                if self.coord_free[nodes-1][permutations[0,0]] ==False and self.coord_free[nodes-1][permutations[0,1]] ==False:
                     new_coord_free[0] = False
-                if self.coord_free[nodes][0] ==False and self.coord_free[nodes][2] ==False:
+                if self.coord_free[nodes-1][permutations[1,0]] ==False and self.coord_free[nodes-1][permutations[1,1]] ==False:
                     new_coord_free[1] = False
-                if self.coord_free[nodes][1] ==False and self.coord_free[nodes][2] ==False:
+                if self.coord_free[nodes-1][permutations[2,0]] ==False and self.coord_free[nodes-1][permutations[2,1]] ==False:
                     new_coord_free[2] = False
                 self.coord_free = torch.cat([self.coord_free,new_coord_free])
 

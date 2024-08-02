@@ -1257,8 +1257,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
     
     model.Initresults()                                       # Initialise the structure for saving training history
     stagnation                          = False               # Stagnation of loss decay
-#DEBUG
-    allow_hadpat = True
+
     while epoch<model.Max_epochs and not stagnation:
         t0 = time.time()
         detJ_new = []
@@ -1307,16 +1306,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                     Removed_elem_list = []
                     old_generation      = model.elements_generation
                     for i in range(indices.shape[0]):
-                    # DEBUG##############################################################################################################################################
-                    # for i in range(1):
                         el_id           = indices[i]  
                         if model.elements_generation[el_id.item()]<model.MaxGeneration:
                             model.MaxGeneration_elements=1
-                    # DEBUG##############################################################################################################################################
                         if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
-                        # if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration and allow_hadpat:
-                            # if epoch >1:
-                            allow_hadpat = False
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
                             model.eval()
@@ -1346,8 +1339,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                                 optimizer.add_param_group({'params': model.nodal_values[1][-3:]})
                             elif optimizer.__class__.__name__ == "LBFGS":
                                 optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-
-
                     # model.Freeze_Mesh()
                 if d_loss < model.loss_decrease_c:
                     stagnation = True
@@ -1362,7 +1353,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
         elif optimizer.__class__.__name__ == "LBFGS":
-            if (epoch+1) % 1 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+            if (epoch+1) % 5 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 

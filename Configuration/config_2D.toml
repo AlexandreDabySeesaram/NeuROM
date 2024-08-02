@@ -111,18 +111,18 @@ device                  = 'cpu'                                     # Device for
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 20                                      # Maximum number of iterations for the training stage
+n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = true                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 2                                        # Maximum of times a given element can be splitted during h adaptivity
+multiscl_max_refinment  = 4                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 1                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 4                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
 optimizer               = 'lbfgs'                                   # 'adam', 'lbfgs'
 
 ####################################################

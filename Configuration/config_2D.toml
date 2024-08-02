@@ -5,7 +5,7 @@
 ####################################################
 
 [geometry]
-Name                    = 'Square'
+Name                    = 'Hole_3'
 L                       = 10                                        # Length of the Beam
 A                       = 1                                         # Section of the beam
 Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D

@@ -1422,18 +1422,18 @@ class MeshNN_2D(nn.Module):
                 new_dofs_free_x = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
                 new_dofs_free_y = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
 
-                if self.dofs_free_x[nodes][0] ==False and self.dofs_free_x[nodes][1] ==False:
+                if self.dofs_free_x[nodes-1][permutations[0,0]] ==False and self.dofs_free_x[nodes-1][permutations[0,1]] ==False:
                     new_dofs_free_x[0] = False
-                if self.dofs_free_x[nodes][0] ==False and self.dofs_free_x[nodes][2] ==False:
+                if self.dofs_free_x[nodes-1][permutations[1,0]] ==False and self.dofs_free_x[nodes-1][permutations[1,1]] ==False:
                     new_dofs_free_x[1] = False
-                if self.dofs_free_x[nodes][1] ==False and self.dofs_free_x[nodes][2] ==False:
+                if self.dofs_free_x[nodes-1][permutations[2,0]] ==False and self.dofs_free_x[nodes-1][permutations[2,1]] ==False:
                     new_dofs_free_x[2] = False
 
-                if self.dofs_free_y[nodes][0] ==False and self.dofs_free_y[nodes][1] ==False:
+                if self.dofs_free_y[nodes-1][permutations[0,0]] ==False and self.dofs_free_y[nodes-1][permutations[0,1]] ==False:
                     new_dofs_free_y[0] = False
-                if self.dofs_free_y[nodes][0] ==False and self.dofs_free_y[nodes][2] ==False:
+                if self.dofs_free_y[nodes-1][permutations[1,0]] ==False and self.dofs_free_y[nodes-1][permutations[1,1]] ==False:
                     new_dofs_free_y[1] = False
-                if self.dofs_free_y[nodes][1] ==False and self.dofs_free_y[nodes][2] ==False:
+                if self.dofs_free_y[nodes-1][permutations[2,0]] ==False and self.dofs_free_y[nodes-1][permutations[2,1]] ==False:
                     new_dofs_free_y[2] = False
                 u = self.values
                 u[self.dofs_free_x,0] = self.nodal_values['x_free']

@@ -77,6 +77,11 @@ match config["hardware"]["FloatPrecision"]:
     case "half":
         tensor_float_type = torch.float16
 
+if config['training']['h_adapt_MaxGeneration'] > 1 and (config["hardware"]["device"] == 'mps' or config["hardware"]["device"] == 'cuda'):
+    print('***** WARNING: Changing device to CPU due to h-adaptivity not implemented on GPU yet')
+    config["hardware"]["device"] = 'cpu'
+
+
 match config["hardware"]["device"]:
     case 'mps':
         device = torch.device("mps")

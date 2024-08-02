@@ -1733,7 +1733,8 @@ def Training_2D_FEM(model, config, Mat):
             Mesh_object_fine = pre.Mesh( config["geometry"]["Name"],                    # Create the mesh object
                                          MaxElemSize, 
                                          config["interpolation"]["order"], 
-                                         config["interpolation"]["dimension"])
+                                         config["interpolation"]["dimension"], 
+                                         welcome = False)
             Mesh_object_fine.AddBorders( config["Borders"]["Borders"])
             Mesh_object_fine.AddBCs(     config["geometry"]["Volume_element"],
                                     [],

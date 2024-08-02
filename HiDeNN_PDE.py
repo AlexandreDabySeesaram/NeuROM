@@ -1459,11 +1459,6 @@ class MeshNN_2D(nn.Module):
                     self.nodal_values['y_imposed'] = torch.cat([self.nodal_values['y_imposed'], self.values[~self.dofs_free_y,1][-dy_imposed:]])
                     self.nodal_values['y_imposed'].requires_grad = False
 
-                # self.nodal_values['x_free'] = self.values[self.dofs_free_x,0] 
-                # self.nodal_values['y_free'] = self.values[self.dofs_free_y,1]
-                # self.nodal_values['x_imposed'] = self.values[~self.dofs_free_x,0]                    
-                # self.nodal_values['y_imposed'] = self.values[~self.dofs_free_y,1]
-
         NewNodes_indexes = np.max(self.connectivity) + np.array([1,2,3])
         match vers:
             case 'old':

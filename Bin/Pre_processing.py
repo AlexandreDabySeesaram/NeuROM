@@ -84,9 +84,10 @@ def ElementSize(dimension, **kwargs):
     return MaxElemSize
     
 class Mesh:
-    def __init__(self, name, h_max, order, dimension):
+    def __init__(self, name, h_max, order, dimension, welcome =True):
         """inputs the name of the geometry and the maximum size of the element"""
-        PrintWelcome()
+        if welcome:
+            PrintWelcome()
         self.h_max_str = str(np.around(h_max, decimals=3))
 
         self.order = str(order)

@@ -1353,7 +1353,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
         elif optimizer.__class__.__name__ == "LBFGS":
-            if (epoch+1) % 5 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+            if (epoch+1) % config['postprocess']['ModularEpochsPrint'] == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 
@@ -1361,10 +1361,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
     # print("*************** END OF TRAINING ***************\n")
     print("*************** END FIRST PHASE ***************\n")
     print(f'* Training time: {time_stop-time_start}s')
-    print(f'* Saving time: {save_time}s')
-    print(f'* Evaluation time: {eval_time}s')
-    print(f'* Backward time: {back_time}s')
-    print(f'* Update time: {update_time}s')
+    # print(f'* Saving time: {save_time}s')
+    # print(f'* Evaluation time: {eval_time}s')
+    # print(f'* Backward time: {back_time}s')
+    # print(f'* Update time: {update_time}s')
     print(f'* Average epoch time: {(time_stop-time_start)/(epoch+1)}s')
 
     return Loss_vect, (time_stop-time_start)
@@ -1791,6 +1791,8 @@ def Training_2D_FEM(model, config, Mat):
                                     "d_eps_max_vect":d_eps_max_vect,
                                     "eps_max_vect":eps_max_vect,
                                     "detJ_tot":detJ_tot}
+            print("***************** END TRAINING ****************\n")
+            print(f'* Training time: {Duration_tot}s')                                    
     return model 
 
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):

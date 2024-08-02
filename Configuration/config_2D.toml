@@ -118,11 +118,11 @@ LoadPreviousModel       = false                                     # Boolean to
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 4                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 1                                        # Maximum of times a given element can be splitted during h adaptivity
+multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 2                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 5                                         # Multiscale homogeneous refinement coefficient
 optimizer               = 'lbfgs'                                   # 'adam', 'lbfgs'
 
 ####################################################
@@ -132,6 +132,7 @@ optimizer               = 'lbfgs'                                   # 'adam', 'l
 ####################################################
 
 [postprocess]
+ModularEpochsPrint      = 2                                         # indices for all of which the epoch is displayed during training and saved for vtk history
 BoolPlot                = false                                     # Boolean for plots used for gif
 BoolPlotPost            = false                                     # Boolean for plots used for Post
 BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm

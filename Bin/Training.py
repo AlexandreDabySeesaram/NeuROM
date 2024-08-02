@@ -1257,7 +1257,8 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
     
     model.Initresults()                                       # Initialise the structure for saving training history
     stagnation                          = False               # Stagnation of loss decay
-
+#DEBUG
+    allow_hadpat = True
     while epoch<model.Max_epochs and not stagnation:
         t0 = time.time()
         detJ_new = []
@@ -1306,17 +1307,28 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                     Removed_elem_list = []
                     old_generation      = model.elements_generation
                     for i in range(indices.shape[0]):
+                    # DEBUG##############################################################################################################################################
+                    # for i in range(1):
                         el_id           = indices[i]  
                         if model.elements_generation[el_id.item()]<model.MaxGeneration:
                             model.MaxGeneration_elements=1
+                    # DEBUG##############################################################################################################################################
                         if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
+                        # if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration and allow_hadpat:
+                            # if epoch >1:
+                            allow_hadpat = False
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
                             model.eval()
                             newvalue = model(new_coordinate,el_id) 
                             model.train()
                             Removed_elems = model.SplitElemNonLoc(el_id)                                    # Refine element el_id and remove consequently splitted element from the list of element to split
-                            Removed_elems[0] = Removed_elems[0].numpy()
+                            vers = 'New_V2'
+                            if vers == 'New_V2':
+                                Removed_elems = [e.numpy() for e in Removed_elems]
+                            else:
+                                Removed_elems[0] = Removed_elems[0].numpy()
+                            
                             # Update indexes 
                             for j in range(indices.shape[0]):
                                 number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
@@ -1350,7 +1362,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
         elif optimizer.__class__.__name__ == "LBFGS":
-            if (epoch+1) % 5 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
+            if (epoch+1) % 1 == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
 

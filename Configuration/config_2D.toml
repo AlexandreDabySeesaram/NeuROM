@@ -5,7 +5,7 @@
 ####################################################
 
 [geometry]
-Name                    = 'Hole_3'
+Name                    = 'Square'
 L                       = 10                                        # Length of the Beam
 A                       = 1                                         # Section of the beam
 Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
@@ -69,7 +69,7 @@ mu                      = 1.0
 dimension               = 2                                         # Dimension of the study (1D or 2D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 0.5                                         # Maximum element size in the 2D mesh
+MaxElemSize2D           = 1                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -78,7 +78,7 @@ MaxElemSize2D           = 0.5                                         # Maximum 
 ####################################################
 
 [solver]
-FrozenMesh              = true                                      # Nodal coordinates frozen
+FrozenMesh              = false                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
@@ -111,15 +111,15 @@ device                  = 'cpu'                                     # Device for
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 10000                                      # Maximum number of iterations for the training stage
+n_epochs                = 20                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = true                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 3                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 1                                         # Maximum of times a given element can be splitted during h adaptivity
+multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 2                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
 multiscl_refinment_cf   = 4                                         # Multiscale homogeneous refinement coefficient

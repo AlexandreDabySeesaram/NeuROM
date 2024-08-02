@@ -1236,9 +1236,16 @@ class MeshNN_2D(nn.Module):
 
     def Split_hangingNodes(self,edge_id,edge_nodes,new_node):
         self.NElem +=1
-        nodes = self.connectivity[edge_id][0]
-        Third_node = np.delete(nodes,np.where(nodes == edge_nodes[0]))
-        Third_node = np.delete(Third_node,np.where(Third_node == edge_nodes[1]))
+        vers = 'New_V2'
+        match vers:
+            case 'old':
+                nodes = self.connectivity[edge_id][0]
+                Third_node = np.delete(nodes,np.where(nodes == edge_nodes[0]))
+                Third_node = np.delete(Third_node,np.where(Third_node == edge_nodes[1]))
+            case 'New_V2':
+                nodes = self.connectivity[edge_id]
+                Third_node = np.delete(nodes,np.where(nodes == edge_nodes[0]))
+                Third_node = np.delete(Third_node,np.where(Third_node == edge_nodes[1]))
 
 
         new_connectivity = self.connectivity
@@ -1315,40 +1322,171 @@ class MeshNN_2D(nn.Module):
         self.MaxGeneration = MaxGeneration
         self.Jacobian_threshold = Jacobian_threshold
         self.MaxGeneration_elements = 0
+    def GetCoordIndex(idx):
+        match Free:
+            case True:
+                idx_coord = torch.sum(coord_free_mask[:int(idx)]) - 1
+                return 'free', idx_coord
+            case False:
+                idx_coord = (idx - torch.sum(coord_free_mask[:int(idx)])) - 1
+                return 'imposed', idx_coord
 
     def SplitElemNonLoc(self, el_id):
         nodes = self.connectivity[el_id]
-        # Find edges of the element
-        node1_indices = (self.connectivity[:, 0] == nodes[0]) + (self.connectivity[:, 1] == nodes[0]) + (self.connectivity[:, 2] == nodes[0])
-        node2_indices = (self.connectivity[:, 0] == nodes[1]) + (self.connectivity[:, 1] == nodes[1]) + (self.connectivity[:, 2] == nodes[1])
-        node3_indices = (self.connectivity[:, 0] == nodes[2]) + (self.connectivity[:, 1] == nodes[2]) + (self.connectivity[:, 2] == nodes[2])
-        # Find edges where there are the nodes
-        edge_1_2 = np.transpose(np.vstack((node1_indices,node2_indices)))
-        edge_1_3 = np.transpose(np.vstack((node1_indices,node3_indices)))
-        edge_2_3 = np.transpose(np.vstack((node2_indices,node3_indices)))
-        # Find element sharing the both nodes
-        elem_edge_1 = np.where(np.all(edge_1_2 == [True,True],axis=1))[0]
-        elem_edge_2 = np.where(np.all(edge_1_3 == [True,True],axis=1))[0]
-        elem_edge_3 = np.where(np.all(edge_2_3 == [True,True],axis=1))[0]
-        # Remove current element
-        elem_edge_1 = np.delete(elem_edge_1,np.where(elem_edge_1 == el_id.item()))
-        elem_edge_2 = np.delete(elem_edge_2,np.where(elem_edge_2 == el_id.item()))
-        elem_edge_3 = np.delete(elem_edge_3,np.where(elem_edge_3 == el_id.item()))
+        vers = 'New_V2'
+        match vers:
+            case 'old':
+                # Find edges of the element
+                node1_indices = (self.connectivity[:, 0] == nodes[0]) + (self.connectivity[:, 1] == nodes[0]) + (self.connectivity[:, 2] == nodes[0])
+                node2_indices = (self.connectivity[:, 0] == nodes[1]) + (self.connectivity[:, 1] == nodes[1]) + (self.connectivity[:, 2] == nodes[1])
+                node3_indices = (self.connectivity[:, 0] == nodes[2]) + (self.connectivity[:, 1] == nodes[2]) + (self.connectivity[:, 2] == nodes[2])
+                # Find edges where there are the nodes
+                edge_1_2 = np.transpose(np.vstack((node1_indices,node2_indices)))
+                edge_1_3 = np.transpose(np.vstack((node1_indices,node3_indices)))
+                edge_2_3 = np.transpose(np.vstack((node2_indices,node3_indices)))
+                # Find element sharing the both nodes
+                elem_edge_1 = np.where(np.all(edge_1_2 == [True,True],axis=1))[0]
+                elem_edge_2 = np.where(np.all(edge_1_3 == [True,True],axis=1))[0]
+                elem_edge_3 = np.where(np.all(edge_2_3 == [True,True],axis=1))[0]
+                # Remove current element
+                elem_edge_1 = np.delete(elem_edge_1,np.where(elem_edge_1 == el_id.item()))
+                elem_edge_2 = np.delete(elem_edge_2,np.where(elem_edge_2 == el_id.item()))
+                elem_edge_3 = np.delete(elem_edge_3,np.where(elem_edge_3 == el_id.item()))
+                Coord = [self.coordinates[int(i-1)] for i in nodes]
+                New_coordinates = torch.vstack([0.5*(Coord[0]+Coord[1]),
+                                                0.5*(Coord[0]+Coord[2]),
+                                                0.5*(Coord[1]+Coord[2])])
+                for i in range(New_coordinates.shape[0]):
+                    self.coordinates.append(New_coordinates[None,i])
+                #Evaluate new nodale values:
+                self.eval()
+                newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
+                self.train()
+                # Initialise new nodale values
+                for i in range(newvalue.shape[1]):
+                    self.nodal_values[0].append(newvalue[None,0,i])
+                    self.nodal_values[1].append(newvalue[None,1,i])
 
-        Coord = [self.coordinates[int(i-1)] for i in nodes]
-        New_coordinates = torch.vstack([0.5*(Coord[0]+Coord[1]),
-                                        0.5*(Coord[0]+Coord[2]),
-                                        0.5*(Coord[1]+Coord[2])])
+            case 'New_V2':
+                connectivity_tensor = torch.tensor(self.connectivity, dtype = torch.int32)
+                mask = (connectivity_tensor == nodes[0]) | (connectivity_tensor == nodes[1]) | (connectivity_tensor == nodes[2])
+                row_counts = mask.sum(dim=1)
+                elems_edges = torch.where(row_counts >= 2)[0]
+                mask_el_id = elems_edges != el_id
+                elems_edges = elems_edges[mask_el_id] 
+                Coordinates_all = self.coordinates_all
+                Coordinates_all[self.coord_free] = self.coordinates['free']
+                Coordinates_all[~self.coord_free] = self.coordinates['imposed']
+                Coord = Coordinates_all[nodes-1,:]
+
+                # permutations = torch.tensor([np.where(np.isin(nodes,self.connectivity[elems_edges][i,:]))[0] for i in range(self.connectivity[elems_edges].shape[0])])
+                permutations = torch.cat([torch.tensor(np.where(np.isin(nodes,self.connectivity[elems_edges][i,:]))[0])[None,:] for i in range(self.connectivity[elems_edges].shape[0])])
+                if permutations.shape[0] < 3:
+                    target_rows = torch.tensor([[0, 1], [1, 0]])
+                    if not torch.any(torch.all(permutations == target_rows[:, None], dim=2)):
+                        permutations = torch.cat([permutations, target_rows[0,:].unsqueeze(0)])
+                    target_rows = torch.tensor([[0, 2], [2, 0]])
+                    if not torch.any(torch.all(permutations == target_rows[:, None], dim=2)):
+                        permutations = torch.cat([permutations, target_rows[0,:].unsqueeze(0)])
+                    target_rows = torch.tensor([[1, 2], [2, 1]])
+                    if not torch.any(torch.all(permutations == target_rows[:, None], dim=2)):
+                        permutations = torch.cat([permutations, target_rows[0,:].unsqueeze(0)])
+
+                # permutations = torch.tensor([[0, 1], [0, 2], [1, 2]])
+                New_coordinates = 0.5 * (Coord[permutations[:, 0]] + Coord[permutations[:, 1]])
+                #Evaluate new nodale values:
+                self.eval()
+                newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
+                self.train()
+                Coordinates_all_new = torch.cat([Coordinates_all,New_coordinates])
+                new_coord_free = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
+                if self.coord_free[nodes][0] ==False and self.coord_free[nodes][1] ==False:
+                    new_coord_free[0] = False
+                if self.coord_free[nodes][0] ==False and self.coord_free[nodes][2] ==False:
+                    new_coord_free[1] = False
+                if self.coord_free[nodes][1] ==False and self.coord_free[nodes][2] ==False:
+                    new_coord_free[2] = False
+                self.coord_free = torch.cat([self.coord_free,new_coord_free])
+
+
+                d_coord_free =  Coordinates_all_new[self.coord_free,:].shape[0] - self.coordinates['free'].shape[0]
+                d_coord_imposed =  Coordinates_all_new[~self.coord_free,:].shape[0] - self.coordinates['imposed'].shape[0]
+                if d_coord_free> 0:
+                    self.coordinates['free'] = torch.cat([self.coordinates['free'], Coordinates_all_new[self.coord_free,:][-d_coord_free:,:]])
+                if d_coord_imposed> 0:
+                    self.coordinates['imposed'] = torch.cat([self.coordinates['imposed'], New_coordinates[~new_coord_free,:]])
+                    # self.coordinates['imposed'] = torch.cat([self.coordinates['imposed'], Coordinates_all_new[~self.coord_free,:][-d_coord_imposed:,:]])
+                    self.coordinates['imposed'].requires_grad = False
+
+                self.coordinates_all = Coordinates_all_new
+                new_dofs_free_x = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
+                new_dofs_free_y = torch.ones(3,dtype = self.coord_free.dtype, device = self.coord_free.device) ==1
+
+                if self.dofs_free_x[nodes][0] ==False and self.dofs_free_x[nodes][1] ==False:
+                    new_dofs_free_x[0] = False
+                if self.dofs_free_x[nodes][0] ==False and self.dofs_free_x[nodes][2] ==False:
+                    new_dofs_free_x[1] = False
+                if self.dofs_free_x[nodes][1] ==False and self.dofs_free_x[nodes][2] ==False:
+                    new_dofs_free_x[2] = False
+
+                if self.dofs_free_y[nodes][0] ==False and self.dofs_free_y[nodes][1] ==False:
+                    new_dofs_free_y[0] = False
+                if self.dofs_free_y[nodes][0] ==False and self.dofs_free_y[nodes][2] ==False:
+                    new_dofs_free_y[1] = False
+                if self.dofs_free_y[nodes][1] ==False and self.dofs_free_y[nodes][2] ==False:
+                    new_dofs_free_y[2] = False
+                u = self.values
+                u[self.dofs_free_x,0] = self.nodal_values['x_free']
+                u[self.dofs_free_y,1] = self.nodal_values['y_free']
+                u[~self.dofs_free_x,0] = self.nodal_values['x_imposed']                    
+                u[~self.dofs_free_y,1] = self.nodal_values['y_imposed']
+                self.dofs_free_x = torch.cat([self.dofs_free_x,new_dofs_free_x])
+                self.dofs_free_y = torch.cat([self.dofs_free_y,new_dofs_free_y])
+                self.values = torch.cat([u, newvalue.t()])
+                dx_free = self.values[self.dofs_free_x,0].shape[0] - self.nodal_values['x_free'].shape[0]
+                dy_free = self.values[self.dofs_free_y,0].shape[0] - self.nodal_values['y_free'].shape[0]
+                dx_imposed = self.values[~self.dofs_free_x,0].shape[0] - self.nodal_values['x_imposed'].shape[0]
+                dy_imposed = self.values[~self.dofs_free_y,0].shape[0] - self.nodal_values['y_imposed'].shape[0]
+                if dx_free>0:
+                    self.nodal_values['x_free'] = torch.cat([self.nodal_values['x_free'], self.values[self.dofs_free_x,0][-dx_free:]])
+                if dy_free>0:
+                    self.nodal_values['y_free'] = torch.cat([self.nodal_values['y_free'], self.values[self.dofs_free_y,1][-dy_free:]])
+                if dx_imposed>0:
+                    self.nodal_values['x_imposed'] = torch.cat([self.nodal_values['x_imposed'], self.values[~self.dofs_free_x,0][-dx_imposed:]])
+                    self.nodal_values['x_imposed'].requires_grad = False
+
+                if dy_imposed>0:
+                    self.nodal_values['y_imposed'] = torch.cat([self.nodal_values['y_imposed'], self.values[~self.dofs_free_y,1][-dy_imposed:]])
+                    self.nodal_values['y_imposed'].requires_grad = False
+
+                # self.nodal_values['x_free'] = self.values[self.dofs_free_x,0] 
+                # self.nodal_values['y_free'] = self.values[self.dofs_free_y,1]
+                # self.nodal_values['x_imposed'] = self.values[~self.dofs_free_x,0]                    
+                # self.nodal_values['y_imposed'] = self.values[~self.dofs_free_y,1]
 
         NewNodes_indexes = np.max(self.connectivity) + np.array([1,2,3])
-        new_elem = np.array([   [NewNodes_indexes[0], NewNodes_indexes[1], nodes[0]],
-                                [nodes[1], NewNodes_indexes[2], NewNodes_indexes[0]],
-                                [NewNodes_indexes[2], nodes[2], NewNodes_indexes[1]],
-                                [NewNodes_indexes[2], NewNodes_indexes[1], NewNodes_indexes[0]]])
+        match vers:
+            case 'old':
+                new_elem = np.array([   [NewNodes_indexes[0], NewNodes_indexes[1], nodes[0]],
+                                        [nodes[1], NewNodes_indexes[2], NewNodes_indexes[0]],
+                                        [NewNodes_indexes[2], nodes[2], NewNodes_indexes[1]],
+                                        [NewNodes_indexes[2], NewNodes_indexes[1], NewNodes_indexes[0]]])
+            case 'New_V2':
+
+                permutations[torch.where((permutations == permutations[0,0])[1:,:])[0]+1,torch.where((permutations == permutations[0,0])[1:,:])[1]]
 
 
-        for i in range(New_coordinates.shape[0]):
-            self.coordinates.append(New_coordinates[None,i])
+
+                Third_1 = torch.where((permutations == permutations[0,0])[1:,:])[0]+1
+                Third_2 = torch.where((permutations == permutations[0,1])[1:,:])[0]+1
+                Initial_3 = permutations[Third_2,torch.where(permutations[Third_2,:] != permutations[0,1])[1]]
+                Third_3 = torch.where(torch.logical_and(torch.tensor([0,1,2]) != Third_1 , torch.tensor([0,1,2]) != Third_2 ))[0]
+                new_elem = np.array([   [nodes[permutations[0,0]], NewNodes_indexes[0], NewNodes_indexes[Third_1]],
+                                        [nodes[permutations[0,1]], NewNodes_indexes[0], NewNodes_indexes[Third_2]],
+                                        [NewNodes_indexes[Third_2], nodes[Initial_3], NewNodes_indexes[Third_1]],
+                                        [NewNodes_indexes[0], NewNodes_indexes[1], NewNodes_indexes[2]]])
+
+
         new_connectivity = self.connectivity
         new_generation = self.elements_generation
         new_det = self.detJ_0.numpy()
@@ -1360,14 +1498,6 @@ class MeshNN_2D(nn.Module):
         new_generation = np.delete(new_generation,(el_id),axis = 0)
         new_det = np.delete(new_det,(el_id),axis = 0)
 
-        #Evaluate new nodale values:
-        self.eval()
-        newvalue = self(New_coordinates,torch.tensor([el_id,el_id,el_id]))
-        self.train()
-        # Initialise new nodale values
-        for i in range(newvalue.shape[1]):
-            self.nodal_values[0].append(newvalue[None,0,i])
-            self.nodal_values[1].append(newvalue[None,1,i])
         # Update connectivity
         new_connectivity = np.vstack((new_connectivity,new_elem))
         new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 4, axis=None)))
@@ -1387,22 +1517,33 @@ class MeshNN_2D(nn.Module):
             self.Interpolation.UpdateConnectivity(self.connectivity)
         self.NElem +=3
         Removed_elem_list = [el_id]
-        Edges = [elem_edge_1,elem_edge_2,elem_edge_3]
-        nodes_edge = [[nodes[0],nodes[1]],[nodes[0],nodes[2]],[nodes[1],nodes[2]]]
-        for i in range(len(Edges)):
-            edge = Edges[i]
-            # Need to be updated to new connectivity
-            node_edge = nodes_edge[i]
-            if edge.shape[0] == 1:
-                edge_new = edge - np.where(np.array(Removed_elem_list)<edge)[0].shape[0]
-                self.Split_hangingNodes(edge_new,node_edge,NewNodes_indexes[i])
-                Removed_elem_list.append(edge)
-            else:
-                self.coordinates[-(3-i)].requires_grad = False
-                if not (self.nodal_values[0][int(node_edge[0])-1].requires_grad and self.nodal_values[0][int(node_edge[1])-1].requires_grad):
-                    self.nodal_values[0][-(3-i)].requires_grad = False
-                if not (self.nodal_values[1][int(node_edge[0])-1].requires_grad and self.nodal_values[1][int(node_edge[1])-1].requires_grad):
-                    self.nodal_values[1][-(3-i)].requires_grad = False
+        match vers:
+            case 'old':
+                Edges = [elem_edge_1,elem_edge_2,elem_edge_3]
+                nodes_edge = [[nodes[0],nodes[1]],[nodes[0],nodes[2]],[nodes[1],nodes[2]]]
+                for i in range(len(Edges)):
+                    edge = Edges[i]
+                    # Need to be updated to new connectivity
+                    node_edge = nodes_edge[i]
+                    if edge.shape[0] == 1:
+                        edge_new = edge - np.where(np.array(Removed_elem_list)<edge)[0].shape[0]
+                        self.Split_hangingNodes(edge_new,node_edge,NewNodes_indexes[i])
+                        Removed_elem_list.append(edge)
+                    else:
+                        self.coordinates[-(3-i)].requires_grad = False
+                        if not (self.nodal_values[0][int(node_edge[0])-1].requires_grad and self.nodal_values[0][int(node_edge[1])-1].requires_grad):
+                            self.nodal_values[0][-(3-i)].requires_grad = False
+                        if not (self.nodal_values[1][int(node_edge[0])-1].requires_grad and self.nodal_values[1][int(node_edge[1])-1].requires_grad):
+                            self.nodal_values[1][-(3-i)].requires_grad = False
+            case 'New_V2':
+                nodes_edge = nodes[permutations]
+                for i in range(elems_edges.shape[0]):
+                    edge = elems_edges[i]
+                    node_edge = nodes_edge[i,:]
+                    edge_new = edge.cpu().numpy() - np.where(np.array(Removed_elem_list)<edge.cpu().numpy())[0].shape[0]
+                    self.Split_hangingNodes(edge_new,node_edge,NewNodes_indexes[i])
+                    Removed_elem_list.append(edge[None])
+
         return Removed_elem_list
 
     def forward(self, x = 'NaN', el_id = 'NaN'):

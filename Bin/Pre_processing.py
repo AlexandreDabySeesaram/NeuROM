@@ -280,16 +280,16 @@ class Mesh:
 
         if self.order =='1':
             mesh = meshio.Mesh(points, {"triangle":cells})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
             mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-            meshio.write(msh_name[0:-4]+".xml", mesh)
+            # meshio.write(msh_name[0:-4]+".xml", mesh)
 
         elif self.order =='2':
             mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
 
             mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
-            meshio.write(msh_name[0:-4]+".xml", mesh)
+            # meshio.write(msh_name[0:-4]+".xml", mesh)
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()
@@ -311,7 +311,7 @@ class Mesh:
 
         if self.order =='1':
             mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
                
         reader = vtk.vtkUnstructuredGridReader()
         reader.SetFileName(msh_name[0:-4]+".vtk",)  

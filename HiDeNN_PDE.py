@@ -65,27 +65,27 @@ class ElementBlock_Bar_Quadr(nn.Module):
         # to prevent any form of extrapolation beyond its boundaries 
 
         if -1  in i:
-            x_left_0 = coordinates[0]-coordinates[1]/100
-            x_right_0 = coordinates[0]  
-            x_left_2 = coordinates[1]
-            x_right_2 = coordinates[1]*(1+1/100)
-            x_left = torch.cat([x_left_0,x_left_2])
-            x_right = torch.cat([x_right_0,x_right_2])
+            x_left_0    = coordinates[0]-coordinates[1]/100
+            x_right_0   = coordinates[0]  
+            x_left_2    = coordinates[1]
+            x_right_2   = coordinates[1]*(1+1/100)
+            x_left      = torch.cat([x_left_0,x_left_2])
+            x_right     = torch.cat([x_right_0,x_right_2])
         else:
-            x_left = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
-            x_right = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
-            x_mid = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
-        sh_mid_1 = self.LinearBlock(x, x_left, x_right, self.zero, x_right - x_left)
-        sh_mid_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left, self.zero)    
-        sh_mid = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right)).T
+            x_left      = torch.cat([coordinates[row-1] for row in self.connectivity[i,0]])
+            x_right     = torch.cat([coordinates[row-1] for row in self.connectivity[i,-2]])
+            x_mid       = torch.cat([coordinates[row-1] for row in self.connectivity[i,-1]])
+        sh_mid_1    = self.LinearBlock(x, x_left, x_right, self.zero, x_right - x_left)
+        sh_mid_2    = self.LinearBlock(x, x_left, x_right, x_right - x_left, self.zero)    
+        sh_mid      = -(sh_mid_1*sh_mid_2)/((x_mid -x_left)*(x_mid - x_right)).T
 
-        sh_R_1 = self.LinearBlock(x, x_left, x_right, x_mid - x_left, x_mid - x_right)
-        sh_R_2 = self.LinearBlock(x, x_left, x_right, x_right - x_left,  self.zero) 
-        sh_R = (sh_R_1*sh_R_2)/((x_left-x_mid)*(x_left - x_right)).T
+        sh_R_1      = self.LinearBlock(x, x_left, x_right, x_mid - x_left, x_mid - x_right)
+        sh_R_2      = self.LinearBlock(x, x_left, x_right, x_right - x_left,  self.zero) 
+        sh_R        = (sh_R_1*sh_R_2)/((x_left-x_mid)*(x_left - x_right)).T
 
-        sh_L_1 = self.LinearBlock(x, x_left, x_right,  self.zero, x_right - x_left)
-        sh_L_2 = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
-        sh_L = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid)).T
+        sh_L_1      = self.LinearBlock(x, x_left, x_right,  self.zero, x_right - x_left)
+        sh_L_2      = self.LinearBlock(x, x_left, x_right, x_left - x_mid, x_right - x_mid)
+        sh_L        = (sh_L_1*sh_L_2)/((x_right-x_left)*(x_right - x_mid)).T
 
         out = torch.stack((sh_L, sh_R, sh_mid),dim=2).view(sh_R.shape[0],-1) # Left | Right | Middle
 
@@ -120,29 +120,29 @@ class ElementBlock_Bar_Lin(nn.Module):
         """
         try:
             if -1  in i:
-                x_left_0 = coordinates[0]-coordinates[1]/100
-                x_right_0 = coordinates[0]  
-                x_left_2 = coordinates[1]
-                x_right_2 = coordinates[1]*(1+1/100)
-                x_left = [x_left_0,x_left_2]
-                x_right = [x_right_0,x_right_2]
+                x_left_0    = coordinates[0]-coordinates[1]/100
+                x_right_0   = coordinates[0]  
+                x_left_2    = coordinates[1]
+                x_right_2   = coordinates[1]*(1+1/100)
+                x_left      = [x_left_0,x_left_2]
+                x_right     = [x_right_0,x_right_2]
             else:
-                x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
-                x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
+                x_left      = [coordinates[row-1] for row in self.connectivity[i,0]]
+                x_right     = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-            left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
-            right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
-            out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
+            left    = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
+            right   = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
+            out     = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
         except:
             self.register_buffer('zero', torch.tensor([0], dtype = torch.float32))
             self.register_buffer('one', torch.tensor([1], dtype = torch.float32))
             if -1  in i:
-                x_left_0 = coordinates[0]-coordinates[1]/100
-                x_right_0 = coordinates[0]  
-                x_left_2 = coordinates[1]
-                x_right_2 = coordinates[1]*(1+1/100)
-                x_left = [x_left_0,x_left_2]
-                x_right = [x_right_0,x_right_2]
+                x_left_0    = coordinates[0]-coordinates[1]/100
+                x_right_0   = coordinates[0]  
+                x_left_2    = coordinates[1]
+                x_right_2   = coordinates[1]*(1+1/100)
+                x_left      = [x_left_0,x_left_2]
+                x_right     = [x_right_0,x_right_2]
             else:
                 x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
                 x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
@@ -162,13 +162,11 @@ class MeshNN(nn.Module):
     def __init__(self, mesh):
         super(MeshNN, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
-
-        self.version = "Trapezoidal"
+        self.version    = "Trapezoidal"
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[mesh.Nodes[i][1]]])) \
                                              for i in range(len(mesh.Nodes))])
-        self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
-        self.NElem = mesh.NElem
-
+        self.dofs       = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem      = mesh.NElem
         self.connectivity = mesh.Connectivity
 
         if mesh.NoBC==False:
@@ -236,6 +234,7 @@ class MeshNN(nn.Module):
         self.InterpoLayer_uu.weight.data = NewNodalValues[2:,0]
 
     def ZeroOut(self):
+        """ This functions cancels out every nodal values associated with the MeshNN interpolation"""
         self.InterpoLayer_uu.weight.data = 0*self.NodalValues_uu
 
 
@@ -243,9 +242,6 @@ class MeshNN(nn.Module):
         """Set the two Dirichlet boundary conditions
         Args:
             u_d (Float list): The left and right BCs"""
-
-        # self.u_0 = torch.tensor(u_d[0], dtype=torch.float64)
-        # self.u_L = torch.tensor(u_d[1], dtype=torch.float64)
         self.register_buffer('u_0', torch.tensor(u_d[0], dtype=torch.float64))
         self.register_buffer('u_L', torch.tensor(u_d[1], dtype=torch.float64))
 
@@ -338,9 +334,6 @@ class InterpPara(nn.Module):
         """Set the coordinates as trainable parameters """
         for param in self.coordinates:
             param.requires_grad = True
-        #Freeze external coorinates to keep geometry    
-        # self.coordinates[0].requires_grad = False
-        # self.coordinates[1].requires_grad = False
 
     def UnFreeze_FEM(self):
         """Set the nodale values as trainable parameters """
@@ -362,6 +355,14 @@ class InterpPara(nn.Module):
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
     def __init__(self, mesh, ParametersList, config, n_modes_ini = 1, n_modes_max = 100):
+        """ The ROM model is built on a tensor decomposition between space and the given parameters.
+        agrs:
+            - mesh (Object): The mesh object parsed from the gmsh .geo file
+            - ParametersList (tensor): The parameter hypercube: tensor of size Mx3 with M parameters mu. Each row is mu_min, mu_max, N_mu 
+            - config (Dictionnary): the config file
+            - n_modes_ini (integer): the initial number of modes of the ROM
+            - n_modes_max (integer): the maximum number of modes of the ROM """
+
         super(NeuROM, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
         IndexesNon0BCs = [i for i, BC in enumerate(mesh.ListOfDirichletsBCsValues) if BC != 0]
@@ -374,8 +375,6 @@ class NeuROM(nn.Module):
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1
         self.config = config
-
-
         self.n_para = len(ParametersList)
         match mesh.dimension:
             case '1':
@@ -405,16 +404,19 @@ class NeuROM(nn.Module):
         self.FreezeAll()
         self.UnfreezeTruncated()
     def train(self):
+        """Enable the training mode of NeurROM"""
         self.training = True
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].train() 
 
     def eval(self):
+        """Enable the evaluation mode of NeurROM"""
         self.training = False
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].eval()  
 
     def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        """Initialise the default training parameters used to train the ROM"""
         self.loss_decrease_c = loss_decrease_c
         self.Max_epochs = Max_epochs
         self.learning_rate = learning_rate
@@ -434,7 +436,7 @@ class NeuROM(nn.Module):
     
     def AddMode(self):
         """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""
-        self.n_modes_truncated += 1  # Increment the number of modes used in the truncated tensor decomposition
+        self.n_modes_truncated += 1     # Increment the number of modes used in the truncated tensor decomposition
         Mesh_status = self.Mesh_status  # Remember Mesh status
         self.FreezeAll()
         self.Mesh_status = Mesh_status  # Revert tocorrect  Mesh status
@@ -456,10 +458,12 @@ class NeuROM(nn.Module):
         optim.add_param_group({'params': Para})
     
     def Freeze_N_1(self):
+        """Freezes N-1 first space modes """ 
         for i in range(self.n_modes_truncated-1):
             self.Space_modes[i].Freeze_FEM() 
 
     def UnfreezeTruncated(self):
+        """Une freezes the used modes of the ROM """ 
         for i in range(self.n_modes_truncated):
             self.Space_modes[i].UnFreeze_FEM()  
         
@@ -601,6 +605,10 @@ class NeuROM(nn.Module):
         return out
 
     def Init_from_previous(self,PreviousFullModel,Model_provided = False):
+        """Initialise the model by projection PreviousFullModel onto self 
+        args:
+            - PreviousFullModel (ROM model or string): model used as initial point
+            - Model_provided (Boolean): says if PreviousFullModel is the actual model or a its name (a string)"""
         import os
 
         if Model_provided:
@@ -631,17 +639,27 @@ class NeuROM(nn.Module):
                 self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
 
 class InterpolationBlock2D_Lin(nn.Module):
-    
+    """This class performs the FEM (linear) interpolation based on 2D shape functions and nodal values"""
     def __init__(self, connectivity):
        
         super(InterpolationBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
         self.updated_connectivity = True
     def UpdateConnectivity(self,connectivity):
+        """This function updates the connectivity tables of the interpolatin class
+        args: 
+            connectivity (numpy array): The new connectivty table"""
         self.connectivity = connectivity.astype(int)
         self.updated_connectivity = True
-    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values,node_mask_x, node_mask_y, nodal_values_tensor, flag_training):
-        vers = 'new_V2'
+    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values,node_mask_x = 'nan', node_mask_y= 'nan', nodal_values_tensor= 'nan', flag_training = 'True'):
+        '''Performs the 2D linear interpolation
+        args:
+            - x (tensor): space coordinate where to do the evaluation
+            - cell id (integer array): Corresponding element(s)
+            - shape_functions corresponding N_i(x)
+            - 
+        '''
+        vers = 'new_V2'                                                             # Enables 'old' slow implementation or 'New_V2' more efficient implementation
         if flag_training:
             if vers == 'old':
                 cell_nodes_IDs = self.connectivity[cell_id,:] - 1
@@ -684,14 +702,10 @@ class InterpolationBlock2D_Lin(nn.Module):
                 cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
             if vers == 'old':
                 values = torch.ones_like(torch.tensor(nodal_values, dtype=nodal_values[0][0].dtype,  device=nodal_values[0][0].device))
-
                 for j in range(values.shape[0]):
                     for k in range(values.shape[1]):
                         values[j,k] = nodal_values[j][k]
-
-
             for i in range(len(relation_BC_node_IDs)):
-
                 nodes = relation_BC_node_IDs[i]
                 normals = relation_BC_normals[i]
                 value = relation_BC_values[i]
@@ -800,9 +814,13 @@ class ElementBlock2D_Lin(nn.Module):
         return torch.tensor([[1/3, 1/3, 1/3]],dtype=torch.float64, requires_grad=True) # a1, a2, a3 the 3 area coordinates
 
     def forward(self, x, cell_id, coordinates, nodal_values,coord_mask,coordinates_all,flag_training):
-        """ This is the forward function of the Linear element block. Note that to prevent extrapolation outside of the structure's geometry, 
-        phantom elements are used to cancel out the interpolation shape functions outside of the beam.
-        Those phantom elements are flagged with index -1
+        """ This is the forward function of the Linear element block that outputs 2D linear shape functions based on
+        args:
+            - x (tensor) : position where to evalutate the shape functions
+            - cell_id (interger) : Associated element
+            - coordinates (np array): nodal coordinates array
+            - coord_mask (boolean tensor) : mask for free nodes in the mesh
+            - coordinates_all prealocated tensor of all coordinates
         """
 
         cell_nodes_IDs = self.connectivity[cell_id,:]
@@ -811,38 +829,19 @@ class ElementBlock2D_Lin(nn.Module):
         vers = 'new_V2'
         match vers:
             case 'old':
-        # t0 = time.time()
                 node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
                 node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
                 node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
-        # tf = time.time()
-        # print(f'duration old (ms) = {1000*(tf-t0)}')
-        # t0 = time.time()
             case 'new':
-                # t0 = time.time()
-                # nodal_coord_tensor = torch.stack([torch.cat(tuple(coor)) for coor in coordinates], dim=0)
-                # tf = time.time()
-                # print(f'duration old (ms) = {1000*(tf-t0)}')
-                # t0 = time.time()
-                # nodal_coord_tensor = torch.stack(tuple(torch.cat(tuple(coordinates))), dim=0)
                 nodal_coord_tensor =torch.cat(tuple(coordinates),dim = 0)
-                # tf = time.time()
-                # print(f'duration new (ms) = {1000*(tf-t0)}')
-
                 Ids = torch.as_tensor(cell_nodes_IDs-1).to(nodal_coord_tensor.device).t()[:,:,None]
                 nodes_coord =  torch.gather(nodal_coord_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
             case 'new_V2':
-                # coord_mask = coord_mask[:,None].repeat([1,2])
                 coordinates_all = torch.ones_like(coordinates_all)
-                # coordinates_all = torch.ones(coord_mask[:,None].repeat([1,2]).shape, dtype = coordinates['free'].dtype, device = coordinates['free'].device)
                 coordinates_all[coord_mask] = coordinates['free']
                 coordinates_all[~coord_mask] = coordinates['imposed']
                 Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
                 nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
-        # tf = time.time()
-        # print(f'duration new (ms) = {1000*(tf-t0)}')
-
-
         if flag_training:
 
             refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1)
@@ -872,13 +871,11 @@ class ElementBlock2D_Lin(nn.Module):
                 case 'new' | 'new_V2':
                     N = refCoord
 
-
             match vers:
                 case 'old':
                     detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
                 case 'new' | 'new_V2':
                     detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
-
             return N,x_g, detJ*w_g
 
         else:
@@ -887,9 +884,6 @@ class ElementBlock2D_Lin(nn.Module):
                     refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
                 case 'new'| 'new_V2':
                     refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
-
-            # refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
-            # refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
             out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
             return out
 

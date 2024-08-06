@@ -1042,10 +1042,20 @@ class MeshNN_2D(nn.Module):
         self.UnFreeze_FEM()
 
     def ZeroOut(self):
-        # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
-        self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_x])
-        self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_y])
-        self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+        vers = 'New_V2'
+        match vers:
+            case 'old':
+                # self.nodal_values = nn.ParameterList([nn.Parameter(0*torch.tensor([i[0]])) for i in self.values])
+                self.nodal_values_x = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_x])
+                self.nodal_values_y = nn.ParameterList([nn.Parameter((0*torch.tensor([i[0]], dtype = self.float_config.dtype, device = self.float_config.device))) for i in self.nodal_values_y])
+                self.nodal_values = [self.nodal_values_x,self.nodal_values_y]
+            case 'New_V2':
+                self.nodal_values['x_free'] = 0*self.nodal_values['x_free']
+                self.nodal_values['y_free'] = 0*self.nodal_values['y_free']
+
+                self.nodal_values['x_imposed'] = 0*self.nodal_values['x_imposed']
+                self.nodal_values['y_imposed'] = 0*self.nodal_values['y_imposed']
+
 
     def StoreIdList(self,x):
         if torch.is_tensor(x):
@@ -1071,19 +1081,34 @@ class MeshNN_2D(nn.Module):
                 newcoordinates[self.coord_free] = self.coordinates['free']
                 newcoordinates[~self.coord_free] = self.coordinates['imposed']
         IDs_newcoord = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
-        NewNodalValues = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype)
+        NewNodalValues = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype).t()
         # check if a cell ID was not found for some new nodes 
         if -1 in IDs_newcoord:
             index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
-            oldcoordinates = [coord for coord in CoarseModel.coordinates]
-            oldcoordinates = torch.cat(oldcoordinates,dim=0)
+            match vers:
+                case 'old':
+                    oldcoordinates = [coord for coord in CoarseModel.coordinates]
+                    oldcoordinates = torch.cat(oldcoordinates,dim=0)
+                case 'New_V2':
+                    oldcoordinates = torch.ones_like(CoarseModel.coordinates_all)
+                    oldcoordinates[CoarseModel.coord_free] = CoarseModel.coordinates['free']
+                    oldcoordinates[~CoarseModel.coord_free] = CoarseModel.coordinates['imposed']
             for ind_neg in index_neg:
                 not_found_coordinates = newcoordinates[ind_neg]
                 dist_vect = not_found_coordinates - oldcoordinates
                 dist = torch.norm(dist_vect, dim=1)
                 closest_old_nodal_value = dist.topk(1, largest=False)[1]
-                NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
-                NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].to(self.float_config.dtype)
+                match vers:
+                    case 'old':
+                        NewNodalValues[0][ind_neg] = CoarseModel.nodal_values_x[closest_old_nodal_value].to(self.float_config.dtype)
+                        NewNodalValues[1][ind_neg] = CoarseModel.nodal_values_y[closest_old_nodal_value].to(self.float_config.dtype)
+                    case 'New_V2':
+                        old_values = CoarseModel.values
+                        old_values[CoarseModel.dofs_free_x,0] = CoarseModel.nodal_values['x_free']
+                        old_values[CoarseModel.dofs_free_y,1] = CoarseModel.nodal_values['y_free']
+                        old_values[~CoarseModel.dofs_free_x,0] = CoarseModel.nodal_values['x_imposed']
+                        old_values[~CoarseModel.dofs_free_y,1] = CoarseModel.nodal_values['y_imposed']
+                        NewNodalValues[ind_neg,:] =  old_values[closest_old_nodal_value,:].to(self.float_config.dtype).to(self.float_config.device)
         vers =  'New_V2'
         match vers:
             case 'old':
@@ -1094,7 +1119,7 @@ class MeshNN_2D(nn.Module):
                 self.nodal_values_y = new_nodal_values_y
                 self.nodal_values = new_nodal_values
             case 'New_V2':
-                NewNodalValues = NewNodalValues.t()
+                NewNodalValues = NewNodalValues
                 self.nodal_values['x_free'] = NewNodalValues[self.dofs_free_x,0]
                 self.nodal_values['x_imposed'] = NewNodalValues[~self.dofs_free_x,0]
                 self.nodal_values['y_free'] = NewNodalValues[self.dofs_free_y,1]
@@ -1577,9 +1602,16 @@ class MeshNN_2D(nn.Module):
 
     def Freeze_FEM(self):
         """Set the coordinates as untrainable parameters """
-        for dim in self.nodal_values:
-            for val in dim:
-                val.requires_grad = False
+        vers = 'New_V2'
+        match vers:
+            case 'old':
+                for dim in self.nodal_values:
+                    for val in dim:
+                        val.requires_grad = False
+            case 'New_V2':
+                self.nodal_values['x_free'].requires_grad = False
+                self.nodal_values['y_free'].requires_grad = False
+
       
     def Freeze_Mesh(self):
         """Set the coordinates as untrainable parameters"""
@@ -1595,7 +1627,6 @@ class MeshNN_2D(nn.Module):
         """Set the coordinates as trainable parameters"""
         vers = 'new_V2'
         if vers == 'new_V2':
-
             self.coordinates['free'].requires_grad = True
             self.coordinates['imposed'].requires_grad = False
 

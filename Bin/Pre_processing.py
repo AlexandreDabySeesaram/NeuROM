@@ -261,9 +261,11 @@ class Mesh:
             print(f'\n************ MESH READING COMPLETE ************\n\n \
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
-* Number of Elements:       {self.Connectivity.shape[0]}\n \
-* No excluded points:          {self.NoExcl}')
+* Number of Dofs:           {self.NNodes*int(self.dimension)}')
+# * No excluded points:          {self.NoExcl}')
 #* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
+# * Number of Elements:       {self.Connectivity.shape[0]}\n \
+
 
 
     def ExportMeshVtk(self,flag_update = False):

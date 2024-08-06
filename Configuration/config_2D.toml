@@ -5,7 +5,7 @@
 ####################################################
 
 [geometry]
-Name                    = 'Square'
+Name                    = 'Hole_3'
 L                       = 10                                        # Length of the Beam
 A                       = 1                                         # Section of the beam
 Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
@@ -78,7 +78,7 @@ MaxElemSize2D           = 1                                         # Maximum el
 ####################################################
 
 [solver]
-FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenMesh              = true                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
@@ -122,7 +122,7 @@ multiscl_max_refinment  = 4                                         # Multiscale
 h_adapt_MaxGeneration   = 2                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.3                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
-multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
+multiscl_refinment_cf   = 4                                         # Multiscale homogeneous refinement coefficient
 optimizer               = 'lbfgs'                                   # 'adam', 'lbfgs'
 
 ####################################################
@@ -132,7 +132,7 @@ optimizer               = 'lbfgs'                                   # 'adam', 'l
 ####################################################
 
 [postprocess]
-ModularEpochsPrint      = 2                                         # indices for all of which the epoch is displayed during training and saved for vtk history
+ModularEpochsPrint      = 1                                         # indices for all of which the epoch is displayed during training and saved for vtk history
 BoolPlot                = false                                     # Boolean for plots used for gif
 BoolPlotPost            = false                                     # Boolean for plots used for Post
 BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm

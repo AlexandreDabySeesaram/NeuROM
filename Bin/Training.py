@@ -1825,7 +1825,6 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 Training_NeuROM_FinalStageLBFGS(model,config)           # Second stage of training (LBFGS)
             case 2:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
-                #Debug
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
@@ -1892,8 +1891,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
             if not config["solver"]["FrozenParaMesh"]:
                 model.UnFreeze_MeshPara()                                           # Set parameters mesh cordinates as trainable
 
-#DEBUG
-            # config["training"]["n_epochs"] = 1
+
             model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
                                         Max_epochs = config["training"]["n_epochs"], 
                                         learning_rate = config["training"]["learning_rate"])

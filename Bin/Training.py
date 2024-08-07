@@ -1833,7 +1833,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                     config["geometry"]["Name"],                 # Create the mesh object
                                     MaxElemSize, 
                                     config["interpolation"]["order"], 
-                                    config["interpolation"]["dimension"]
+                                    config["interpolation"]["dimension"],
+                                    welcome = False
                             )
             Mesh_object_fine.AddBorders(config["Borders"]["Borders"])
             Mesh_object_fine.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)

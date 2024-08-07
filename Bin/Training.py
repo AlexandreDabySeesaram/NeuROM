@@ -1829,48 +1829,47 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
-        Mesh_object_fine = pre.Mesh( 
-                                config["geometry"]["Name"],                 # Create the mesh object
-                                MaxElemSize, 
-                                config["interpolation"]["order"], 
-                                config["interpolation"]["dimension"]
-                        )
-        Mesh_object_fine.AddBorders(config["Borders"]["Borders"])
-        Mesh_object_fine.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
-                                        config["geometry"]["Volume_element"],
-                                        Excluded,
-                                        config["DirichletDictionryList"]
-                            )                   
-        Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
-        Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
-        match config["interpolation"]["dimension"]:
-            case 1:
-                if config["solver"]["IntegralMethod"] == "Gaussian_quad":
-                    Mesh_object_fine.ExportMeshVtk1D()
-            case 2:
-                Mesh_object_fine.ExportMeshVtk()
-        if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
-            Mesh_object_fine.AssemblyMatrix() 
-        if config["solver"]["BiPara"]:
-            ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
-                                                    config["parameters"]["para_1_max"],
-                                                    config["parameters"]["N_para_1"]],
-                                                [   config["parameters"]["para_2_min"],
-                                                    config["parameters"]["para_2_max"],
-                                                    config["parameters"]["N_para_2"]]])
-        else:
-            ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
-                                                    config["parameters"]["para_1_max"],
-                                                    config["parameters"]["N_para_1"]]])
+            Mesh_object_fine = pre.Mesh( 
+                                    config["geometry"]["Name"],                 # Create the mesh object
+                                    MaxElemSize, 
+                                    config["interpolation"]["order"], 
+                                    config["interpolation"]["dimension"]
+                            )
+            Mesh_object_fine.AddBorders(config["Borders"]["Borders"])
+            Mesh_object_fine.AddBCs(                                                         # Include Boundary physical domains infos (BCs+volume)
+                                            config["geometry"]["Volume_element"],
+                                            Excluded,
+                                            config["DirichletDictionryList"]
+                                )                   
+            Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
+            Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
+            match config["interpolation"]["dimension"]:
+                case 1:
+                    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+                        Mesh_object_fine.ExportMeshVtk1D()
+                case 2:
+                    Mesh_object_fine.ExportMeshVtk()
+            if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
+                Mesh_object_fine.AssemblyMatrix() 
+            if config["solver"]["BiPara"]:
+                ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        config["parameters"]["N_para_1"]],
+                                                    [   config["parameters"]["para_2_min"],
+                                                        config["parameters"]["para_2_max"],
+                                                        config["parameters"]["N_para_2"]]])
+            else:
+                ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        config["parameters"]["N_para_1"]]])
 
-        model_2 = NeuROM(                                                         # Build the surrogate (reduced-order) model
-                                                    Mesh_object_fine, 
-                                                    ParameterHypercube, 
-                                                    config,
-                                                    config["solver"]["n_modes_ini"],
-                                                    config["solver"]["n_modes_max"]
-                        )
-        if n_refinement < config["training"]["multiscl_max_refinment"]:
+            model_2 = NeuROM(                                                         # Build the surrogate (reduced-order) model
+                                                        Mesh_object_fine, 
+                                                        ParameterHypercube, 
+                                                        config,
+                                                        config["solver"]["n_modes_ini"],
+                                                        config["solver"]["n_modes_max"]
+                            )
             model.eval()
             if model_2.float_config.dtype != model.float_config.dtype:
                 model_2.to(model.float_config.dtype)

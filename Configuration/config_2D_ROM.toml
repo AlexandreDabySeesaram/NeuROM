@@ -82,7 +82,7 @@ TrainingStrategy        = 'Integral'                                # 'Integral'
 IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = true                                      # Enable bi-stifness beam in 1D
-Angle_study             = false                                    # switch between angle or bistiffness
+Angle_study             = true                                    # switch between angle or bistiffness
 n_modes_max             = 50                                       # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
 # MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
@@ -113,7 +113,7 @@ r_adapt                 = false                                     # Enables r-
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 RemoveLastMode          = true                                      # Boolean enabling to remove the last mode that is by construction useless (to avoid increasing the ROB with multi level training)
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
+loss_decrease_c         = 1e-5                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = true                                         # Enables training all the space modes (as opposed to only the lastly added mode)
 multiscl_max_refinment  = 4                                         # Multiscale maximum number of refinement
 h_adapt_MaxGeneration   = 3                                         # Maximum of times a given element can be splitted during h adaptivity
@@ -165,13 +165,13 @@ para_1_min                  = 1e-3                                  # Minimum va
 para_1_max                  = 10e-3                                 # Maximum value for the 1st parameter
 N_para_1                    = 10                                    # Discretisation of the 1D parametric space
 # Angle
-# para_2_min                  = 0                                     # Minimum value for the 2nd parameter
-# para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
-# N_para_2                    = 60                                    # Discretisation of the 1D parametric space
-# alpha
 para_2_min                  = 0                                     # Minimum value for the 2nd parameter
-para_2_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
-N_para_2                    = 30                                    # Discretisation of the 1D parametric space
+para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
+N_para_2                    = 60                                    # Discretisation of the 1D parametric space
+# alpha
+# para_2_min                  = 0                                     # Minimum value for the 2nd parameter
+# para_2_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
+# N_para_2                    = 30                                    # Discretisation of the 1D parametric space
 
 #%% 1D
 # # Stiffness

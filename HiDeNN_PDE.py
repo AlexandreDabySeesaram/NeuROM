@@ -1042,6 +1042,9 @@ class MeshNN_2D(nn.Module):
         self.UnFreeze_FEM()
 
     def ZeroOut(self):
+        """
+            Sets the nodal values of the model to zero
+        """
         vers = 'New_V2'
         match vers:
             case 'old':
@@ -1067,6 +1070,9 @@ class MeshNN_2D(nn.Module):
         self.IdStored = True
 
     def Init_from_previous(self,CoarseModel):
+        """"
+            Initialise the current model based on a previous "CoarseModel"
+        """
         try:
              CoarseModel.float_config.dtype
         except:
@@ -1124,21 +1130,12 @@ class MeshNN_2D(nn.Module):
                 self.nodal_values['x_imposed'] = NewNodalValues[~self.dofs_free_x,0]
                 self.nodal_values['y_free'] = NewNodalValues[self.dofs_free_y,1]
                 self.nodal_values['y_imposed'] = NewNodalValues[~self.dofs_free_y,1]
-
-
-                # nodal_values_x_imposed = NewNodalValues[~self.dofs_free_x,0]
-                # nodal_values_y_imposed = NewNodalValues[~self.dofs_free_y,1]
-                # nodal_values_x_free = NewNodalValues[self.dofs_free_x,0]
-                # nodal_values_y_free = NewNodalValues[self.dofs_free_y,1]
-                # self.nodal_values = nn.ParameterDict({
-                #                                     'x_free': nodal_values_x_free,
-                #                                     'y_free': nodal_values_y_free,
-                #                                     'x_imposed': nodal_values_x_imposed,
-                #                                     'y_imposed': nodal_values_y_imposed
-                #                                     })
  
 
     def SetBCs(self, ListOfDirichletsBCsValues):
+        """
+            Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
+        """
         for i in range(len(ListOfDirichletsBCsValues)):
             if self.ListOfDirichletsBCsRelation[i] == False:
                 if self.ListOfDirichletsBCsConstit[i] == False:
@@ -1561,6 +1558,29 @@ class MeshNN_2D(nn.Module):
         return Removed_elem_list
 
     def forward(self, x = 'NaN', el_id = 'NaN'):
+        """
+        The main forward pass of the mesh object.
+
+        This function computes the interpolation based on the current mesh state. The behavior differs depending on the training mode (`self.training`).
+
+        Args:
+            self (object): The object itself.
+            x (torch.Tensor, optional): Input tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
+            el_id (torch.Tensor, optional): Element ID tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
+
+        Returns:
+            tuple: A tuple containing:
+                - interpol (torch.Tensor): The interpolated values at the integration points.
+                - x_g (torch.Tensor): The coordinates of the integration points. (Only returned during training)
+                - detJ (torch.Tensor): The determinant of the Jacobian matrix. (Only returned during training)
+
+        Notes:
+            * During training (`self.training` is True):
+                * `el_id` is generated internally if not provided.
+                * Additional calculations are performed for `shape_functions`, `x_g`, and `detJ` using the `ElementBlock` function.
+            * During evaluation (`self.training` is False):
+                * Only `shape_functions` are calculated using `ElementBlock`.
+        """
         if self.training:
             el_id = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
@@ -1576,8 +1596,18 @@ class MeshNN_2D(nn.Module):
             return interpol
 
     def UnFreeze_FEM(self):
-        """Set the coordinates as trainable parameters """
-        # print("Unfreeze values")
+        """This function unfreezes the nodal values that will be trainable during optimization. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+            Args:
+                self (object): The 2D space interpolation model.
+
+            Returns:
+                None (the function modifies the trainable flags of `self.nodal_values` in-place).
+
+            Modifies:
+                self.nodal_values (dict): A dictionary containing tensors of nodal values. The `requires_grad` attribute of specific tensors within the dictionary is modified.
+        """        
         vers = 'new'
         if vers == 'new': 
             self.nodal_values['x_free'].requires_grad = True
@@ -1601,7 +1631,19 @@ class MeshNN_2D(nn.Module):
                         values[idf].requires_grad = True
 
     def Freeze_FEM(self):
-        """Set the coordinates as untrainable parameters """
+        """
+        This function prevents any modification of nodal values during optimisation. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+        Args:
+            self (object): The 2D space interpolation model.
+
+        Returns:
+            None (the function modifies the trainable flags of `self.nodal_values` in-place).
+
+        Modifies:
+            self.nodal_values (dict): A dictionary containing tensors of node values. The `requires_grad` attribute of all tensors within the dictionary is set to False.
+        """
         vers = 'New_V2'
         match vers:
             case 'old':
@@ -1614,7 +1656,19 @@ class MeshNN_2D(nn.Module):
 
       
     def Freeze_Mesh(self):
-        """Set the coordinates as untrainable parameters"""
+        """
+        This function prevents any modification of node coordinates during optimisation. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+        Args:
+            self (object): The 2D space interpolation model.
+
+        Returns:
+            None (the function modifies the trainable flags of `self.coordinates` in-place).
+
+        Modifies:
+            self.coordinates (dict): A dictionary containing tensors of node coordinates. The `requires_grad` attribute of all tensors within the dictionary is set to False.
+        """
         vers = 'new_V2'
         if vers == 'new_V2':
             self.coordinates['free'].requires_grad = False
@@ -1624,7 +1678,18 @@ class MeshNN_2D(nn.Module):
                 param.requires_grad = False
     
     def UnFreeze_Mesh(self):
-        """Set the coordinates as trainable parameters"""
+        """This function unfreezes the nodes in the mesh that will be trainable during optimization. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+            Args:
+                self (object): The 2D space interpolation model.
+
+            Returns:
+                None (the function modifies the trainable flags of `self.coordinates` in-place).
+
+            Modifies:
+                self.coordinates (dict): A dictionary containing tensors of node coordinates. The `requires_grad` attribute of specific tensors within the dictionary is modified.
+        """
         vers = 'new_V2'
         if vers == 'new_V2':
             self.coordinates['free'].requires_grad = True
@@ -1650,7 +1715,20 @@ class MeshNN_2D(nn.Module):
 
 
     def Update_Middle_Nodes(self, mesh):
+        """
+        Updates the coordinates of the middle nodes in a mesh structure.
 
+        This function takes a mesh object as input and modifies the coordinates of the middle nodes (nodes 4, 5, and 6) of each cell. The new coordinates are calculated as the average of the coordinates of the two neighboring nodes.
+
+        Args:
+            mesh (object): A mesh object containing connectivity information and node coordinates.
+
+        Returns:
+            None
+
+        Modifies:
+            self.coordinates (torch.Tensor): The tensor containing the coordinates of all nodes in the mesh. The coordinates of the middle nodes are updated in-place.
+        """
         cell_nodes_IDs = mesh.Connectivity
         node1_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,0]])
         node2_coord =  torch.cat([self.coordinates[int(row)-1] for row in cell_nodes_IDs[:,1]])

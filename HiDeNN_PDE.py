@@ -12,7 +12,6 @@ torch.set_default_dtype(torch.float64)
 #Import post processing libraries
 import Post.Plots as Pplot
 import matplotlib.pyplot as plt
-mps_device = torch.device("mps")
 import numpy as np
 
 
@@ -442,7 +441,6 @@ class NeuROM(nn.Module):
         self.Mesh_status = Mesh_status  # Revert tocorrect  Mesh status
         self.Space_modes[self.n_modes_truncated-1].ZeroOut()
         self.Space_modes[self.n_modes_truncated-1].UnFreeze_FEM()
-        # self.Space_modes[self.n_modes_truncated-1].InterpoLayer_uu.weight.data = 0*self.Space_modes[self.n_modes_truncated-1].NodalValues_uu
 
         if self.Mesh_status == 'Free':
             self.UnFreeze_Mesh()
@@ -657,7 +655,6 @@ class InterpolationBlock2D_Lin(nn.Module):
             - x (tensor): space coordinate where to do the evaluation
             - cell id (integer array): Corresponding element(s)
             - shape_functions corresponding N_i(x)
-            - 
         '''
         vers = 'new_V2'                                                             # Enables 'old' slow implementation or 'New_V2' more efficient implementation
         if flag_training:

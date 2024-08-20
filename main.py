@@ -192,17 +192,18 @@ if not config["solver"]["ParametricStudy"]:
 # Parameter space-definition
 
 if config["solver"]["ParametricStudy"]:
-    if config["solver"]["BiPara"]:
-        ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
-                                                config["parameters"]["para_1_max"],
-                                                config["parameters"]["N_para_1"]],
-                                            [   config["parameters"]["para_2_min"],
-                                                config["parameters"]["para_2_max"],
-                                                config["parameters"]["N_para_2"]]])
-    else:
-        ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
-                                                config["parameters"]["para_1_max"],
-                                                config["parameters"]["N_para_1"]]])
+    match config["solver"]["N_ExtraCoordinates"]:
+        case 2:
+            ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]],
+                                                [   config["parameters"]["para_2_min"],
+                                                    config["parameters"]["para_2_max"],
+                                                    config["parameters"]["N_para_2"]]])
+        case 1:
+            ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                    config["parameters"]["para_1_max"],
+                                                    config["parameters"]["N_para_1"]]])
 
     ROM_model = NeuROM(                                                         # Build the surrogate (reduced-order) model
                                                 Mesh_object, 
@@ -214,8 +215,8 @@ if config["solver"]["ParametricStudy"]:
 
 #%% Load coarser model  
 
-match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibility and name should be read from config file
-    case True:
+match config["solver"]["N_ExtraCoordinates"]:       # TODO: Should be a check of compatibility and name should be read from config file
+    case 2:
         match config["interpolation"]["dimension"]:
             case 1:
                 # PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10'
@@ -225,7 +226,7 @@ match config["solver"]["BiPara"]:       # TODO: Should be a check of compatibili
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters'
                 # PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.5'
                 PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
-    case False:
+    case 1:
         match config["solver"]["IntegralMethod"]:
             case "Trapezoidal":
                 PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
@@ -326,7 +327,7 @@ if config["solver"]["ParametricStudy"]:
             sign = "Positive"
         else:
             sign = "Negative"
-    if config["solver"]["BiPara"]:                                              # define type of parametric study for saving files
+    if config["solver"]["N_ExtraCoordinates"] == 2:                             # define type of parametric study for saving files
         Study = "_BiPara"
     else: 
         Study = "_MonoPara" 
@@ -386,45 +387,47 @@ if config["solver"]["ParametricStudy"]:
     if config["postprocess"]["Plot_ROM_FOM"]:
         match config["interpolation"]["dimension"]:
             case 1:
-                if config["solver"]["BiPara"]:
-                    Pplot.Plot_BiParametric_Young(ROM_model,
-                                                Training_coordinates,config["geometry"]["A"],
-                                                AnalyticBiParametricSolution,
-                                                name_model = 'Plot_ROM_FOM'+"_"+
-                                                config["postprocess"]["Plot_name"]+
-                                                str(config["interpolation"]["np"])+"_"+
-                                                Study+
-                                                Mesh_state+
-                                                val,
-                                                tikz=True)
-                else:
-                    Pplot.Plot_Parametric_Young(ROM_model,
-                                                Training_coordinates,config["geometry"]["A"],
-                                                AnalyticSolution,
-                                                name_model = 'Plot_ROM_FOM'+"_"+
-                                                config["postprocess"]["Plot_name"]+
-                                                str(config["interpolation"]["np"])+"_"+
-                                                Mesh_state+
-                                                Study+
-                                                val,
-                                                tikz=True)                
+                match config["solver"]["N_ExtraCoordinates"]:
+                    case 2:
+                        Pplot.Plot_BiParametric_Young(ROM_model,
+                                                    Training_coordinates,config["geometry"]["A"],
+                                                    AnalyticBiParametricSolution,
+                                                    name_model = 'Plot_ROM_FOM'+"_"+
+                                                    config["postprocess"]["Plot_name"]+
+                                                    str(config["interpolation"]["np"])+"_"+
+                                                    Study+
+                                                    Mesh_state+
+                                                    val,
+                                                    tikz=True)
+                    case 1:
+                        Pplot.Plot_Parametric_Young(ROM_model,
+                                                    Training_coordinates,config["geometry"]["A"],
+                                                    AnalyticSolution,
+                                                    name_model = 'Plot_ROM_FOM'+"_"+
+                                                    config["postprocess"]["Plot_name"]+
+                                                    str(config["interpolation"]["np"])+"_"+
+                                                    Mesh_state+
+                                                    Study+
+                                                    val,
+                                                    tikz=True)                
     if config["postprocess"]["Interactive_pltot"]:
 
         match config["interpolation"]["dimension"]:
             case 1:
-                if config["solver"]["BiPara"]:
-                    Pplot.Plot_BiParametric_Young_Interactive(  ROM_model,
-                                                Training_coordinates,
-                                                config["geometry"]["A"],
-                                                AnalyticBiParametricSolution,
-                                                'name_model')
-                else:
-                    ROM_model.eval()
-                    Pplot.Plot_Parametric_Young_Interactive(    ROM_model,
-                                                Training_coordinates,
-                                                config["geometry"]["A"],
-                                                AnalyticSolution,
-                                                'name_model')                                
+                match config["solver"]["N_ExtraCoordinates"]:
+                    case 2:
+                        Pplot.Plot_BiParametric_Young_Interactive(  ROM_model,
+                                                    Training_coordinates,
+                                                    config["geometry"]["A"],
+                                                    AnalyticBiParametricSolution,
+                                                    'name_model')
+                    case 1:
+                        ROM_model.eval()
+                        Pplot.Plot_Parametric_Young_Interactive(    ROM_model,
+                                                    Training_coordinates,
+                                                    config["geometry"]["A"],
+                                                    AnalyticSolution,
+                                                    'name_model')                                
             case 2:
                 Pplot.Plot_2D_PyVista(ROM_model, 
                                 Mesh_object, 

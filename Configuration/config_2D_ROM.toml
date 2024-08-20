@@ -79,13 +79,15 @@ MaxElemSize2D           = 2                                         # Maximum el
 FrozenMesh              = true                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
-IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
+IntegralMethod          = 'Trapezoidal'                             # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = true                                      # Enable bi-stifness beam in 1D
-Angle_study             = true                                    # switch between angle or bistiffness
-n_modes_max             = 50                                       # Maximum number of modes in the Tensor Decomposition
+# BiPara                  = true                                      # Enable bi-stifness beam in 1D
+# Angle_study             = true                                      # switch between angle or bistiffness
+Problem                 = 'AngleStiffness'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness"
+N_ExtraCoordinates      = 2                                         # Number of extra parameters in the tensor decomposition 
+n_modes_max             = 50                                        # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
-# MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
+# MultiScale              = true                                    # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################
 ###                                              ###

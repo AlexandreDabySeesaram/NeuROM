@@ -415,7 +415,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         A                   = config["geometry"]["A"]
         L                   = config["geometry"]["L"]
     n_epochs            = config["training"]["n_epochs"]
-    BiPara              = config["solver"]["BiPara"]
+    # BiPara              = config["solver"]["BiPara"]
     loss_decrease_c     = config["training"]["loss_decrease_c"]
     ### Generate training points coordinates
     # In space
@@ -445,13 +445,13 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                                 )
 
     Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
-
-    if config["solver"]["BiPara"]:
-        Training_para_coordinates_list = nn.ParameterList(
-                                                            (Training_para_coordinates_1,
-                                                            Training_para_coordinates_2))
-    else:
-        Training_para_coordinates_list = [Training_para_coordinates_1]
+    match config["solver"]["N_ExtraCoordinates"]:
+        case 2:
+            Training_para_coordinates_list = nn.ParameterList(
+                                                                (Training_para_coordinates_1,
+                                                                Training_para_coordinates_2))
+        case 1:
+            Training_para_coordinates_list = [Training_para_coordinates_1]
 
 
     # BCs used for the analytical comparison 
@@ -494,25 +494,27 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
         # Compute loss
         loss_time_start             = time.time()
-        if not BiPara:
-            match config["interpolation"]["dimension"]:
-                case 1:
-                    match config["solver"]["IntegralMethod"]:   
-                        case "Gaussian_quad":
-                            loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
-                        case "Trapezoidal":
-                            loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
-                case 2:
-                        loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-        else:
-            match config["interpolation"]["dimension"]:
-                case 1:
-                    loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
-                case 2:  
-                    if config["solver"]["Angle_study"]:
-                        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                    else:
-                        loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+        match config["solver"]["N_ExtraCoordinates"]:
+            case 1:
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        match config["solver"]["IntegralMethod"]:   
+                            case "Gaussian_quad":
+                                loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                            case "Trapezoidal":
+                                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                    case 2:
+                            loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+            case 2:
+                match config["interpolation"]["dimension"]:
+                    case 1:
+                        loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                    case 2:  
+                        match config["solver"]["Problem"]:
+                            case "AngleStiffness":
+                                loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "BiStiffness":
+                                loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -585,15 +587,16 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             epoch+=1
             model.training_recap["Loss_vect"].append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
-            if not BiPara:
-                if config["interpolation"]["dimension"] == 1:
-                    match config["solver"]["IntegralMethod"]:   
-                        case "Trapezoidal":
-                            model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
-                        case "Gaussian_quad":
-                            model.training_recap["L2_error"].append(1)
+            match config["solver"]["N_ExtraCoordinates"]: 
+                case 1:
+                    if config["interpolation"]["dimension"] == 1:
+                        match config["solver"]["IntegralMethod"]:   
+                            case "Trapezoidal":
+                                model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                            case "Gaussian_quad":
+                                model.training_recap["L2_error"].append(1)
         if (epoch+1) % 100 == 0:
-            if not BiPara and config["interpolation"]["dimension"] == 1:
+            if config["solver"]["N_ExtraCoordinates"] == 1 and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
@@ -640,7 +643,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
     A               = config["geometry"]["A"]
     L               = config["geometry"]["L"]
     n_epochs        = config["training"]["n_epochs"]
-    BiPara          = config["solver"]["BiPara"]
+    # BiPara          = config["solver"]["BiPara"]
     loss_decrease_c = config["training"]["loss_decrease_c"]
     ### Generate training points coordinates
     # In space
@@ -670,13 +673,13 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                                 )
 
     Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
-
-    if config["solver"]["BiPara"]:
-        Training_para_coordinates_list = nn.ParameterList(
-                                                            (Training_para_coordinates_1,
-                                                            Training_para_coordinates_2))
-    else:
-        Training_para_coordinates_list = [Training_para_coordinates_1]
+    match config["solver"]["N_ExtraCoordinates"]:
+        case 2:
+            Training_para_coordinates_list = nn.ParameterList(
+                                                                (Training_para_coordinates_1,
+                                                                Training_para_coordinates_2))
+        case 1:
+            Training_para_coordinates_list = [Training_para_coordinates_1]
 
     epoch                       = 0
     stagnancy_counter           = 0
@@ -706,25 +709,27 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
             #             loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
             # else:
             #     loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
-            if not BiPara:
-                match config["interpolation"]["dimension"]:
-                    case 1:
-                        match config["solver"]["IntegralMethod"]:   
-                            case "Gaussian_quad":
-                                loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
-                            case "Trapezoidal":
-                                loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
-                    case 2:
-                            loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-            else:
-                match config["interpolation"]["dimension"]:
-                    case 1:
-                        loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
-                    case 2:  
-                        if config["solver"]["Angle_study"]:
-                            loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                        else:
-                            loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
+            match config["solver"]["N_ExtraCoordinates"]:
+                case 1:
+                    match config["interpolation"]["dimension"]:
+                        case 1:
+                            match config["solver"]["IntegralMethod"]:   
+                                case "Gaussian_quad":
+                                    loss = PotentialEnergyVectorisedParametric_Gauss(model,A,Training_para_coordinates_list)
+                                case "Trapezoidal":
+                                    loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
+                        case 2:
+                                loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                case 2:
+                    match config["interpolation"]["dimension"]:
+                        case 1:
+                            loss = PotentialEnergyVectorisedBiParametric(model,A,Training_para_coordinates_list,Training_coordinates,RHS(Training_coordinates))
+                        case 2:
+                            match config["solver"]["Problem"]:
+                                case "AngleStiffness":
+                                    loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                case "BiStiffness":
+                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
             loss.backward()
             return loss
 
@@ -750,14 +755,15 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
             model.training_recap["Loss_vect"].append(loss.item())
             model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
             numel_E = Training_para_coordinates_list[0].shape[0]
-            if not BiPara:
-                match config["solver"]["IntegralMethod"]:   
-                    case "Trapezoidal":
-                        model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
-                    case "Gaussian_quad":
-                        model.training_recap["L2_error"].append(1)
+            match config["solver"]["N_ExtraCoordinates"]:
+                case 1:
+                    match config["solver"]["IntegralMethod"]:   
+                        case "Trapezoidal":
+                            model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
+                        case "Gaussian_quad":
+                            model.training_recap["L2_error"].append(1)
         if (epoch+1) % 5 == 0:
-            if not BiPara:
+            if config["solver"]["N_ExtraCoordinates"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}%')
             else:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
@@ -1392,21 +1398,24 @@ def Training_2D_NeuROM(model, config, optimizer,Mat):
 
     Training_para_coordinates_2         = Training_para_coordinates_2[:,None]  
 
-    if config["solver"]["BiPara"]:
-        Training_para_coordinates_list  = nn.ParameterList(
+    match config["solver"]["N_ExtraCoordinates"]:
+        case 2:
+            Training_para_coordinates_list  = nn.ParameterList(
                                                             (Training_para_coordinates_1,
                                                             Training_para_coordinates_2))
-    else:
-        Training_para_coordinates_list  = [Training_para_coordinates_1]
+        case 1:
+            Training_para_coordinates_list  = [Training_para_coordinates_1]
 
     time_start                          = time.time()
     epoch                               = 0 
     Loss_vect                           = []
     stagnation                          = False
     while epoch<model.Max_epochs and not stagnation:
-        
-        # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-        loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+        match config["solver"]["N_ExtraCoordinates"]:
+            case 1:
+                loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+            case 2:
+                loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
 
         loss.backward()
         # update weights
@@ -1852,17 +1861,18 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                     Mesh_object_fine.ExportMeshVtk()
             if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
                 Mesh_object_fine.AssemblyMatrix() 
-            if config["solver"]["BiPara"]:
-                ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
-                                                        config["parameters"]["para_1_max"],
-                                                        config["parameters"]["N_para_1"]],
-                                                    [   config["parameters"]["para_2_min"],
-                                                        config["parameters"]["para_2_max"],
-                                                        config["parameters"]["N_para_2"]]])
-            else:
-                ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
-                                                        config["parameters"]["para_1_max"],
-                                                        config["parameters"]["N_para_1"]]])
+            match config["solver"]["N_ExtraCoordinates"]:
+                case 2:
+                    ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                            config["parameters"]["para_1_max"],
+                                                            config["parameters"]["N_para_1"]],
+                                                        [   config["parameters"]["para_2_min"],
+                                                            config["parameters"]["para_2_max"],
+                                                            config["parameters"]["N_para_2"]]])
+                case 1:
+                    ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+                                                            config["parameters"]["para_1_max"],
+                                                            config["parameters"]["N_para_1"]]])
 
             model_2 = NeuROM(                                                         # Build the surrogate (reduced-order) model
                                                         Mesh_object_fine, 

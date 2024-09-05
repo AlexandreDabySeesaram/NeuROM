@@ -939,8 +939,8 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         U_interm_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["U_interm_tot"]]
         Gen_interm_tot      = Model_FEM.training_recap["Gen_interm_tot"]
         detJ_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["detJ_tot"]]
+        detJ_current_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["detJ_current_tot"]]
         Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
-
         # Add 3-rd dimension
         X_interm_tot    = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
         U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
@@ -948,7 +948,7 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         for timestep in range(len(U_interm_tot)):
             sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
             point_data={"U":U_interm_tot[timestep]}, 
-            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
+            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ_0": [detJ_tot[timestep].data], "detJ": [detJ_current_tot[timestep].data]})
 
             sol.write(
                 f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  

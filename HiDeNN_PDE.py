@@ -1301,7 +1301,8 @@ class MeshNN_2D(nn.Module):
         self.G_interm = []
         self.Connectivity_interm = []
         self.Jacobian_interm = []
-
+        self.Jacobian_current_interm = []
+        
     def StoreResults(self):
         vers = "new_V2"
         if vers == 'new_V2':
@@ -1330,6 +1331,7 @@ class MeshNN_2D(nn.Module):
         self.G_interm.append(self.elements_generation)
         self.Connectivity_interm.append(self.connectivity-1)
         self.Jacobian_interm.append(self.detJ_0.detach().clone())
+        self.Jacobian_current_interm.append(self.detJ.detach().clone())
 
     def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
         self.MaxGeneration = MaxGeneration

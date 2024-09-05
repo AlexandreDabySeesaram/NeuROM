@@ -1352,6 +1352,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 loss_old = loss.item()
                 detJ_0 = detJ
                 model.detJ_0 = detJ
+                model.detJ = detJ
             Loss_vect.append(loss.item())
 
         if optimizer.__class__.__name__ == "Adam":
@@ -1709,6 +1710,7 @@ def Training_2D_FEM(model, config, Mat):
         detJ_tot            += model.Jacobian_interm
         X_interm_tot        += model.X_interm
         Connectivity_tot    += model.Connectivity_interm
+        detJ_current_tot    += model.Jacobian_current_interm
 
         if config["training"]["multiscl_max_refinment"] >1:
             # Compute maximum strain 
@@ -1799,7 +1801,8 @@ def Training_2D_FEM(model, config, Mat):
                                     "Connectivity_tot":Connectivity_tot,
                                     "d_eps_max_vect":d_eps_max_vect,
                                     "eps_max_vect":eps_max_vect,
-                                    "detJ_tot":detJ_tot}
+                                    "detJ_tot":detJ_tot,
+                                    "detJ_current_tot":detJ_current_tot}
             print("***************** END TRAINING ****************\n")
             print(f'* Training time: {Duration_tot}s')                                    
     return model 

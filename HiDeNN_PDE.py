@@ -1264,6 +1264,7 @@ class MeshNN_2D(nn.Module):
         new_connectivity = self.connectivity
         new_generation = self.elements_generation
         new_det = self.detJ_0.numpy()
+        new_current_det = self.detJ.numpy()
         curren_det = new_det[edge_id]
 
         curren_gen = new_generation[edge_id]
@@ -1271,16 +1272,21 @@ class MeshNN_2D(nn.Module):
         new_connectivity = np.delete(new_connectivity,(edge_id),axis = 0)
         new_generation = np.delete(new_generation,(edge_id),axis = 0)
         new_det = np.delete(new_det,(edge_id),axis = 0)
+        new_current_det = np.delete(new_current_det,(el_id),axis = 0)
 
         new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
                                 [edge_nodes[1], new_node, Third_node[0]]])
         new_connectivity = np.vstack((new_connectivity,new_elem))
         new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 2, axis=None)))
         new_det = np.hstack((new_det,np.repeat(np.array(curren_det/2), 2, axis=None)))
+        new_current_det = np.hstack((new_current_det,np.repeat(np.array(curren_det/4), 4, axis=None)))
 
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
         self.detJ_0 = torch.tensor( new_det, 
+                                    dtype = self.float_config.dtype, 
+                                    device= self.float_config.device)
+        self.detJ = torch.tensor( new_current_det, 
                                     dtype = self.float_config.dtype, 
                                     device= self.float_config.device)
         if self.order =='1':
@@ -1302,7 +1308,7 @@ class MeshNN_2D(nn.Module):
         self.Connectivity_interm = []
         self.Jacobian_interm = []
         self.Jacobian_current_interm = []
-        
+
     def StoreResults(self):
         vers = "new_V2"
         if vers == 'new_V2':
@@ -1500,22 +1506,27 @@ class MeshNN_2D(nn.Module):
         new_connectivity = self.connectivity
         new_generation = self.elements_generation
         new_det = self.detJ_0.numpy()
-
+        new_current_det = self.detJ.numpy()
         # Remove splitted element
         new_connectivity = np.delete(new_connectivity,(el_id),axis = 0)
         curren_gen = new_generation[el_id]
         curren_det = new_det[el_id]
         new_generation = np.delete(new_generation,(el_id),axis = 0)
         new_det = np.delete(new_det,(el_id),axis = 0)
+        new_current_det = np.delete(new_current_det,(el_id),axis = 0)
 
         # Update connectivity
         new_connectivity = np.vstack((new_connectivity,new_elem))
         new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 4, axis=None)))
         new_det = np.hstack((new_det,np.repeat(np.array(curren_det/4), 4, axis=None)))
+        new_current_det = np.hstack((new_current_det,np.repeat(np.array(curren_det/4), 4, axis=None)))
 
         self.connectivity = new_connectivity
         self.elements_generation = new_generation
         self.detJ_0 = torch.tensor( new_det, 
+                                    dtype = self.float_config.dtype, 
+                                    device= self.float_config.device)
+        self.detJ = torch.tensor( new_current_det, 
                                     dtype = self.float_config.dtype, 
                                     device= self.float_config.device)
 

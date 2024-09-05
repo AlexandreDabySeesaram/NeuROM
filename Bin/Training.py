@@ -1299,6 +1299,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
         with torch.no_grad():
             detJ = detJ_new[0]
             xg = xg_new[0]
+            model.detJ = detJ
 
             epoch+=1
             if epoch >1:
@@ -1682,6 +1683,7 @@ def Training_2D_FEM(model, config, Mat):
     d_eps_max_vect      = []                                # List of reltive delta of maximum strain through training
     eps_max_vect        = []                                # List of maximum strain through training
     detJ_tot            = []                                # List of history of detJ through training
+    detJ_current_tot    = []
     MaxElemSize         = config["interpolation"]["MaxElemSize2D"] # Initial value of max elem size from config file
     import meshio
     while n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:

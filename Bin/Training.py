@@ -1309,7 +1309,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 if torch.max(D_detJ)>model.Jacobian_threshold:
                     indices             = torch.nonzero(D_detJ > model.Jacobian_threshold)
                     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
-                    model.detJ_0[indices] = detJ[indices]
+                    # model.detJ_0[indices] = detJ[indices]
                     Removed_elem_list = []
                     old_generation      = model.elements_generation
                     for i in range(indices.shape[0]):
@@ -1317,6 +1317,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                         if model.elements_generation[el_id.item()]<model.MaxGeneration:
                             model.MaxGeneration_elements=1
                         if el_id.item() not in Removed_elem_list and model.elements_generation[el_id.item()]<model.MaxGeneration:
+                            # model.detJ_0[indices] = detJ[indices]
                             el_id = torch.tensor([el_id],dtype=torch.int)
                             new_coordinate = xg[el_id]
                             model.eval()

@@ -1329,7 +1329,9 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                                 Removed_elems = [e.numpy() for e in Removed_elems]
                             else:
                                 Removed_elems[0] = Removed_elems[0].numpy()
-                            
+
+                            # Add newly removed elems to list
+                            Removed_elem_list += Removed_elems
                             # Update indexes 
                             for j in range(indices.shape[0]):
                                 number_elems_above = len([e for e in Removed_elems if e < indices[j].numpy()])
@@ -1340,8 +1342,8 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                                 Removed_elem_list[j] = Removed_elem_list[j] - number_elems_above
 
                             if optimizer.__class__.__name__ == "Adam":
-                                # Add newly removed elems to list
-                                Removed_elem_list += Removed_elems
+                                # # Add newly removed elems to list
+                                # Removed_elem_list += Removed_elems
                                 optimizer.add_param_group({'params': model.coordinates[-3:]})
                                 optimizer.add_param_group({'params': model.nodal_values[0][-3:]})
                                 optimizer.add_param_group({'params': model.nodal_values[1][-3:]})

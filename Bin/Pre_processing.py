@@ -224,8 +224,12 @@ class Mesh:
                     match ElemList[1]:
                         case 1:
                             node_per_elem = 2
+                        case 2:
+                            node_per_elem = 3
                         case 8:
                             node_per_elem = 3
+                        case 9:
+                            node_per_elem = 6
                         case 15:
                             node_per_elem = 1
                     self.borders_nodes.append(ElemList[-node_per_elem:])  
@@ -235,18 +239,22 @@ class Mesh:
                         if ElemList[3] == self.ListOfDirichletsBCsIds[ID_idx]: 
                             match ElemList[1]:
                                 case 1:
-                                    self.type = "2-node bar"
-                                    self.dim = 1
-                                    self.node_per_elem = 2
+                                    BCs_type = "2-node bar"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 2
+                                case 2:
+                                    BCs_node_per_elem = 3
                                 case 8:
-                                    self.type = "3-node quadratic bar"
-                                    self.dim = 1
-                                    self.node_per_elem = 3
+                                    BCs_type = "3-node quadratic bar"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 3
+                                case 9:
+                                    BCs_node_per_elem = 6
                                 case 15:
-                                    self.type = "point"
-                                    self.dim = 1
-                                    self.node_per_elem = 1
-                            self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
+                                    BCs_type = "point"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 1
+                            self.DirichletBoundaryNodes[ID_idx].append(ElemList[-BCs_node_per_elem:])  
 
                 if self.NoExcl == False:
                     for ID_idx in range(len(self.ExcludeId)):
@@ -277,21 +285,34 @@ class Mesh:
             cells = (self.Connectivity-1).astype(np.int32)
         else:
             points = meshBeam.points
-            cells = meshBeam.cells_dict["triangle"]
+            match self.type:
+                case 't3: 3-node triangle':
+                    cells = meshBeam.cells_dict["triangle"]
+                case '4-node tetrahedron':
+                    cells = meshBeam.cells_dict["tetra"]
+
         # create meshio mesh based on points and cells from .msh file
+        
+        match self.type:
+            case 't3: 3-node triangle':
+                if self.order =='1':
+                    mesh = meshio.Mesh(points, {"triangle":cells})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
+                    # mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
 
-        if self.order =='1':
-            mesh = meshio.Mesh(points, {"triangle":cells})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
-            mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-            # meshio.write(msh_name[0:-4]+".xml", mesh)
+                elif self.order =='2':
+                    mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
 
-        elif self.order =='2':
-            mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
-
-            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
-            # meshio.write(msh_name[0:-4]+".xml", mesh)
+                    # mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
+            case '4-node tetrahedron':
+                if self.order =='1':
+                    mesh = meshio.Mesh(points, {"tetra":cells})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
+                else:
+                    raise ValueError("Only first order element have been implemented in 1D for now")
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()

@@ -351,6 +351,8 @@ class InterpPara(nn.Module):
             previous_model.register_buffer('float_config',torch.tensor([0.0],dtype = torch.float64)  )                                                     # Keep track of device and dtype used throughout the model
         self.InterpoLayer.weight.data = (previous_model(newparacoordinates).to(previous_model.float_config.dtype).T).to(self.float_config.dtype)
 
+#%% Parametric NeuROM Tensor decomposition
+
 class NeuROM(nn.Module):
     """This class builds the Reduced-order model from the interpolation NN for space and parameters space"""
     def __init__(self, mesh, ParametersList, config, n_modes_ini = 1, n_modes_max = 100):
@@ -636,6 +638,8 @@ class NeuROM(nn.Module):
             for para in range(min(Nb_parameters_fine,Nb_parameters_coarse)):
                 self.Para_modes[mode][para].Init_from_previous(BeamROM_coarse.Para_modes[mode][para])
 
+#%% 2D interpolation
+
 class InterpolationBlock2D_Lin(nn.Module):
     """This class performs the FEM (linear) interpolation based on 2D shape functions and nodal values"""
     def __init__(self, connectivity):
@@ -754,9 +758,6 @@ class InterpolationBlock2D_Lin(nn.Module):
                     nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
                     u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
             return u
-
-
-
 
 
 class InterpolationBlock2D_Quad(nn.Module):
@@ -2116,3 +2117,79 @@ class MeshNN_1D(nn.Module):
             interpol = self.Interpolation(x, el_id, self.nodal_values, shape_functions)
 
             return interpol
+
+
+
+#%% 3D interpolation
+
+class ElementBlock3D_Lin(nn.Module):
+    """
+    Returns:
+         N_i(x)'s for each nodes within each element"""
+    def __init__(self, connectivity):
+        """ Initialise the Linear Bar element 
+        Args:
+            connectivity (Interger table): Connectivity matrix of the 3D mesh
+        """
+        super(ElementBlock2D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+        self.register_buffer('GaussPoint',self.GP())
+    def UpdateConnectivity(self,connectivity):
+        self.connectivity = connectivity.astype(int)
+
+    def GP(self):
+        gp =  torch.tensor([  [0.5854101966249685, 0.1381966011250105, 0.1381966011250105], 
+                [0.1381966011250105, 0.5854101966249685, 0.1381966011250105], 
+                [0.1381966011250105, 0.1381966011250105, 0.5854101966249685], 
+                [0.1381966011250105, 0.1381966011250105, 0.1381966011250105]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
+        # Add 4th volume coordinate from first 3
+        gp = torch.hstack([gp, 1-torch.sum(gp, dim=1)[:,None]]) # shape [gxn]
+        return gp
+
+    def forward(self, x, cell_id, coordinates, nodal_values,coord_mask,coordinates_all,flag_training):
+        """ This is the forward function of the Linear element block that outputs 3D linear shape functions based on
+        args:
+            - x (tensor) : position where to evalutate the shape functions
+            - cell_id (interger) : Associated element
+            - coordinates (np array): nodal coordinates array
+            - coord_mask (boolean tensor) : mask for free nodes in the mesh
+            - coordinates_all prealocated tensor of all coordinates
+        """
+
+        cell_nodes_IDs = self.connectivity[cell_id,:]
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+        coordinates_all = torch.ones_like(coordinates_all)
+        coordinates_all[coord_mask] = coordinates['free']
+        coordinates_all[~coord_mask] = coordinates['imposed']
+        Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
+        nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(4,1,1),1, Ids.repeat(1,1,3)) # for each element, 4 nodes with 3 coordonates 
+
+        if flag_training:
+
+            refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1) # Computes N_i(xg local) for each gp for each element, shape [exgxn]
+
+            w_g = 1/24                                              # Gauss weight
+
+            Ng = refCoordg
+
+            x_g = torch.einsum('nex,egn->egx',nodes_coord,Ng)
+
+            refCoord = GetRefCoord_3D(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+
+            N = refCoord
+
+            ##### I stopped here, compute det of tet using broadcast 
+        #     detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
+            
+        #     return N,x_g, detJ*w_g
+
+        # else:
+        #     match vers:
+        #         case 'old':
+        #             refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
+        #         case 'new'| 'new_V2':
+        #             refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+        #     out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+        #     return out

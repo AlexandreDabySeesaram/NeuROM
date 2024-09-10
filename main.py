@@ -147,7 +147,7 @@ match config["interpolation"]["dimension"]:
     case 1:
         if config["solver"]["IntegralMethod"] == "Gaussian_quad":
             Mesh_object.ExportMeshVtk1D()
-    case 2:
+    case 2 | 3:
         Mesh_object.ExportMeshVtk()
 
 # if config["interpolation"]["dimension"] ==2:
@@ -178,6 +178,9 @@ if not config["solver"]["ParametricStudy"]:
 
         case 2:
             Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
+        
+        case 3:
+            Model_FEM = MeshNN_3D(Mesh_object, n_components = 3)
 
     # Set the coordinates as trainable
     Model_FEM.UnFreeze_Mesh()

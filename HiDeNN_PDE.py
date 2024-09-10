@@ -1278,7 +1278,7 @@ class MeshNN_2D(nn.Module):
         new_elem = np.array([   [edge_nodes[0], new_node, Third_node[0]],
                                 [edge_nodes[1], new_node, Third_node[0]]])
         new_connectivity = np.vstack((new_connectivity,new_elem))
-        new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen+1), 2, axis=None)))
+        new_generation = np.hstack((new_generation,np.repeat(np.array(curren_gen), 2, axis=None)))
         new_det = np.hstack((new_det,np.repeat(np.array(curren_det/2), 2, axis=None)))
         new_current_det = np.hstack((new_current_det,np.repeat(np.array(curren_det/2), 2, axis=None)))
 

@@ -58,7 +58,7 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     #plt.show()
     plt.clf()
@@ -82,7 +82,7 @@ def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,T
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
     #plt.show()
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     plt.clf()
 
 def PlotEnergyLoss(error,zoom,name):
@@ -106,7 +106,7 @@ def PlotTrajectories(Coord_trajectories,name):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     #plt.show()
     plt.clf()
 
@@ -967,7 +967,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     new_coord = torch.cat(new_coord,dim=0)
 
     L = config["geometry"]["L"]
-    A = config["material"]["A"]
+    A = config["geometry"]["A"]
     E = config["material"]["E"]
     n_visu = config["postprocess"]["n_visualization"]
 
@@ -1022,7 +1022,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/Displacement.pdf', transparent=True) 
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
     #plt.show()
     plt.clf()
 
@@ -1040,7 +1040,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/Gradient.pdf', transparent=True)  
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     #plt.show()
     plt.clf()
@@ -1083,7 +1083,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     new_coord = torch.cat(new_coord,dim=0)
 
     L = config["geometry"]["L"]
-    A = config["material"]["A"]
+    A = config["geometry"]["A"]
     E = config["material"]["E"]
     n_visu = config["postprocess"]["n_visualization"]
 
@@ -1138,7 +1138,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/Displacement.pdf', transparent=True) 
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
     #plt.show()
     plt.clf()
 
@@ -1156,7 +1156,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/Gradient.pdf', transparent=True)  
-    tikzplotlib.save('/Users/skardova/Dropbox/Lungs/HiDeNN_paper_metrials/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
+    tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     #plt.show()
     plt.clf()
@@ -1598,3 +1598,42 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
 
 
             plotter.show()
+
+def Normalized_error_1D(model, config, Mat, model_du = []):
+
+    new_coord = [coord for coord in model.coordinates]
+    new_coord = torch.cat(new_coord,dim=0)
+
+    L = config["geometry"]["L"]
+    A = config["geometry"]["A"]
+    E = config["material"]["E"]
+    n_visu = config["postprocess"]["n_visualization"]
+
+    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
+        model.mesh.ExportMeshVtk1D(flag_update = True)
+
+        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+        model.eval()
+        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+    
+    if config["solver"]["IntegralMethod"] == "None":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = model_du(PlotCoordinates)
+
+
+
+    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
+
+    return l2_loss, l2_loss_grad

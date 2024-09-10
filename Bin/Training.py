@@ -1922,7 +1922,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
 def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 
     n_epochs = config["training"]["n_epochs_2"]
-    A = config["material"]["A"]
+    A = config["geometry"]["A"]
     E = config["material"]["E"]
     L = config["geometry"]["L"]
 
@@ -2080,7 +2080,7 @@ def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
 
     n_epochs = config["training"]["n_epochs_1"]
-    A = config["material"]["A"]
+    A = config["geometry"]["A"]
     E = config["material"]["E"]
     L = config["geometry"]["L"]
 
@@ -2232,7 +2232,7 @@ def Training_1D_FEM_Gradient_Descent(model, config, Mat, model_test = []):
 def Training_1D_Mixed_LBFGS(model_u, model_du, config, Mat):
 
     n_epochs = config["training"]["n_epochs"]
-    A = config["material"]["A"]
+    A = config["geometry"]["A"]
     E = config["material"]["E"]
     L = config["geometry"]["L"]
 

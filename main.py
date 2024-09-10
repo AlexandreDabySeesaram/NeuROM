@@ -77,9 +77,10 @@ match config["hardware"]["FloatPrecision"]:
     case "half":
         tensor_float_type = torch.float16
 
-if (config['training']['h_adapt_MaxGeneration'] > 1 and not config['solver']['FrozenMesh']) and (config["hardware"]["device"] == 'mps' or config["hardware"]["device"] == 'cuda'):
-    print('***** WARNING: Changing device to CPU due to h-adaptivity not implemented on GPU yet')
-    config["hardware"]["device"] = 'cpu'
+if config["interpolation"]["dimension"] > 1:
+    if (config['training']['h_adapt_MaxGeneration'] > 1 and not config['solver']['FrozenMesh']) and (config["hardware"]["device"] == 'mps' or config["hardware"]["device"] == 'cuda'):
+        print('***** WARNING: Changing device to CPU due to h-adaptivity not implemented on GPU yet')
+        config["hardware"]["device"] = 'cpu'
 
 
 match config["hardware"]["device"]:
@@ -218,20 +219,21 @@ if config["solver"]["ParametricStudy"]:
 
 #%% Load coarser model  
 
-match config["solver"]["N_ExtraCoordinates"]:       
-    case 2:
-        match config["interpolation"]["dimension"]:
-            case 1:
-                PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10_new'
+if config["training"]["LoadPreviousModel"]:
+    match config["solver"]["N_ExtraCoordinates"]:       
+        case 2:
+            match config["interpolation"]["dimension"]:
+                case 1:
+                    PreviousFullModel = 'TrainedModels/1D_Bi_Stiffness_np_10_new'
 
-            case 2:
-                PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
-    case 1:
-        match config["solver"]["IntegralMethod"]:
-            case "Trapezoidal":
-                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
-            case "Gaussian_quad":
-                PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'
+                case 2:
+                    PreviousFullModel = 'TrainedModels/2D_Bi_Parameters_el_0.2'
+        case 1:
+            match config["solver"]["IntegralMethod"]:
+                case "Trapezoidal":
+                    PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_np_100'
+                case "Gaussian_quad":
+                    PreviousFullModel = 'TrainedModels/1D_Mono_Stiffness_Gauss_np_100'
 
 
 if config["training"]["LoadPreviousModel"] and config["solver"]["ParametricStudy"]:

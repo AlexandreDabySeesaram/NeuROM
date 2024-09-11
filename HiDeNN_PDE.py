@@ -182,10 +182,12 @@ class MeshNN(nn.Module):
         # Phantom elements always use LinearBlock
         self.ElementBlock_BC = ElementBlock_Bar_Lin(mesh.Connectivity)
         self.InterpoLayer_uu = nn.Linear(self.dofs-self.NBCs,1,bias=False)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
+        # self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-self.NBCs), requires_grad=False)
         #TODO: trace why mesh.borders_nodes is not populated in 1D NeuROM
         # self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
-        # self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
+
+        # Changed to border_nodes instead of NBCs for mixed formulation without BCs (TODO: confirm with NeuROM)
+        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  

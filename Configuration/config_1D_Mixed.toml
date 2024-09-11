@@ -86,6 +86,8 @@ IntegralMethod          = 'None'
 [hardware]
 BoolGPU                 = false                                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                         # Enable compilation of the model
+FloatPrecision          = "double"                                      # Enable to switch between simple (float32) or double (float64)
+device                  = 'mps'
 
 ####################################################
 ###                                              ###

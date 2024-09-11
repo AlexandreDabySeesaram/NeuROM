@@ -167,8 +167,8 @@ def GramSchmidt_test(B):
 def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""
     with torch.no_grad(): #No derivatino of the heavyside function
-        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
-        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = torch.float32))
+        f_1 = torch.heaviside(x-5,torch.tensor(1, dtype = model.float_config.dtype, device = model.float_config.device))
+        f_2 = 1-torch.heaviside(x-5,torch.tensor(1, dtype = model.float_config.dtype, device = model.float_config.device))
 
     ###### Enables orthogonalisation process #######
     Orthgonality = False                                    # Enable othogonality constraint of the space modes
@@ -218,8 +218,8 @@ def PotentialEnergyVectorisedBiParametric(model,A, E, x, b):
         integral = torch.sum(torch.sum(torch.sum(int_term1 - int_term2,axis=0))/(E_tensor.shape[1]))/(E_tensor.shape[2])
     else:
         F = torch.cat((f_1,f_2),dim = 1)
-        E1 = torch.cat((E[0],torch.ones(E[0].shape)),dim = 1)
-        E2 = torch.cat((torch.ones(E[1].shape),E[1]),dim = 1)
+        E1 = torch.cat((E[0],torch.ones(E[0].shape, dtype = model.float_config.dtype, device = model.float_config.device)),dim = 1)
+        E2 = torch.cat((torch.ones(E[1].shape, dtype = model.float_config.dtype, device = model.float_config.device),E[1]),dim = 1)
         term1_contributions = 0.25 * A *(
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[1:],lambda_i[0][:],lambda_i[1][:],du_dx[1:],lambda_i[0][:],lambda_i[1][:],dx,F[1:],E1,E2)+
             torch.einsum('im,mj...,ml...,iq,qj...,ql...,i...,ie,je,le->',du_dx[:-1],lambda_i[0][:],lambda_i[1][:],du_dx[:-1],lambda_i[0][:],lambda_i[1][:],dx,F[:-1],E1,E2)
@@ -259,12 +259,14 @@ def Derivative(u,x):
     du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
     return du_dx
 
-def AnalyticSolution(A,E,x,u0=0,uL=0):
+def AnalyticSolution(A,E,x,u0=0,uL=0.005):
     lin = u0 + ((uL-u0)/10)*x
     out = (1/(A*E)*(torch.exp(-np.pi*(x-2.5)**2)-np.exp(-6.25*np.pi))) \
         + (2/(A*E)*(torch.exp(-np.pi*(x-7.5)**2)-np.exp(-56.25*np.pi))) \
             - (x/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
     return out+lin
+
+
 
 def AnalyticParametricSolution(A,E,x,u0=0,uL=0):
     E = E[0] # to simple parametric solution
@@ -283,11 +285,12 @@ def AnalyticBiParametricSolution(A,E,x,u0=0,uL=0):
             - (x/(10*A*E1))*(np.exp(-6.25*np.pi)) + (x/(10*A*E2))*(np.exp(-56.25*np.pi))
     return out
 
-def AnalyticGradientSolution(A,E,x):
+def AnalyticGradientSolution(A,E,x,u0=0,uL=0.005):
+    lin = ((uL-u0)/10)
     out = (2/(A*E)*((-np.pi)*(x-2.5)*torch.exp(-np.pi*(x-2.5)**2))) \
         + (4/(A*E)*((-np.pi)*(x-7.5)*torch.exp(-np.pi*(x-7.5)**2))) \
             - (1/(10*A*E))*(np.exp(-6.25*np.pi) - np.exp(-56.25*np.pi))
-    return out
+    return out + lin
 
 def MixedFormulation_Loss(A, E, u, du, x, b):
 
@@ -302,10 +305,41 @@ def MixedFormulation_Loss(A, E, u, du, x, b):
 
     return torch.mean(res_eq), torch.mean(res_constit)
 
+
+def AnalyticSolution1(A,E,x,u0=0,uL=0.005):
+    C =( uL - 10**3/(3*A*E))/10
+    return 1/(A*E)*(x**3/3) + C*x
+
+def AnalyticGradientSolution1(A,E,x,u0=0,uL=0.005):
+    C =( uL - 10**3/(3*A*E))/10
+
+    return 1/(A*E)*(x**2) + C
+
+def RHS1(x):
+    return  2*x
+
+def InternalEnergy_1D(u,x,A,E):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    W_e = 0.5*A*E*du_dx*du_dx - RHS(x)*u
+    
+    return W_e
+
+def WeakEquilibrium_1D(u, u_test, du_test_dx, x, A, E):
+
+    du_dx = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), create_graph=True)[0]
+    prod = A*E*du_dx*du_test_dx - RHS(x)*u_test
+    return prod
+
+
 def InternalEnergy_2D(u,x,lmbda, mu):
+
     eps =  Strain(u,x)
+
     sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], lmbda, mu),dim=1)
-    W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=1)
+
+    W_e = torch.sum(torch.stack([eps[:,0], eps[:,1], 2*eps[:,2]],dim=1)*sigma,dim=-1)
+    
     return W_e
 
 def Gravity(theta,rho = 1e-9):
@@ -319,7 +353,7 @@ def Gravity_vect(theta,rho = 1e-9):
     return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
 
 def VolumeForcesEnergy_2D(u,theta, rho):
-    fv = Gravity(theta,rho)
+    fv = Gravity(theta,rho).to(u.dtype).to(u.device)
     W_e = u.t()@fv
     return torch.squeeze(W_e)
 
@@ -327,45 +361,49 @@ def Stress(ep_11, ep_22, ep_12, lmbda, mu):
     tr_epsilon = ep_11 + ep_22
     return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
 
-def VonMises(sigma):
+def VonMises(sigma, lmbda, mu):
+    
+    # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
-    VM = torch.tensor([[2/3, -1/3, 0],[-1/3, 2/3, 0],[0, 0, torch.sqrt(two)]],dtype=torch.float64)
-    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma) # in voigt notation
+    two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
+    sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0, 0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
+    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
 
 def VonMises_plain_strain(sigma, lmbda, mu):
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
-    two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=torch.float64)
+    two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
     sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
-    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=torch.float64)
+    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
     sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
 
 def Stress_tensor(eps, lmbda, mu):
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
 def InternalEnergy_2D_einsum(u,x,lmbda, mu):
     eps =  Strain_sqrt(u,x)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
     return W_e
 
 def InternalResidual(u,x,u_star,x_star,lmbda, mu):
     eps =  Strain_sqrt(u,x)
     eps_star = Strain_sqrt(u_star,x_star)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
 def InternalResidual_precomputed(eps,eps_star,lmbda, mu):
     # eps =  Strain_sqrt(u,x)
     # eps_star = Strain_sqrt(u_star,x_star)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
@@ -390,23 +428,23 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
 
     eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
     eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)
         ]
     lambda_i = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
             for l in range(model.n_para)
         ]    
-    E_float = E[0][:,0].to(torch.float64)
+    E_float = E[0][:,0]
 
     W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],E_float)
 
     # W_int = torch.einsum('ij,ejm,eim,em,mp...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0].to(torch.float64),E[0][:,0].to(torch.float64))
     W_ext_e = [VolumeForcesEnergy_2D(Space_modes[i],theta = torch.tensor(0*torch.pi/2), rho = 1e-9) for i in range(model.n_modes_truncated)]
     W_ext_e = torch.stack(W_ext_e,dim=1)
-    W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0].to(torch.float64))
+    W_ext = torch.einsum('em,em,mp...->',W_ext_e,torch.abs(detJ_i),lambda_i[0])
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
@@ -428,21 +466,21 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
 
     eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
     eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)
         ]
     lambda_i = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
             for l in range(model.n_para)
         ]    
-    E_float = E[0][:,0].to(torch.float64)
-    theta_float = E[1][:,0].to(torch.float64)
+    E_float = E[0][:,0]
+    theta_float = E[1][:,0]
 
     W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
 
-    Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
@@ -489,7 +527,7 @@ def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
             torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
 
     # Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
-    Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9)
+    Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
 
     W_ext = torch.einsum('iem,i,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
@@ -587,12 +625,14 @@ def Strain(u,x):
     """ Return the vector strain [eps_xx eps_yy eps_xy]"""
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0])],dim=1)
+
+    return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
+
+
+
+
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
-
-    #print("u_pred = ", u_pred.shape)
-    #print("x = ", x.shape)
 
     du = torch.autograd.grad(u_pred, x, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
     dv = torch.autograd.grad(v_pred, x, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
@@ -603,31 +643,33 @@ def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
     d_s22 = torch.autograd.grad(s22_pred, x, grad_outputs=torch.ones_like(s22_pred), create_graph=True)[0]
     d_s12 = torch.autograd.grad(s12_pred, x, grad_outputs=torch.ones_like(s12_pred), create_graph=True)[0]
 
-    
+    # d_s11_u = torch.autograd.grad(s_11, x, grad_outputs=torch.ones_like(s_11), create_graph=True)[0]
+    # d_s22_u = torch.autograd.grad(s_22, x, grad_outputs=torch.ones_like(s_22), create_graph=True)[0]
+    # d_s12_u = torch.autograd.grad(s_12, x, grad_outputs=torch.ones_like(s_12), create_graph=True)[0]
+
     res_eq = (d_s11[:,0] + d_s12[:,1])**2 + (d_s12[:,0] + d_s22[:,1])**2
     res_constit = (s_11 - s11_pred)**2 + (s_22 - s22_pred)**2 + (s_12 - s12_pred)**2
-
+    # res_eq_u = (d_s11_u[:,0] + d_s12_u[:,1])**2 + (d_s12_u[:,0] + d_s22_u[:,1])**2
 
     assert sum(res_constit.shape) == x.shape[0]
     assert sum(res_eq.shape) == x.shape[0]
 
-    return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
-    
-def Mixed_2D_loss_Displacement_based(model_u, model_du, x, lmbda, mu):
+    return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12 
+
+
+def Mixed_2D_loss_Strain(u_pred, v_pred, dudx_pred, dvdy_pred, dudy_pred, x, lmbda, mu):
 
     du = torch.autograd.grad(u_pred, x, grad_outputs=torch.ones_like(u_pred), create_graph=True)[0]
     dv = torch.autograd.grad(v_pred, x, grad_outputs=torch.ones_like(v_pred), create_graph=True)[0]
     
-    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+    s_11, s_22, s_12 = Stress(dudx_pred, dvdy_pred, dudy_pred, lmbda, mu)
 
-    d_s11 = torch.autograd.grad(s11_pred, x, grad_outputs=torch.ones_like(s11_pred), create_graph=True)[0]
-    d_s22 = torch.autograd.grad(s22_pred, x, grad_outputs=torch.ones_like(s22_pred), create_graph=True)[0]
-    d_s12 = torch.autograd.grad(s12_pred, x, grad_outputs=torch.ones_like(s12_pred), create_graph=True)[0]
+    d_s11 = torch.autograd.grad(s_11, x, grad_outputs=torch.ones_like(s_11), create_graph=True)[0]
+    d_s22 = torch.autograd.grad(s_22, x, grad_outputs=torch.ones_like(s_12), create_graph=True)[0]
+    d_s12 = torch.autograd.grad(s_12, x, grad_outputs=torch.ones_like(s_22), create_graph=True)[0]
 
-    
     res_eq = (d_s11[:,0] + d_s12[:,1])**2 + (d_s12[:,0] + d_s22[:,1])**2
-    res_constit = (s_11 - s11_pred)**2 + (s_22 - s22_pred)**2 + (s_12 - s12_pred)**2
-
+    res_constit = (du[:,0] - dudx_pred)**2 + (dv[:,1] - dvdy_pred)**2 + (0.5*(du[:,1] + dv[:,0]) - dudy_pred)**2
 
     assert sum(res_constit.shape) == x.shape[0]
     assert sum(res_eq.shape) == x.shape[0]
@@ -635,6 +677,11 @@ def Mixed_2D_loss_Displacement_based(model_u, model_du, x, lmbda, mu):
     return torch.mean(res_eq), torch.mean(res_constit), s_11, s_22, s_12
 
 def Neumann_BC_rel(Model):
+    #print(" * Neumann_BC_rel")
+
+    s_11 = Model.nodal_values[0]
+    s_22 = Model.nodal_values[1]
+    s_12 = Model.nodal_values[2]
 
     for i in range(len(Model.relation_BC_node_IDs)):
 
@@ -642,26 +689,22 @@ def Neumann_BC_rel(Model):
         normals = Model.relation_BC_normals[i]
         value = Model.relation_BC_values[i]
 
-        s_11 = Model.nodal_values[0]
-        s_22 = Model.nodal_values[1]
-        s_12 = Model.nodal_values[2]
-
         if len(value)>1:
             for j in range(nodes.shape[0]):
 
                 ID = nodes[j]
                 normal = normals[j]
 
-                if np.isclose(normal[0],0.0, atol=1e-06):
+                if np.isclose(normal[0],0.0, atol=1.0e-8):
                     s_12[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[1]]))
                     s_22[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[1]]))
-                elif np.isclose(normal[1],0.0, atol=1e-06):
+                elif np.isclose(normal[1],0.0, atol=1.0e-8):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]/normal[0]]))
                     s_12[ID] = torch.nn.Parameter(torch.tensor([value[1]/normal[0]]))
                 else:
+                    #s_12[ID] = (value[1] - s_22[ID]*normal[1])/normal[0]
                     s_11[ID] = (value[0] - s_12[ID]*normal[1])/normal[0]
                     s_22[ID] = (value[1] - s_12[ID]*normal[0])/normal[1]
-                    #s_12[ID] = (value[0] - s_11[ID]*normal[0])/normal[1]
 
         elif len(value)==1:
             for j in range(nodes.shape[0]):
@@ -669,13 +712,59 @@ def Neumann_BC_rel(Model):
                 ID = nodes[j]
                 normal = normals[j]
 
-                #print(ID.item())
-                #print(normal)
-
-                if np.isclose(normal[0],0.0, atol=1e-06):
+                if np.isclose(normal[0],0.0, atol=1.0e-8):
                     s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
                     s_22[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
-                elif np.isclose(normal[1],0.0, atol=1e-06):
+                elif np.isclose(normal[1],0.0, atol=1.0e-8):
+                    s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
+                else:
+                    #s_12[ID] = (value[0]*normal[0] - s_11[ID]*normal[0])/normal[1]
+                    s_11[ID] = (value[0]*normal[0] - s_12[ID]*normal[1])/normal[0]
+                    s_22[ID] = (value[0]*normal[1] - s_12[ID]*normal[0])/normal[1]
+
+def CheckNeumann_BC_rel(Model):
+    #print(" * Neumann_BC_rel")
+
+    s_11 = Model.nodal_values[0]
+    s_22 = Model.nodal_values[1]
+    s_12 = Model.nodal_values[2]
+
+    for i in range(len(Model.relation_BC_node_IDs)):
+
+        nodes = Model.relation_BC_node_IDs[i]
+        normals = Model.relation_BC_normals[i]
+        value = Model.relation_BC_values[i]
+
+        if len(value)>1:
+            for j in range(nodes.shape[0]):
+
+                ID = nodes[j]
+                normal = normals[j]
+
+                if np.isclose(normal[0],0.0, atol=1.0e-8):
+                    print("nx ==0")
+                    print(s_12[ID] - torch.nn.Parameter(torch.tensor([value[0]/normal[1]])))
+                    print(s_22[ID] - torch.nn.Parameter(torch.tensor([value[1]/normal[1]])))
+                elif np.isclose(normal[1],0.0, atol=1.0e-8):
+                    print("ny == 0")
+                    print(s_11[ID] - torch.nn.Parameter(torch.tensor([value[0]/normal[0]])))
+                    print(s_12[ID] - torch.nn.Parameter(torch.tensor([value[1]/normal[0]])))
+                else:
+                    print("n general")
+                    print(s_11[ID] - (value[0] - s_12[ID]*normal[1])/normal[0])
+                    print(s_22[ID] - (value[1] - s_12[ID]*normal[0])/normal[1])
+                    print()
+        elif len(value)==1:
+            for j in range(nodes.shape[0]):
+
+                ID = nodes[j]
+                normal = normals[j]
+
+                if np.isclose(normal[0],0.0, atol=1.0e-8):
+                    s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
+                    s_22[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+                elif np.isclose(normal[1],0.0, atol=1.0e-8):
                     s_11[ID] = torch.nn.Parameter(torch.tensor([value[0]]))
                     s_12[ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
                 else:
@@ -730,14 +819,56 @@ def GetRealCoord(model, mesh, cell_ids, ref_coord):
 
     coord = ref_coord[:,0].view(-1, 1)*node1_coord + ref_coord[:,1].view(-1, 1)*node2_coord + ref_coord[:,2].view(-1, 1)*node3_coord
 
-    # print("cell ids : ", cell_ids[0])
-    # print("node ids : ", node_ids[0,:])
-
-    # print("n1 : ", node1_coord[0])
-    # print("n2 : ", node2_coord[0])
-    # print("n3 : ", node3_coord[0])
-    # print("x : ", coord[0])
-    # print("check cell ID : ", mesh.GetCellIds(coord)[0])
-    # print()
     return coord.clone().detach().requires_grad_(True), cell_ids, cell_ids
+
+
+def Update_Coordinates(Model_u, Model_du, Mesh_u, Mesh_du):
+
+    cell_nodes_IDs_u = Mesh_u.Connectivity
+    cell_nodes_IDs_du = Mesh_du.Connectivity
+
+    node1_coord =  torch.cat([Model_du.coordinates[int(row)-1] for row in cell_nodes_IDs_du[:,0]])
+    node2_coord =  torch.cat([Model_du.coordinates[int(row)-1] for row in cell_nodes_IDs_du[:,1]])
+    node3_coord =  torch.cat([Model_du.coordinates[int(row)-1] for row in cell_nodes_IDs_du[:,2]])
+
+    for j in range(len(cell_nodes_IDs_u)):
+        # print(Model_du.coordinates[int(cell_nodes_IDs_du[j,0])-1])
+        # print(node1_coord[j].unsqueeze(0))
+        # print()
+        Model_u.coordinates[int(cell_nodes_IDs_u[j,0])-1] = node1_coord[j].unsqueeze(0)
+        Model_u.coordinates[int(cell_nodes_IDs_u[j,1])-1] = node2_coord[j].unsqueeze(0)
+        Model_u.coordinates[int(cell_nodes_IDs_u[j,2])-1] = node3_coord[j].unsqueeze(0)
+
+
+def CopyStress(Model_u, Model_du, Domain_mesh_u, lmbda, mu):
+    stress_all_coord = [(Model_du.coordinates[i]).clone().detach().requires_grad_(True) for i in range(len(Model_du.coordinates))]
+
+    stress_all_cell_IDs = torch.tensor([torch.tensor(Domain_mesh_u.GetCellIds(i),dtype=torch.int)[0] for i in stress_all_coord])
+    stress_all_coord = (torch.cat(stress_all_coord)).clone().detach().requires_grad_(True)
+
+    u_pred = Model_u(stress_all_coord, stress_all_cell_IDs)
+    
+    du = torch.autograd.grad(u_pred[0,:], stress_all_coord, grad_outputs=torch.ones_like(u_pred[0,:]), create_graph=True)[0]
+    dv = torch.autograd.grad(u_pred[1,:], stress_all_coord, grad_outputs=torch.ones_like(u_pred[1,:]), create_graph=True)[0]
+    
+    s_11, s_22, s_12 = Stress(du[:,0], dv[:,1], 0.5*(du[:,1] + dv[:,0]), lmbda, mu)
+
+    node_IDs_s11 = []
+    node_IDs_s22 = []
+    node_IDs_s12 = []
+
+    for j in range(len(Model_du.nodal_values[0])):
+        if Model_du.nodal_values[0][j].requires_grad == True:
+            node_IDs_s11.append(j)
+        if Model_du.nodal_values[1][j].requires_grad == True:
+            node_IDs_s22.append(j)
+        if Model_du.nodal_values[2][j].requires_grad == True:
+            node_IDs_s12.append(j)
+              
+    for j in node_IDs_s11:
+        Model_du.nodal_values[0][j] = torch.nn.Parameter(torch.tensor([s_11[j]]))
+    for j in node_IDs_s22:
+        Model_du.nodal_values[1][j] = torch.nn.Parameter(torch.tensor([s_22[j]]))
+    for j in node_IDs_s12:
+        Model_du.nodal_values[2][j] = torch.nn.Parameter(torch.tensor([s_12[j]]))
 

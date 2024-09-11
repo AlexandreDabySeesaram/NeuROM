@@ -10,14 +10,27 @@ plt.rcParams.update({
 import numpy as np
 import matplotlib
 import torch
+import meshio
 from scipy import ndimage
 
 matplotlib.rcParams["text.usetex"] = True
 matplotlib.rcParams["font.family"] = "serif"
 matplotlib.rcParams["font.size"] = "14"
 from matplotlib.ticker import MaxNLocator
+try:
+    import tikzplotlib
+except:
+    print('* WARNING: could not load tikzplotlib')
+from matplotlib.legend import Legend
+Legend._ncol = property(lambda self: self._ncols)
 
-from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain
+from matplotlib.lines import Line2D
+
+Line2D._us_dashSeq    = property(lambda self: self._dash_pattern[1])
+Line2D._us_dashOffset = property(lambda self: self._dash_pattern[0])
+
+
+from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain, AnalyticSolution, AnalyticGradientSolution
 
 def export_csv(Name,y, x='None'):
     import pandas as pd
@@ -29,7 +42,14 @@ def export_csv(Name,y, x='None'):
 def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,TrialCoordinates,AnalyticSolution,model,name):
 
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+    
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+        
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
     plt.plot(TrialCoordinates.data,model(TrialCoordinates).data,'--', label = 'HiDeNN')
@@ -38,6 +58,8 @@ def PlotSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,Trial
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+
     #plt.show()
     plt.clf()
 
@@ -45,7 +67,12 @@ def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,T
     # Plots the gradient & compare to reference
     #plt.plot(InitialCoordinates,[coord*0 for coord in InitialCoordinates],'+k', markersize=2, label = 'Initial Nodes')'
 
-    plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    param = model.coordinates[3]
+    if param.requires_grad == True:
+        plt.scatter(InitialCoordinates,[coord*0 for coord in InitialCoordinates], s=6, color="pink", alpha=0.5, label = 'Initial Nodes')
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Mesh Nodes')
     plt.plot(TrialCoordinates.data,AnalyticGradientSolution(A,E,TrialCoordinates.data), label = 'Ground Truth')
     plt.plot(TrialCoordinates.data,Derivative(model(TrialCoordinates),TrialCoordinates).data,'--', label = 'HiDeNN')
@@ -55,6 +82,7 @@ def PlotGradSolution_Coordinates_Analytical(A,E,InitialCoordinates,Coordinates,T
     # plt.title('Displacement first derivative')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
     #plt.show()
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     plt.clf()
 
 def PlotEnergyLoss(error,zoom,name):
@@ -66,13 +94,21 @@ def PlotEnergyLoss(error,zoom,name):
     #plt.show()
     plt.clf()
 
-def PlotTrajectories(Coord_trajectories,name):
+def PlotTrajectories(Coord_trajectories,name, show):
     """Plots the trajectories of the coordinates during training"""
-    plt.plot(Coord_trajectories)
+    
+    if len(Coord_trajectories)>5000:
+        x = np.arange(len(Coord_trajectories))
+        plt.plot(x[0::500], Coord_trajectories[0::500])
+    else:
+        plt.plot(Coord_trajectories)
+
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    #plt.show()
+    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    if show:
+        plt.show()
     plt.clf()
 
 def Plot_NegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
@@ -236,17 +272,20 @@ def Plot_Lossdecay_Modes(Modes_flag,decay,name,threshold,tikz = False):
 
 def Plot_Compare_Loss2l2norm(error,error2,name):
     # Lift to be able to use semilogy
-    error3 = error-np.min(error)
+    # error3 = error-np.min(error)
+
+    error3 = np.abs(error)
+
     plt.semilogy(error2,color='#247ab5ff')
     ax = plt.gca()
     ax.tick_params(axis='y', colors='#247ab5ff')
     # plt.ylabel(r'$\Vert \underline{u}_{ex} - \underline{u}_{NN} \Vert^2$')
     plt.ylabel(r'$\Xi$',color='#247ab5ff')
-    plt.ylim((0.01,20))
+    # plt.ylim((0.01,20))
     ax2 = plt.gca().twinx()
     ax2.semilogy(error3,color='#d95319ff')
     ax2.tick_params(axis='y', colors='#d95319ff')
-    ax2.set_ylabel(r'Lifted $J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
+    ax2.set_ylabel(r'$J\left(\underline{u}\left(\underline{x}\right)\right)$',color='#d95319ff')
     plt.savefig('Results/'+name+'.pdf', transparent=True, bbox_inches = "tight")
     plt.clf()
 
@@ -423,7 +462,7 @@ def Plot_Parametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticSolutio
         Nodal_coordinates = [BeamROM.Space_modes[0].coordinates[l].data for l in range(len(BeamROM.Space_modes[0].coordinates))]
         Nodal_coordinates = torch.cat(Nodal_coordinates)
         u_analytical_E_discrete = AnalyticSolution(A,E,Nodal_coordinates.data,u0,uL)
-        E = torch.tensor([E])
+        E = torch.tensor([E],dtype=u0.dtype)
         E = E[:,None] # Add axis so that dimensions match
         u_E = BeamROM(TrialCoordinates,[E])
         u_NN_discrete = BeamROM(Nodal_coordinates,[E])
@@ -462,9 +501,9 @@ def Plot_BiParametric_Young_Interactive(BeamROM,TrialCoordinates,A,AnalyticBiPar
         uL = BeamROM.Space_modes[0].u_L
         # Calculate the corresponding function values for each x value
         u_analytical_E = AnalyticBiParametricSolution(A,[E2,E1],TrialCoordinates.data,u0,uL).view(-1)
-        E1 = torch.tensor([E1])
+        E1 = torch.tensor([E1],dtype=u0.dtype)
         E1 = E1[:,None] # Add axis so that dimensions match
-        E2 = torch.tensor([E2])
+        E2 = torch.tensor([E2],dtype=u0.dtype)
         E2 = E2[:,None] # Add axis so that dimensions match        
         E = [E1,E2]
         u_E = BeamROM(TrialCoordinates,E).view(-1)
@@ -764,9 +803,12 @@ def Plot1DSection(u_predicted, n_train_x, n_train_y, name):
 
 def Plot2Dresults(u_predicted, x, name):
 
+    u_predicted = u_predicted.reshape(2,-1)
+    x = x.reshape(-1,2)
+
     fig, ax = plt.subplots(1, 2, layout="constrained", figsize = (18,8), dpi=50)
 
-    size =  8*50/ (np.sqrt(x.shape[0])/3)
+    size =  0.5*8*50/ (np.sqrt(x.shape[0])/3)
 
     # img0 = ax[0].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[0,:].detach(), vmin=-0.55, vmax=0.55, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
     # img1 = ax[1].scatter( x[:,0].detach(),  x[:,1].detach(), c = u_predicted[1,:].detach(), vmin=0, vmax=1.7, marker="s", s=size, alpha =1.0, cmap = "coolwarm")
@@ -838,40 +880,73 @@ def Plot2Dresults_Derivative(u_predicted, e11, e22, e12, x, name):
 def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
         import meshio
         # Get nodal values from the trained model
-        u_x = [u for u in Model_FEM.nodal_values_x]
-        u_y = [u for u in Model_FEM.nodal_values_y]
+        vers = 'new_V2'
+        if vers == 'new_V2':
+            u_x = Model_FEM.U_interm[-1][:,0]
+            u_y = Model_FEM.U_interm[-1][:,1]
+            List_elems = torch.arange(0,Model_FEM.NElem,dtype=torch.int)
+            Model_FEM.train()
+            _,xg,detJ = Model_FEM()
+            Model_FEM.eval()
+            eps =  Strain(Model_FEM(xg, List_elems),xg).to(torch.device('cpu'))
+            sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
+            sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu).to(torch.device('cpu'))
+            u = torch.stack([u_x,u_y,torch.zeros(u_x.shape[0], dtype=u_x.dtype).to(u_x.device)],dim=1).cpu()
+            import numpy as np
+            Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape, dtype=u_x.dtype).to(u_x.device)[:,None]]).cpu()
+            Coord_converged = np.array(Coord.cpu())
+            Connect_converged = Model_FEM.connectivity
+            sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
+            point_data={"U":u.data}, 
+            cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
+            sol.write(
+                "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
+            )
+        else:
+            u_x = [u.to(torch.device('cpu')) for u in Model_FEM.nodal_values_x]
+            u_y = [u.to(torch.device('cpu')) for u in Model_FEM.nodal_values_y]
+            # Compute the strain 
+            List_elems = torch.arange(0,Model_FEM.NElem,dtype=torch.int)
+            Model_FEM.train()
+            _,xg,detJ = Model_FEM()
+            Model_FEM.eval()
+            eps =  Strain(Model_FEM(xg, List_elems),xg).to(torch.device('cpu'))
+            sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
+            # sigma_VM = VonMises(sigma)
+            sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu).to(torch.device('cpu'))
+            # X_interm_tot = Model_FEM.training_recap["X_interm_tot"]
+            X_interm_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["X_interm_tot"]]
 
-        # Compute the strain 
-        List_elems = torch.arange(0,Model_FEM.NElem,dtype=torch.int)
-        Model_FEM.train()
-        _,xg,detJ = Model_FEM()
-        Model_FEM.eval()
-        eps =  Strain(Model_FEM(xg, List_elems),xg)
-        sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
-        sigma_VM = VonMises(sigma)
-        sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
-        X_interm_tot = Model_FEM.training_recap["X_interm_tot"]
-
-        X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
-        u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
-        import numpy as np
-        Coord_converged = np.array([[Model_FEM.coordinates[i][0][0].item(),Model_FEM.coordinates[i][0][1].item(),0] for i in range(len(Model_FEM.coordinates))])
-        Connect_converged = Model_FEM.connectivity
-        sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
-        point_data={"U":u.data}, 
-        cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM.data]}, )
-        sol.write(
-            "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
-        )
+            X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
+            u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
+            import numpy as np
+            Coord_converged = np.array([[Model_FEM.coordinates[i][0][0].to(torch.device('cpu')).item(),Model_FEM.coordinates[i][0][1].to(torch.device('cpu')).item(),0] for i in range(len(Model_FEM.coordinates))])
+            Connect_converged = Model_FEM.connectivity
+            sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
+            point_data={"U":u.data}, 
+            cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
+            sol.write(
+                "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
+            )
 
 def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         import meshio
-        X_interm_tot        = Model_FEM.training_recap["X_interm_tot"]
-        U_interm_tot        = Model_FEM.training_recap["U_interm_tot"]
+        # X_interm_tot        = Model_FEM.training_recap["X_interm_tot"]
+        # U_interm_tot        = Model_FEM.training_recap["U_interm_tot"]
+        # Gen_interm_tot      = Model_FEM.training_recap["Gen_interm_tot"]
+        # detJ_tot            = Model_FEM.training_recap["detJ_tot"]
+        # Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
+        X_interm_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["X_interm_tot"]]
+        U_interm_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["U_interm_tot"]]
         Gen_interm_tot      = Model_FEM.training_recap["Gen_interm_tot"]
-        detJ_tot            = Model_FEM.training_recap["detJ_tot"]
-        Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
+        detJ_tot = [torch.abs(det_i).to(torch.device('cpu')) for det_i in Model_FEM.training_recap["detJ_tot"]]
+        detJ_current_tot = [torch.abs(det_i).to(torch.device('cpu')) for det_i in Model_FEM.training_recap["detJ_current_tot"]]
 
+        #Debug
+        D_detJ = [(torch.abs(detJ_tot[i]) - torch.abs(detJ_current_tot[i]))/torch.abs(detJ_tot[i]) for i in range(len(detJ_tot))]   
+        ##
+
+        Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
         # Add 3-rd dimension
         X_interm_tot    = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
         U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
@@ -879,11 +954,127 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         for timestep in range(len(U_interm_tot)):
             sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
             point_data={"U":U_interm_tot[timestep]}, 
-            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ": [detJ_tot[timestep].data]}, )
+            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ_0": [detJ_tot[timestep].data], "detJ": [detJ_current_tot[timestep].data], "D_detJ": [D_detJ[timestep].data]})
 
             sol.write(
                 f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
             )
+
+
+
+def Plot_Eval_1d(model, config, Mat, model_du = []):
+
+    new_coord = [coord for coord in model.coordinates]
+    new_coord = torch.cat(new_coord,dim=0)
+
+    L = config["geometry"]["L"]
+    A = config["geometry"]["A"]
+    E = config["material"]["E"]
+    n_visu = config["postprocess"]["n_visualization"]
+
+
+    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
+        model.mesh.ExportMeshVtk1D(flag_update = True)
+
+        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+        model.eval()
+        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = Coordinates
+
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = Coordinates
+
+    if config["solver"]["IntegralMethod"] == "None":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = model_du(PlotCoordinates)
+
+        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
+        Coordinates_du = [model_du.coordinates[i].data.item() for i in range(len(model_du.coordinates))]
+
+    analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm
+    print(f'* Final l2 loss : {np.format_float_scientific(l2_loss, precision=4)}')
+
+    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
+    print(f'* Final l2 loss grad : {np.format_float_scientific(l2_loss_grad, precision=4)}')
+
+    if config["solver"]["FrozenMesh"] == False:
+        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+
+
+    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
+    plt.plot(PlotCoordinates.data,u_predicted.data,'--', label = 'Predicted solution')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    # plt.title('Displacement')
+    plt.savefig('Results/Displacement.pdf', transparent=True) 
+    tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
+    plt.show()
+    plt.clf()
+
+    fig = matplotlib.pyplot.gcf()
+    fig.set_size_inches(9, 7)
+
+    if config["solver"]["FrozenMesh"] == False:
+        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
+        
+    plt.plot(Coordinates_du,[coord*0 for coord in Coordinates_du],'.k', markersize=2, label = 'Nodal position')
+    plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
+    plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
+    plt.xlabel(r'$\underline{x}$ [m]')
+    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.legend(loc="upper left")
+    # plt.title('Displacement')
+    plt.savefig('Results/Gradient.pdf', transparent=True)  
+    tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
+
+    plt.show()
+    plt.clf()
+
+
+
+def ExportSamplesforEval(model,Mat,config):
+
+    MaxElemSize = config["interpolation"]["MaxElemSize2D"]
+    ref = config["training"]["multiscl_max_refinment"]-1
+
+    model.mesh.Nodes = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
+    model.mesh.Connectivity = model.connectivity
+    model.mesh.ExportMeshVtk(flag_update = True)
+
+    coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)
+    List_elems = torch.tensor(model.mesh.GetCellIds(coord),dtype=torch.int)
+
+    u = model(coord, List_elems)
+    eps =  Strain(model(coord, List_elems),coord)
+    sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
+    sigma_VM = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
+
+    if config["solver"]["FrozenMesh"] == False:
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
+
+    else:
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) + "_fixed_u.npy", np.array(u.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma.npy", np.array(sigma.detach()))
+        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
+
 
 def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_field_name = 'Ux', scaling_factor = 20, Interactive_parameter = 'theta', Plot_mesh = True, color_map = 'viridis'):
     import pyvista as pv                                                            # Import PyVista
@@ -1292,3 +1483,42 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
 
 
             plotter.show()
+
+def Normalized_error_1D(model, config, Mat, model_du = []):
+
+    new_coord = [coord for coord in model.coordinates]
+    new_coord = torch.cat(new_coord,dim=0)
+
+    L = config["geometry"]["L"]
+    A = config["geometry"]["A"]
+    E = config["material"]["E"]
+    n_visu = config["postprocess"]["n_visualization"]
+
+    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
+        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
+        model.mesh.ExportMeshVtk1D(flag_update = True)
+
+        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
+        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
+
+        model.eval()
+        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+
+
+    if config["solver"]["IntegralMethod"] == "Trapezoidal":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
+    
+    if config["solver"]["IntegralMethod"] == "None":
+        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
+        u_predicted = model(PlotCoordinates)
+        du_dx = model_du(PlotCoordinates)
+
+
+
+    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
+    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
+
+    return l2_loss, l2_loss_grad

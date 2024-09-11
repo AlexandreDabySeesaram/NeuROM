@@ -113,15 +113,15 @@ device                  = 'cpu'                                     # Device for
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 500                                      # Maximum number of iterations for the training stage
+n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = true                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
 multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 5                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 2                                        # Maximum of times a given element can be splitted during h adaptivity
+multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
+h_adapt_MaxGeneration   = 1                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
 multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
@@ -140,21 +140,21 @@ BoolPlotPost            = false                                     # Boolean fo
 BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
-exportVTK               = true                                      # Enables VTK export (final)
-exportVTK_history       = true                                      # Enables VTK export (history)
-Name_export             = "Katkas_comp_noIncSplitted"                             # Name for the VTK results files
+exportVTK               = false                                      # Enables VTK export (final)
+exportVTK_history       = false                                      # Enables VTK export (history)
+Name_export             = "detJ_ExportTest"                             # Name for the VTK results files
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false 
 Plot_error_mode         = false
 Plot_ROM_FOM            = false
 Interactive_pltot       = true
-PyVista_Type            = "DualSliders"                             # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
+PyVista_Type            = "DualSliders"                                   # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
 Default_E               = 5e-3 
 Default_theta           = 0                                         # Default value of the gravity angle in plots
 scalar_field_name       = 'Uy'                                      # Plotted field
 scaling_factor          = 20                                        # Wrap by vector scaling factor
 Interactive_parameter   = 'theta'                                   # Interactive parameter
-Plot_mesh               = true                                      # Show mesh on interactive plots
+Plot_mesh               = true                                     # Show mesh on interactive plots
 
 ####################################################
 ###                                              ###

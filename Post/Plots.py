@@ -94,7 +94,7 @@ def PlotEnergyLoss(error,zoom,name):
     #plt.show()
     plt.clf()
 
-def PlotTrajectories(Coord_trajectories,name):
+def PlotTrajectories(Coord_trajectories,name, show):
     """Plots the trajectories of the coordinates during training"""
     
     if len(Coord_trajectories)>5000:
@@ -107,7 +107,8 @@ def PlotTrajectories(Coord_trajectories,name):
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
     tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
-    #plt.show()
+    if show:
+        plt.show()
     plt.clf()
 
 def Plot_NegLoss_Modes(Modes_flag,error,name, sign = "Negative",tikz = False):
@@ -1023,7 +1024,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     # plt.title('Displacement')
     plt.savefig('Results/Displacement.pdf', transparent=True) 
     tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
-    #plt.show()
+    plt.show()
     plt.clf()
 
     fig = matplotlib.pyplot.gcf()
@@ -1042,123 +1043,7 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.savefig('Results/Gradient.pdf', transparent=True)  
     tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
-    #plt.show()
-    plt.clf()
-
-
-
-def ExportSamplesforEval(model,Mat,config):
-
-    MaxElemSize = config["interpolation"]["MaxElemSize2D"]
-    ref = config["training"]["multiscl_max_refinment"]-1
-
-    model.mesh.Nodes = [[i+1,model.coordinates[i][0][0].item(),model.coordinates[i][0][1].item(),0] for i in range(len(model.coordinates))]
-    model.mesh.Connectivity = model.connectivity
-    model.mesh.ExportMeshVtk(flag_update = True)
-
-    coord = torch.tensor(np.load("../2D_example/eval_coordinates.npy"), dtype=torch.float64, requires_grad=True)
-    List_elems = torch.tensor(model.mesh.GetCellIds(coord),dtype=torch.int)
-
-    u = model(coord, List_elems)
-    eps =  Strain(model(coord, List_elems),coord)
-    sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1)
-    sigma_VM = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu)
-
-    if config["solver"]["FrozenMesh"] == False:
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_u.npy", np.array(u.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma.npy", np.array(sigma.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_free_sigma_VM.npy", np.array(sigma_VM.detach()))
-
-    else:
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) + "_fixed_u.npy", np.array(u.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma.npy", np.array(sigma.detach()))
-        np.save("../2D_example/NN_solution/"+str(MaxElemSize/(2**ref)) +"_fixed_sigma_VM.npy", np.array(sigma_VM.detach()))
-
-
-
-
-def Plot_Eval_1d(model, config, Mat, model_du = []):
-
-    new_coord = [coord for coord in model.coordinates]
-    new_coord = torch.cat(new_coord,dim=0)
-
-    L = config["geometry"]["L"]
-    A = config["geometry"]["A"]
-    E = config["material"]["E"]
-    n_visu = config["postprocess"]["n_visualization"]
-
-
-    if config["solver"]["IntegralMethod"] == "Gaussian_quad":
-        model.mesh.Nodes = [[i+1,new_coord[i].item(),0,0] for i in range(len(model.mesh.Nodes))]
-        model.mesh.ExportMeshVtk1D(flag_update = True)
-
-        PlotCoordinates = torch.tensor([i for i in torch.linspace(0,L,n_visu)],dtype=torch.float64, requires_grad=True)
-        IDs_plot = torch.tensor(model.mesh.GetCellIds(PlotCoordinates),dtype=torch.int)
-
-        model.eval()
-        u_predicted = model(PlotCoordinates, IDs_plot)[:,0]
-        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
-
-        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
-        Coordinates_du = Coordinates
-
-
-    if config["solver"]["IntegralMethod"] == "Trapezoidal":
-        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
-        u_predicted = model(PlotCoordinates)
-        du_dx = torch.autograd.grad(u_predicted, PlotCoordinates, grad_outputs=torch.ones_like(u_predicted), create_graph=True)[0]
-
-        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
-        Coordinates_du = Coordinates
-
-    if config["solver"]["IntegralMethod"] == "None":
-        PlotCoordinates = torch.tensor([[i] for i in torch.linspace(0,L,n_visu)], dtype=torch.float64, requires_grad=True)
-        u_predicted = model(PlotCoordinates)
-        du_dx = model_du(PlotCoordinates)
-
-        Coordinates = [model.coordinates[i].data.item() for i in range(len(model.coordinates))]
-        Coordinates_du = [model_du.coordinates[i].data.item() for i in range(len(model_du.coordinates))]
-
-    analytical_norm = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data)).data
-    l2_loss = torch.linalg.vector_norm(AnalyticSolution(A,E,PlotCoordinates.data) - u_predicted).data/analytical_norm
-    print(f'* Final l2 loss : {np.format_float_scientific(l2_loss, precision=4)}')
-
-    l2_loss_grad = torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data) - du_dx).data/torch.linalg.vector_norm(AnalyticGradientSolution(A,E,PlotCoordinates.data)).data
-    print(f'* Final l2 loss grad : {np.format_float_scientific(l2_loss_grad, precision=4)}')
-
-    if config["solver"]["FrozenMesh"] == False:
-        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
-
-
-    plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
-    plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
-    plt.plot(PlotCoordinates.data,u_predicted.data,'--', label = 'Predicted solution')
-    plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
-    plt.legend(loc="upper left")
-    # plt.title('Displacement')
-    plt.savefig('Results/Displacement.pdf', transparent=True) 
-    tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
-    #plt.show()
-    plt.clf()
-
-    fig = matplotlib.pyplot.gcf()
-    fig.set_size_inches(9, 7)
-
-    if config["solver"]["FrozenMesh"] == False:
-        plt.scatter(model.original_coordinates,[coord*0 for coord in model.original_coordinates], s=6, color="pink", alpha=0.5, label = 'Initial nodal position')
-        
-    plt.plot(Coordinates_du,[coord*0 for coord in Coordinates_du],'.k', markersize=2, label = 'Nodal position')
-    plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
-    plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
-    plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
-    plt.legend(loc="upper left")
-    # plt.title('Displacement')
-    plt.savefig('Results/Gradient.pdf', transparent=True)  
-    tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
-
-    #plt.show()
+    plt.show()
     plt.clf()
 
 

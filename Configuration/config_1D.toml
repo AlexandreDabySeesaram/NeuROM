@@ -6,9 +6,9 @@
 
 [geometry]
 Name                    = 'Beam'
-L                       = 10                                            # Length of the Beam
-A                       = 1                                             # Section of the beam
-Volume_element          = 100                                           # Volume element correspond to the 1D elem in 1D
+L                       = 10                                        # Length of the Beam
+A                       = 1                                         # Section of the beam
+Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
 
 ####################################################
 ###                                              ###
@@ -17,18 +17,18 @@ Volume_element          = 100                                           # Volume
 ####################################################
 
 [Borders]
-Borders                 = [1,2]                                         # List of the structure's boundaries
+Borders                 = [3,4]                                     # List of the structure's boundaries
 
 [[DirichletDictionryList]]
-Entity                  = 3                                             # Physical tag of the boundary
-Value                   = 0                                             # numerical value
-Normal                  = 0                                             # prescribed component (0=x,1=y,2=z)
+Entity                  = 3                                         # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 0                                          # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
 [[DirichletDictionryList]]
 Entity                  = 4 
-Value                   = 0 
+Value                   = 0.005 
 Normal                  = 0 
 Relation                = false
 Constitutive            = false
@@ -42,6 +42,8 @@ Constitutive            = false
 [material]
 E                       = 175                                           # Young's modulus (175 if 1D 5*1e-3 if 2D)
 nu                      = 0.3                                           # Poisson's ration
+A                       = 1.0
+
 
 ####################################################
 ###                                              ###
@@ -52,9 +54,9 @@ nu                      = 0.3                                           # Poisso
 [interpolation]
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order                   = 1                                             # Order of the shape functions
-np                      = 10                                            # Number of Nodes in the Mesh in 1D
+np                      = 320                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
-n_integr_points         = 5                                             # Number of integration points per element
+n_integr_points         = 5                                           # Number of integration points per element
 
 ####################################################
 ###                                              ###
@@ -64,13 +66,13 @@ n_integr_points         = 5                                             # Number
 
 [solver]
 FrozenMesh              = true                                         # Nodal coordinates frozen
-FrozenParaMesh          = true                                          # Nodal coordinates frozen
-TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed'
-IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
-ParametricStudy         = true                                          # Boolean to switch between plain HiDeNN and NeuROM
-BiPara                  = true                                         # Enable bi-stifness beam in 1D
+FrozenParaMesh          = false                                          # Nodal coordinates frozen
+TrainingStrategy        = 'Integral'                                    # 'Integral' or 'Mixed' = weak formulation
+IntegralMethod          = 'Gaussian_quad'                                # Type of integration (Gaussian_quad, Trapezoidal)
+ParametricStudy         = false                                          # Boolean to switch between plain HiDeNN and NeuROM
+BiPara                  = false                                          # Enable bi-stifness beam in 1D
 n_modes_max             = 100                                           # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 1                                             # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 5                                             # Initial number of modes in the Tensor Decomposition
 
 ####################################################
 ###                                              ###
@@ -81,8 +83,7 @@ n_modes_ini             = 1                                             # Initia
 [hardware]
 BoolGPU                 = false                                         # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                         # Enable compilation of the model
-FloatPrecision          = "double"                                      # Enable to switch between simple (float32) or double (float64)
-device                  = 'mps'
+
 ####################################################
 ###                                              ###
 ###                   TRAINING                   ###
@@ -91,16 +92,19 @@ device                  = 'mps'
 
 [training]
 TrainingRequired        = true                                          # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 3000                                          # Maximum number of iterations for the training stage
-learning_rate           = 0.001                                         # optimizer learning rate
-LoadPreviousModel       = false                                          # Boolean to enable reusing a previously trained model
-RemoveLastMode          = true                                      # Boolean enabling to remove the last mode that is by construction useless (to avoid increasing the ROB with multi level training)
+TwoStageTraining        = false                                          # 2 stages = Gradient descend + LBFGS, 1 stage = LBFGS
+n_epochs_1                = 1000                                          # Maximum number of iterations for the training stage
+n_epochs_2                = 100                                          # Maximum number of iterations for the training stage
+learning_rate           = 1.0e-3                                         # optimizer learning rate
+LoadPreviousModel       = false                                         # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                          # Slightly move training samples if they are on the mesh nodes exactly
-loss_decrease_c         = 1e-5                                          # Stagnation criterion for the loss decay rate (mode addition criterion)
-Stagnation_threshold    = 1e-7
-multi_mode_training     = true                                          # Enables training all the space modes (as opposed to only the lastly added mode)
-multiscl_max_refinment  = 3                                             # Multiscale maximum number of refinement
-multiscl_refinment_cf   = 2                                             # Multiscale homogeneous refinement coefficient
+loss_decrease_c         = 1e-15                                         # Stagnation criterion for the loss decay rate (mode addition criterion)
+Stagnation_threshold_1    = 1e-2
+Stagnation_threshold_2    = 1e-7
+Stagnation_counter_1      = 5
+Stagnation_counter_2      = 5
+Loss_counter            = 1000
+Points_per_element      = 10                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
 
 ####################################################
 ###                                              ###
@@ -114,12 +118,12 @@ BoolPlotPost            = false                                         # Boolea
 BoolCompareNorms        = true                                          # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                         # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
-Plot_loss_mode          = false
-Plot_loss_decay_mode    = false
-Plot_error_mode         = false
-Interactive_pltot       = true
-Plot_ROM_FOM            = false
-Plot_name               = 'paper_sequential'
+Plot_loss_mode          = true
+Plot_loss_decay_mode    = true
+n_visualization         = 1000                                          # Number of points used to plot the results 
+Show_Trajectories       = false
+
+
 ####################################################
 ###                                              ###
 ###                  Parameters                  ###

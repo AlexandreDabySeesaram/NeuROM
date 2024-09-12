@@ -14,7 +14,6 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlexandreDabySeesaram/NeuROM",
     package_dir = {
-    'neurom': 'HiDeNN',
     'neurom.src': 'neurom/src',
     'neurom.Post': 'neurom/Post'},
     packages=['neurom', 'neurom.src', 'neurom.Post'],                            # Automatically finds neurom and its subpackages

@@ -14,6 +14,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlexandreDabySeesaram/NeuROM",
     packages=setuptools.find_packages(include=['neurom', 'neurom.*']),                            # Automatically finds neurom and its subpackages
+    scripts=["main",],
     license="GPLv3",
     classifiers=[
         "Programming Language :: Python :: 3",

@@ -9,30 +9,35 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 ## Folder's structure
 ``````
 .
-├── Bin
-│   ├── PDE_Library.py
-│   ├── Pre_processing.py
-│   └── Training.py
+├── neurom
+│       ├── HiDeNN_PDE.py
+|       |
+│       ├── src
+│       |   ├── PDE_Library.py
+│       |   ├── Pre_processing.py
+│       |   └── Training.py
+|       |
+|       ├── Post
+|       │   └── Plots.py
+|       |
+│       └── main.py
 │   
 ├── Geometries
 │   ├── Beam.geo
 │   └── Beam0.01.msh
 │
-├── HiDeNN_PDE.py
 │
 ├── Illustrations
 │   └── NeuROM_1D.gif
-│
-├── Post
-│   └── Plots.py
+|
 │
 ├── README.md
 │
-├── TrainedModels
-│   ├── ROM_1Para_np_10_nmodes_1_npara_1
-│   └── ROM_1Para_np_50_nmodes_1_npara_1
-│
-└── main.py
+└── TrainedModels
+    ├── ROM_1Para_np_10_nmodes_1_npara_1
+    └── ROM_1Para_np_50_nmodes_1_npara_1
+ 
+
 ``````
 
 

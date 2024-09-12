@@ -20,5 +20,5 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["argparse","pytorch", "matplotlib", "meshio", "numpy"],
+    install_requires=["argparse","torch", "matplotlib", "meshio", "numpy"],
 )

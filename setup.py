@@ -8,7 +8,7 @@ setuptools.setup(
     name="neurom",
     version=version,
     author="Martin Genet",
-    author_email="martin.genet@polytechnique.edu",
+    author_email="[alexandre.daby-seesaram,katerina.skardova,martin.genet]@polytechnique.edu",
     description=open("README.md", "r").readlines()[1][:-1],
     long_description = open("README.md", "r").read(),
     long_description_content_type="text/markdown",

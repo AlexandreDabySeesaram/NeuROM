@@ -16,7 +16,7 @@ setuptools.setup(
     packages=setuptools.find_packages(include=['neurom', 'neurom.*']),                            # Automatically finds neurom and its subpackages
     entry_points={
         'console_scripts': [
-            'neurom = neurom.main:run_script',  
+            'neurom = neurom.main',  
         ],
     },
     license="GPLv3",

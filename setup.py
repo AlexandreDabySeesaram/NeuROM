@@ -13,7 +13,7 @@ setuptools.setup(
     long_description = open("README.md", "r").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/AlexandreDabySeesaram/NeuROM",
-    packages=setuptools.find_packages(include=['neurom', 'neurom.*']),                            # Automatically finds neurom and its subpackages
+    packages=setuptools.find_packages(),                            # Automatically finds neurom and its subpackages
     entry_points={
         'console_scripts': [
             'neurom = neurom:main',  

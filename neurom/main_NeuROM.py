@@ -2,15 +2,15 @@
 # import HiDeNN library
 from HiDeNN_PDE import MeshNN, NeuROM
 # Import pre-processing functions
-import Bin.Pre_processing as pre
+import src.Pre_processing as pre
 # Import torch librairies
 import torch
 import torch.nn as nn
 # Import mechanical functions
-from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
+from src.PDE_Library import RHS, PotentialEnergyVectorised, \
      Derivative, AnalyticGradientSolution, AnalyticSolution, AnalyticBiParametricSolution
 # Import Training funcitons
-from Bin.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
+from src.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
      Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
      Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed
 #Import post processing libraries

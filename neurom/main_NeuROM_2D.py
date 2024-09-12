@@ -1,11 +1,11 @@
 #%% Libraries import
 from HiDeNN_PDE import MeshNN_2D, NeuROM
-import Bin.Pre_processing as pre
+import src.Pre_processing as pre
 import torch
 import torch.nn as nn
 import numpy as np
-from Bin.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
-from Bin.Training import Training_2D_Integral,Training_2D_NeuROM
+from src.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises
+from src.Training import Training_2D_Integral,Training_2D_NeuROM
 import Post.Plots as Pplot
 import time
 import os

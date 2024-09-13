@@ -1,9 +1,9 @@
 #%% Libraries import
 import time 
 # Import pre-processing functions
-import Bin.Pre_processing as pre
+import src.Pre_processing as pre
 # Import mechanical functions
-from Bin.PDE_Library import RHS, PotentialEnergyVectorised, \
+from src.PDE_Library import RHS, PotentialEnergyVectorised, \
         Derivative, AnalyticGradientSolution, AnalyticSolution, GramSchmidt
 # Import torch librairies
 import torch

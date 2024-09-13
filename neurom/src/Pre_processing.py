@@ -96,6 +96,12 @@ class Mesh:
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
         self.borders_exist = False
+        if not os.path.isdir("Results"):
+            subprocess.run(["mkdir", "Results"])
+        if not os.path.isdir("Results/Paraview"):
+            subprocess.run(["mkdir", "Results/Paraview"])
+        if not os.path.isdir("Results/Paraview/TimeSeries/"):
+            subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
     
     def AddBorders(self,borders):
         self.borders = borders

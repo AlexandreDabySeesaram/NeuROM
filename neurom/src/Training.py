@@ -4,11 +4,11 @@ from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
 import Post.Plots as Pplot
 import copy
 import time
-import Bin.Pre_processing as pre
+import src.Pre_processing as pre
 import torch
 import random 
 import torch.nn as nn
-from Bin.PDE_Library import RHS, PotentialEnergy, \
+from src.PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \

@@ -1,6 +1,6 @@
 #%% Libraries import
 from HiDeNN_PDE import MeshNN_2D
-import Bin.Pre_processing as pre
+import src.Pre_processing as pre
 import torch
 import torch.nn as nn
 import numpy as numpy

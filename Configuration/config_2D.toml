@@ -54,10 +54,10 @@ Constitutive            = false
 ####################################################
 
 [material]
-E                       = 1                                         # Young's modulus (175 if 1D 5*1e-3 if 2D, 1 if 2D parametric (mult coeff for parameters))
-nu                      = 0.3                                       # Poisson's ration
 lmbda                   = 1.25
 mu                      = 1.0
+
+
 
 ####################################################
 ###                                              ###
@@ -78,14 +78,17 @@ MaxElemSize2D           = 2.0                                   # Maximum elemen
 ####################################################
 
 [solver]
-FrozenMesh              = true                                      # Nodal coordinates frozen
-FrozenParaMesh          = true                                  # Nodal coordinates frozen
+FrozenMesh              = false                                      # Nodal coordinates frozen
+FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
+IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = true                                       # Enable bi-stifness beam in 1D
+Problem                 = 'AngleStiffness'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness"
+N_ExtraCoordinates      = 2                                         # Number of extra parameters in the tensor decomposition 
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 4                                         # Initial number of modes in the Tensor Decomposition
-# MultiScale            = false                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
+n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
+MultiScale              = true                                     # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 regul_term              = false
 volume_forces           = false
 
@@ -98,6 +101,9 @@ volume_forces           = false
 [hardware]
 BoolGPU                 = false                                     # Boolean enabling GPU computations (autograd function is not working currently on mac M2)
 BoolCompile             = false                                     # Enable compilation of the model
+FloatPrecision          = "double"                                  # Enable to switch between simple (float32) or double (float64)
+device                  = 'cpu'                                     # Device for training (mps, cuda, cpu) 
+
 
 ####################################################
 ###                                              ###
@@ -109,12 +115,13 @@ BoolCompile             = false                                     # Enable com
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
 n_epochs                = 10000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
-r_adapt                 = false                                     # Enables r-adaptivity
+r_adapt                 = true                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
 BoolFilterTrainingData  = true                                      # Slightly move training samples if they are on the mesh nodes exactly
 loss_decrease_c         = 1e-7                                      # Stagnation criterion for the loss decay rate (mode addition criterion)
+multi_mode_training     = false                                         # Enables training all the space modes (as opposed to only the lastly added mode)
 multiscl_max_refinment  = 1                                         # Multiscale maximum number of refinement
-h_adapt_MaxGeneration   = 1                                         # Maximum of times a given element can be splitted during h adaptivity
+h_adapt_MaxGeneration   = 1                                        # Maximum of times a given element can be splitted during h adaptivity
 h_adapt_J_thrshld       = 0.5                                       # relative jacobian delta ratio above which an element is refined
 d_eps_max_threshold     = 1e-7                                      # Threshold criterion on the relative delat of max strain to stop global mesh refinement
 multiscl_refinment_cf   = 2                                         # Multiscale homogeneous refinement coefficient
@@ -127,14 +134,27 @@ optimizer               = 'lbfgs'                                   # 'adam', 'l
 ####################################################
 
 [postprocess]
+ModularEpochsPrint      = 1                                         # indices for all of which the epoch is displayed during training and saved for vtk history
 BoolPlot                = false                                     # Boolean for plots used for gif
 BoolPlotPost            = false                                     # Boolean for plots used for Post
 BoolCompareNorms        = true                                      # Boolean for comparing energy norm to L2 norm
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
-exportVTK               = true                                      # Enables VTK export (final)
+exportVTK               = false                                      # Enables VTK export (final)
 exportVTK_history       = false                                      # Enables VTK export (history)
-Name_export             = "UNIFIED_VTK"                             # Name for the VTK results files
+Name_export             = "detJ_ExportTest"                             # Name for the VTK results files
+Plot_loss_mode          = false
+Plot_loss_decay_mode    = false 
+Plot_error_mode         = false
+Plot_ROM_FOM            = false
+Interactive_pltot       = true
+PyVista_Type            = "DualSliders"                                   # Type of interactive plot (Frame: single frame, Static: several snapshots, Interactive: Sliders, DualSliders)
+Default_E               = 5e-3 
+Default_theta           = 0                                         # Default value of the gravity angle in plots
+scalar_field_name       = 'Uy'                                      # Plotted field
+scaling_factor          = 20                                        # Wrap by vector scaling factor
+Interactive_parameter   = 'theta'                                   # Interactive parameter
+Plot_mesh               = true                                     # Show mesh on interactive plots
 
 ####################################################
 ###                                              ###
@@ -151,7 +171,11 @@ N_para_1                    = 10                                    # Discretisa
 # Angle
 para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
-N_para_2                    = 30                                    # Discretisation of the 1D parametric space
+N_para_2                    = 60                                    # Discretisation of the 1D parametric space
+# alpha
+para_3_min                  = 0                                     # Minimum value for the 2nd parameter
+para_3_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)
+N_para_3                    = 30                                    # Discretisation of the 1D parametric space
 
 #%% 1D
 # # Stiffness

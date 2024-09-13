@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy
 import torch.nn as nn
 
-from Bin.PDE_Library import Mixed_2D_loss, Stress
+from src.PDE_Library import Mixed_2D_loss, Stress
 
 
 def Read_NumSol(num_sol_name):

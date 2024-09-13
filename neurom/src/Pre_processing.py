@@ -28,10 +28,9 @@ https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
 def get_git_tag() -> str:
     try:
-        val = subprocess.check_output(['git', 'describe', '--abbrev=0']).decode('ascii').strip()
+        return subprocess.check_output(['git', 'describe','--tag', '--abbrev=0']).decode('ascii').strip()
     except:
-        val = "0.0"
-    return val
+        return 'unknown version'
 
 def PrintWelcome():
     version = get_git_tag()
@@ -85,9 +84,10 @@ def ElementSize(dimension, **kwargs):
     return MaxElemSize
     
 class Mesh:
-    def __init__(self, name, h_max, order, dimension):
+    def __init__(self, name, h_max, order, dimension, welcome =True):
         """inputs the name of the geometry and the maximum size of the element"""
-        PrintWelcome()
+        if welcome:
+            PrintWelcome()
         self.h_max_str = str(np.around(h_max, decimals=3))
 
         self.order = str(order)
@@ -96,6 +96,12 @@ class Mesh:
         self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
         self.name_geo = self.name+'.geo'
         self.borders_exist = False
+        if not os.path.isdir("Results"):
+            subprocess.run(["mkdir", "Results"])
+        if not os.path.isdir("Results/Paraview"):
+            subprocess.run(["mkdir", "Results/Paraview"])
+        if not os.path.isdir("Results/Paraview/TimeSeries/"):
+            subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
     
     def AddBorders(self,borders):
         self.borders = borders
@@ -138,9 +144,6 @@ class Mesh:
             self.NoExcl = False
 
     def MeshGeo(self):
-        if not os.path.exists('Geometries'):
-            os.makedirs('Geometries')
-            
         path = 'Geometries/'+self.name_mesh
         if os.path.isfile(path):
             pass
@@ -148,11 +151,18 @@ class Mesh:
             print('*************** Mesh Geometry  ****************\n' )
             # GMSH is in path but does not appear to be through python os.sytem
             # -1 = Perform 1D mesh generation
-            mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
-                    ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
-                    ' -clmax '+self.h_max_str  
-                    ##' -clmin '+self.h_min_str + '- algo delquad'
-            os.system(mesh_command)        
+            try:
+                mesh_command = 'gmsh Geometries/'+self.name_geo+ \
+                        ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                        ' -clmax '+self.h_max_str  
+                        ##' -clmin '+self.h_min_str + '- algo delquad'
+                os.system(mesh_command)
+            except:
+                mesh_command = '/Applications/Gmsh.app/Contents/MacOS/gmsh Geometries/'+self.name_geo+ \
+                        ' -'+self.dimension+' -order '+self.order+' -o '+'Geometries/'+self.name_mesh+  \
+                        ' -clmax '+self.h_max_str  
+                        ##' -clmin '+self.h_min_str + '- algo delquad'
+                os.system(mesh_command)
          
     
     def ReadMesh(self):
@@ -220,8 +230,12 @@ class Mesh:
                     match ElemList[1]:
                         case 1:
                             node_per_elem = 2
+                        case 2:
+                            node_per_elem = 3
                         case 8:
                             node_per_elem = 3
+                        case 9:
+                            node_per_elem = 6
                         case 15:
                             node_per_elem = 1
                     self.borders_nodes.append(ElemList[-node_per_elem:])  
@@ -231,18 +245,22 @@ class Mesh:
                         if ElemList[3] == self.ListOfDirichletsBCsIds[ID_idx]: 
                             match ElemList[1]:
                                 case 1:
-                                    self.type = "2-node bar"
-                                    self.dim = 1
-                                    self.node_per_elem = 2
+                                    BCs_type = "2-node bar"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 2
+                                case 2:
+                                    BCs_node_per_elem = 3
                                 case 8:
-                                    self.type = "3-node quadratic bar"
-                                    self.dim = 1
-                                    self.node_per_elem = 3
+                                    BCs_type = "3-node quadratic bar"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 3
+                                case 9:
+                                    BCs_node_per_elem = 6
                                 case 15:
-                                    self.type = "point"
-                                    self.dim = 1
-                                    self.node_per_elem = 1
-                            self.DirichletBoundaryNodes[ID_idx].append(ElemList[-self.node_per_elem:])  
+                                    BCs_type = "point"
+                                    BCs_dim = 1
+                                    BCs_node_per_elem = 1
+                            self.DirichletBoundaryNodes[ID_idx].append(ElemList[-BCs_node_per_elem:])  
 
                 if self.NoExcl == False:
                     for ID_idx in range(len(self.ExcludeId)):
@@ -257,9 +275,11 @@ class Mesh:
             print(f'\n************ MESH READING COMPLETE ************\n\n \
 * Dimension of the problem: {self.dim}D\n \
 * Elements type:            {self.type}\n \
-* Number of Elements:       {self.Connectivity.shape[0]}\n \
-* No excluded points:          {self.NoExcl}')
+* Number of Dofs:           {self.NNodes*int(self.dimension)}')
+# * No excluded points:          {self.NoExcl}')
 #* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
+# * Number of Elements:       {self.Connectivity.shape[0]}\n \
+
 
 
     def ExportMeshVtk(self,flag_update = False):
@@ -271,21 +291,34 @@ class Mesh:
             cells = (self.Connectivity-1).astype(np.int32)
         else:
             points = meshBeam.points
-            cells = meshBeam.cells_dict["triangle"]
+            match self.type:
+                case 't3: 3-node triangle':
+                    cells = meshBeam.cells_dict["triangle"]
+                case '4-node tetrahedron':
+                    cells = meshBeam.cells_dict["tetra"]
+
         # create meshio mesh based on points and cells from .msh file
+        
+        match self.type:
+            case 't3: 3-node triangle':
+                if self.order =='1':
+                    mesh = meshio.Mesh(points, {"triangle":cells})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
+                    # mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
 
-        if self.order =='1':
-            mesh = meshio.Mesh(points, {"triangle":cells})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-            mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-            meshio.write(msh_name[0:-4]+".xml", mesh)
+                elif self.order =='2':
+                    mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
 
-        elif self.order =='2':
-            mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
-
-            mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
-            meshio.write(msh_name[0:-4]+".xml", mesh)
+                    # mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
+            case '4-node tetrahedron':
+                if self.order =='1':
+                    mesh = meshio.Mesh(points, {"tetra":cells})
+                    meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
+                else:
+                    raise ValueError("Only first order element have been implemented in 1D for now")
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()
@@ -307,7 +340,7 @@ class Mesh:
 
         if self.order =='1':
             mesh = meshio.Mesh(points, {"line":meshBeam.cells_dict["line"]})
-            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=False )
+            meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
                
         reader = vtk.vtkUnstructuredGridReader()
         reader.SetFileName(msh_name[0:-4]+".vtk",)  

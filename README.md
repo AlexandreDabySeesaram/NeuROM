@@ -1,7 +1,7 @@
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
-NeuROM provide a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN qrchitecture that provides an interpolation framework through a deep neural network which wight and biais are constrained so that the interpolation mnatches a finite element interpolation. 
-The first hidden layers play the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs.
+NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation mnatches a finite element interpolation (P1 or P2). 
+The first hidden layers plays the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 
 
 This code provides an implementation of a HiDeNN. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
@@ -78,7 +78,7 @@ Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space inte
 
 ### Reduced-order modelling
 
-Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the number of requested mode, a reduced-order model od the parametric field is built
+Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the maximum number of requested modes, a reduced-order model od the parametric field is built
 
 `ROM_model = NeuROM(Mesh_object,ParameterHypercube,ConfigFile)`
 

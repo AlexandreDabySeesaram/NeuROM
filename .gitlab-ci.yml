@@ -11,6 +11,7 @@ pypi:
     TWINE_PASSWORD: $PYPI_PASS
   script:
     - pip install -U twine
+    - pip install setuptools 
     - python setup.py sdist bdist_wheel
     - twine upload dist/*
 

@@ -1,7 +1,7 @@
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
 <h1 align="center">
-<img src="Illustrations/NeuROM_ter.svg" width="300">
+<img src="Illustrations/NeuROM_ter.svg" width="400">
 </h1><br>
 
 <!-- ![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png)  -->

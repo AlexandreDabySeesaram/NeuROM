@@ -1,5 +1,7 @@
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
+![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png) 
+
 NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation mnatches a finite element interpolation (P1 or P2). 
 The first hidden layers plays the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 

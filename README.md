@@ -42,7 +42,7 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 │
 └── TrainedModels
     | 
-    └── 
+    └── 2D_Bi_Parameters_el_0.2
  
 
 ``````

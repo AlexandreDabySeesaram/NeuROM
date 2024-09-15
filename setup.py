@@ -9,7 +9,7 @@ setuptools.setup(
     version=version,
     author="Alexandre Daby-Seesaram, Katerina Skardova, Martin Genet",
     author_email="[alexandre.daby-seesaram,katerina.skardova,martin.genet]@polytechnique.edu",
-    description=open("README.md", "r").readlines()[1][:-1],
+    description="NeuROM, a NN-PGD architecture based on the HiDeNN Framework (Finite Element Neural Network Interpolation)",
     long_description = open("README.md", "r").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/AlexandreDabySeesaram/NeuROM",

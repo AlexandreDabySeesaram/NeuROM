@@ -24,7 +24,7 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 │   
 ├── Geometries
 │   ├── Beam.geo
-│   └── Beam0.01.msh
+│   └── Hole.geo
 │
 │
 ├── Illustrations

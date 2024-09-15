@@ -446,9 +446,11 @@ def main():
        
 # %%
 if (__name__ == "__main__") or (__name__=='neurom.main'):
+    Boolean_main = False
 
     if __name__=="__main__":
         __package__='neurom'
+        Boolean_main = True
     import argparse
     import tomllib
     from .src import MyHeaders
@@ -469,4 +471,5 @@ if (__name__ == "__main__") or (__name__=='neurom.main'):
         args = parser.parse_args()
     inputs = vars(args)
     print(f"* Executing job in {args.cf}")
-    main()
+    if Boolean_main:
+        main()

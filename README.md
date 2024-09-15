@@ -24,6 +24,7 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 │   
 ├── Geometries
 │   ├── Beam.geo
+│   ├── Hole_3.geo
 │   └── Hole.geo
 │
 │
@@ -34,8 +35,8 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 ├── README.md
 │
 └── TrainedModels
-    ├── ROM_1Para_np_10_nmodes_1_npara_1
-    └── ROM_1Para_np_50_nmodes_1_npara_1
+    | 
+    └── 
  
 
 ``````

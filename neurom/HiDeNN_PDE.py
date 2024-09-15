@@ -1,16 +1,16 @@
 #%% Libraries import
 import time 
 # Import pre-processing functions
-import src.Pre_processing as pre
+from .src import Pre_processing as pre
 # Import mechanical functions
-from src.PDE_Library import RHS, PotentialEnergyVectorised, \
+from .src.PDE_Library import RHS, PotentialEnergyVectorised, \
         Derivative, AnalyticGradientSolution, AnalyticSolution, GramSchmidt
 # Import torch librairies
 import torch
 import torch.nn as nn
 torch.set_default_dtype(torch.float64)
 #Import post processing libraries
-import Post.Plots as Pplot
+from .Post import Plots as Pplot
 import matplotlib.pyplot as plt
 import numpy as np
 

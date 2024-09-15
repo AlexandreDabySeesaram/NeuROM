@@ -5,9 +5,9 @@ import subprocess
 version = subprocess.check_output(['git', 'describe','--tag', '--abbrev=0']).decode('ascii').strip()
 
 setuptools.setup(
-    name="neurom",
+    name="NeuROM-Py",
     version=version,
-    author="Martin Genet",
+    author="Alexandre Daby-Seesaram, Katerina Skardova, Martin Genet",
     author_email="[alexandre.daby-seesaram,katerina.skardova,martin.genet]@polytechnique.edu",
     description=open("README.md", "r").readlines()[1][:-1],
     long_description = open("README.md", "r").read(),

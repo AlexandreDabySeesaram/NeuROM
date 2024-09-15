@@ -1,14 +1,14 @@
 import numpy as numpy
 import torch
-from HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
-import Post.Plots as Pplot
+from ..HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
+from ..Post import Plots as Pplot
 import copy
 import time
-import src.Pre_processing as pre
+from . import Pre_processing as pre
 import torch
 import random 
 import torch.nn as nn
-from src.PDE_Library import RHS, PotentialEnergy, \
+from .PDE_Library import RHS, PotentialEnergy, \
     PotentialEnergyVectorised, AlternativePotentialEnergy, \
         Derivative, AnalyticGradientSolution, AnalyticSolution,\
             PotentialEnergyVectorisedParametric,AnalyticParametricSolution, \

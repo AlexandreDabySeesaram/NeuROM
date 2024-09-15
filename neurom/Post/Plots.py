@@ -30,7 +30,7 @@ Line2D._us_dashSeq    = property(lambda self: self._dash_pattern[1])
 Line2D._us_dashOffset = property(lambda self: self._dash_pattern[0])
 
 
-from src.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain, AnalyticSolution, AnalyticGradientSolution
+from ..src.PDE_Library import Strain, Stress, InternalEnergy_2D, VonMises, VonMises_plain_strain, AnalyticSolution, AnalyticGradientSolution
 
 def export_csv(Name,y, x='None'):
     import pandas as pd

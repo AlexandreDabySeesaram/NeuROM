@@ -5,11 +5,11 @@ import subprocess
 version = subprocess.check_output(['git', 'describe','--tag', '--abbrev=0']).decode('ascii').strip()
 
 setuptools.setup(
-    name="neurom",
+    name="NeuROM-Py",
     version=version,
-    author="Martin Genet",
+    author="Alexandre Daby-Seesaram, Katerina Skardova, Martin Genet",
     author_email="[alexandre.daby-seesaram,katerina.skardova,martin.genet]@polytechnique.edu",
-    description=open("README.md", "r").readlines()[1][:-1],
+    description="NeuROM, a NN-PGD architecture based on the HiDeNN Framework (Finite Element Neural Network Interpolation)",
     long_description = open("README.md", "r").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/AlexandreDabySeesaram/NeuROM",
@@ -28,5 +28,5 @@ setuptools.setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
-    install_requires=["argparse","torch", "matplotlib", "meshio", "numpy", "ipython"],
+    install_requires=["argparse","torch", "matplotlib", "meshio", "numpy", "ipython", "scipy", "gmsh", "vtk", "pyvista"],
 )

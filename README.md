@@ -1,7 +1,13 @@
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
-NeuROM provide a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN qrchitecture that provides an interpolation framework through a deep neural network which wight and biais are constrained so that the interpolation mnatches a finite element interpolation. 
-The first hidden layers play the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs.
+<h1 align="center">
+<img src="https://alexandredabyseesaram.github.io/Resources/Images/NeuROM_ter.svg" width="400">
+</h1><br>
+
+<!-- ![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png)  -->
+
+NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation mnatches a finite element interpolation (P1 or P2). 
+The first hidden layers plays the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 
 
 This code provides an implementation of a HiDeNN. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
@@ -24,7 +30,8 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 │   
 ├── Geometries
 │   ├── Beam.geo
-│   └── Beam0.01.msh
+│   ├── Hole_3.geo
+│   └── Hole.geo
 │
 │
 ├── Illustrations
@@ -34,8 +41,8 @@ This code provides an implementation of a HiDeNN. The input of the layer is the 
 ├── README.md
 │
 └── TrainedModels
-    ├── ROM_1Para_np_10_nmodes_1_npara_1
-    └── ROM_1Para_np_50_nmodes_1_npara_1
+    | 
+    └── 2D_Bi_Parameters_el_0.2
  
 
 ``````
@@ -78,7 +85,7 @@ Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space inte
 
 ### Reduced-order modelling
 
-Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the number of requested mode, a reduced-order model od the parametric field is built
+Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the maximum number of requested modes, a reduced-order model od the parametric field is built
 
 `ROM_model = NeuROM(Mesh_object,ParameterHypercube,ConfigFile)`
 
@@ -120,18 +127,11 @@ The trainable parameters can be changed on the fly.
 ## Licensing
 
 
- * Copyright (C) 2024, UMR 7649, École Polytechnique, IPP, CNRS, MΞDISIM Team, INRIA
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+  Copyright (C) 2024, UMR 7649, École Polytechnique, IPP, CNRS, MΞDISIM Team, INRIA
+ 
+  This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+ 
+  This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ 
+  You should have received a copy of the GNU General Public License along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ 

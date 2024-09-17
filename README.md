@@ -10,7 +10,7 @@ NeuROM provides a interpretable Deep Neural Network architecture that uses Tenso
 The first hidden layers plays the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 
 
-This code provides an implementation of a HiDeNN. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
+This code provides an implementation of a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
 
 ## Folder's structure
 ``````

@@ -52,7 +52,7 @@ def main():
     ####################################################
     #%% Import config file
     # Read script arguments
-
+    print(f"* Executing job in {args.cf}")
     # Add possibility to specify name of config file with argparse
     with open(args.cf, mode="rb") as f:
         config = tomllib.load(f)
@@ -470,6 +470,5 @@ if (__name__ == "__main__") or (__name__=='neurom.main'):
     else:
         args = parser.parse_args()
     inputs = vars(args)
-    print(f"* Executing job in {args.cf}")
     if Boolean_main:
         main()

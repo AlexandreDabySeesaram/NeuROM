@@ -13,13 +13,37 @@ https://pypi.org/project/NeuROM-Py/)
 
 
 
-NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation matches a finite element interpolation (P1 or P2). 
-The first hidden layers play the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
+NeuROM provides an interpretable deep neural network architecture that uses tensor decomposition to give a parametric reduced-order model. This network interpretability comes from the HiDeNN architecture that offers an interpolation framework through a deep neural network in which weights and biases are constrained so that the interpolation matches a finite element interpolation (P1 or P2). 
+The first hidden layers play the role of the shape functions, while the last layer, called the interpolation layer in the remainder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated with each shape function. Therefore, prescribing Dirichlet boundary conditions is straightforward by freezing the weights associated with the prescribed values of fixed DoFs. However, learning the parameters related to the first layers accounts for mesh adaptation.
 
 
-This code provides an implementation of a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
+This code implements a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The layer's input is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case, the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
 
-## Folder's structure
+
+## Using the code
+
+Executing the code is as easy as running
+
+`neurom -cf Configurations/your_config.toml` where the option `-cf` stands for *configuration file* and allow the user to specify which configuration file should be used.
+
+The code must be lauched from a folder containing two subfolder
+* Configurations
+  * where one or more configuration files are stored
+* Geometries
+  * where the gmsh .geo files are stored
+
+The folder from which the code is launched should have the following architecture.  
+
+``````
+.
+│
+├── Geometries
+│   └── Geometry.geo
+└── Configurations
+    └── your_config.toml
+ ``````
+
+## Repository's structure
 ``````
 .
 ├── neurom
@@ -53,37 +77,14 @@ This code provides an implementation of a Finite Element Neural Network Interpol
  
 
 ``````
-## Using the code
-
-Executing the code is as easy as running
-
-`neurom -cf Configurations/your_config.toml` where the option `-cf` stands for configuration file and allow the user to specify which configuration file should be used.
-
-The code must be lauched from a folder containing two subfolder
-* Configurations
-  * where one or more configuration files are stored
-* Geometries
-  * where the gmsh .geo files are stored
-
-The folder from which the code is launched should have the following architecture.  
-
-``````
-.
-│
-├── Geometries
-│   └── Geometry.geo
-└── Configurations
-    └── your_config.toml
- ``````
-
 
 ## Architecture of the NN
 
-There are two level of modelling involved. The space interpolation in itself can be trained to get a solution for a given problem. Such interpolation is achieved using the model `MeshNN`. Building on that interpolation model and using a similar interpolation for the parametric space, a reduced-order model can be trained as well using the `NeuROM` class.
+There are two levels of modelling involved. The space interpolation in itself can be trained to get a solution for a given problem. Such interpolation is achieved using the model `MeshNN`. Building on that interpolation model and using a similar interpolation for the parametric space, a reduced-order model can also be trained using the `NeuROM` class.
 
 ### Data entry
 
-A `Config` file needs to be filled with the job parameters (name of the geometry, solvers' parameters, post-precessing required, etc.) A default file is specified at the top the `main.py` script but any other file can be passed as an argument when running the main script as `python main.py -cf 'Configuration/CONFIG_FILE.toml'`.
+A `config` file needs to be filled with the job parameters (name of the geometry, solvers' parameters, post-precessing required, etc.) A default file is specified at the top of the `main.py` script, but any other file can be passed as an argument when running the main script as `neurom -cf 'Configuration/config.toml'`.
 
 ### Pre-processing
 `Mesh` class that builds the Geometry and the `Mesh_object` from the 
@@ -92,7 +93,7 @@ Inputs:
 * `config["interpolation"]["order"]`, 
 * `config["interpolation"]["dimension"]`
 
-The method `.AddBCs` then allows to define Dirichlet boundary conditions and specify the volume element of the structure that should be considered.
+The method `.AddBCs` then allows the definition of Dirichlet boundary conditions and specifies the volume element of the structure that should be considered.
 Inputs:
 * List of BCs (Physical surface, value, normal direction)
 * volume index
@@ -105,7 +106,7 @@ respectively mesh the geometry (if the mesh does not already exist), parse the m
 
 ### Space interpolation
 
-Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space interpolation of the quantity of interest using first or second order FE shape functions.
+Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space interpolation of the quantity of interest using first or second-order FE shape functions.
 
    * MeshNN class that, given a mesh, "assemble" the shape functions accordingly
         * `model = MeshNN_2D(Mesh_object)` (or `model = MeshNN_1D(Mesh_object)` in 1D) Creates an interpolation model
@@ -114,7 +115,7 @@ Given a mesh object created using the `Mesh` class,  `MeshNN` gives a space inte
 
 ### Reduced-order modelling
 
-Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the maximum number of requested modes, a reduced-order model od the parametric field is built
+Given a hypercube `ParameterHypercube` defining the parametric space, the Space dirichlet boundary conditions a mesh and the maximum number of requested modes, a reduced-order model of the parametric field is built
 
 `ROM_model = NeuROM(Mesh_object,ParameterHypercube,ConfigFile)`
 
@@ -125,32 +126,32 @@ Given a hypercube `ParameterHypercube` defining the parametric space, the Space 
 ## Training the NN 
 
 
-The Volumic forces are accounted for in the loss function through the right hand side (RHS) function and the loss function is the potential energy.
+The Volumic forces are accounted for in the loss function through the right-hand side (RHS) function, and the loss function is the potential energy.
 
 The trainable parameters can be changed on the fly. 
 
-* `model.Freeze_Mesh()` Freezes the mesh so that only the nodale values are trained
+* `model.Freeze_Mesh()` Freezes the mesh so that only the nodal values are trained
 * `model.UnFreeze_Mesh()` Unfreezes the mesh so that the coordinates values can be trained
 
-* `model.Freeze_FEM()` Freezes the nodale values so that only the coordinates are trained
-* `model.UnFreeze_FEM()` Unfreezes the nodale so that FEM problem can be solved
+* `model.Freeze_FEM()` Freezes the nodal values so that only the coordinates are trained
+* `model.UnFreeze_FEM()` Unfreezes the nodal so that FEM problem can be solved
 
 ### Reduced-order modelling
 
-The Volumic forces are accounted for in the loss function through the right hand side (RHS) function and the loss function is the potential energy.
+The Volumic forces are accounted for in the loss function through the right-hand side (RHS) function, and the loss function is the potential energy.
 
 The trainable parameters can be changed on the fly. 
 
-* `ROM_model.Freeze_Mesh()` Freezes the space mesh so that only the nodale values are trained
+* `ROM_model.Freeze_Mesh()` Freezes the space mesh so that only the nodal values are trained
 * `ROM_model.UnFreeze_Mesh()` Unfreezes the space mesh so that the coordinates values can be trained
 
-* `ROM_model.Freeze_Space()` Freezes the space nodale values so that only the coordinates are trained
-* `ROM_model.UnFreeze_Space()` Unfreezes the space nodale so that FEM problem can be solved
-* `ROM_model.Freeze_MeshPara()` Freezes the parametric mesh so that only the nodale values are trained
+* `ROM_model.Freeze_Space()` Freezes the space nodal values so that only the coordinates are trained
+* `ROM_model.UnFreeze_Space()` Unfreezes the space nodal so that FEM problem can be solved
+* `ROM_model.Freeze_MeshPara()` Freezes the parametric mesh so that only the nodal values are trained
 * `ROM_model.UnFreeze_MeshPara()` Unfreezes the parametric mesh so that the coordinates values can be trained
 
-* `ROM_model.Freeze_Para()` Freezes the parametric nodale values so that only the coordinates are trained
-* `ROM_model.UnFreeze_Para()` Unfreezes the parametric nodale so that FEM problem can be solved
+* `ROM_model.Freeze_Para()` Freezes the parametric nodal values so that only the coordinates are trained
+* `ROM_model.UnFreeze_Para()` Unfreezes the parametric nodal so that FEM problem can be solved
 
 
 ## Licensing

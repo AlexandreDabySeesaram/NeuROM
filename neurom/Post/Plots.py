@@ -96,7 +96,9 @@ def PlotEnergyLoss(error,zoom,name):
 
 def PlotTrajectories(Coord_trajectories,name, show, tikz_plot=False):
     """Plots the trajectories of the coordinates during training"""
-    
+    if not tikz_plot:
+        plt.rcParams['text.usetex'] = False
+        
     if len(Coord_trajectories)>5000:
         x = np.arange(len(Coord_trajectories))
         plt.plot(x[0::500], Coord_trajectories[0::500])

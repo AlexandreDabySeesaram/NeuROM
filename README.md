@@ -6,6 +6,13 @@
 
 <!-- ![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png)  -->
 
+
+[![PyPI Downloads](https://img.shields.io/pypi/dm/NeuROM-Py.svg?label=PyPI%20downloads)](
+https://pypi.org/project/NeuROM-Py/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13772741.svg)](https://doi.org/10.5281/zenodo.13772741)
+
+
+
 NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation matches a finite element interpolation (P1 or P2). 
 The first hidden layers play the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 

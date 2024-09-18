@@ -106,9 +106,10 @@ def PlotTrajectories(Coord_trajectories,name, show, tikz_plot=False):
         plt.plot(Coord_trajectories)
 
     plt.xlabel(r'epochs')
-    plt.ylabel(r'$x_i\left(\underline{x}\right)$')
-    plt.savefig('Results/'+name+'.pdf', transparent=True)  
+    plt.ylabel(r'$x_i\left(x\right)$')
     if tikz_plot:
+        plt.ylabel(r'$x_i\left(\underline{x}\right)$')
+        plt.savefig('Results/'+name+'.pdf', transparent=True)  
         tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     if show:
         plt.show()
@@ -1022,12 +1023,14 @@ def Plot_Eval_1d(model, config, Mat, model_du = [], tikz_plot=True):
     plt.plot(Coordinates,[coord*0 for coord in Coordinates],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
     plt.plot(PlotCoordinates.data,u_predicted.data,'--', label = 'Predicted solution')
-    plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+    plt.xlabel(r'$x$ [m]')
+    plt.ylabel(r'$u\left(x\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement')
-    plt.savefig('Results/Displacement.pdf', transparent=True) 
     if tikz_plot:
+        plt.xlabel(r'$\underline{x}$ [m]')
+        plt.ylabel(r'$\underline{u}\left(\underline{x}\right)$')
+        plt.savefig('Results/Displacement.pdf', transparent=True) 
         tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
     plt.show()
     plt.clf()
@@ -1041,12 +1044,14 @@ def Plot_Eval_1d(model, config, Mat, model_du = [], tikz_plot=True):
     plt.plot(Coordinates_du,[coord*0 for coord in Coordinates_du],'.k', markersize=2, label = 'Nodal position')
     plt.plot(PlotCoordinates.data,AnalyticGradientSolution(A,E,PlotCoordinates.data), label = 'Analytical solution')
     plt.plot(PlotCoordinates.data,du_dx.data,'--', label = 'Predicted solution')
-    plt.xlabel(r'$\underline{x}$ [m]')
-    plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+    plt.xlabel(r'$x$ [m]')
+    plt.ylabel(r'$\frac{du}{dx}\left(x\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement')
-    plt.savefig('Results/Gradient.pdf', transparent=True) 
     if tikz_plot: 
+        plt.xlabel(r'$\underline{x}$ [m]')
+        plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
+        plt.savefig('Results/Gradient.pdf', transparent=True) 
         tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     plt.show()

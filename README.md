@@ -65,7 +65,7 @@ The code must be lauched from a folder containing two subfolder
 * Geometries
   * where the gmsh .geo files are stored
 
-The folder from which the code is lauch should have the following architecture.  
+The folder from which the code is lauched should have the following architecture.  
 
 ``````
 .

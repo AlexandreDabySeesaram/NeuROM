@@ -6,8 +6,15 @@
 
 <!-- ![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png)  -->
 
-NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation mnatches a finite element interpolation (P1 or P2). 
-The first hidden layers plays the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
+
+[![PyPI Downloads](https://img.shields.io/pypi/dm/NeuROM-Py.svg?label=PyPI%20downloads)](
+https://pypi.org/project/NeuROM-Py/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13772741.svg)](https://doi.org/10.5281/zenodo.13772741)
+
+
+
+NeuROM provides a interpretable Deep Neural Network architecture that uses Tensor decomposition to provide a parametric reduced-order model. This interpretability of the network comes from the HiDeNN architecture that provides an interpolation framework through a deep neural network which weights and biaises are constrained so that the interpolation matches a finite element interpolation (P1 or P2). 
+The first hidden layers play the role of the shape functions while the last layer, called interpolation layer in the reminder of the document, utilises the output of the shape functions to interpolate the output. Training the weights of that last hidden layer is the same as solving a FEM problem on a fixed mesh. The weights of the interpolation layer directly correspond to the nodal values associated to each shape function. Therefore prescibing dirichlet boundary conditions is straight forward by freezing the weights associated to the prescribed values of fixed DoFs. Learning the parameters associated with the first layers however accounts to mesh adaptation.
 
 
 This code provides an implementation of a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The input of the layer is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
@@ -46,11 +53,33 @@ This code provides an implementation of a Finite Element Neural Network Interpol
  
 
 ``````
+## Using the code
+
+Executing the code is as easy as running
+
+`neurom -cf Configurations/NameOfTheConfigFile.toml` where the option `-cf` stands for configuration file and allow the user to specify which configuration file should be used.
+
+The code must be lauched from a folder containing two subfolder
+* Configurations
+  * where which one or more configuration files are stored
+* Geometries
+  * where the gmsh .geo files are stored
+
+The folder from whcih 
+
+``````
+.
+│
+├── Geometries
+│   └── Geometry.geo
+└── Configurations
+    └── config.toml
+ ``````
 
 
 ## Architecture of the NN
 
-There are two level of modelling involved. The space interpolation in itself can be trained to get a solution for a given problem. Such interpolation is achieved using the model `MeshNN`. Building on that interpolation model and using a similar interpolation for the parametric space, a reduced-order model can e trained as well using the `NeuROM` class.
+There are two level of modelling involved. The space interpolation in itself can be trained to get a solution for a given problem. Such interpolation is achieved using the model `MeshNN`. Building on that interpolation model and using a similar interpolation for the parametric space, a reduced-order model can be trained as well using the `NeuROM` class.
 
 ### Data entry
 

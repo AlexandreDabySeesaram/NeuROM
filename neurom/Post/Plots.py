@@ -94,7 +94,7 @@ def PlotEnergyLoss(error,zoom,name):
     #plt.show()
     plt.clf()
 
-def PlotTrajectories(Coord_trajectories,name, show):
+def PlotTrajectories(Coord_trajectories,name, show, tikz_plot=False):
     """Plots the trajectories of the coordinates during training"""
     
     if len(Coord_trajectories)>5000:
@@ -106,7 +106,8 @@ def PlotTrajectories(Coord_trajectories,name, show):
     plt.xlabel(r'epochs')
     plt.ylabel(r'$x_i\left(\underline{x}\right)$')
     plt.savefig('Results/'+name+'.pdf', transparent=True)  
-    tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
+    if tikz_plot:
+        tikzplotlib.save('Results/'+name+'.tikz', axis_height='6.5cm', axis_width='9cm') 
     if show:
         plt.show()
     plt.clf()
@@ -962,8 +963,9 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
 
 
 
-def Plot_Eval_1d(model, config, Mat, model_du = []):
-
+def Plot_Eval_1d(model, config, Mat, model_du = [], tikz_plot=True):
+    if not tikz_plot:
+        plt.rcParams['text.usetex'] = False
     new_coord = [coord for coord in model.coordinates]
     new_coord = torch.cat(new_coord,dim=0)
 
@@ -1023,7 +1025,8 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.legend(loc="upper left")
     # plt.title('Displacement')
     plt.savefig('Results/Displacement.pdf', transparent=True) 
-    tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
+    if tikz_plot:
+        tikzplotlib.save('Results/Displacement.tikz', axis_height='6.5cm', axis_width='9cm') 
     plt.show()
     plt.clf()
 
@@ -1040,8 +1043,9 @@ def Plot_Eval_1d(model, config, Mat, model_du = []):
     plt.ylabel(r'$\frac{d\underline{u}}{dx}\left(\underline{x}\right)$')
     plt.legend(loc="upper left")
     # plt.title('Displacement')
-    plt.savefig('Results/Gradient.pdf', transparent=True)  
-    tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
+    plt.savefig('Results/Gradient.pdf', transparent=True) 
+    if tikz_plot: 
+        tikzplotlib.save('Results/Gradient.tikz', axis_height='6.5cm', axis_width='9cm') 
 
     plt.show()
     plt.clf()

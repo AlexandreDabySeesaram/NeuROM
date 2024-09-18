@@ -6,7 +6,7 @@
 
 <!-- ![NeuROM logo](Illustrations/NeuROM_logo_sansserif.png)  -->
 
-
+[![GitHub license](https://img.shields.io/github/license/alexandredabyseesaram/neurom)](https://github.com/alexandredabyseesaram/neurom)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/NeuROM-Py.svg?label=PyPI%20downloads)](
 https://pypi.org/project/NeuROM-Py/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13772741.svg)](https://doi.org/10.5281/zenodo.13772741)

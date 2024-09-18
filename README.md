@@ -57,15 +57,15 @@ This code provides an implementation of a Finite Element Neural Network Interpol
 
 Executing the code is as easy as running
 
-`neurom -cf Configurations/NameOfTheConfigFile.toml` where the option `-cf` stands for configuration file and allow the user to specify which configuration file should be used.
+`neurom -cf Configurations/your_config.toml` where the option `-cf` stands for configuration file and allow the user to specify which configuration file should be used.
 
 The code must be lauched from a folder containing two subfolder
 * Configurations
-  * where which one or more configuration files are stored
+  * where one or more configuration files are stored
 * Geometries
   * where the gmsh .geo files are stored
 
-The folder from whcih 
+The folder from which the code is lauch should have the following architecture.  
 
 ``````
 .
@@ -73,7 +73,7 @@ The folder from whcih
 ├── Geometries
 │   └── Geometry.geo
 └── Configurations
-    └── config.toml
+    └── your_config.toml
  ``````
 
 

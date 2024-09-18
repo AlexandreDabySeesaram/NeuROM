@@ -26,7 +26,7 @@ Executing the code is as easy as running
 
 `neurom -cf Configurations/your_config.toml` where the option `-cf` stands for *configuration file* and allow the user to specify which configuration file should be used.
 
-The code must be lauched from a folder containing two subfolder
+The code must be lauched from a folder containing two subfolders
 * Configurations
   * where one or more configuration files are stored
 * Geometries

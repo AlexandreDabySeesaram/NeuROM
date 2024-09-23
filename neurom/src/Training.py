@@ -1917,7 +1917,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     try:
         return model, Mesh_object_fine
     except:
-        return model, Mesh_object
+        return model
 
 def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 

@@ -249,11 +249,10 @@ def main():
             ROM_model.to(tensor_float_type)
             ROM_model.to(device)
             optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
-            match config["interpolation"]["dimension"]:
-                case 1:
-                    ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
-                case 2:
-                    ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
+            if config["training"]["multiscl_max_refinment"] == 1:
+                ROM_model = Training_NeuROM_multi_level(ROM_model,config, Mat)  
+            else:
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)  
             ROM_model.to(torch.device("cpu"))
             ROM_model.eval()
     else:

@@ -316,7 +316,7 @@ class InterpPara(nn.Module):
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
-        self.InterpoLayer.weight.data = 0.1*self.NodalValues_para
+        # self.InterpoLayer.weight.data = 0.1*self.NodalValues_para
         self.ElemList = torch.arange(self.n_elem)
 
     def forward(self,mu):

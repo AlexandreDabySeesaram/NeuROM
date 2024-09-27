@@ -373,7 +373,8 @@ class NeuROM(nn.Module):
             n_modes_max+=1
         self.IndexesNon0BCs = IndexesNon0BCs
         self.n_modes = n_modes_max
-        self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
+        self.register_buffer('n_modes_truncated',torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))) 
+        # self.n_modes_truncated = torch.min(torch.tensor(self.n_modes),torch.tensor(n_modes_ini))
         self.dimension = mesh.dimension
         if IndexesNon0BCs and self.n_modes_truncated==1: #If non homogeneous BCs, add mode for relevement
             self.n_modes_truncated+=1

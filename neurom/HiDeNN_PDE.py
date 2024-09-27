@@ -574,7 +574,7 @@ class NeuROM(nn.Module):
                     case 2:
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
-                            if self.Space_modes[i].IdStored:
+                            if self.Space_modes[i].IdStored and x.shape == self.Space_modes[i].Stored_ID["coordinates"].shape:
                                     if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
                                         IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
                                         u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)

@@ -17,7 +17,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -515,6 +515,13 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "BiStiffness":
                                 loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "AngleStiffnessNeoHookean":
+                                # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                # loss = loss_1+loss_2
+                                loss = loss_1
+
+
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -599,7 +606,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             if config["solver"]["N_ExtraCoordinates"] == 1 and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
+                if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                else:
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     model.training_recap["training_time"] += (time_stop-time_start)
@@ -729,7 +739,12 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "BiStiffness":
-                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
+                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                case "AngleStiffnessNeoHookean":
+                                    # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                    loss = loss_1+loss_2
+                                            
             loss.backward()
             return loss
 

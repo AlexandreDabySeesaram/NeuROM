@@ -454,9 +454,9 @@ if (__name__ == "__main__") or (__name__=='neurom.main'):
     import tomllib
     from .src import MyHeaders
 
-
+    Default_config_file = 'Configuration/config_2D_ROM_NH.toml'
     # Default_config_file = 'Configuration/config_2D_ROM.toml'
-    Default_config_file = 'Configuration/config_2D.toml'
+    # Default_config_file = 'Configuration/config_2D.toml'
     # Default_config_file = 'Configuration/config_1D.toml'
 
 

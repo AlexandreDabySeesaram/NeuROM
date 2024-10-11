@@ -486,6 +486,59 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
+
+def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+    grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+
+    grad_u_i = torch.stack(grad_u_list,dim=3)  
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]    
+    mu_lame = E[0][:,0]/3
+    theta_float = E[1][:,0]
+    # if stage == "First":
+    #     kappa = 0 # penalisation term
+    # else:
+    #     kappa = 100 # penalisation term
+
+
+    tr_gtg = torch.einsum('exym,exyl,em,mp...,lp...,mt...,lt...,p->',grad_u_i,grad_u_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],mu_lame) # trace of tgradu.gradu * mu
+    tr_g = torch.einsum('exxm,em,mp...,mt...,p->',grad_u_i,torch.abs(detJ_i),lambda_i[0],lambda_i[1],mu_lame) # trace of gradu * mu
+    W_int = 0.5*(tr_gtg+tr_g)
+
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
+
+    Constraint_1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+    Constraint_2 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+    Constraint_3 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+    Constraint_4 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+    Constraint = kappa*(Constraint_1 + Constraint_2 + Constraint_3 - Constraint_4)**2
+
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0]), Constraint/(E[0].shape[0])
+    # return (0.5*W_int)/(E[0].shape[0])
+
 def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
 
     Space_modes = []
@@ -620,6 +673,12 @@ def Strain_sqrt(u,x):
     du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
     dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
     return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+
+def grad_u_2D(u,x):
+    """ Return the gradient of u"""
+    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+    return torch.stack([du[:,:], dv[:,:]],dim=1)
 
 def Strain(u,x):
     """ Return the vector strain [eps_xx eps_yy eps_xy]"""

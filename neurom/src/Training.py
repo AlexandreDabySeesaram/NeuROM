@@ -517,9 +517,15 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "AngleStiffnessNeoHookean":
                                 # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
-                                loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
-                                # loss = loss_1+loss_2
-                                loss = loss_1
+                                if stagnancy_counter >= 1:
+                                    kappa=0.1
+                                    print("kappa non zero")
+                                else:
+                                    kappa=0.1
+                                loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=kappa)    
+                                loss = loss_1+model.lagrange*loss_2
+                                # loss_2 = torch.tensor(12)
+                                # loss = loss_1
 
 
         eval_time                   += time.time() - loss_time_start
@@ -742,9 +748,10 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
                                 case "AngleStiffnessNeoHookean":
                                     # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
-                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
-                                    loss = loss_1+loss_2
-                                            
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=0.1)    
+                                    loss = loss_1+model.lagrange*loss_2
+                                    print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+
             loss.backward()
             return loss
 
@@ -1850,6 +1857,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     while n_refinement < config["training"]["multiscl_max_refinment"]:
         print(f"* Refinement level: {n_refinement}\n")
         n_refinement            +=1
+
+        if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+            model.lagrange = nn.Parameter(torch.tensor(1, requires_grad=True, dtype = model.float_config.dtype, device = model.float_config.device))
+
         optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:

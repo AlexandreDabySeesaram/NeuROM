@@ -109,7 +109,7 @@ device                  = 'cpu'                                     # Device for
 
 [training]
 TrainingRequired        = true                                      # Boolean leading to Loading pre trained model or retraining from scratch
-n_epochs                = 1300                                      # Maximum number of iterations for the training stage
+n_epochs                = 3000                                      # Maximum number of iterations for the training stage
 learning_rate           = 0.001                                     # optimizer learning rate
 r_adapt                 = false                                     # Enables r-adaptivity
 LoadPreviousModel       = false                                     # Boolean to enable reusing a previously trained model
@@ -169,7 +169,7 @@ N_para_1                    = 10                                    # Discretisa
 # Angle
 para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
-N_para_2                    = 60                                    # Discretisation of the 1D parametric space
+N_para_2                    = 20                                    # Discretisation of the 1D parametric space
 # alpha
 # para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 # para_2_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)

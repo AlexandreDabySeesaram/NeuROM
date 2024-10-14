@@ -529,14 +529,32 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
     Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
-    Constraint_1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
-    Constraint_2 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
-    Constraint_3 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
-    Constraint_4 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
-    Constraint = kappa*(Constraint_1 + Constraint_2 + Constraint_3 - Constraint_4)**2
+    # Constraint_1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+    # Constraint_2 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+    # Constraint_3 = torch.einsum('ei,ei,ip...,it...->', torch.abs(detJ_i),grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+    # Constraint_4 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+    # Constraint = kappa*(Constraint_1 + Constraint_2 + Constraint_3 - Constraint_4)**2
+
+    if kappa == 0: 
+         Constraint = torch.tensor(kappa)
+    else:
+        C1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+        C2 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+        C3 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+        C4 = -2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->',torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1], grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+
+        C5 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+        C6 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+        C7 = -2*torch.einsum('ek,ek,kp...,kt...,ei,ip...,it...,ej,jp...,jt...->',torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+
+        C8 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+        C9 = -2*torch.einsum('ek,ek,kp...,kt...,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1], grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+
+        C10 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->', torch.abs(detJ_i),grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+        Constraint = (C1+C2+C3+C4+C5+C6+C7+C8+C9+C10)
 
 
-    return (0.5*W_int - W_ext)/(E[0].shape[0]), Constraint/(E[0].shape[0])
+    return (0.5*W_int - W_ext)/(E[0].shape[0]*E[1].shape[0]), Constraint/(E[0].shape[0]*E[1].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
 def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):

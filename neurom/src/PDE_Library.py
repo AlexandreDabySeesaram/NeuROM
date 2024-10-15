@@ -591,7 +591,7 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
             for l in range(model.n_para)
         ]    
-    mu_lame = E[0][:,0]/3
+    E_float = E[0][:,0]
     theta_float = E[1][:,0]
 
 ######################################### DEBUG #############################
@@ -615,25 +615,26 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
 
 ############################################################################
 
-    tr_EE_A = 0.5*torch.einsum('em,exym,mp...,mt...,eyxl,lp...,lt...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
-    tr_EE_B = 0.5*torch.einsum('em,exym,mp...,mt...,exyl,lp...,lt...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
-    tr_EE_C = torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,eyxn,np...,nt...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
-    tr_EE_D = 0.25*torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,ewyn,np...,nt...,ewxo,op...,ot...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
+    tr_EE_A = 0.5*torch.einsum('em,exym,mp...,mt...,eyxl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    tr_EE_B = 0.5*torch.einsum('em,exym,mp...,mt...,exyl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    tr_EE_C = torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,eyxn,np...,nt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    tr_EE_D = 0.25*torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,ewyn,np...,nt...,ewxo,op...,ot...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
     int_trEE_para = tr_EE_A+tr_EE_B+tr_EE_C+tr_EE_D
 
 
-    tr_E_squared_E = torch.einsum('em,exxm,mp...,mt...,eXXl,lp...,lt...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
-    tr_E_squared_F = torch.einsum('em,exxm,mp...,mt...,eXYl,lp...,lt...,eXYn,np...,nt...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
-    tr_E_squared_G = 0.25*torch.einsum('em,eyxm,mp...,mt...,eyxl,lp...,lt...,eYXn,np...,nt...,eYXo,op...,ot...->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1]) 
+    tr_E_squared_E = torch.einsum('em,exxm,mp...,mt...,eXXl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    tr_E_squared_F = torch.einsum('em,exxm,mp...,mt...,eXYl,lp...,lt...,eXYn,np...,nt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    tr_E_squared_G = 0.25*torch.einsum('em,eyxm,mp...,mt...,eyxl,lp...,lt...,eYXn,np...,nt...,eYXo,op...,ot...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
     int_trE_squared_para = tr_E_squared_E+tr_E_squared_F+tr_E_squared_G
 
 
 
-    W_int = int_trEE_para + int_trE_squared_para
+    W_int = mu*int_trEE_para + 0.5*lmbda*int_trE_squared_para
+
     Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
-    return (0.5*W_int - W_ext)/(E[0].shape[0]*E[1].shape[0])
+    return (W_int - W_ext)/(E[0].shape[0]*E[1].shape[0])
 
 
 

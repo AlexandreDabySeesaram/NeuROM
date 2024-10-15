@@ -17,7 +17,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -521,11 +521,15 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                     kappa=0.1
                                     print("kappa non zero")
                                 else:
-                                    kappa=0.1
+                                    kappa=0
                                 loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=kappa)    
-                                loss = loss_1+model.lagrange*loss_2
+                                # loss = loss_1+model.lagrange*loss_2
+                                loss = loss_1+kappa*loss_2
+
                                 # loss_2 = torch.tensor(12)
                                 # loss = loss_1
+                            case "AngleStiffnessKSV":
+                                loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
 
 
         eval_time                   += time.time() - loss_time_start
@@ -712,7 +716,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                 uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("************** START SECOND PAHSE *************\n")
     time_start = time.time()
-    while  epoch<n_epochs and stagnancy_counter < 5:
+    while  epoch<10 and stagnancy_counter < 5:
         # Compute loss
 
         def closure():
@@ -749,8 +753,14 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "AngleStiffnessNeoHookean":
                                     # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
                                     loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=0.1)    
-                                    loss = loss_1+model.lagrange*loss_2
+                                    if epoch >=5:
+                                        loss = loss_1+model.lagrange*loss_2
+                                    else:
+                                        loss = loss_1+0.1*loss_2
                                     print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                                case "AngleStiffnessKSV":
+                                    loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+
 
             loss.backward()
             return loss

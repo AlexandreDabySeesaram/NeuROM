@@ -83,7 +83,7 @@ IntegralMethod          = 'Trapezoidal'                             # Type of in
 ParametricStudy         = true                                      # Boolean to switch between plain HiDeNN and NeuROM
 # BiPara                  = true                                      # Enable bi-stifness beam in 1D
 # Angle_study             = true                                      # switch between angle or bistiffness
-Problem                 = 'AngleStiffnessNeoHookean'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness", "AngleStiffnessNeoHookean"
+Problem                 = 'AngleStiffnessKSV'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness", "AngleStiffnessNeoHookean", "AngleStiffnessKSV"
 N_ExtraCoordinates      = 2                                         # Number of extra parameters in the tensor decomposition 
 n_modes_max             = 50                                        # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 2                                         # Initial number of modes in the Tensor Decomposition
@@ -166,10 +166,14 @@ colormap                = 'viridis'                                 # Plot color
 para_1_min                  = 1e-4                                  # Minimum value for the 1st parameter
 para_1_max                  = 10e-4                                 # Maximum value for the 1st parameter
 N_para_1                    = 10                                    # Discretisation of the 1D parametric space
+
 # Angle
 para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 para_2_max                  = 6.29                                  # Maximum value for the 2nd parameter (2*pi)
 N_para_2                    = 20                                    # Discretisation of the 1D parametric space
+
+
+
 # alpha
 # para_2_min                  = 0                                     # Minimum value for the 2nd parameter
 # para_2_max                  = 10                                    # Maximum value for the 2nd parameter (2*pi)

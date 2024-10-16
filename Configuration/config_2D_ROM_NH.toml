@@ -86,7 +86,7 @@ ParametricStudy         = true                                      # Boolean to
 Problem                 = 'AngleStiffnessKSV'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness", "AngleStiffnessNeoHookean", "AngleStiffnessKSV"
 N_ExtraCoordinates      = 2                                         # Number of extra parameters in the tensor decomposition 
 n_modes_max             = 50                                        # Maximum number of modes in the Tensor Decomposition
-n_modes_ini             = 2                                         # Initial number of modes in the Tensor Decomposition
+n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
 # MultiScale              = true                                    # Requires multi-scale (not implemented for NeuROM - need to use LoadPreviousModel manually)
 
 ####################################################

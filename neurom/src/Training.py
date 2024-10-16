@@ -612,7 +612,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
                             case "Gaussian_quad":
                                 model.training_recap["L2_error"].append(1)
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 10 == 0:
             if config["solver"]["N_ExtraCoordinates"] == 1 and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
@@ -716,7 +716,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                 uL = model.Space_modes[0].ListOfDirichletsBCsValues[1]
     print("************** START SECOND PAHSE *************\n")
     time_start = time.time()
-    while  epoch<10 and stagnancy_counter < 5:
+    while  epoch<n_epochs and stagnancy_counter < 5:
         # Compute loss
 
         def closure():

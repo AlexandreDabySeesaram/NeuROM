@@ -614,11 +614,28 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
 
 
 ############################################################################
-
+    import time
+    t_0 = time.time()
     tr_EE_A = 0.5*torch.einsum('em,exym,mp...,mt...,eyxl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    t_end = time.time()
+    # print(f'Duration C_1 (ms): {1000*(t_end-t_0)}')
+    t_0 = time.time()
+
     tr_EE_B = 0.5*torch.einsum('em,exym,mp...,mt...,exyl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    t_end = time.time()
+    # print(f'Duration C_2 (ms): {1000*(t_end-t_0)}')
+    t_0 = time.time()
+
     tr_EE_C = torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,eyxn,np...,nt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    t_end = time.time()
+    # print(f'Duration C_3 (ms): {1000*(t_end-t_0)}')
+    t_0 = time.time()
+
     tr_EE_D = 0.25*torch.einsum('em,ezxm,mp...,mt...,ezyl,lp...,lt...,ewyn,np...,nt...,ewxo,op...,ot...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
+    t_end = time.time()
+    # print(f'Duration C_4 (ms): {1000*(t_end-t_0)}')
+    t_0 = time.time()
+ 
     int_trEE_para = tr_EE_A+tr_EE_B+tr_EE_C+tr_EE_D
 
 

@@ -55,7 +55,7 @@ Constitutive            = false
 
 [material]
 E                       = 1                                         # Young's modulus (175 if 1D 5*1e-3 if 2D, 1 if 2D parametric (mult coeff for parameters))
-nu                      = 0.3                                       # Poisson's ration
+nu                      = 0.48                                       # Poisson's ration
 
 ####################################################
 ###                                              ###

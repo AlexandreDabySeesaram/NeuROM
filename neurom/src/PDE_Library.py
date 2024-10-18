@@ -505,16 +505,6 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
     grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
 
 
-    ##################### DEBUG ####################################
-    # x = torch.tensor([[1.1,2.2],[1.1,2.2],[1.1,2.2],[1.1,2.2],[1.1,2.2]], requires_grad = True)
-    # x2 = x[:,[1,0]]
-    # x2[:,1] = 2*x2[:,1]
-    # v = (x+3*x2).t()
-    # gv = grad_u_2D(v,x)
-
-
-    ###################################################################
-
 
     grad_u_i = torch.stack(grad_u_list,dim=3)  
     Para_mode_Lists = [
@@ -527,15 +517,72 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
         ]    
     mu_lame = E[0][:,0]/3
     theta_float = E[1][:,0]
-    # if stage == "First":
-    #     kappa = 0 # penalisation term
-    # else:
-    #     kappa = 100 # penalisation term
+
+
+######################################### DEBUG #############################
+
+    lambda_i = [torch.ones(1,1,1),torch.ones(1,1,1)]
+    mu_lame = torch.ones_like(mu_lame)
+# E_green_lagrange = Green_lagrange(grad_u_i[:,:,:,0])
+
+# tr_E_E = torch.einsum("eij,eji->e",E_green_lagrange,E_green_lagrange)
+# int_tr_E_E = torch.einsum("e, e->",tr_E_E,torch.abs(detJ_i)[:,0])
+
+
+# tr_E_squared = torch.pow(torch.einsum("eii->e",E_green_lagrange),2)
+# int_trE_squared = torch.einsum("e, e->",tr_E_squared,torch.abs(detJ_i)[:,0])
+
+
+# tr_E = torch.einsum("eii->e",E_green_lagrange)
+# tr_E_squared = torch.pow(tr_E,2)
+# int_trE_squared = torch.einsum("e, e->",tr_E_squared,torch.abs(detJ_i)[:,0])
+
+
+
+####Parametrised 
+
+
+#     tr_gtg_e = torch.einsum('exym,exyl,mp...,lp...,mt...,lt...->e',grad_u_i,grad_u_i,lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1]) # trace of tgradu.gradu * mu
+#     tr_g_e = torch.einsum('exxm,mp...,mt...->e',grad_u_i,lambda_i[0],lambda_i[1]) # trace of gradu * mu
+
+
+#     tr_gtg_e_np = torch.einsum('exy,exy->e',grad_u_i[:,:,:,0],grad_u_i[:,:,:,0]) # trace of gradu * mu
+
+#     tr_g_e_np = torch.einsum('exx->e',grad_u_i[:,:,:,0]) # trace of gradu * mu
+
+#     int_tr_gtg_e = torch.einsum('e,e->',tr_gtg_e,torch.abs(detJ_i)[:,0])
+#     int_tr_g_e = torch.einsum('e,e->',tr_g_e,torch.abs(detJ_i)[:,0])
+
+# #####
+
+
+
+#     tr_C = torch.einsum('eki,eki -> e',grad_u_i[:,:,:,0],grad_u_i[:,:,:,0])
+#     tr_C_2 = tr_C-2 
+#     int_tr_C_2 = torch.einsum("e, e->",tr_C_2,torch.abs(detJ_i)[:,0])
+#     F = grad_u_i[:,:,:,0] + id_tensor[None,:,:]
+
+#     C = torch.einsum('eki,ekj -> eij',F,F)
+    
+
+#     levi_civitas = torch.tensor([[0., 1.0],[-1.0, 0.0]], dtype = grad_u_i.dtype, device = grad_u_i.device)
+#     id_tensor = torch.tensor([[1., 0.0],[0.0, 1.0]], dtype = grad_u_i.dtype, device = grad_u_i.device)
+
+#     C_I = C - id_tensor[None,:,:]
+#     tr_C_I = torch.einsum('exx -> e', C_I)
+#     int_tr_C_I = torch.einsum("e, e->",tr_C_I,torch.abs(detJ_i)[:,0])
+
+
+#     det_F_1 = 0.5*torch.einsum('ij,kl,eik,ejl -> e', levi_civitas, levi_civitas, F, F)-1
+#     det_F_1_squarred = det_F_1**2
+
+#     int_det_F_1_squarred = torch.einsum("e, e->",det_F_1_squarred,torch.abs(detJ_i)[:,0])
+############################################################################
 
 
     tr_gtg = torch.einsum('exym,exyl,em,mp...,lp...,mt...,lt...,p->',grad_u_i,grad_u_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],mu_lame) # trace of tgradu.gradu * mu
     tr_g = torch.einsum('exxm,em,mp...,mt...,p->',grad_u_i,torch.abs(detJ_i),lambda_i[0],lambda_i[1],mu_lame) # trace of gradu * mu
-    W_int = (tr_gtg+tr_g)
+    W_int = (tr_gtg+2*tr_g)
 
     Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
@@ -543,10 +590,10 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
     if kappa == 0: 
          Constraint = torch.tensor(kappa)
     else:
-        C1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
-        C2 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
-        C3 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
-        C4 = -2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->',torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1], grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
+        C1 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+        C2 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
+        C3 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])
+        C4 = -2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...,ek,kp...,kt...,el,lp...,lt...->',torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1], grad_u_i[:,0,1,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,0,:],lambda_i[0],lambda_i[1])
 
         C5 = torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1])
         C6 = 2*torch.einsum('ei,ei,ip...,it...,ej,jp...,jt...->', torch.abs(detJ_i),grad_u_i[:,0,0,:],lambda_i[0],lambda_i[1],grad_u_i[:,1,1,:],lambda_i[0],lambda_i[1])

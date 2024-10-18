@@ -521,10 +521,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                     kappa=0.1
                                     print("kappa non zero")
                                 else:
-                                    kappa=0
+                                    kappa=0.1
                                 loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=kappa)    
                                 # loss = loss_1+model.lagrange*loss_2
-                                loss = loss_1+kappa*loss_2
+                                loss = loss_1+0.1*loss_2
 
                                 # loss_2 = torch.tensor(12)
                                 # loss = loss_1
@@ -754,7 +754,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
                                     loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=0.1)    
                                     if epoch >=5:
-                                        loss = loss_1+model.lagrange*loss_2
+                                        # loss = loss_1+model.lagrange*loss_2
+                                        loss = loss_1+0.1*loss_2
                                     else:
                                         loss = loss_1+0.1*loss_2
                                     print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')

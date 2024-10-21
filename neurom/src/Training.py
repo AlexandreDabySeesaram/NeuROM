@@ -17,7 +17,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -515,6 +515,20 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "BiStiffness":
                                 loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "AngleStiffnessNeoHookean":
+                                # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                if epoch <= 1500:
+                                    loss_1 = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                    loss_2 = 0*loss_1
+                                else:
+                                    kappa = 0.1
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=kappa)    
+                                # loss = loss_1+model.lagrange*loss_2
+                                loss = loss_1+1000*loss_2
+                            case "AngleStiffnessKSV":
+                                loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+
+
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -595,11 +609,14 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
                             case "Gaussian_quad":
                                 model.training_recap["L2_error"].append(1)
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 10 == 0:
             if config["solver"]["N_ExtraCoordinates"] == 1 and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
+                if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                else:
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     model.training_recap["training_time"] += (time_stop-time_start)
@@ -729,7 +746,16 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "BiStiffness":
-                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
+                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                case "AngleStiffnessNeoHookean":
+                                    # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=0.1)    
+                                    loss = loss_1+1000*loss_2
+                                    print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                                case "AngleStiffnessKSV":
+                                    loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+
+
             loss.backward()
             return loss
 
@@ -1835,6 +1861,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     while n_refinement < config["training"]["multiscl_max_refinment"]:
         print(f"* Refinement level: {n_refinement}\n")
         n_refinement            +=1
+
+        if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+            model.lagrange = nn.Parameter(torch.tensor(1, requires_grad=True, dtype = model.float_config.dtype, device = model.float_config.device))
+
         optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:

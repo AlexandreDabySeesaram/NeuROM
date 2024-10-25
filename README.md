@@ -19,6 +19,33 @@ The first hidden layers play the role of the shape functions, while the last lay
 
 This code implements a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The layer's input is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case, the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
 
+## Installation
+
+
+
+### From PyPI
+You can install the latest stable version of NeuROM directly from PyPI using pip:
+
+```bash
+pip install neurom-py
+```
+
+
+To improve performances it is recommanded to further install the optimisation of einsum using conda as follow
+
+````
+conda install opt_einsum -c conda-forge
+````
+
+### From the sources (Github) in editable mode
+
+The package can also be installed from the sources in editabl mode so that the user can modifiy the sources and run the modified version in a straightforward manner by
+
+```bash
+git clone https://github.com/AlexandreDabySeesaram/NeuROM.git
+cd NeuROM
+pip install -e .
+```
 
 ## Using the code
 

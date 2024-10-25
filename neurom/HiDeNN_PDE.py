@@ -14,6 +14,8 @@ from .Post import Plots as Pplot
 import matplotlib.pyplot as plt
 import numpy as np
 
+from torch.backends import opt_einsum
+opt_einsum.enabled = True
 
 
 import torch.jit as jit

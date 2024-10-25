@@ -21,7 +21,11 @@ This code implements a Finite Element Neural Network Interpolation (FENNI) based
 
 ## Installation
 
+Start by creating a conda environment as follow:
 
+```
+conda create -n neurom-env python=3.12
+```
 
 ### From PyPI
 You can install the latest stable version of NeuROM directly from PyPI using pip:

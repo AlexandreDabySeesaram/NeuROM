@@ -17,7 +17,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -1305,10 +1305,29 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
 
             detJ_small = detJ[torch.where(torch.abs(detJ)<1.0e-6)]
 
-            if config["solver"]["volume_forces"] == True:
-                loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
-            else:
-                loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+            # Check existance
+            try:
+                config["solver"]["Problem"]
+            except:
+                config["solver"]["Problem"] = "Linear"
+                print("* Warning: No problem specified. Defaulted to linear problem")
+            match config["solver"]["Problem"]:
+                case "Linear":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                case "NeoHookean":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                case "SaintVenntKirchhoff":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum_SaintVenantKirchhoff(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum_SaintVenantKirchhoff(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                    
             
             if config["solver"]["regul_term"] == True:
                 regul = torch.sum(1/torch.abs(detJ_small))
@@ -1824,6 +1843,12 @@ def Training_2D_FEM(model, config, Mat):
                                     learning_rate = config["training"]["learning_rate"])
         else:
             model.train()
+
+            #########
+            optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+            #########
+
             model.training_recap = {"Loss_tot":Loss_tot,
                                     "Duration_tot":Duration_tot,
                                     "U_interm_tot":U_interm_tot,

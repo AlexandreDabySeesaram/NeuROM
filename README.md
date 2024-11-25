@@ -35,12 +35,6 @@ pip install neurom-py
 ```
 
 
-To improve performances it is recommanded to further install the optimisation of einsum using conda as follow
-
-````
-conda install opt_einsum -c conda-forge
-````
-
 ### From the sources (Github) in editable mode
 
 The package can also be installed from the sources in editabl mode so that the user can modifiy the sources and run the modified version in a straightforward manner by
@@ -50,6 +44,14 @@ git clone https://github.com/AlexandreDabySeesaram/NeuROM.git
 cd NeuROM
 pip install -e .
 ```
+
+### Recommendation 
+
+To improve performances it is recommanded to further install the optimisation of einsum using conda as follows
+
+````
+conda install opt_einsum -c conda-forge
+````
 
 ## Using the code
 

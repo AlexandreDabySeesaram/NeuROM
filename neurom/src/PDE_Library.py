@@ -393,6 +393,32 @@ def InternalEnergy_2D_einsum(u,x,lmbda, mu):
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
     return W_e
 
+def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu):
+    grad_u =  grad_u_2D(u,x)
+    Green_lagrange_tensor = Green_lagrange(grad_u)
+    Id = torch.eye(2,dtype=Green_lagrange_tensor.dtype, device=Green_lagrange_tensor.device)
+    F = grad_u + Id
+    C = torch.einsum('eki,ekj->eij',F,F)
+    J = torch.linalg.det(F)
+    tr = torch.einsum('eii->e',C)
+
+    penalty = torch.relu(-J)
+
+    W_e = 0.5*mu*(tr-2-2*torch.log(torch.abs(J))) + 0.5*(lmbda*(J-1)**2) + 1000*penalty
+
+    return W_e
+
+def InternalEnergy_2D_einsum_SaintVenantKirchhoff(u,x,lmbda, mu):
+    grad_u =  grad_u_2D(u,x)
+    Green_lagrange_tensor = Green_lagrange(grad_u)
+    eps_green = torch.stack([Green_lagrange_tensor[:,0,0], Green_lagrange_tensor[:,1,1], (1/torch.sqrt(torch.tensor(2)))*(Green_lagrange_tensor[:,1,0])],dim=1)
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=Green_lagrange_tensor.dtype, device=Green_lagrange_tensor.device)
+    W_e = torch.einsum('ij,ej,ei->e',K,eps_green,eps_green)
+    return W_e
+
+
+
+
 def InternalResidual(u,x,u_star,x_star,lmbda, mu):
     eps =  Strain_sqrt(u,x)
     eps_star = Strain_sqrt(u_star,x_star)

@@ -2211,3 +2211,411 @@ def GetRefCoord_3D(x, nodes_coord):
 
     inverse_mapping = torch.linalg.inv(x_extended)
     return torch.einsum('eix,egx->egi',inverse_mapping,x_extended)                    # Return the reference coordinates (a_1, a_2, a_3, a_4)
+
+
+
+class InterpolationBlock3D_Lin(nn.Module):
+    """This class performs the FEM (linear) interpolation based on 2D shape functions and nodal values"""
+    def __init__(self, connectivity):
+       
+        super(InterpolationBlock3D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+        self.updated_connectivity = True
+    def UpdateConnectivity(self,connectivity):
+        """This function updates the connectivity tables of the interpolatin class
+        args: 
+            connectivity (numpy array): The new connectivty table"""
+        self.connectivity = connectivity.astype(int)
+        self.updated_connectivity = True
+
+    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values,node_mask_x = 'nan', node_mask_y= 'nan', nodal_values_tensor= 'nan', flag_training = 'True'):
+        '''Performs the 2D linear interpolation
+        args:
+            - x (tensor): space coordinate where to do the evaluation
+            - cell id (integer array): Corresponding element(s)
+            - shape_functions corresponding N_i(x)
+        '''
+        vers = 'new_V2'                                                             # Enables 'old' slow implementation or 'New_V2' more efficient implementation
+        if flag_training:
+
+
+            if self.updated_connectivity:
+                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+                if cell_nodes_IDs.ndim == 1:
+                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+                self.updated_connectivity = False
+                self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+
+
+                nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+                nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+                nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+                nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+                nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+                self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, self.Ids.repeat(1,1,3))
+                u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
+            return u
+
+        else:
+            cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+            if cell_nodes_IDs.ndim == 1:
+                cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']
+            Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+            u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
+            return u
+
+
+
+
+
+class MeshNN_3D(nn.Module):
+    """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
+    The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
+    Updating those parameters correspond to r-adaptativity
+    The Interpolation layer weights correspond to the nodal values. Updating them 
+    is equivqlent to solving the PDE. """
+
+
+    def __init__(self, mesh, n_components):
+        super(MeshNN_2D, self).__init__()
+        self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
+
+        self.register_buffer('coordinates_all', torch.cat(tuple([(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+                                                                    for i in range(len(mesh.Nodes))])))                                                     # Keep track of device and dtype used throughout the model
+        # self.coordinates_all = torch.cat(tuple([(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
+        #                                                             for i in range(len(mesh.Nodes))]))
+        self.coordinates =nn.ParameterDict({
+                                            'free': self.coordinates_all,
+                                            'imposed': [],
+                                            'mask':[]
+                                            })
+
+
+
+        # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
+        # self.values =0.5*torch.ones((mesh.NNodes,n_components))
+        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+
+        self.frozen_BC_node_IDs         = []
+        self.frozen_BC_node_IDs_x       = []             
+        self.frozen_BC_node_IDs_y       = []             
+
+
+        self.connectivity               = mesh.Connectivity
+        self.ExcludeFromDirichlet       = mesh.ExcludedPoints
+        self.borders_nodes              = mesh.borders_nodes
+        self.elements_generation        = np.ones(self.connectivity.shape[0])
+        self.DirichletBoundaryNodes     = mesh.DirichletBoundaryNodes
+        self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
+        # self.normals = mesh.normals
+        self.dofs                       = mesh.NNodes*mesh.dim # Number of Dofs
+        self.NElem                      = mesh.NElem
+        self.ListOfDirichletsBCsValues  = mesh.ListOfDirichletsBCsValues
+        self.mesh                       = mesh
+        self.IdStored                   = False
+
+        if mesh.NoBC==False:
+            self.SetBCs(mesh.ListOfDirichletsBCsValues)
+            self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
+        else:
+            self.NBCs = 0
+
+        self.order = mesh.order
+        if mesh.order =='1':
+            self.ElementBlock   = ElementBlock2D_Lin(mesh.Connectivity)
+            self.Interpolation  = InterpolationBlock2D_Lin(mesh.Connectivity)
+        elif mesh.order == '2':
+            assert 0, "quadratic 3D element not implemented. Aborting."
+
+        # set parameters 
+        self.RefinementParameters()
+        self.TrainingParameters()
+        self.UnFreeze_FEM()
+
+
+    def forward(self, x = 'NaN', el_id = 'NaN'):
+        """
+        The main forward pass of the mesh object.
+
+        This function computes the interpolation based on the current mesh state. The behavior differs depending on the training mode (`self.training`).
+
+        Args:
+            self (object): The object itself.
+            x (torch.Tensor, optional): Input tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
+            el_id (torch.Tensor, optional): Element ID tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
+
+        Returns:
+            tuple: A tuple containing:
+                - interpol (torch.Tensor): The interpolated values at the integration points.
+                - x_g (torch.Tensor): The coordinates of the integration points. (Only returned during training)
+                - detJ (torch.Tensor): The determinant of the Jacobian matrix. (Only returned during training)
+
+        Notes:
+            * During training (`self.training` is True):
+                * `el_id` is generated internally if not provided.
+                * Additional calculations are performed for `shape_functions`, `x_g`, and `detJ` using the `ElementBlock` function.
+            * During evaluation (`self.training` is False):
+                * Only `shape_functions` are calculated using `ElementBlock`.
+        """
+        if self.training:
+            el_id                       = torch.arange(0,self.NElem,dtype=torch.int)
+            shape_functions,x_g, detJ   = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
+            interpol                    = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values,self.training)
+            return interpol, x_g, detJ
+        else:
+            shape_functions             = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
+            interpol                    = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values, False)
+
+            return interpol
+
+    def ZeroOut(self):
+        """
+            Sets the nodal values of the model to zero
+        """
+
+        self.nodal_values['x_free']     = 0*self.nodal_values['x_free']
+        self.nodal_values['y_free']     = 0*self.nodal_values['y_free']
+
+        self.nodal_values['x_imposed']  = 0*self.nodal_values['x_imposed']
+        self.nodal_values['y_imposed']  = 0*self.nodal_values['y_imposed']
+
+
+    def StoreIdList(self,x):
+        if torch.is_tensor(x):
+            self.Stored_ID = {"coordinates": x, 
+                                "Ids": self.mesh.GetCellIds(x)}
+        else:
+            self.Stored_ID = {"coordinates": torch.tensor(x), 
+                                "Ids": self.mesh.GetCellIds(x)}
+        self.IdStored = True
+
+    def Init_from_previous(self,CoarseModel):
+        """"
+            Initialise the current model based on a previous "CoarseModel"
+        """
+        try:
+             CoarseModel.float_config.dtype
+        except:
+            CoarseModel.float_config = torch.tensor([0],dtype = torch.float64)
+
+        newcoordinates                      = torch.ones_like(self.coordinates_all)
+        newcoordinates[self.coord_free]     = self.coordinates['free']
+        newcoordinates[~self.coord_free]    = self.coordinates['imposed']
+        IDs_newcoord                        = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
+        NewNodalValues                      = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype).t()
+        # check if a cell ID was not found for some new nodes 
+        if -1 in IDs_newcoord:
+            index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)
+
+            oldcoordinates                          = torch.ones_like(CoarseModel.coordinates_all)
+            oldcoordinates[CoarseModel.coord_free]  = CoarseModel.coordinates['free']
+            oldcoordinates[~CoarseModel.coord_free] = CoarseModel.coordinates['imposed']
+            for ind_neg in index_neg:
+                not_found_coordinates   = newcoordinates[ind_neg]
+                dist_vect               = not_found_coordinates - oldcoordinates
+                dist                    = torch.norm(dist_vect, dim=1)
+                closest_old_nodal_value = dist.topk(1, largest=False)[1]
+
+                old_values = CoarseModel.values
+                old_values[CoarseModel.dofs_free_x,0]   = CoarseModel.nodal_values['x_free']
+                old_values[CoarseModel.dofs_free_y,1]   = CoarseModel.nodal_values['y_free']
+                old_values[~CoarseModel.dofs_free_x,0]  = CoarseModel.nodal_values['x_imposed']
+                old_values[~CoarseModel.dofs_free_y,1]  = CoarseModel.nodal_values['y_imposed']
+                NewNodalValues[ind_neg,:] =  old_values[closest_old_nodal_value,:].to(self.float_config.dtype).to(self.float_config.device)
+
+        NewNodalValues = NewNodalValues
+        self.nodal_values['x_free']     = NewNodalValues[self.dofs_free_x,0]
+        self.nodal_values['x_imposed']  = NewNodalValues[~self.dofs_free_x,0]
+        self.nodal_values['y_free']     = NewNodalValues[self.dofs_free_y,1]
+        self.nodal_values['y_imposed']  = NewNodalValues[~self.dofs_free_y,1]
+ 
+
+    def SetBCs(self, ListOfDirichletsBCsValues):
+        """
+            Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
+        """
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsRelation[i] == False:
+                if self.ListOfDirichletsBCsConstit[i] == False:
+                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                    match self.ListOfDirichletsBCsNormals[i]:
+                        case 0:
+                            self.frozen_BC_node_IDs_x.append(IDs)
+                        case 1:
+                            self.frozen_BC_node_IDs_y.append(IDs)   
+                    self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+                    
+
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsConstit[i] == True:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+
+                if len(self.relation_BC_node_IDs)>0:
+                    delete_relation = torch.cat(self.relation_BC_node_IDs)
+
+                    for elem in IDs:
+                        if elem in delete_relation:
+                            IDs = IDs[IDs!=elem]
+                if len(self.frozen_BC_node_IDs)>0:
+                    delete_simple = torch.cat(self.frozen_BC_node_IDs)
+                    for elem in IDs:
+                        if elem in delete_simple:
+                            IDs = IDs[IDs!=elem]
+
+                self.constit_BC_node_IDs.append(IDs)
+
+        self.IDs_frozen_BC_node_y                   = torch.unique(torch.stack(self.frozen_BC_node_IDs_y))
+        self.IDs_frozen_BC_node_x                   = torch.unique(torch.stack(self.frozen_BC_node_IDs_x))
+        self.dofs_free_x                            =( torch.ones_like(self.values[:,0])==1)
+        self.dofs_free_x[self.IDs_frozen_BC_node_x] = False
+        self.dofs_free_y                            =( torch.ones_like(self.values[:,0])==1)
+        self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
+
+        nodal_values_x_imposed                      = self.values[~self.dofs_free_x,0]
+        nodal_values_y_imposed                      = self.values[~self.dofs_free_y,1]
+        nodal_values_x_free                         = self.values[self.dofs_free_x,0]
+        nodal_values_y_free                         = self.values[self.dofs_free_y,1]
+        self.nodal_values                           = nn.ParameterDict({
+                                                        'x_free': nodal_values_x_free,
+                                                        'y_free': nodal_values_y_free,
+                                                        'x_imposed': nodal_values_x_imposed,
+                                                        'y_imposed': nodal_values_y_imposed
+                                                        })
+        border_nodes                                = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+        Fixed_Ids                                   = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
+        self.coord_free                             =(torch.ones_like(self.values[:,0])==1)
+        self.coord_free[Fixed_Ids]                  = False
+        self.coordinates['free']                    = self.coordinates_all[self.coord_free,:]
+        self.coordinates['imposed']                 = self.coordinates_all[~self.coord_free,:]
+
+
+    def TrainingParameters(self, loss_decrease_c = 1e-7,Max_epochs = 1000, learning_rate = 0.001):
+        self.loss_decrease_c = loss_decrease_c
+        self.Max_epochs = Max_epochs
+        self.learning_rate = learning_rate
+
+    def Initresults(self):
+        self.U_interm                               = []
+        self.X_interm                               = []
+        self.G_interm                               = []
+        self.Connectivity_interm                    = []
+        self.Jacobian_interm                        = []
+        self.Jacobian_current_interm                = []
+
+    def StoreResults(self):
+
+        u = self.values
+        u[self.dofs_free_x,0]                       = self.nodal_values['x_free']
+        u[self.dofs_free_y,1]                       = self.nodal_values['y_free']
+        u[~self.dofs_free_x,0]                      = self.nodal_values['x_imposed']                    
+        u[~self.dofs_free_y,1]                      = self.nodal_values['y_imposed']
+
+        self.U_interm.append(u.detach().clone())
+
+        new_coord                                   = self.coordinates_all
+        new_coord[self.coord_free]                  = self.coordinates['free']
+        new_coord[~self.coord_free]                 = self.coordinates['imposed']
+
+        self.X_interm.append(new_coord.detach().clone())
+        self.G_interm.append(self.elements_generation)
+        self.Connectivity_interm.append(self.connectivity-1)
+        self.Jacobian_interm.append(self.detJ_0.detach().clone())
+        self.Jacobian_current_interm.append(self.detJ.detach().clone())
+
+    def RefinementParameters(self,MaxGeneration = 2, Jacobian_threshold = 0.4):
+        self.MaxGeneration          = MaxGeneration
+        self.Jacobian_threshold     = Jacobian_threshold
+        self.MaxGeneration_elements = 0
+
+    def GetCoordIndex(idx):
+        match Free:
+            case True:
+                idx_coord = torch.sum(coord_free_mask[:int(idx)]) - 1
+                return 'free', idx_coord
+            case False:
+                idx_coord = (idx - torch.sum(coord_free_mask[:int(idx)])) - 1
+                return 'imposed', idx_coord
+
+    def UnFreeze_FEM(self):
+        """This function unfreezes the nodal values that will be trainable during optimization. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+            Args:
+                self (object): The 2D space interpolation model.
+
+            Returns:
+                None (the function modifies the trainable flags of `self.nodal_values` in-place).
+
+            Modifies:
+                self.nodal_values (dict): A dictionary containing tensors of nodal values. The `requires_grad` attribute of specific tensors within the dictionary is modified.
+        """        
+
+        self.nodal_values['x_free'].requires_grad       = True
+        self.nodal_values['y_free'].requires_grad       = True
+        self.nodal_values['x_imposed'].requires_grad    = False
+        self.nodal_values['y_imposed'].requires_grad    = False
+
+
+    def Freeze_FEM(self):
+        """
+        This function prevents any modification of nodal values during optimisation. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+        Args:
+            self (object): The 2D space interpolation model.
+
+        Returns:
+            None (the function modifies the trainable flags of `self.nodal_values` in-place).
+
+        Modifies:
+            self.nodal_values (dict): A dictionary containing tensors of node values. The `requires_grad` attribute of all tensors within the dictionary is set to False.
+        """
+
+        self.nodal_values['x_free'].requires_grad = False
+        self.nodal_values['y_free'].requires_grad = False
+
+      
+    def Freeze_Mesh(self):
+        """
+        This function prevents any modification of node coordinates during optimisation. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+        Args:
+            self (object): The 2D space interpolation model.
+
+        Returns:
+            None (the function modifies the trainable flags of `self.coordinates` in-place).
+
+        Modifies:
+            self.coordinates (dict): A dictionary containing tensors of node coordinates. The `requires_grad` attribute of all tensors within the dictionary is set to False.
+        """
+
+        self.coordinates['free'].requires_grad      = False
+        self.coordinates['imposed'].requires_grad   = False
+
+    
+    def UnFreeze_Mesh(self):
+        """This function unfreezes the nodes in the mesh that will be trainable during optimization. It uses the version string (`vers`) to switch the between the 'old'implementation
+        and the more efficient 'New_V2'one.
+
+            Args:
+                self (object): The 2D space interpolation model.
+
+            Returns:
+                None (the function modifies the trainable flags of `self.coordinates` in-place).
+
+            Modifies:
+                self.coordinates (dict): A dictionary containing tensors of node coordinates. The `requires_grad` attribute of specific tensors within the dictionary is modified.
+        """
+
+        self.coordinates['free'].requires_grad      = True
+        self.coordinates['imposed'].requires_grad   = False

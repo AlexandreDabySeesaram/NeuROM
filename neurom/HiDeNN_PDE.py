@@ -2284,7 +2284,7 @@ class MeshNN_3D(nn.Module):
 
 
     def __init__(self, mesh, n_components):
-        super(MeshNN_2D, self).__init__()
+        super(MeshNN_3D, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
         self.register_buffer('coordinates_all', torch.cat(tuple([(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
@@ -2297,15 +2297,12 @@ class MeshNN_3D(nn.Module):
                                             'mask':[]
                                             })
 
-
-
-        # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
-        # self.values =0.5*torch.ones((mesh.NNodes,n_components))
         self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
 
         self.frozen_BC_node_IDs         = []
         self.frozen_BC_node_IDs_x       = []             
         self.frozen_BC_node_IDs_y       = []             
+        self.frozen_BC_node_IDs_z       = []             
 
 
         self.connectivity               = mesh.Connectivity
@@ -2372,7 +2369,6 @@ class MeshNN_3D(nn.Module):
         else:
             shape_functions             = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
             interpol                    = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values, False)
-
             return interpol
 
     def ZeroOut(self):
@@ -2382,9 +2378,11 @@ class MeshNN_3D(nn.Module):
 
         self.nodal_values['x_free']     = 0*self.nodal_values['x_free']
         self.nodal_values['y_free']     = 0*self.nodal_values['y_free']
+        self.nodal_values['z_free']     = 0*self.nodal_values['z_free']
 
         self.nodal_values['x_imposed']  = 0*self.nodal_values['x_imposed']
         self.nodal_values['y_imposed']  = 0*self.nodal_values['y_imposed']
+        self.nodal_values['z_imposed']  = 0*self.nodal_values['z_imposed']
 
 
     def StoreIdList(self,x):
@@ -2426,8 +2424,10 @@ class MeshNN_3D(nn.Module):
                 old_values = CoarseModel.values
                 old_values[CoarseModel.dofs_free_x,0]   = CoarseModel.nodal_values['x_free']
                 old_values[CoarseModel.dofs_free_y,1]   = CoarseModel.nodal_values['y_free']
+                old_values[CoarseModel.dofs_free_y,2]   = CoarseModel.nodal_values['z_free']
                 old_values[~CoarseModel.dofs_free_x,0]  = CoarseModel.nodal_values['x_imposed']
                 old_values[~CoarseModel.dofs_free_y,1]  = CoarseModel.nodal_values['y_imposed']
+                old_values[~CoarseModel.dofs_free_y,2]  = CoarseModel.nodal_values['z_imposed']
                 NewNodalValues[ind_neg,:] =  old_values[closest_old_nodal_value,:].to(self.float_config.dtype).to(self.float_config.device)
 
         NewNodalValues = NewNodalValues
@@ -2435,6 +2435,8 @@ class MeshNN_3D(nn.Module):
         self.nodal_values['x_imposed']  = NewNodalValues[~self.dofs_free_x,0]
         self.nodal_values['y_free']     = NewNodalValues[self.dofs_free_y,1]
         self.nodal_values['y_imposed']  = NewNodalValues[~self.dofs_free_y,1]
+        self.nodal_values['z_free']     = NewNodalValues[self.dofs_free_y,2]
+        self.nodal_values['z_imposed']  = NewNodalValues[~self.dofs_free_y,2]
  
 
     def SetBCs(self, ListOfDirichletsBCsValues):
@@ -2442,56 +2444,47 @@ class MeshNN_3D(nn.Module):
             Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
         """
         for i in range(len(ListOfDirichletsBCsValues)):
-            if self.ListOfDirichletsBCsRelation[i] == False:
-                if self.ListOfDirichletsBCsConstit[i] == False:
-                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                    match self.ListOfDirichletsBCsNormals[i]:
-                        case 0:
-                            self.frozen_BC_node_IDs_x.append(IDs)
-                        case 1:
-                            self.frozen_BC_node_IDs_y.append(IDs)   
-                    self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+
+            IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+            IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+            match self.ListOfDirichletsBCsNormals[i]:
+                case 0:
+                    self.frozen_BC_node_IDs_x.append(IDs)
+                case 1:
+                    self.frozen_BC_node_IDs_y.append(IDs)   
+                case 2:
+                    self.frozen_BC_node_IDs_z.append(IDs)   
+            print(f"self.values shape is {self.values.shape}")#DEBUG
+            self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
                     
+        print(f"self.frozen_BC_node_IDs_y  is {self.frozen_BC_node_IDs_y}")
 
-        for i in range(len(ListOfDirichletsBCsValues)):
-            if self.ListOfDirichletsBCsConstit[i] == True:
-                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-
-                if len(self.relation_BC_node_IDs)>0:
-                    delete_relation = torch.cat(self.relation_BC_node_IDs)
-
-                    for elem in IDs:
-                        if elem in delete_relation:
-                            IDs = IDs[IDs!=elem]
-                if len(self.frozen_BC_node_IDs)>0:
-                    delete_simple = torch.cat(self.frozen_BC_node_IDs)
-                    for elem in IDs:
-                        if elem in delete_simple:
-                            IDs = IDs[IDs!=elem]
-
-                self.constit_BC_node_IDs.append(IDs)
-
-        self.IDs_frozen_BC_node_y                   = torch.unique(torch.stack(self.frozen_BC_node_IDs_y))
-        self.IDs_frozen_BC_node_x                   = torch.unique(torch.stack(self.frozen_BC_node_IDs_x))
+        self.IDs_frozen_BC_node_y                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
+        self.IDs_frozen_BC_node_x                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
+        self.IDs_frozen_BC_node_z                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_z))
         self.dofs_free_x                            =( torch.ones_like(self.values[:,0])==1)
         self.dofs_free_x[self.IDs_frozen_BC_node_x] = False
         self.dofs_free_y                            =( torch.ones_like(self.values[:,0])==1)
         self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
+        self.dofs_free_z                            =( torch.ones_like(self.values[:,0])==1)
+        self.dofs_free_z[self.IDs_frozen_BC_node_z] = False
 
         nodal_values_x_imposed                      = self.values[~self.dofs_free_x,0]
         nodal_values_y_imposed                      = self.values[~self.dofs_free_y,1]
+        nodal_values_z_imposed                      = self.values[~self.dofs_free_z,2]
         nodal_values_x_free                         = self.values[self.dofs_free_x,0]
         nodal_values_y_free                         = self.values[self.dofs_free_y,1]
+        nodal_values_z_free                         = self.values[self.dofs_free_z,2]
         self.nodal_values                           = nn.ParameterDict({
                                                         'x_free': nodal_values_x_free,
                                                         'y_free': nodal_values_y_free,
+                                                        'z_free': nodal_values_z_free,
                                                         'x_imposed': nodal_values_x_imposed,
-                                                        'y_imposed': nodal_values_y_imposed
+                                                        'y_imposed': nodal_values_y_imposed,
+                                                        'z_imposed': nodal_values_z_imposed,
                                                         })
         border_nodes                                = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
-        Fixed_Ids                                   = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
+        Fixed_Ids                                   = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes,self.IDs_frozen_BC_node_z]))
         self.coord_free                             =(torch.ones_like(self.values[:,0])==1)
         self.coord_free[Fixed_Ids]                  = False
         self.coordinates['free']                    = self.coordinates_all[self.coord_free,:]
@@ -2516,8 +2509,10 @@ class MeshNN_3D(nn.Module):
         u = self.values
         u[self.dofs_free_x,0]                       = self.nodal_values['x_free']
         u[self.dofs_free_y,1]                       = self.nodal_values['y_free']
+        u[self.dofs_free_z,2]                       = self.nodal_values['z_free']
         u[~self.dofs_free_x,0]                      = self.nodal_values['x_imposed']                    
         u[~self.dofs_free_y,1]                      = self.nodal_values['y_imposed']
+        u[~self.dofs_free_z,2]                      = self.nodal_values['z_imposed']
 
         self.U_interm.append(u.detach().clone())
 
@@ -2561,8 +2556,10 @@ class MeshNN_3D(nn.Module):
 
         self.nodal_values['x_free'].requires_grad       = True
         self.nodal_values['y_free'].requires_grad       = True
+        self.nodal_values['z_free'].requires_grad       = True
         self.nodal_values['x_imposed'].requires_grad    = False
         self.nodal_values['y_imposed'].requires_grad    = False
+        self.nodal_values['z_imposed'].requires_grad    = False
 
 
     def Freeze_FEM(self):
@@ -2582,6 +2579,7 @@ class MeshNN_3D(nn.Module):
 
         self.nodal_values['x_free'].requires_grad = False
         self.nodal_values['y_free'].requires_grad = False
+        self.nodal_values['z_free'].requires_grad = False
 
       
     def Freeze_Mesh(self):

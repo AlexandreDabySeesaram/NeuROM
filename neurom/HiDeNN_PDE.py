@@ -2143,10 +2143,11 @@ class ElementBlock3D_Lin(nn.Module):
         self.connectivity = connectivity.astype(int)
 
     def GP(self):
-        gp =  torch.tensor([  [0.5854101966249685, 0.1381966011250105, 0.1381966011250105], 
-                [0.1381966011250105, 0.5854101966249685, 0.1381966011250105], 
-                [0.1381966011250105, 0.1381966011250105, 0.5854101966249685], 
-                [0.1381966011250105, 0.1381966011250105, 0.1381966011250105]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
+        # gp =  torch.tensor([  [0.5854101966249685, 0.1381966011250105, 0.1381966011250105], 
+        #         [0.1381966011250105, 0.5854101966249685, 0.1381966011250105], 
+        #         [0.1381966011250105, 0.1381966011250105, 0.5854101966249685], 
+        #         [0.1381966011250105, 0.1381966011250105, 0.1381966011250105]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
+        gp =  torch.tensor([[0.25, 0.25, 0.25]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
         # Add 4th volume coordinate from first 3
         gp = torch.hstack([gp, 1-torch.sum(gp, dim=1)[:,None]]) # shape [gxn]
         return gp
@@ -2175,26 +2176,38 @@ class ElementBlock3D_Lin(nn.Module):
 
             refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1) # Computes N_i(xg local) for each gp for each element, shape [exgxn]
 
-            w_g = 1/24                                              # Gauss weight
+            # w_g = 1/24                                              # Gauss weight
+            w_g = 1                                                  # Gauss weight
 
             Ng = refCoordg
 
             x_g = torch.einsum('nex,egn->egx',nodes_coord,Ng)
 
-            refCoord = GetRefCoord_3D(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+            refCoord = GetRefCoord_3D(x_g,nodes_coord)
 
             N = refCoord
 
-            ##### I stopped here, compute det of tet using broadcast 
-        #     detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
-            
-        #     return N,x_g, detJ*w_g
+            DN = torch.tensor([
+                            [1,0,0,-1],
+                            [0,1,0,-1], 
+                            [0,0,1,-1]])
+            Jacobian = torch.einsum('xn,enX->exX',DN,nodes_coord)
+            detJ = torch.linspace.det(Jacobian)
+            return N,x_g, detJ*w_g
 
-        # else:
-        #     match vers:
-        #         case 'old':
-        #             refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-        #         case 'new'| 'new_V2':
-        #             refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
-        #     out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-        #     return out
+        else:
+            refCoord = GetRefCoord_3D(x,nodes_coord)
+            return out
+
+    
+
+
+def GetRefCoord_3D(x, nodes_coord):
+    nodes = torch.einsum('nex->exn',nodes_coord,Ng)         # reshape the nodes matrix for batched inverse
+    [e, x, n] = nodes.shape
+    x_extended = torch.empty(e, n, n)                       # Preallocate the final tensor with shape (e, n, n)
+    x_extended[:, :m, :] = tensor
+    x_extended[:, m, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
+
+    inverse_mapping = torch.linalg.inv(x_extended)
+    return torch.einsum('eix,egx->egi',inverse_mapping,x_extended)                    # Return the reference coordinates (a_1, a_2, a_3, a_4)

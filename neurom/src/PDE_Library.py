@@ -387,11 +387,19 @@ def Stress_tensor(eps, lmbda, mu):
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
-def InternalEnergy_2D_einsum(u,x,lmbda, mu):
-    eps =  Strain_sqrt(u,x)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
-    W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
-    return W_e
+def InternalEnergy_2D_einsum(u,x,lmbda, mu, dim = 2):
+    match dim:
+        case 2:
+            eps =  Strain_sqrt(u,x)
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
+            W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+            return W_e
+        case 3:
+            eps =  Strain_sqrt(u,x, dim = dim)
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
+            W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+            return W_e
+
 
 def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu):
     grad_u =  grad_u_2D(u,x)
@@ -857,11 +865,20 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
     return integral
 
-def Strain_sqrt(u,x):
+def Strain_sqrt(u,x, dim = 2):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
-    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+
+    match dim:
+        case 2:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+
+        case 3:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,0], dv[:,1], dw[:,2], (1/torch.sqrt(torch.tensor(2)))*(dv[:,2] + dw[:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,2] + dw[:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
 
 def grad_u_2D(u,x):
     """ Return the gradient of u"""

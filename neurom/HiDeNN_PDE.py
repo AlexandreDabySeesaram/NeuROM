@@ -2136,7 +2136,7 @@ class ElementBlock3D_Lin(nn.Module):
         Args:
             connectivity (Interger table): Connectivity matrix of the 3D mesh
         """
-        super(ElementBlock2D_Lin, self).__init__()
+        super(ElementBlock3D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
         self.register_buffer('GaussPoint',self.GP())
     def UpdateConnectivity(self,connectivity):
@@ -2181,18 +2181,25 @@ class ElementBlock3D_Lin(nn.Module):
 
             Ng = refCoordg
 
-            x_g = torch.einsum('nex,egn->egx',nodes_coord,Ng)
+
+            x_g = torch.einsum('nex,egn->egx',nodes_coord,Ng[:,None,:])
 
             refCoord = GetRefCoord_3D(x_g,nodes_coord)
 
             N = refCoord
 
             DN = torch.tensor([
-                            [1,0,0,-1],
+                            [1.0,0,0,-1],
                             [0,1,0,-1], 
                             [0,0,1,-1]])
-            Jacobian = torch.einsum('xn,enX->exX',DN,nodes_coord)
-            detJ = torch.linspace.det(Jacobian)
+            DN.to(nodes_coord.dtype)
+            DN.to(nodes_coord.device)
+
+            print(f"nodes_coord.shape {nodes_coord.shape}")
+            print(f"DN.dtype {DN.dtype}")
+            print(f"nodes_coord.dtype {nodes_coord.dtype}")
+            Jacobian = torch.einsum('xn,neX->exX',DN,nodes_coord)
+            detJ = torch.linalg.det(Jacobian)
             return N,x_g, detJ*w_g
 
         else:
@@ -2203,13 +2210,19 @@ class ElementBlock3D_Lin(nn.Module):
 
 
 def GetRefCoord_3D(x, nodes_coord):
-    nodes = torch.einsum('nex->exn',nodes_coord,Ng)         # reshape the nodes matrix for batched inverse
-    [e, x, n] = nodes.shape
-    x_extended = torch.empty(e, n, n)                       # Preallocate the final tensor with shape (e, n, n)
-    x_extended[:, :m, :] = tensor
-    x_extended[:, m, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
+    nodes = torch.einsum('nex->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
+    [e, c, n] = nodes.shape
+    mapping = torch.empty(e, n, n)                       # Preallocate the final tensor with shape (e, n, n)
+    mapping[:, :c, :] = nodes
+    mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
 
-    inverse_mapping = torch.linalg.inv(x_extended)
+    [e, g, c] = x.shape
+
+    x_extended              = torch.empty(e, g, n) 
+    x_extended[:, :, :c]    = x
+    x_extended[:, :, c]     = 1
+
+    inverse_mapping = torch.linalg.inv(mapping)
     return torch.einsum('eix,egx->egi',inverse_mapping,x_extended)                    # Return the reference coordinates (a_1, a_2, a_3, a_4)
 
 
@@ -2326,8 +2339,8 @@ class MeshNN_3D(nn.Module):
 
         self.order = mesh.order
         if mesh.order =='1':
-            self.ElementBlock   = ElementBlock2D_Lin(mesh.Connectivity)
-            self.Interpolation  = InterpolationBlock2D_Lin(mesh.Connectivity)
+            self.ElementBlock   = ElementBlock3D_Lin(mesh.Connectivity)
+            self.Interpolation  = InterpolationBlock3D_Lin(mesh.Connectivity)
         elif mesh.order == '2':
             assert 0, "quadratic 3D element not implemented. Aborting."
 

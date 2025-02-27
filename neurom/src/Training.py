@@ -1316,7 +1316,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
@@ -1718,7 +1718,7 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
 
-def Training_2D_FEM(model, config, Mat):
+def Training_2_3D_FEM(model, config, Mat):
     n_epochs = config["training"]["n_epochs"]
     n_refinement        = 0                                 # Initialise the refinement level
     stagnation          = False                             # Stagnation flag
@@ -1835,18 +1835,18 @@ def Training_2D_FEM(model, config, Mat):
             model.train()
 
 
-            model.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
-                                        Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
+            model.RefinementParameters( MaxGeneration       = config["training"]["h_adapt_MaxGeneration"], 
+                                        Jacobian_threshold  = config["training"]["h_adapt_J_thrshld"])
 
-            model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                    Max_epochs = config["training"]["n_epochs"], 
-                                    learning_rate = config["training"]["learning_rate"])
+            model.TrainingParameters(   loss_decrease_c     = config["training"]["loss_decrease_c"], 
+                                        Max_epochs          = config["training"]["n_epochs"], 
+                                        learning_rate       = config["training"]["learning_rate"])
         else:
             model.train()
 
-            #########
+            #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
             #########
 
             model.training_recap = {"Loss_tot":Loss_tot,
@@ -1862,6 +1862,8 @@ def Training_2D_FEM(model, config, Mat):
             print("***************** END TRAINING ****************\n")
             print(f'* Training time: {Duration_tot}s')                                    
     return model 
+
+Training_2D_FEM = Training_2_3D_FEM                                                                                                                             # for retrocompatibility reasons #DEBUG
 
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     n_refinement                = 0

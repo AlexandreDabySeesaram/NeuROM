@@ -2195,9 +2195,6 @@ class ElementBlock3D_Lin(nn.Module):
             DN.to(nodes_coord.dtype)
             DN.to(nodes_coord.device)
 
-            print(f"nodes_coord.shape {nodes_coord.shape}")
-            print(f"DN.dtype {DN.dtype}")
-            print(f"nodes_coord.dtype {nodes_coord.dtype}")
             Jacobian = torch.einsum('xn,neX->exX',DN,nodes_coord)
             detJ = torch.linalg.det(Jacobian)
             return N,x_g, detJ*w_g
@@ -2260,17 +2257,15 @@ class InterpolationBlock3D_Lin(nn.Module):
                 self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
 
 
-                nodal_values_tensor = torch.ones_like(nodal_values_tensor)
-                nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
-                nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
-                nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
-                nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-                nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
-                nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
-                self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, self.Ids.repeat(1,1,3))
-                print(f"self.nodes_values.shape {self.nodes_values.shape}")#DEBUG
-                print(f"shape_functions.shape {shape_functions.shape}")#DEBUG
-                u = torch.einsum('igx,g...i->xg',self.nodes_values,shape_functions)
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
+            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, self.Ids.repeat(1,1,3))
+            u = torch.einsum('igx,g...i->xg',self.nodes_values,shape_functions)
             return u
 
         else:
@@ -2473,7 +2468,6 @@ class MeshNN_3D(nn.Module):
                     self.frozen_BC_node_IDs_y.append(IDs)   
                 case 2:
                     self.frozen_BC_node_IDs_z.append(IDs)   
-            print(f"self.values shape is {self.values.shape}")#DEBUG
             self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
                     
         print(f"self.frozen_BC_node_IDs_y  is {self.frozen_BC_node_IDs_y}")

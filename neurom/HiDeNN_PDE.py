@@ -2241,7 +2241,7 @@ class InterpolationBlock3D_Lin(nn.Module):
         self.connectivity = connectivity.astype(int)
         self.updated_connectivity = True
 
-    def forward(self, x, cell_id, nodal_values, shape_functions, relation_BC_node_IDs, relation_BC_normals, relation_BC_values,node_mask_x = 'nan', node_mask_y= 'nan', nodal_values_tensor= 'nan', flag_training = 'True'):
+    def forward(self, x, cell_id, nodal_values, shape_functions,node_mask_x = 'nan', node_mask_y= 'nan', node_mask_z= 'nan', nodal_values_tensor= 'nan', flag_training = 'True'):
         '''Performs the 2D linear interpolation
         args:
             - x (tensor): space coordinate where to do the evaluation
@@ -2263,10 +2263,14 @@ class InterpolationBlock3D_Lin(nn.Module):
                 nodal_values_tensor = torch.ones_like(nodal_values_tensor)
                 nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
                 nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+                nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
                 nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
                 nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+                nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
                 self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, self.Ids.repeat(1,1,3))
-                u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
+                print(f"self.nodes_values.shape {self.nodes_values.shape}")#DEBUG
+                print(f"shape_functions.shape {shape_functions.shape}")#DEBUG
+                u = torch.einsum('igx,g...i->xg',self.nodes_values,shape_functions)
             return u
 
         else:
@@ -2277,11 +2281,13 @@ class InterpolationBlock3D_Lin(nn.Module):
             nodal_values_tensor = torch.ones_like(nodal_values_tensor)
             nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
             nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
             nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']  
             Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
             nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
-            u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
+            u = torch.einsum('igx,g...i->xg',nodes_values,shape_functions)
             return u
 
 
@@ -2377,11 +2383,11 @@ class MeshNN_3D(nn.Module):
         if self.training:
             el_id                       = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ   = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
-            interpol                    = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values,self.training)
+            interpol                    = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.dofs_free_x,self.dofs_free_y,self.dofs_free_z,self.values,self.training)
             return interpol, x_g, detJ
         else:
             shape_functions             = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
-            interpol                    = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.relation_BC_node_IDs, self.relation_BC_normals, self.relation_BC_values, self.dofs_free_x,self.dofs_free_y,self.values, False)
+            interpol                    = self.Interpolation(x, el_id, self.nodal_values, shape_functions, self.dofs_free_x,self.dofs_free_y,self.dofs_free_z,self.values, False)
             return interpol
 
     def ZeroOut(self):

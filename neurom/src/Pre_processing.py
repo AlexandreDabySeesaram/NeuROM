@@ -440,6 +440,9 @@ class Mesh:
                     point = [coord, 0, 0]
                 case '2':
                     point = [coord[0], coord[1], 0]
+                case '3':
+                    point = [coord[0], coord[1], coord[2]]
+            print(f"point to be located : {point}")#DEBUG
             ids.append(locator.FindCell(point))
 
         return ids

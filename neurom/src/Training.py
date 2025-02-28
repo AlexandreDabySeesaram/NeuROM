@@ -1,6 +1,6 @@
 import numpy as numpy
 import torch
-from ..HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
+from ..HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_3D
 from ..Post import Plots as Pplot
 import copy
 import time
@@ -1804,7 +1804,12 @@ def Training_2_3D_FEM(model, config, Mat):
             Mesh_object_fine.ReadMesh()   
             Mesh_object_fine.ExportMeshVtk()
             List_elems          = torch.arange(0,Mesh_object_fine.NElem,dtype=torch.int)
-            model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
+            
+            match Mesh_object_fine.dim:
+                case 2:
+                    model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
+                case 3:
+                    model_2 = MeshNN_3D(Mesh_object_fine, 3)                                    # Create the associated model (with 2 components)
             vers = 'New_V2'
             match vers:
                 case 'old':

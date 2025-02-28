@@ -2201,7 +2201,10 @@ class ElementBlock3D_Lin(nn.Module):
 
         else:
             refCoord = GetRefCoord_3D(x,nodes_coord)
-            return out
+            print(f"refCoord.shape {refCoord.shape}")#DEBUG
+            # out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+            # return out
+            return refCoord
 
     
 
@@ -2281,7 +2284,7 @@ class InterpolationBlock3D_Lin(nn.Module):
             nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
             nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']  
             Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
-            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, Ids.repeat(1,1,3))
             u = torch.einsum('igx,g...i->xg',nodes_values,shape_functions)
             return u
 

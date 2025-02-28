@@ -888,6 +888,8 @@ class ElementBlock2D_Lin(nn.Module):
                 case 'new'| 'new_V2':
                     refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
             out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
+
+
             return out
 
 class ElementBlock2D_Quad(nn.Module):
@@ -2201,7 +2203,6 @@ class ElementBlock3D_Lin(nn.Module):
 
         else:
             refCoord = GetRefCoord_3D(x,nodes_coord)
-            print(f"refCoord.shape {refCoord.shape}")#DEBUG
             # out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
             # return out
             return refCoord
@@ -2216,7 +2217,11 @@ def GetRefCoord_3D(x, nodes_coord):
     mapping[:, :c, :] = nodes
     mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
 
-    [e, g, c] = x.shape
+    try:
+        [e, g, c] = x.shape
+    except:
+        x = x[:,None,:]
+        [e, g, c] = x.shape
 
     x_extended              = torch.empty(e, g, n) 
     x_extended[:, :, :c]    = x
@@ -2452,8 +2457,8 @@ class MeshNN_3D(nn.Module):
         self.nodal_values['x_imposed']  = NewNodalValues[~self.dofs_free_x,0]
         self.nodal_values['y_free']     = NewNodalValues[self.dofs_free_y,1]
         self.nodal_values['y_imposed']  = NewNodalValues[~self.dofs_free_y,1]
-        self.nodal_values['z_free']     = NewNodalValues[self.dofs_free_y,2]
-        self.nodal_values['z_imposed']  = NewNodalValues[~self.dofs_free_y,2]
+        self.nodal_values['z_free']     = NewNodalValues[self.dofs_free_z,2]
+        self.nodal_values['z_imposed']  = NewNodalValues[~self.dofs_free_z,2]
  
 
     def SetBCs(self, ListOfDirichletsBCsValues):
@@ -2473,8 +2478,6 @@ class MeshNN_3D(nn.Module):
                     self.frozen_BC_node_IDs_z.append(IDs)   
             self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
                     
-        print(f"self.frozen_BC_node_IDs_y  is {self.frozen_BC_node_IDs_y}")
-
         self.IDs_frozen_BC_node_y                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
         self.IDs_frozen_BC_node_x                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
         self.IDs_frozen_BC_node_z                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_z))

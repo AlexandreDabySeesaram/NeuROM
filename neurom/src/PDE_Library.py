@@ -376,9 +376,12 @@ def VonMises_plain_strain(sigma, lmbda, mu):
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
-    sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    if sigma.shape[1] != 3:
+        sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    else:
+        sigma_3D = sigma
     VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
-    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 
+    sigma_dev = torch.einsum('ij,ej...->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
 
@@ -498,9 +501,16 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
     xg_i = torch.stack(xg_modes,dim=2) 
     detJ_i = torch.stack(detJ_modes,dim=1)  
 
-    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
-    eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+    match model.mesh.dim:
+        case 2:
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        case 3:
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
+
+    eps_i       = torch.stack(eps_list,dim=2)  
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)

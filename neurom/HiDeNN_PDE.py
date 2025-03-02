@@ -2446,10 +2446,10 @@ class MeshNN_3D(nn.Module):
                 old_values = CoarseModel.values
                 old_values[CoarseModel.dofs_free_x,0]   = CoarseModel.nodal_values['x_free']
                 old_values[CoarseModel.dofs_free_y,1]   = CoarseModel.nodal_values['y_free']
-                old_values[CoarseModel.dofs_free_y,2]   = CoarseModel.nodal_values['z_free']
+                old_values[CoarseModel.dofs_free_z,2]   = CoarseModel.nodal_values['z_free']
                 old_values[~CoarseModel.dofs_free_x,0]  = CoarseModel.nodal_values['x_imposed']
                 old_values[~CoarseModel.dofs_free_y,1]  = CoarseModel.nodal_values['y_imposed']
-                old_values[~CoarseModel.dofs_free_y,2]  = CoarseModel.nodal_values['z_imposed']
+                old_values[~CoarseModel.dofs_free_z,2]  = CoarseModel.nodal_values['z_imposed']
                 NewNodalValues[ind_neg,:] =  old_values[closest_old_nodal_value,:].to(self.float_config.dtype).to(self.float_config.device)
 
         NewNodalValues = NewNodalValues

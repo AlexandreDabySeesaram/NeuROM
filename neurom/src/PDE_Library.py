@@ -346,11 +346,15 @@ def Gravity(theta,rho = 1e-9):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
-def Gravity_vect(theta,rho = 1e-9):
+def Gravity_vect(theta,rho = 1e-9, dim = 2):
     """Should be unified with Gravity defined above, require chaging torch.tensor(0*torch.pi/2) to torch.tensor([0*torch.pi/2]) in 
     functions referencing the latter."""
     g = 9.81*1e3                            #m/s^2
-    return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
+    match dim:
+        case 2:
+            return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
+        case 3:
+            return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta), 0*torch.sin(theta)]))
 
 def VolumeForcesEnergy_2D(u,theta, rho):
     fv = Gravity(theta,rho).to(u.dtype).to(u.device)
@@ -376,9 +380,12 @@ def VonMises_plain_strain(sigma, lmbda, mu):
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
-    sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    if sigma.shape[1] != 3:
+        sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+    else:
+        sigma_3D = sigma
     VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
-    sigma_dev = torch.einsum('ij,ej->ei',VM,sigma_3D) # in voigt notation 
+    sigma_dev = torch.einsum('ij,ej...->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
 
@@ -387,11 +394,19 @@ def Stress_tensor(eps, lmbda, mu):
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
-def InternalEnergy_2D_einsum(u,x,lmbda, mu):
-    eps =  Strain_sqrt(u,x)
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
-    W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
-    return W_e
+def InternalEnergy_2D_einsum(u,x,lmbda, mu, dim = 2):
+    match dim:
+        case 2:
+            eps =  Strain_sqrt(u,x)
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
+            W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+            return W_e
+        case 3:
+            eps =  Strain_sqrt(u,x, dim = dim)
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
+            W_e = torch.einsum('ij,e...j,e...i->e',K,eps,eps)
+            return W_e
+
 
 def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu):
     grad_u =  grad_u_2D(u,x)
@@ -474,7 +489,7 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
-def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
+def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
 
     Space_modes = []
     xg_modes = []
@@ -486,13 +501,24 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
         detJ_modes.append(detJ_k)
 
  
-    u_i = torch.stack(Space_modes,dim=2)
-    xg_i = torch.stack(xg_modes,dim=2) 
+
     detJ_i = torch.stack(detJ_modes,dim=1)  
 
-    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
-    eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        case 3:
+            print(Space_modes[0].shape)
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+    eps_i       = torch.stack(eps_list,dim=2)  
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)
@@ -504,14 +530,16 @@ def InternalEnergy_2D_einsum_Bipara(model,lmbda, mu,E):
     E_float = E[0][:,0]
     theta_float = E[1][:,0]
 
-    W_int = torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
+    print(f"eps_i shape is {eps_i.shape}")#DEBUG
+    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
 
-    Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
+InternalEnergy_2D_einsum_Bipara = InternalEnergy_2_3D_einsum_Bipara
 
 def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
 
@@ -857,11 +885,20 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
     return integral
 
-def Strain_sqrt(u,x):
+def Strain_sqrt(u,x, dim = 2):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
-    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+
+    match dim:
+        case 2:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+
+        case 3:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2], (1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
 
 def grad_u_2D(u,x):
     """ Return the gradient of u"""

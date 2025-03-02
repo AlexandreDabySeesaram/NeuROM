@@ -391,6 +391,8 @@ class NeuROM(nn.Module):
                         self.Space_modes = nn.ModuleList([MeshNN_1D(mesh, config["interpolation"]["n_integr_points"]) for i in range(self.n_modes)])
             case '2':
                 self.Space_modes = nn.ModuleList([MeshNN_2D(mesh, n_components= 2) for i in range(self.n_modes)])
+            case '3':
+                self.Space_modes = nn.ModuleList([MeshNN_3D(mesh, n_components= 3) for i in range(self.n_modes)])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
 
@@ -607,6 +609,51 @@ class NeuROM(nn.Module):
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
+            case '3':
+                match self.n_para:
+                    case 1:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=3)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyzk,kj->xyj',u_i,P1)
+                    case 2:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            if self.Space_modes[i].IdStored and x.shape == self.Space_modes[i].Stored_ID["coordinates"].shape:
+                                    if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                                    else:
+                                        self.Space_modes[i].StoreIdList(x)
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            else:
+                                self.Space_modes[i].StoreIdList(x)
+                                IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            # IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=2)
+                        print(f"ui shape {u_i.shape}")#DEBUG
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
+                    case 3:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes,dim=3)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyzk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
         return out
 
     def Init_from_previous(self,PreviousFullModel,Model_provided = False):

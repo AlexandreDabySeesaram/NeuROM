@@ -17,7 +17,8 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
+                                InternalEnergy_2_3D_einsum_Bipara
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -527,7 +528,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = loss_1+1000*loss_2
                             case "AngleStiffnessKSV":
                                 loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
-
+                    case 3:
+                        loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
 
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
@@ -737,6 +739,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
                         case 2:
                                 loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        case 3:
+                            assert 0, "Single extra-parameter non implemented in 3D. Aborting."
                 case 2:
                     match config["interpolation"]["dimension"]:
                         case 1:
@@ -754,6 +758,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
                                 case "AngleStiffnessKSV":
                                     loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+                        case 3:
+                            loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
 
 
             loss.backward()
@@ -1872,6 +1878,7 @@ def Training_2_3D_FEM(model, config, Mat):
 Training_2D_FEM = Training_2_3D_FEM                                                                                                                             # for retrocompatibility reasons #DEBUG
 
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
+    print("INSIDE")#DEBUG
     n_refinement                = 0
     MaxElemSize                 = pre.ElementSize(
                                 dimension     = config["interpolation"]["dimension"],
@@ -1906,6 +1913,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
             case 2:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+            case 3:
+                Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+        print("After training grid 1 ")#DEBUG
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
@@ -1924,11 +1935,14 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                 )                   
             Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
             Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
+
             match config["interpolation"]["dimension"]:
                 case 1:
                     if config["solver"]["IntegralMethod"] == "Gaussian_quad":
                         Mesh_object_fine.ExportMeshVtk1D()
                 case 2:
+                    Mesh_object_fine.ExportMeshVtk()
+                case 3:
                     Mesh_object_fine.ExportMeshVtk()
             if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
                 Mesh_object_fine.AssemblyMatrix() 
@@ -1953,6 +1967,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                                         config["solver"]["n_modes_max"]
                             )
             model.eval()
+            print("INSIDE before 2nd training")#DEBUG
+
             if model_2.float_config.dtype != model.float_config.dtype:
                 model_2.to(model.float_config.dtype)
                 print(f'Finer model passed to dtype {model.float_config.dtype}')

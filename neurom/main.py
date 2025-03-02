@@ -93,7 +93,7 @@ def main():
                                         coef1     = config["material"]["E"],            # Young Modulus
                                         coef2     = config["geometry"]["A"]             # Section area of the 1D bar
                             )
-    elif config["interpolation"]["dimension"] == 2:
+    elif config["interpolation"]["dimension"] in [2,3]:
         try:
             Mat = pre.Material(         flag_lame = False,                              # If True should input lmbda and mu instead of E and nu
                                         coef1     = config["material"]["E"],            # Young Modulus
@@ -423,10 +423,27 @@ def main():
                                     Interactive_parameter = config["postprocess"]["Interactive_parameter"],
                                     Plot_mesh = config["postprocess"]["Plot_mesh"],
                                     color_map = config["postprocess"]["colormap"])
+                case 3:
+                    Pplot.Plot_2D_PyVista(ROM_model, 
+                                    Mesh_object, 
+                                    config, 
+                                    E = config["postprocess"]["Default_E"], 
+                                    theta = config["postprocess"]["Default_theta"], 
+                                    scalar_field_name = config["postprocess"]["scalar_field_name"], 
+                                    scaling_factor = config["postprocess"]["scaling_factor"], 
+                                    Interactive_parameter = config["postprocess"]["Interactive_parameter"],
+                                    Plot_mesh = config["postprocess"]["Plot_mesh"],
+                                    color_map = config["postprocess"]["colormap"])
             
     else:
         match config["interpolation"]["dimension"]:
             case 2:
+                if config["postprocess"]["exportVTK"]:
+                    Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+                    # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
+                if config["postprocess"]["exportVTK_history"]:
+                    Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+            case 3:
                 if config["postprocess"]["exportVTK"]:
                     Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
                     # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)

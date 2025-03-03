@@ -92,14 +92,14 @@ class Mesh:
         """inputs the name of the geometry and the maximum size of the element"""
         if welcome:
             PrintWelcome()
-        self.h_max_str = str(np.around(h_max, decimals=3))
-
-        self.order = str(order)
-        self.dimension = str(dimension)
-        self.name = name
-        self.name_mesh = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
-        self.name_geo = self.name+'.geo'
-        self.borders_exist = False
+        self.h_max_str      = str(np.around(h_max, decimals=3))
+        self.h_max          = h_max
+        self.order          = str(order)
+        self.dimension      = str(dimension)
+        self.name           = name
+        self.name_mesh      = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
+        self.name_geo       = self.name+'.geo'
+        self.borders_exist  = False
         if not os.path.isdir("Results"):
             subprocess.run(["mkdir", "Results"])
         if not os.path.isdir("Results/Paraview"):

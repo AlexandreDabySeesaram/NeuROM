@@ -2367,6 +2367,14 @@ class MeshNN_3D(nn.Module):
                                             })
 
         self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+        name_mesh_string_tensor = torch.ByteTensor(list(mesh.name_mesh.encode('utf-8')))
+        h_max_string_tensor = torch.ByteTensor(list(mesh.h_max_str.encode('utf-8')))
+
+        self.register_buffer('name_mesh',torch.tensor([0]))
+        self.register_buffer('h_max_str',torch.tensor([0]))
+        self.register_buffer('h_max',torch.tensor(mesh.h_max))
+
+
 
         self.frozen_BC_node_IDs         = []
         self.frozen_BC_node_IDs_x       = []             

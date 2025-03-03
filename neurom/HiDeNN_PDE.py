@@ -639,7 +639,7 @@ class NeuROM(nn.Module):
                             # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
-                        print(f"ui shape {u_i.shape}")#DEBUG
+                        # print(f"ui shape {u_i.shape}")#DEBUG
                         P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)

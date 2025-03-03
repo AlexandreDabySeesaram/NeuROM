@@ -512,7 +512,7 @@ def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
 
         case 3:
-            print(Space_modes[0].shape)
+            # print(Space_modes[0].shape)
             u_i = torch.stack(Space_modes,dim=2)
             xg_i = torch.stack(xg_modes,dim=2) 
             eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
@@ -530,7 +530,7 @@ def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
     E_float = E[0][:,0]
     theta_float = E[1][:,0]
 
-    print(f"eps_i shape is {eps_i.shape}")#DEBUG
+    # print(f"eps_i shape is {eps_i.shape}")#DEBUG
     W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],E_float)
 
     Gravity_force = Gravity_vect(theta_float,rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)

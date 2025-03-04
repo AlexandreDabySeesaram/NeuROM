@@ -108,6 +108,16 @@ def main():
         
 
     #%% Create mesh object
+    flag_state_dict_previous_model = False
+    if config["training"]["LoadPreviousModel"]:
+        try:
+            trained_dict = torch.load('Trained_models/'+config["training"]["PreviousModel"], weights_only=False)
+            # print(f"h max is {trained_dict['Space_modes.0.h_max'].item()}")#DEBUG
+            config["interpolation"]["MaxElemSize2D"] = trained_dict["Space_modes.0.h_max"].item()
+            flag_state_dict_previous_model = True
+        except:
+            print("Warning no previous model name provided, default name chose.")
+
     # Definition of the (initial) element size of the mesh
     MaxElemSize = pre.ElementSize(
                                     dimension     = config["interpolation"]["dimension"],
@@ -227,8 +237,11 @@ def main():
 
 
     if config["training"]["LoadPreviousModel"] and config["solver"]["ParametricStudy"]:
-        ROM_model.Init_from_previous(PreviousFullModel)
-        ROM_model.UnfreezeTruncated()
+        if flag_state_dict_previous_model:
+            ROM_model.load_state_dict(trained_dict)
+        else:
+            ROM_model.Init_from_previous(PreviousFullModel)
+            ROM_model.UnfreezeTruncated()
     #%% Training 
     if config["solver"]["ParametricStudy"]:
         ROM_model.Freeze_Mesh()                                                             # Set space mesh cordinates as untrainable
@@ -301,6 +314,10 @@ def main():
     with open(args.cf, mode="rb") as f:
         config = tomllib.load(f)
     print("*************** POST-PROCESSING ***************\n")
+
+    if config["postprocess"]["SaveModel"]:
+        torch.save(ROM_model.state_dict(), 'Trained_models/'+config["postprocess"]["Saved_model_name"])
+
     if config["solver"]["ParametricStudy"]:
         Training_coordinates = torch.tensor([[i/50] for i in range(2,500)], 
                         dtype=torch.float32, 

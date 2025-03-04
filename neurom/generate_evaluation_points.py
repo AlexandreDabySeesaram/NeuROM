@@ -22,7 +22,7 @@ order = 1
 n_integration_points = 1
                                                    # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 0.075                                                 # Maximum element size of the mesh
+MaxElemSize = 0.05                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 

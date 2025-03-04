@@ -1,11 +1,10 @@
 #%% Libraries import
-from HiDeNN_PDE import MeshNN_2D
-import src.Pre_processing as pre
+from .HiDeNN_PDE import MeshNN_2D
+from .src import Pre_processing as pre
 import torch
 import torch.nn as nn
 import numpy as numpy
 
-import Post.Plots as Pplot
 import time
 import os
 import matplotlib.pyplot as plt
@@ -46,7 +45,7 @@ Domain_mesh.ExportMeshVtk()
 
 # Create model
 n_component = 2                                                 # Number of components of the interpolated field
-Model_2D = MeshNN_2D(Domain_mesh, n_component, n_integration_points)                  # Create the associated model (with 2 components)
+Model_2D = MeshNN_2D(Domain_mesh, n_components = 2)                  # Create the associated model (with 2 components)
 Model_2D.UnFreeze_FEM()
 # Model_2D.UnFreeze_Mesh()
 Model_2D.Freeze_Mesh()
@@ -56,10 +55,20 @@ cell_ids = torch.arange(0,Model_2D.NElem-1)
 
 node_ids = Domain_mesh.Connectivity[cell_ids,:]
 
-node1_coord =  torch.cat([Model_2D.coordinates[int(row)-1] for row in node_ids[:,0]])
-node2_coord =  torch.cat([Model_2D.coordinates[int(row)-1] for row in node_ids[:,1]])
-node3_coord =  torch.cat([Model_2D.coordinates[int(row)-1] for row in node_ids[:,2]])
+coordinates_all = torch.ones_like(Model_2D.coordinates_all)
+coordinates_all[Model_2D.coord_free] = Model_2D.coordinates['free']
+coordinates_all[~Model_2D.coord_free] = Model_2D.coordinates['imposed']
+Nodes = torch.hstack([torch.linspace(1,coordinates_all.shape[0],coordinates_all.shape[0], dtype = coordinates_all.dtype, device = coordinates_all.device)[:,None],
+                                          coordinates_all])
+Nodes = torch.hstack([Nodes,torch.zeros(Nodes.shape[0],1, dtype = Nodes.dtype, device = Nodes.device)])
+
+
+node1_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,0]])
+node2_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,1]])
+node3_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,2]])
+
+
 
 coord = (node1_coord + node2_coord + node3_coord)/3
 
-numpy.save("../2D_example/eval_coordinates.npy", numpy.array(coord))
+numpy.save("../2D_example/eval_coordinates_"+str(MaxElemSize)+".npy", numpy.array(coord))

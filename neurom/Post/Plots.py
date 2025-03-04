@@ -951,18 +951,30 @@ def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         ##
 
         Connectivity_tot    = Model_FEM.training_recap["Connectivity_tot"]
-        # Add 3-rd dimension
-        X_interm_tot    = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
-        U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
+        match Model_FEM.mesh.dim:
+            case 2:
+                # Add 3-rd dimension
+                X_interm_tot    = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
+                U_interm_tot = [torch.cat([u,torch.zeros(u.shape[0],1)],dim=1) for u in U_interm_tot]
 
-        for timestep in range(len(U_interm_tot)):
-            sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
-            point_data={"U":U_interm_tot[timestep]}, 
-            cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ_0": [detJ_tot[timestep].data], "detJ": [detJ_current_tot[timestep].data], "D_detJ": [D_detJ[timestep].data]})
+                for timestep in range(len(U_interm_tot)):
+                    sol = meshio.Mesh(X_interm_tot[timestep].data, {"triangle":Connectivity_tot[timestep].data},
+                    point_data={"U":U_interm_tot[timestep]}, 
+                    cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ_0": [detJ_tot[timestep].data], "detJ": [detJ_current_tot[timestep].data], "D_detJ": [D_detJ[timestep].data]})
 
-            sol.write(
-                f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
-            )
+                    sol.write(
+                        f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
+                    )
+            case 3:
+                for timestep in range(len(U_interm_tot)):
+                    sol = meshio.Mesh(X_interm_tot[timestep].data, {"tetra":Connectivity_tot[timestep].data},
+                    point_data={"U":U_interm_tot[timestep]}, 
+                    cell_data={"Gen": [Gen_interm_tot[timestep]], "detJ_0": [detJ_tot[timestep].data], "detJ": [detJ_current_tot[timestep].data], "D_detJ": [D_detJ[timestep].data]})
+
+                    sol.write(
+                        f"Results/Paraview/TimeSeries/solution_"+Name_export+f"_{timestep}.vtk",  
+                    )
+
 
 
 

@@ -1,6 +1,6 @@
 import numpy as numpy
 import torch
-from ..HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D
+from ..HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_3D
 from ..Post import Plots as Pplot
 import copy
 import time
@@ -17,7 +17,8 @@ from .PDE_Library import RHS, PotentialEnergy, \
                     InternalEnergy_2D, VolumeForcesEnergy_2D,InternalEnergy_2D_einsum, InternalResidual,Strain_sqrt,InternalResidual_precomputed,\
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
-                            InternalEnergy_1D, WeakEquilibrium_1D
+                            InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
+                                InternalEnergy_2_3D_einsum_Bipara
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -515,6 +516,21 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "BiStiffness":
                                 loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "AngleStiffnessNeoHookean":
+                                # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                if epoch <= 1500:
+                                    loss_1 = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                    loss_2 = 0*loss_1
+                                else:
+                                    kappa = 0.1
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=kappa)    
+                                # loss = loss_1+model.lagrange*loss_2
+                                loss = loss_1+1000*loss_2
+                            case "AngleStiffnessKSV":
+                                loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+                    case 3:
+                        loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
          # check for new minimal loss - Update the state for revert
@@ -595,11 +611,14 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 model.training_recap["L2_error"].append((torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL)-model(Training_coordinates,Training_para_coordinates_list),dim=1)/numel_E).data)/(torch.norm(torch.sum(AnalyticParametricSolution(A,Training_para_coordinates_list,Training_coordinates.data,u0,uL),dim=1)/numel_E)))
                             case "Gaussian_quad":
                                 model.training_recap["L2_error"].append(1)
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 10 == 0:
             if config["solver"]["N_ExtraCoordinates"] == 1 and config["interpolation"]["dimension"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}% modes = {model.n_modes_truncated}')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
+                if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                else:
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     model.training_recap["training_time"] += (time_stop-time_start)
@@ -720,6 +739,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
                         case 2:
                                 loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        case 3:
+                            assert 0, "Single extra-parameter non implemented in 3D. Aborting."
                 case 2:
                     match config["interpolation"]["dimension"]:
                         case 1:
@@ -729,7 +750,18 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "BiStiffness":
-                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)            
+                                    loss = InternalEnergy_2D_einsum_BiStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                case "AngleStiffnessNeoHookean":
+                                    # loss = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)    
+                                    loss_1, loss_2 = InternalEnergy_2D_einsum_Bipara_NeoHookean(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, kappa=0.1)    
+                                    loss = loss_1+1000*loss_2
+                                    print(f'LBFGS: lambda: {model.lagrange} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
+                                case "AngleStiffnessKSV":
+                                    loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+                        case 3:
+                            loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+
+
             loss.backward()
             return loss
 
@@ -1279,10 +1311,29 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
 
             detJ_small = detJ[torch.where(torch.abs(detJ)<1.0e-6)]
 
-            if config["solver"]["volume_forces"] == True:
-                loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
-            else:
-                loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+            # Check existance
+            try:
+                config["solver"]["Problem"]
+            except:
+                config["solver"]["Problem"] = "Linear"
+                print("* Warning: No problem specified. Defaulted to linear problem")
+            match config["solver"]["Problem"]:
+                case "Linear":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))
+                case "NeoHookean":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                case "SaintVenntKirchhoff":
+                    if config["solver"]["volume_forces"] == True:
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum_SaintVenantKirchhoff(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                    else:
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum_SaintVenantKirchhoff(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                    
             
             if config["solver"]["regul_term"] == True:
                 regul = torch.sum(1/torch.abs(detJ_small))
@@ -1673,7 +1724,7 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
 
-def Training_2D_FEM(model, config, Mat):
+def Training_2_3D_FEM(model, config, Mat):
     n_epochs = config["training"]["n_epochs"]
     n_refinement        = 0                                 # Initialise the refinement level
     stagnation          = False                             # Stagnation flag
@@ -1759,7 +1810,12 @@ def Training_2D_FEM(model, config, Mat):
             Mesh_object_fine.ReadMesh()   
             Mesh_object_fine.ExportMeshVtk()
             List_elems          = torch.arange(0,Mesh_object_fine.NElem,dtype=torch.int)
-            model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
+            
+            match Mesh_object_fine.dim:
+                case 2:
+                    model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
+                case 3:
+                    model_2 = MeshNN_3D(Mesh_object_fine, 3)                                    # Create the associated model (with 2 components)
             vers = 'New_V2'
             match vers:
                 case 'old':
@@ -1771,7 +1827,8 @@ def Training_2D_FEM(model, config, Mat):
                     coordinates_all[~model.coord_free] = model.coordinates['imposed']
                     Nodes = torch.hstack([torch.linspace(1,coordinates_all.shape[0],coordinates_all.shape[0], dtype = coordinates_all.dtype, device = coordinates_all.device)[:,None],
                                           coordinates_all])
-                    Nodes = torch.hstack([Nodes,torch.zeros(Nodes.shape[0],1, dtype = Nodes.dtype, device = Nodes.device)])
+                    if model.mesh.dim == 2:
+                        Nodes = torch.hstack([Nodes,torch.zeros(Nodes.shape[0],1, dtype = Nodes.dtype, device = Nodes.device)]) # Add 0 3rd component if 2D mesh
                     model.mesh.Nodes = Nodes.detach().cpu().numpy()
             model.mesh.Connectivity = model.connectivity
             model.mesh.ExportMeshVtk(flag_update = True)
@@ -1790,14 +1847,20 @@ def Training_2D_FEM(model, config, Mat):
             model.train()
 
 
-            model.RefinementParameters( MaxGeneration = config["training"]["h_adapt_MaxGeneration"], 
-                                        Jacobian_threshold = config["training"]["h_adapt_J_thrshld"])
+            model.RefinementParameters( MaxGeneration       = config["training"]["h_adapt_MaxGeneration"], 
+                                        Jacobian_threshold  = config["training"]["h_adapt_J_thrshld"])
 
-            model.TrainingParameters(   loss_decrease_c = config["training"]["loss_decrease_c"], 
-                                    Max_epochs = config["training"]["n_epochs"], 
-                                    learning_rate = config["training"]["learning_rate"])
+            model.TrainingParameters(   loss_decrease_c     = config["training"]["loss_decrease_c"], 
+                                        Max_epochs          = config["training"]["n_epochs"], 
+                                        learning_rate       = config["training"]["learning_rate"])
         else:
             model.train()
+
+            #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
+            optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
+            #########
+
             model.training_recap = {"Loss_tot":Loss_tot,
                                     "Duration_tot":Duration_tot,
                                     "U_interm_tot":U_interm_tot,
@@ -1812,7 +1875,10 @@ def Training_2D_FEM(model, config, Mat):
             print(f'* Training time: {Duration_tot}s')                                    
     return model 
 
+Training_2D_FEM = Training_2_3D_FEM                                                                                                                             # for retrocompatibility reasons #DEBUG
+
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
+    print("INSIDE")#DEBUG
     n_refinement                = 0
     MaxElemSize                 = pre.ElementSize(
                                 dimension     = config["interpolation"]["dimension"],
@@ -1835,6 +1901,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     while n_refinement < config["training"]["multiscl_max_refinment"]:
         print(f"* Refinement level: {n_refinement}\n")
         n_refinement            +=1
+
+        if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
+            model.lagrange = nn.Parameter(torch.tensor(1, requires_grad=True, dtype = model.float_config.dtype, device = model.float_config.device))
+
         optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
         match config["interpolation"]["dimension"]:
             case 1:
@@ -1843,6 +1913,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
             case 2:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+            case 3:
+                Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+        print("After training grid 1 ")#DEBUG
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
@@ -1861,11 +1935,14 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                 )                   
             Mesh_object_fine.MeshGeo()                                                       # Mesh the .geo file if .msh does not exist
             Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
+
             match config["interpolation"]["dimension"]:
                 case 1:
                     if config["solver"]["IntegralMethod"] == "Gaussian_quad":
                         Mesh_object_fine.ExportMeshVtk1D()
                 case 2:
+                    Mesh_object_fine.ExportMeshVtk()
+                case 3:
                     Mesh_object_fine.ExportMeshVtk()
             if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
                 Mesh_object_fine.AssemblyMatrix() 
@@ -1890,6 +1967,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                                         config["solver"]["n_modes_max"]
                             )
             model.eval()
+            print("INSIDE before 2nd training")#DEBUG
+
             if model_2.float_config.dtype != model.float_config.dtype:
                 model_2.to(model.float_config.dtype)
                 print(f'Finer model passed to dtype {model.float_config.dtype}')
@@ -1917,7 +1996,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     try:
         return model, Mesh_object_fine
     except:
-        return model, Mesh_object
+        return model
 
 def Training_1D_FEM_LBFGS(model, config, Mat, model_test = []):
 

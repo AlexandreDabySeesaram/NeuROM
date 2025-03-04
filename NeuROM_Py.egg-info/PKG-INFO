@@ -1,3 +1,27 @@
+Metadata-Version: 2.1
+Name: NeuROM-Py
+Version: 3.1.17
+Summary: NeuROM, a NN-PGD architecture based on the HiDeNN Framework (Finite Element Neural Network Interpolation)
+Home-page: https://github.com/AlexandreDabySeesaram/NeuROM
+Author: Alexandre Daby-Seesaram, Katerina Skardova, Martin Genet
+Author-email: [alexandre.daby-seesaram,katerina.skardova,martin.genet]@polytechnique.edu
+License: GPLv3
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Operating System :: OS Independent
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: argparse
+Requires-Dist: torch
+Requires-Dist: matplotlib
+Requires-Dist: meshio
+Requires-Dist: numpy
+Requires-Dist: ipython
+Requires-Dist: scipy
+Requires-Dist: gmsh
+Requires-Dist: vtk
+Requires-Dist: pyvista
+
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
 <h1 align="center">
@@ -19,39 +43,6 @@ The first hidden layers play the role of the shape functions, while the last lay
 
 This code implements a Finite Element Neural Network Interpolation (FENNI) based on the HiDeNN framework. The layer's input is the coordinate $\underline{x}$ where the output is evaluated and the value of the parameters $\underline{\mu}$ for which the output is computed. In this case, the output of the network is the displacement $\underline{u}\left(\underline{x},\underline{\mu}\right)$
 
-## Installation
-
-Start by creating a conda environment as follow:
-
-```
-conda create -n neurom-env python=3.12
-```
-
-### From PyPI
-You can install the latest stable version of NeuROM directly from PyPI using pip:
-
-```bash
-pip install neurom-py
-```
-
-
-### From the sources (Github) in editable mode
-
-The package can also be installed from the sources in editabl mode so that the user can modifiy the sources and run the modified version in a straightforward manner by
-
-```bash
-git clone https://github.com/AlexandreDabySeesaram/NeuROM.git
-cd NeuROM
-pip install -e .
-```
-
-### Recommendation 
-
-To improve performances it is recommanded to further install the optimisation of einsum using conda as follows
-
-````
-conda install opt_einsum -c conda-forge
-````
 
 ## Using the code
 

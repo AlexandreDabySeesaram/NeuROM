@@ -5,7 +5,8 @@
 ####################################################
 
 [geometry]
-Name                    = 'Square'
+# Name                    = 'b3D'
+Name                    = 'Cube_hole'
 L                       = 10                                        # Length of the Beam
 A                       = 1                                         # Section of the beam
 Volume_element          = 100                                       # Volume element correspond to the 1D elem in 1D
@@ -17,35 +18,43 @@ Volume_element          = 100                                       # Volume ele
 ####################################################
 
 [Borders]
-Borders                 = [111,112,113,114,115]                     # List of the structure's boundaries
+Borders                 = [110,111,112,113,114,115, 210]                     # List of the structure's boundaries
 
 [[DirichletDictionryList]]
-Entity                  = 111                                       # Physical tag of the boundary
-Value                   = 0                                         # numerical value
+Entity                  = 114                                       # Physical tag of the boundary
+Value                   = 1                                         # numerical value
 Normal                  = 0                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
 [[DirichletDictionryList]]
-Entity                  = 111                                       # Physical tag of the boundary
+Entity                  = 114                                       # Physical tag of the boundary
 Value                   = 0                                         # numerical value
 Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
 [[DirichletDictionryList]]
-Entity                  = 113                                       # Physical tag of the boundary
+Entity                  = 114                                       # Physical tag of the boundary
+Value                   = 0                                         # numerical value
+Normal                  = 2                                         # prescribed component (0=x,1=y,2=z)
+Relation                = false
+Constitutive            = false
+
+[[DirichletDictionryList]]
+Entity                  = 115                                       # Physical tag of the boundary
 Value                   = 1                                         # numerical value
 Normal                  = 1                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
 
 [[DirichletDictionryList]]
-Entity                  = 113                                       # Physical tag of the boundary
+Entity                  = 115                                       # Physical tag of the boundary
 Value                   = 0                                         # numerical value
 Normal                  = 0                                         # prescribed component (0=x,1=y,2=z)
 Relation                = false
 Constitutive            = false
+
 
 ####################################################
 ###                                              ###
@@ -54,10 +63,10 @@ Constitutive            = false
 ####################################################
 
 [material]
+E                       = 1                                         # Young's modulus (175 if 1D 5*1e-3 if 2D, 1 if 2D parametric (mult coeff for parameters))
+nu                      = 0.3                                       # Poisson's ration
 lmbda                   = 1.25
 mu                      = 1.0
-
-
 
 ####################################################
 ###                                              ###
@@ -66,10 +75,10 @@ mu                      = 1.0
 ####################################################
 
 [interpolation]
-dimension               = 2                                         # Dimension of the study (1D or 2D)
+dimension               = 3                                         # Dimension of the study (1D, 2D or 3D)
 order                   = 1                                         # Order of the shape functions
 np                      = 10                                        # Number of Nodes in the Mesh in 1D
-MaxElemSize2D           = 2.0                                   # Maximum element size in the 2D mesh
+MaxElemSize2D           = 20                                         # Maximum element size in the 2D mesh
 
 ####################################################
 ###                                              ###
@@ -81,10 +90,10 @@ MaxElemSize2D           = 2.0                                   # Maximum elemen
 FrozenMesh              = false                                      # Nodal coordinates frozen
 FrozenParaMesh          = true                                      # Nodal coordinates frozen
 TrainingStrategy        = 'Integral'                                # 'Integral' or 'Mixed'
-IntegralMethod          = 'Gaussian_quad'                                 # Type of integration (Gaussian_quad, Trapezoidal)
+IntegralMethod          = 'Trapezoidal'                                 # Type of integration (Gaussian_quad, Trapezoidal)
 ParametricStudy         = false                                      # Boolean to switch between plain HiDeNN and NeuROM
 BiPara                  = true                                       # Enable bi-stifness beam in 1D
-Problem                 = 'AngleStiffness'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness"
+Problem                 = 'Linear'                          # Problem implemented: "MonoStiffness", "BiStiffness", "AngleStiffness"
 N_ExtraCoordinates      = 2                                         # Number of extra parameters in the tensor decomposition 
 n_modes_max             = 100                                       # Maximum number of modes in the Tensor Decomposition
 n_modes_ini             = 1                                         # Initial number of modes in the Tensor Decomposition
@@ -141,8 +150,8 @@ BoolCompareNorms        = true                                      # Boolean fo
 SaveModel               = false                                     # Boolean leading to Loading pre trained model or retraining from scratch
 Visualisatoin_only      = false
 exportVTK               = true                                      # Enables VTK export (final)
-exportVTK_history       = false                                      # Enables VTK export (history)
-Name_export             = "detJ_ExportTest"                             # Name for the VTK results files
+exportVTK_history       = true                                      # Enables VTK export (history)
+Name_export             = "Cube_hole_free"                             # Name for the VTK results files
 Plot_loss_mode          = false
 Plot_loss_decay_mode    = false 
 Plot_error_mode         = false

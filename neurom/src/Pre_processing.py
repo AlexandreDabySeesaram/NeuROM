@@ -28,9 +28,13 @@ https://www.manpagez.com/info/gmsh/gmsh-2.2.6/gmsh_63.php
 """
 def get_git_tag() -> str:
     try:
-        return subprocess.check_output(['git', 'describe','--tag', '--abbrev=0']).decode('ascii').strip()
+        import neurom
+        return neurom.__version__
     except:
-        return 'unknown version'
+        try:
+            return subprocess.check_output(['git', 'describe','--tag', '--abbrev=0']).decode('ascii').strip()
+        except:
+            return 'unknown version'
 
 def PrintWelcome():
     version = get_git_tag()
@@ -298,14 +302,14 @@ class Mesh:
                     cells = meshBeam.cells_dict["tetra"]
 
         # create meshio mesh based on points and cells from .msh file
-        
+
         match self.type:
             case 't3: 3-node triangle':
                 if self.order =='1':
                     mesh = meshio.Mesh(points, {"triangle":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
-                    # mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-                    # meshio.write(msh_name[0:-4]+".xml", mesh)
+                    mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
+                    meshio.write(msh_name[0:-4]+".xml", mesh)
 
                 elif self.order =='2':
                     mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
@@ -318,14 +322,13 @@ class Mesh:
                     mesh = meshio.Mesh(points, {"tetra":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
                 else:
-                    raise ValueError("Only first order element have been implemented in 1D for now")
+                    raise ValueError("Only first order element have been implemented in 3D for now")
 
         # Load the VTK mesh
         reader = vtk.vtkUnstructuredGridReader()
         reader.SetFileName(msh_name[0:-4]+".vtk",)  
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
-
     def ExportMeshVtk1D(self,flag_update = False):
 
         msh_name = 'Geometries/'+self.name_mesh
@@ -436,6 +439,8 @@ class Mesh:
                     point = [coord, 0, 0]
                 case '2':
                     point = [coord[0], coord[1], 0]
+                case '3':
+                    point = [coord[0], coord[1], coord[2]]
             ids.append(locator.FindCell(point))
 
         return ids

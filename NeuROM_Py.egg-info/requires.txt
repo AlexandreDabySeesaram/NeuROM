@@ -1,0 +1,10 @@
+argparse
+torch
+matplotlib
+meshio
+numpy
+ipython
+scipy
+gmsh
+vtk
+pyvista

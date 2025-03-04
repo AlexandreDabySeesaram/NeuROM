@@ -52,7 +52,7 @@ def main():
     ####################################################
     #%% Import config file
     # Read script arguments
-
+    print(f"* Executing job in {args.cf}")
     # Add possibility to specify name of config file with argparse
     with open(args.cf, mode="rb") as f:
         config = tomllib.load(f)
@@ -93,7 +93,7 @@ def main():
                                         coef1     = config["material"]["E"],            # Young Modulus
                                         coef2     = config["geometry"]["A"]             # Section area of the 1D bar
                             )
-    elif config["interpolation"]["dimension"] == 2:
+    elif config["interpolation"]["dimension"] in [2,3]:
         try:
             Mat = pre.Material(         flag_lame = False,                              # If True should input lmbda and mu instead of E and nu
                                         coef1     = config["material"]["E"],            # Young Modulus
@@ -249,11 +249,10 @@ def main():
             ROM_model.to(tensor_float_type)
             ROM_model.to(device)
             optimizer = torch.optim.Adam([p for p in ROM_model.parameters() if p.requires_grad], lr=config["training"]["learning_rate"])
-            match config["interpolation"]["dimension"]:
-                case 1:
-                    ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
-                case 2:
-                    ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)         
+            if config["training"]["multiscl_max_refinment"] == 1:
+                ROM_model = Training_NeuROM_multi_level(ROM_model,config, Mat)  
+            else:
+                ROM_model, Mesh_object = Training_NeuROM_multi_level(ROM_model,config, Mat)  
             ROM_model.to(torch.device("cpu"))
             ROM_model.eval()
     else:
@@ -424,10 +423,27 @@ def main():
                                     Interactive_parameter = config["postprocess"]["Interactive_parameter"],
                                     Plot_mesh = config["postprocess"]["Plot_mesh"],
                                     color_map = config["postprocess"]["colormap"])
+                case 3:
+                    Pplot.Plot_2D_PyVista(ROM_model, 
+                                    Mesh_object, 
+                                    config, 
+                                    E = config["postprocess"]["Default_E"], 
+                                    theta = config["postprocess"]["Default_theta"], 
+                                    scalar_field_name = config["postprocess"]["scalar_field_name"], 
+                                    scaling_factor = config["postprocess"]["scaling_factor"], 
+                                    Interactive_parameter = config["postprocess"]["Interactive_parameter"],
+                                    Plot_mesh = config["postprocess"]["Plot_mesh"],
+                                    color_map = config["postprocess"]["colormap"])
             
     else:
         match config["interpolation"]["dimension"]:
             case 2:
+                if config["postprocess"]["exportVTK"]:
+                    Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+                    # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
+                if config["postprocess"]["exportVTK_history"]:
+                    Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
+            case 3:
                 if config["postprocess"]["exportVTK"]:
                     Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
                     # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
@@ -455,7 +471,7 @@ if (__name__ == "__main__") or (__name__=='neurom.main'):
     import tomllib
     from .src import MyHeaders
 
-
+    #Default_config_file = 'Configuration/config_2D_ROM_NH.toml'
     # Default_config_file = 'Configuration/config_2D_ROM.toml'
     Default_config_file = 'Configuration/config_2D.toml'
     # Default_config_file = 'Configuration/config_1D.toml'
@@ -470,6 +486,5 @@ if (__name__ == "__main__") or (__name__=='neurom.main'):
     else:
         args = parser.parse_args()
     inputs = vars(args)
-    print(f"* Executing job in {args.cf}")
     if Boolean_main:
         main()

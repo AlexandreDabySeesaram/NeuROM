@@ -2240,9 +2240,9 @@ class ElementBlock3D_Lin(nn.Module):
             DN = torch.tensor([
                             [1.0,0,0,-1],
                             [0,1,0,-1], 
-                            [0,0,1,-1]])
-            DN.to(nodes_coord.dtype)
-            DN.to(nodes_coord.device)
+                            [0,0,1,-1]], dtype=nodes_coord.dtype, device = nodes_coord.device)
+            # DN.to(nodes_coord.dtype)
+            # DN.to(nodes_coord.device)
 
             Jacobian = torch.einsum('xn,neX->exX',DN,nodes_coord)
             detJ = torch.linalg.det(Jacobian)
@@ -2260,7 +2260,12 @@ class ElementBlock3D_Lin(nn.Module):
 def GetRefCoord_3D(x, nodes_coord):
     nodes = torch.einsum('nex->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
     [e, c, n] = nodes.shape
-    mapping = torch.empty(e, n, n)                       # Preallocate the final tensor with shape (e, n, n)
+    mapping = torch.empty(e, n, n, dtype=nodes_coord.dtype, device = nodes_coord.device)                       # Preallocate the final tensor with shape (e, n, n)
+    print(nodes_coord.device)
+    print(mapping.device)
+    mapping.to(nodes_coord.device)
+    print(mapping.device)
+
     mapping[:, :c, :] = nodes
     mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
 
@@ -2270,7 +2275,7 @@ def GetRefCoord_3D(x, nodes_coord):
         x = x[:,None,:]
         [e, g, c] = x.shape
 
-    x_extended              = torch.empty(e, g, n) 
+    x_extended              = torch.empty(e, g, n, dtype=nodes_coord.dtype, device = nodes_coord.device)
     x_extended[:, :, :c]    = x
     x_extended[:, :, c]     = 1
 

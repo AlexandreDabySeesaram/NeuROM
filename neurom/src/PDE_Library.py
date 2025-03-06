@@ -556,7 +556,8 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
     u_i = torch.stack(Space_modes,dim=2)
     xg_i = torch.stack(xg_modes,dim=2) 
     detJ_i = torch.stack(detJ_modes,dim=1)  
-    grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    # grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    grad_u_list = [grad_u_2_3D(Space_modes[i],xg_modes[i], dim = model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
 
 
 
@@ -638,7 +639,8 @@ def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
     tr_g = torch.einsum('exxm,em,mp...,mt...,p->',grad_u_i,torch.abs(detJ_i),lambda_i[0],lambda_i[1],mu_lame) # trace of gradu * mu
     W_int = (tr_gtg+2*tr_g)
 
-    Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    # Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     if kappa == 0: 
@@ -680,7 +682,8 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
     u_i = torch.stack(Space_modes,dim=2)
     xg_i = torch.stack(xg_modes,dim=2) 
     detJ_i = torch.stack(detJ_modes,dim=1)  
-    grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    # grad_u_list = [grad_u_2D(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    grad_u_list = [grad_u_2_3D(Space_modes[i],xg_modes[i], dim = model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
 
 
     grad_u_i = torch.stack(grad_u_list,dim=3)  
@@ -715,6 +718,7 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
 
 
 ############################################################################
+    # print(f"shape grad_u_i {grad_u_i.shape}")#DEBUG
     import time
     t_0 = time.time()
     tr_EE_A = 0.5*torch.einsum('em,exym,mp...,mt...,eyxl,lp...,lt...,p->',torch.abs(detJ_i),grad_u_i,lambda_i[0],lambda_i[1],grad_u_i,lambda_i[0],lambda_i[1],E_float) 
@@ -749,7 +753,8 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
 
     W_int = mu*int_trEE_para + 0.5*lmbda*int_trE_squared_para
 
-    Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    # Gravity_force = Gravity_vect(theta_float,rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    Gravity_force = Gravity_vect(theta_float,rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     return (W_int - W_ext)/(E[0].shape[0]*E[1].shape[0])
@@ -887,6 +892,8 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
 def Strain_sqrt(u,x, dim = 2):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
+    # print(f"shape u is {u.shape}")#DEBUG
+    # print(f"shape x is {x.shape}")#DEBUG
 
     match dim:
         case 2:
@@ -900,11 +907,25 @@ def Strain_sqrt(u,x, dim = 2):
             dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2], (1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
 
-def grad_u_2D(u,x):
+def grad_u_2_3D(u,x, dim = 2):
     """ Return the gradient of u"""
-    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-    return torch.stack([du[:,:], dv[:,:]],dim=1)
+    # print(f"shape u is {u.shape}")#DEBUG
+    # print(f"shape x is {x.shape}")#DEBUG
+
+    match dim:
+        case 2:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,:], dv[:,:]],dim=1)
+        case 3:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,0,:], dv[:,0,:], dw[:,0,:]],dim=1)
+
+
+
+grad_u_2D = grad_u_2_3D
 
 def Green_lagrange(grad_u):
     grad_u_transpose = torch.einsum('exy->eyx',grad_u)

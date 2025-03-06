@@ -529,7 +529,12 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             case "AngleStiffnessKSV":
                                 loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
                     case 3:
-                        loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        match config["solver"]["Problem"]:
+                            case "AngleStiffness":
+                                loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "AngleStiffnessKSV":
+                                loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
+
 
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
@@ -759,7 +764,11 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "AngleStiffnessKSV":
                                     loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
                         case 3:
-                            loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            match config["solver"]["Problem"]:
+                                case "AngleStiffness":
+                                    loss = InternalEnergy_2_3D_einsum_Bipara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                case "AngleStiffnessKSV":
+                                    loss = InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)   
 
 
             loss.backward()
@@ -1878,7 +1887,6 @@ def Training_2_3D_FEM(model, config, Mat):
 Training_2D_FEM = Training_2_3D_FEM                                                                                                                             # for retrocompatibility reasons #DEBUG
 
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
-    print("INSIDE")#DEBUG
     n_refinement                = 0
     MaxElemSize                 = pre.ElementSize(
                                 dimension     = config["interpolation"]["dimension"],
@@ -1967,7 +1975,6 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                                                         config["solver"]["n_modes_max"]
                             )
             model.eval()
-            print("INSIDE before 2nd training")#DEBUG
 
             if model_2.float_config.dtype != model.float_config.dtype:
                 model_2.to(model.float_config.dtype)

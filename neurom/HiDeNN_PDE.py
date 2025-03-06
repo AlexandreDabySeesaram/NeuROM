@@ -2261,10 +2261,10 @@ def GetRefCoord_3D(x, nodes_coord):
     nodes = torch.einsum('nex->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
     [e, c, n] = nodes.shape
     mapping = torch.empty(e, n, n, dtype=nodes_coord.dtype, device = nodes_coord.device)                       # Preallocate the final tensor with shape (e, n, n)
-    print(nodes_coord.device)
-    print(mapping.device)
+    # print(nodes_coord.device)
+    # print(mapping.device)
     mapping.to(nodes_coord.device)
-    print(mapping.device)
+    # print(mapping.device)
 
     mapping[:, :c, :] = nodes
     mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor

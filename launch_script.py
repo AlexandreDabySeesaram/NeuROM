@@ -1,4 +1,4 @@
-from neurom import generate_evaluation_points
+from neurom import generate_evaluation_points_2D
 import torch 
 # from torch.backends import opt_einsum
 from torch.backends import opt_einsum

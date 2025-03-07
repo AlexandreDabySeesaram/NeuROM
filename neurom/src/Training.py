@@ -1417,7 +1417,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
         elif optimizer.__class__.__name__ == "LBFGS":
             if (epoch+1) % config['postprocess']['ModularEpochsPrint'] == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=6)}')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")

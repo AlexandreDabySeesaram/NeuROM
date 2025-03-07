@@ -361,9 +361,24 @@ def VolumeForcesEnergy_2D(u,theta, rho):
     W_e = u.t()@fv
     return torch.squeeze(W_e)
 
-def Stress(ep_11, ep_22, ep_12, lmbda, mu):
-    tr_epsilon = ep_11 + ep_22
-    return tr_epsilon*lmbda + 2*mu*ep_11, tr_epsilon*lmbda + 2*mu*ep_22, 2*mu*ep_12
+def Stress(eps, lmbda, mu):
+    components = eps.shape[1]
+    match components:
+        case 3:     # 2D : [eps_xx eps_yy eps_xy]
+            ep_11=eps[:,0]
+            ep_22=eps[:,1]
+            ep_12=eps[:,2]
+            tr_eps = ep_11 + ep_22
+            return tr_eps*lmbda + 2*mu*ep_11, tr_eps*lmbda + 2*mu*ep_22, 2*mu*ep_12
+        case 6:     # 3D : [eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz]
+            ep_11=eps[:,0]
+            ep_22=eps[:,1]
+            ep_33=eps[:,2]
+            ep_12=eps[:,3]
+            ep_13=eps[:,4]
+            ep_23=eps[:,5]
+            tr_eps = ep_11 + ep_22 + ep_33
+            return tr_eps*lmbda + 2*mu*ep_11, tr_eps*lmbda + 2*mu*ep_22, tr_eps*lmbda + 2*mu*ep_33, 2*mu*ep_12, 2*mu*ep_13, 2*mu*ep_23
 
 def VonMises(sigma, lmbda, mu):
     
@@ -380,11 +395,12 @@ def VonMises_plain_strain(sigma, lmbda, mu):
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
-    if sigma.shape[1] != 3:
-        sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
-    else:
+    if sigma.shape[1] == 3:                                     # 2D: sigma_xx, sigma_yy, sigma_xy
+        sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)   # 2D: sigma_xx, sigma_yy, sigma_zz, sigma_xy
+        VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
+    else:                                                       # 3D: sigma_xx, sigma_yy, sigma_zz, sigma_xy, sigma_xz, sigma_yz
         sigma_3D = sigma
-    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
+        VM = torch.tensor([[2/3, -1/3, -1/3, 0, 0, 0],[-1/3, 2/3,-1/3, 0, 0, 0],[-1/3, -1/3,2/3, 0, 0, 0],[0, 0,0, torch.sqrt(two), 0, 0], [0, 0, 0, 0, torch.sqrt(two), 0], [0, 0, 0, 0, 0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
     sigma_dev = torch.einsum('ij,ej...->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)
@@ -912,13 +928,21 @@ def Green_lagrange(grad_u):
     return 0.5*(grad_u_transpose+grad_u+quad_term)
 
 def Strain(u,x):
-    """ Return the vector strain [eps_xx eps_yy eps_xy]"""
-    du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-    dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+    dim = u.shape[0]
+    match dim:
+        case 2:
+            """ Return the vector strain [eps_xx eps_yy eps_xy]"""
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
 
-    return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
+            return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
+        case 3:
+            """ Return the vector strain [eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz]"""
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[2,:]), create_graph=True)[0]
 
-
+            return torch.stack([du[...,0], dv[...,1], dw[...,2], 0.5*(du[...,1] + dv[...,0]), 0.5*(du[...,2] + dw[...,0]), 0.5*(dv[...,2] + dw[...,1])],dim=1)
 
 
 

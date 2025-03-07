@@ -893,19 +893,37 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
             _,xg,detJ = Model_FEM()
             Model_FEM.eval()
             eps =  Strain(Model_FEM(xg, List_elems),xg).to(torch.device('cpu'))
-            sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
+            sigma =  torch.stack(Stress(eps, Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
             sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu).to(torch.device('cpu'))
             u = torch.stack([u_x,u_y,torch.zeros(u_x.shape[0], dtype=u_x.dtype).to(u_x.device)],dim=1).cpu()
             import numpy as np
-            Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape, dtype=u_x.dtype).to(u_x.device)[:,None]]).cpu()
-            Coord_converged = np.array(Coord.cpu())
+
             Connect_converged = Model_FEM.connectivity
-            sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
-            point_data={"U":u.data}, 
-            cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
-            sol.write(
-                "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
-            )
+
+            match Model_FEM.mesh.dim:
+                case 2:
+                    Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape, dtype=u_x.dtype).to(u_x.device)[:,None]]).cpu()
+                    Coord_converged = np.array(Coord.cpu())
+
+                    sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
+                    point_data={"U":u.data}, 
+                    # cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
+                    cell_data={"sigma_vm": [sigma_VM2.data]}, )
+                    sol.write(
+                        "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
+                    )
+                case 3:
+
+                    Coord = Model_FEM.X_interm[-1].cpu()
+                    Coord_converged = np.array(Coord.cpu())
+
+                    sol = meshio.Mesh(Coord_converged, {"tetra":(Connect_converged-1)},
+                    point_data={"U":u.data}, 
+                    cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
+                    # cell_data={"sigma_vm": [sigma_VM2.data]}, )
+                    sol.write(
+                        "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
+                    )
         else:
             u_x = [u.to(torch.device('cpu')) for u in Model_FEM.nodal_values_x]
             u_y = [u.to(torch.device('cpu')) for u in Model_FEM.nodal_values_y]
@@ -915,23 +933,14 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
             _,xg,detJ = Model_FEM()
             Model_FEM.eval()
             eps =  Strain(Model_FEM(xg, List_elems),xg).to(torch.device('cpu'))
-            sigma =  torch.stack(Stress(eps[:,0], eps[:,1], eps[:,2], Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
+            sigma =  torch.stack(Stress(eps, Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
             # sigma_VM = VonMises(sigma)
             sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu).to(torch.device('cpu'))
             # X_interm_tot = Model_FEM.training_recap["X_interm_tot"]
             X_interm_tot = [x_i.to(torch.device('cpu')) for x_i in Model_FEM.training_recap["X_interm_tot"]]
 
-            X_interm_tot = [torch.cat([x_i,torch.zeros(x_i.shape[0],1)],dim=1) for x_i in X_interm_tot]
-            u = torch.stack([torch.cat(u_x),torch.cat(u_y),torch.zeros(torch.cat(u_x).shape[0])],dim=1)
-            import numpy as np
-            Coord_converged = np.array([[Model_FEM.coordinates[i][0][0].to(torch.device('cpu')).item(),Model_FEM.coordinates[i][0][1].to(torch.device('cpu')).item(),0] for i in range(len(Model_FEM.coordinates))])
-            Connect_converged = Model_FEM.connectivity
-            sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
-            point_data={"U":u.data}, 
-            cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
-            sol.write(
-                "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
-            )
+
+                    
 
 def ExportHistoryResult_VTK(Model_FEM,Mat,Name_export):
         import meshio

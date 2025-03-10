@@ -346,7 +346,7 @@ def Gravity(theta,rho = 1e-9):
     g = 9.81*1e3                            #m/s^2
     return (rho*g*torch.tensor([[torch.sin(theta)],[-torch.cos(theta)]], dtype=torch.float64))
 
-def Gravity_vect(theta,rho = 1e-9, dim = 2):
+def Gravity_vect(theta,rho = 1e-9, dim = 2, n_angle = 1):
     """Should be unified with Gravity defined above, require chaging torch.tensor(0*torch.pi/2) to torch.tensor([0*torch.pi/2]) in 
     functions referencing the latter."""
     g = 9.81*1e3                            #m/s^2
@@ -354,7 +354,26 @@ def Gravity_vect(theta,rho = 1e-9, dim = 2):
         case 2:
             return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta)]))
         case 3:
-            return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta), 0*torch.sin(theta)]))
+            if n_angle == 1:
+                return (rho*g*torch.stack([torch.sin(theta),-torch.cos(theta), 0*torch.sin(theta)]))
+            else:
+                theta_angle = theta[0]
+                phi         = theta[1]
+
+                # Compute the components using broadcasting
+
+                sin_theta   = torch.sin(theta_angle).unsqueeze(1)  
+                cos_theta   = torch.cos(theta_angle).unsqueeze(1)  
+                cos_phi     = torch.cos(phi).unsqueeze(0)      
+                sin_phi     = torch.sin(phi).unsqueeze(0) 
+   
+
+                component_2 = -cos_theta * cos_phi           
+                component_1 = sin_theta * torch.ones(component_2.shape)  
+                component_3 = cos_theta * sin_phi           
+
+                return (rho*g*torch.stack([component_1, component_2, component_3], dim=0))
+
 
 def VolumeForcesEnergy_2D(u,theta, rho):
     fv = Gravity(theta,rho).to(u.dtype).to(u.device)
@@ -537,7 +556,59 @@ def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
     W_ext = torch.einsum('iem,it,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
-    # return (0.5*W_int)/(E[0].shape[0])
+
+def InternalEnergy_2_3D_einsum_Tripara(model,lmbda, mu,E):
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        case 3:
+            # print(Space_modes[0].shape)
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+    eps_i       = torch.stack(eps_list,dim=2)  
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]    
+    E_float = E[0][:,0]
+    theta_float = E[1][:,0]
+    phi_float = E[2][:,0]
+
+    angles = [theta_float,phi_float]
+
+    # print(f"eps_i shape is {eps_i.shape}")#DEBUG
+    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_float)
+
+
+    Gravity_force = Gravity_vect(angles,rho = 1e-9, dim = model.Space_modes[0].mesh.dim, n_angle=2).to(model.float_config.dtype).to(model.float_config.device)
+    W_ext = torch.einsum('iem,its,mp...,mt...,ms...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],torch.abs(detJ_i))
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
 
 InternalEnergy_2D_einsum_Bipara = InternalEnergy_2_3D_einsum_Bipara
 

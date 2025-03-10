@@ -649,11 +649,11 @@ class NeuROM(nn.Module):
                             IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
                             u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
-                        u_i = torch.stack(Space_modes,dim=3)
+                        u_i = torch.stack(Space_modes,dim=2)
                         P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        out = torch.einsum('xyzk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
+                        P3 = (Para_modes[2].view(self.n_modes_truncated,Para_modes[2].shape[1])).to(torch.float64)
+                        out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
         return out
 
     def Init_from_previous(self,PreviousFullModel,Model_provided = False):

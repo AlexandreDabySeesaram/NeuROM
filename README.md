@@ -154,9 +154,8 @@ Given a hypercube `ParameterHypercube` defining the parametric space, the Space 
 
 #### Illustration of the ROM parametric solution
 
-<video src='https://alexandredabyseesaram.github.io/Resources/Videos/NeuROM_3D_gravity_ter.mov' width=50%>
 
-![](Illustrations/NeuROM_2D.gif)
+![](Illustrations/NeuROM_3D_angle.gif)
 
 
 ## Training the NN 

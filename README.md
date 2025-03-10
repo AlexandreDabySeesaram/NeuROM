@@ -158,6 +158,7 @@ Given a hypercube `ParameterHypercube` defining the parametric space, the Space 
 ![](Illustrations/NeuROM_3D_angle.gif)
 
 
+
 ## Training the NN 
 
 

@@ -640,13 +640,13 @@ class NeuROM(nn.Module):
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
                         # print(f"ui shape {u_i.shape}")#DEBUG
-                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
-                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
                         out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
                     case 3:
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
-                            if self.Space_modes[i].IdStored and x.shape == self.Space_modes[i].Stored_ID["coordinates"].shape:
+                            if self.Space_modes[i].IdStored and x.shape == self.Space_modes[i].Stored_ID["coordinates"].shape and x.device == self.Space_modes[i].Stored_ID["coordinates"].device:
                                     if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
                                         IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
                                         u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
@@ -662,9 +662,9 @@ class NeuROM(nn.Module):
                             # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
-                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
-                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        P3 = (Para_modes[2].view(self.n_modes_truncated,Para_modes[2].shape[1])).to(torch.float64)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+                        P3 = (Para_modes[2].view(self.n_modes_truncated,Para_modes[2].shape[1]))
                         out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
         return out
 

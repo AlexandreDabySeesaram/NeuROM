@@ -425,50 +425,87 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                         device = model.float_config.device,
                                         requires_grad=True)
     # In the parameters space
-    Training_para_coordinates_1 = torch.linspace(
-                                                config["parameters"]["para_1_min"],
-                                                config["parameters"]["para_1_max"],
-                                                5*config["parameters"]["N_para_1"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
 
-    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
-
-    Training_para_coordinates_2 = torch.linspace(
-                                                config["parameters"]["para_2_min"],
-                                                config["parameters"]["para_2_max"],
-                                                5*config["parameters"]["N_para_2"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
-
-    Training_para_coordinates_3 = torch.linspace(
-                                                config["parameters"]["para_3_min"],
-                                                config["parameters"]["para_3_max"],
-                                                5*config["parameters"]["N_para_3"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_3 = Training_para_coordinates_3[:,None]  
 
     match config["solver"]["N_ExtraCoordinates"]:
         case 3:
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+            Training_para_coordinates_2 = torch.linspace(
+                                                        config["parameters"]["para_2_min"],
+                                                        config["parameters"]["para_2_max"],
+                                                        5*config["parameters"]["N_para_2"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
+            Training_para_coordinates_3 = torch.linspace(
+                                                        config["parameters"]["para_3_min"],
+                                                        config["parameters"]["para_3_max"],
+                                                        5*config["parameters"]["N_para_3"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_3 = Training_para_coordinates_3[:,None]  
+
             Training_para_coordinates_list = nn.ParameterList(
                                                                 (Training_para_coordinates_1,
                                                                 Training_para_coordinates_2, 
                                                                 Training_para_coordinates_3))
         case 2:
+
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+            Training_para_coordinates_2 = torch.linspace(
+                                                        config["parameters"]["para_2_min"],
+                                                        config["parameters"]["para_2_max"],
+                                                        5*config["parameters"]["N_para_2"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
             Training_para_coordinates_list = nn.ParameterList(
                                                                 (Training_para_coordinates_1,
                                                                 Training_para_coordinates_2))
         case 1:
+
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
             Training_para_coordinates_list = [Training_para_coordinates_1]
 
 
@@ -701,50 +738,87 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                         device = model.float_config.device,
                                         requires_grad=True)
     # In the parameters space
-    Training_para_coordinates_1 = torch.linspace(
-                                                config["parameters"]["para_1_min"],
-                                                config["parameters"]["para_1_max"],
-                                                5*config["parameters"]["N_para_1"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
 
-    Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
-
-    Training_para_coordinates_2 = torch.linspace(
-                                                config["parameters"]["para_2_min"],
-                                                config["parameters"]["para_2_max"],
-                                                5*config["parameters"]["N_para_2"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_2 = Training_para_coordinates_2[:,None] 
-
-    Training_para_coordinates_3 = torch.linspace(
-                                                config["parameters"]["para_3_min"],
-                                                config["parameters"]["para_3_max"],
-                                                5*config["parameters"]["N_para_3"], 
-                                                dtype=model.float_config.dtype, 
-                                                device = model.float_config.device,
-                                                requires_grad=True
-                                                )
-
-    Training_para_coordinates_3 = Training_para_coordinates_3[:,None]  
 
     match config["solver"]["N_ExtraCoordinates"]:
         case 3:
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+            Training_para_coordinates_2 = torch.linspace(
+                                                        config["parameters"]["para_2_min"],
+                                                        config["parameters"]["para_2_max"],
+                                                        5*config["parameters"]["N_para_2"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
+            Training_para_coordinates_3 = torch.linspace(
+                                                        config["parameters"]["para_3_min"],
+                                                        config["parameters"]["para_3_max"],
+                                                        5*config["parameters"]["N_para_3"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_3 = Training_para_coordinates_3[:,None]  
+
             Training_para_coordinates_list = nn.ParameterList(
                                                                 (Training_para_coordinates_1,
                                                                 Training_para_coordinates_2, 
                                                                 Training_para_coordinates_3))
         case 2:
+
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
+            Training_para_coordinates_2 = torch.linspace(
+                                                        config["parameters"]["para_2_min"],
+                                                        config["parameters"]["para_2_max"],
+                                                        5*config["parameters"]["N_para_2"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_2 = Training_para_coordinates_2[:,None]  
+
             Training_para_coordinates_list = nn.ParameterList(
                                                                 (Training_para_coordinates_1,
                                                                 Training_para_coordinates_2))
         case 1:
+
+            Training_para_coordinates_1 = torch.linspace(
+                                                        config["parameters"]["para_1_min"],
+                                                        config["parameters"]["para_1_max"],
+                                                        5*config["parameters"]["N_para_1"], 
+                                                        dtype=model.float_config.dtype, 
+                                                        device = model.float_config.device,
+                                                        requires_grad=True
+                                                        )
+
+            Training_para_coordinates_1 = Training_para_coordinates_1[:,None]
+
             Training_para_coordinates_list = [Training_para_coordinates_1]
 
     epoch                       = 0

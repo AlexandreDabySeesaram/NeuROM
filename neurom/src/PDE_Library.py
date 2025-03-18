@@ -362,6 +362,7 @@ def VolumeForcesEnergy_2D(u,theta, rho):
     return torch.squeeze(W_e)
 
 def Stress(eps, lmbda, mu):
+    # Function used only for export to vtk, ordering compatible with Paraview ( 3D: XX, YY, ZZ, XY, YZ, XZ)
     components = eps.shape[1]
     match components:
         case 3:     # 2D : [eps_xx eps_yy eps_xy]
@@ -370,18 +371,20 @@ def Stress(eps, lmbda, mu):
             ep_12=eps[:,2]
             tr_eps = ep_11 + ep_22
             return tr_eps*lmbda + 2*mu*ep_11, tr_eps*lmbda + 2*mu*ep_22, 2*mu*ep_12
-        case 6:     # 3D : [eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz]
-            ep_11=eps[:,0]
-            ep_22=eps[:,1]
-            ep_33=eps[:,2]
-            ep_12=eps[:,3]
-            ep_13=eps[:,4]
-            ep_23=eps[:,5]
-            tr_eps = ep_11 + ep_22 + ep_33
-            return tr_eps*lmbda + 2*mu*ep_11, tr_eps*lmbda + 2*mu*ep_22, tr_eps*lmbda + 2*mu*ep_33, 2*mu*ep_12, 2*mu*ep_13, 2*mu*ep_23
+        case 6:     # 3D : [eps_xx eps_yy eps_zz eps_xy eps_yz eps_xz]
+            # Input eps: [xx, yy, zz, xy, yz, xz]
+            ep_xx = eps[:,0]
+            ep_yy = eps[:,1]
+            ep_zz = eps[:,2]
+            ep_xy = eps[:,3]
+            ep_yz = eps[:,4]
+            ep_xz = eps[:,5]
+
+            tr_eps = ep_xx + ep_yy + ep_zz
+            return tr_eps*lmbda + 2*mu*ep_xx, tr_eps*lmbda + 2*mu*ep_yy, tr_eps*lmbda + 2*mu*ep_zz,\
+                2*mu*ep_xy, 2*mu*ep_yz, 2*mu*ep_xz
 
 def VonMises(sigma, lmbda, mu):
-    
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
@@ -392,6 +395,7 @@ def VonMises(sigma, lmbda, mu):
     return torch.sqrt((3/2)*sigma_VM)
 
 def VonMises_plain_strain(sigma, lmbda, mu):
+    print(lmbda, mu)
     # Accounts for sigma_zz = (lmbda/(2(mu+lmda)))*(sigma_xx+sigma_yy) != 0 if in plain strain
     two = torch.tensor(2,dtype=torch.float64)
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
@@ -914,7 +918,8 @@ def Strain_sqrt(u,x, dim = 2):
             du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
             dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2], (1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
+            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2],\
+                (1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
 
 def grad_u_2D(u,x):
     """ Return the gradient of u"""
@@ -928,6 +933,8 @@ def Green_lagrange(grad_u):
     return 0.5*(grad_u_transpose+grad_u+quad_term)
 
 def Strain(u,x):
+    # Used only for visualisation purposes.
+    # Ordering corresponds to Paraview.
     dim = u.shape[0]
     match dim:
         case 2:
@@ -937,14 +944,13 @@ def Strain(u,x):
 
             return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
         case 3:
-            """ Return the vector strain [eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz]"""
+            """ Return the vector strain [3D: XX, YY, ZZ, XY, YZ, XZ]"""
             du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
             dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[2,:]), create_graph=True)[0]
 
-            return torch.stack([du[...,0], dv[...,1], dw[...,2], 0.5*(du[...,1] + dv[...,0]), 0.5*(du[...,2] + dw[...,0]), 0.5*(dv[...,2] + dw[...,1])],dim=1)
-
-
+            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2], \
+                0.5*(du[:,:,1] + dv[:,:,0]), 0.5*(dv[:,:,2] + dw[:,:,1]), 0.5*(du[:,:,2] + dw[:,:,0])],dim=1)
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 

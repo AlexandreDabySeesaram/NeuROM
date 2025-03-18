@@ -1857,8 +1857,8 @@ def Training_2_3D_FEM(model, config, Mat):
             model.train()
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
-            optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
+            # optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+            # Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
             #########
 
             model.training_recap = {"Loss_tot":Loss_tot,

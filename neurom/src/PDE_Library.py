@@ -424,8 +424,6 @@ def InternalEnergy_2_3D_einsum(u,x,lmbda, mu, dim = 2):
             eps =  Strain_sqrt(u,x, dim = dim)
             K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej...,ei...->e',K,eps,eps)
-            print(f"shape of K is {K.shape}")
-            print(f"shape of eps is {eps.shape}")
             return W_e
 
 InternalEnergy_2D_einsum = InternalEnergy_2_3D_einsum

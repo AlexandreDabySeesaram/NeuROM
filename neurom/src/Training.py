@@ -18,7 +18,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -1454,7 +1454,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))
+                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))

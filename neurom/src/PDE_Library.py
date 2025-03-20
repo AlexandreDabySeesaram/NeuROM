@@ -918,8 +918,7 @@ def Strain_sqrt(u,x, dim = 2):
             du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
             dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2],\
-                (1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
+            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2],(1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
 
 def grad_u_2D(u,x):
     """ Return the gradient of u"""

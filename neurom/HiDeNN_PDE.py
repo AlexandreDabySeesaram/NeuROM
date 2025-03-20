@@ -640,20 +640,32 @@ class NeuROM(nn.Module):
                             Space_modes.append(u_k)
                         u_i = torch.stack(Space_modes,dim=2)
                         # print(f"ui shape {u_i.shape}")#DEBUG
-                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
-                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
                         out = torch.einsum('xyk,kj,kp->xyjp',u_i,P1,P2)
                     case 3:
                         Space_modes = []
                         for i in range(self.n_modes_truncated):
-                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
-                            u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
+                            if self.Space_modes[i].IdStored and x.shape == self.Space_modes[i].Stored_ID["coordinates"].shape and x.device == self.Space_modes[i].Stored_ID["coordinates"].device:
+                                    if not False in (x == self.Space_modes[i].Stored_ID["coordinates"]):
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                                    else:
+                                        self.Space_modes[i].StoreIdList(x)
+                                        IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                        u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            else:
+                                self.Space_modes[i].StoreIdList(x)
+                                IDs_elems = self.Space_modes[i].Stored_ID["Ids"]
+                                u_k = self.Space_modes[i](self.Space_modes[i].Stored_ID["coordinates"],IDs_elems)
+                            # IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x),dtype=torch.int)
+                            # u_k = self.Space_modes[i](torch.tensor(x),IDs_elems)
                             Space_modes.append(u_k)
-                        u_i = torch.stack(Space_modes,dim=3)
-                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1])).to(torch.float64)
-                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
-                        out = torch.einsum('xyzk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
+                        u_i = torch.stack(Space_modes,dim=2)
+                        P1 = (Para_modes[0].view(self.n_modes_truncated,Para_modes[0].shape[1]))
+                        P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1]))
+                        P3 = (Para_modes[2].view(self.n_modes_truncated,Para_modes[2].shape[1]))
+                        out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
         return out
 
     def Init_from_previous(self,PreviousFullModel,Model_provided = False):
@@ -2240,9 +2252,9 @@ class ElementBlock3D_Lin(nn.Module):
             DN = torch.tensor([
                             [1.0,0,0,-1],
                             [0,1,0,-1], 
-                            [0,0,1,-1]])
-            DN.to(nodes_coord.dtype)
-            DN.to(nodes_coord.device)
+                            [0,0,1,-1]], dtype=nodes_coord.dtype, device = nodes_coord.device)
+            # DN.to(nodes_coord.dtype)
+            # DN.to(nodes_coord.device)
 
             Jacobian = torch.einsum('xn,neX->exX',DN,nodes_coord)
             detJ = torch.linalg.det(Jacobian)
@@ -2260,7 +2272,12 @@ class ElementBlock3D_Lin(nn.Module):
 def GetRefCoord_3D(x, nodes_coord):
     nodes = torch.einsum('nex->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
     [e, c, n] = nodes.shape
-    mapping = torch.empty(e, n, n)                       # Preallocate the final tensor with shape (e, n, n)
+    mapping = torch.empty(e, n, n, dtype=nodes_coord.dtype, device = nodes_coord.device)                       # Preallocate the final tensor with shape (e, n, n)
+    # print(nodes_coord.device)
+    # print(mapping.device)
+    mapping.to(nodes_coord.device)
+    # print(mapping.device)
+
     mapping[:, :c, :] = nodes
     mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
 
@@ -2270,7 +2287,7 @@ def GetRefCoord_3D(x, nodes_coord):
         x = x[:,None,:]
         [e, g, c] = x.shape
 
-    x_extended              = torch.empty(e, g, n) 
+    x_extended              = torch.empty(e, g, n, dtype=nodes_coord.dtype, device = nodes_coord.device)
     x_extended[:, :, :c]    = x
     x_extended[:, :, c]     = 1
 

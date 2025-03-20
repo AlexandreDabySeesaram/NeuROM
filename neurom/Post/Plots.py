@@ -1199,11 +1199,12 @@ def Plot_2D_PyVista(ROM_model, Mesh_object, config, E = 5e-3, theta = 0, scalar_
             Para_coord_list = nn.ParameterList((Param_trial_1,Param_trial_2))
             ROM_model.eval()
             u_sol = ROM_model(torch.tensor(Nodes[:,1:]),Para_coord_list)
-            match ROM_model.n_para:
-                case 1:
-                    u3 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
-                case 2:
-                    u3 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
+            if ROM_model.Space_modes[0].mesh.dim == 2:                              # if 2D must add a zero 3rd component to be compatible with pyvista
+                match ROM_model.n_para:
+                    case 1:
+                        u3 = torch.stack([(u_sol[0,:,0]),(u_sol[1,:,0]),torch.zeros(u_sol[0,:,0].shape[0])],dim=1)
+                    case 2:
+                        u3 = torch.stack([(u_sol[0,:,0,0]),(u_sol[1,:,0,0]),torch.zeros(u_sol[0,:,0,0].shape[0])],dim=1)
             mesh3.point_data['U'] = u3.data
             mesh3.point_data['Ux'] = u3[:,0].data
             mesh3.point_data['Uy'] = u3[:,1].data

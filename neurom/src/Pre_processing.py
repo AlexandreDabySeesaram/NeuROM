@@ -322,8 +322,8 @@ class Mesh:
                     mesh = meshio.Mesh(points, {"tetra":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
 
-                    mesh = meshio.Mesh(points, {"tetra":cells})
-                    meshio.write(msh_name[0:-4]+".xml", mesh)
+                    # mesh = meshio.Mesh(points, {"tetra":cells})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
                 else:
                     raise ValueError("Only first order element have been implemented in 3D for now")
 

@@ -20,7 +20,7 @@ def main():
     from .src.Training import Test_GenerateShapeFunctions, Training_InitialStage, \
         Training_FinalStageLBFGS, FilterTrainingData, Training_NeuROM, Training_NeuROM_FinalStageLBFGS, \
         Mixed_Training_InitialStage, Training_FinalStageLBFGS_Mixed, Training_2D_NeuROM, Training_2D_FEM, Training_NeuROM_multi_level, Training_1D_FEM_LBFGS,\
-        Training_1D_FEM_Gradient_Descent
+        Training_1D_FEM_Gradient_Descent, Training_2_3D_FEM
     #Import post processing libraries
     from .Post import Plots as Pplot
     import time
@@ -307,6 +307,11 @@ def main():
             case 2:
                 time_start = time.time()
                 Model_FEM = Training_2D_FEM(Model_FEM, config, Mat)
+                time_end = time.time()
+
+            case 3:
+                time_start = time.time()
+                Model_FEM = Training_2_3D_FEM(Model_FEM, config, Mat)                
                 time_end = time.time()
 
 

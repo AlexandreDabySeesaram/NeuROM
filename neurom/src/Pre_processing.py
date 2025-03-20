@@ -308,8 +308,8 @@ class Mesh:
                 if self.order =='1':
                     mesh = meshio.Mesh(points, {"triangle":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
-                    mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-                    meshio.write(msh_name[0:-4]+".xml", mesh)
+                    # mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
+                    # meshio.write(msh_name[0:-4]+".xml", mesh)
 
                 elif self.order =='2':
                     mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
@@ -321,6 +321,9 @@ class Mesh:
                 if self.order =='1':
                     mesh = meshio.Mesh(points, {"tetra":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
+
+                    mesh = meshio.Mesh(points, {"tetra":cells})
+                    meshio.write(msh_name[0:-4]+".xml", mesh)
                 else:
                     raise ValueError("Only first order element have been implemented in 3D for now")
 

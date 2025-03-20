@@ -63,7 +63,7 @@ A                       = 1.0
 dimension               = 1                                             # Dimension of the study (1D or 2D)
 order_u                 = 2                                             # Order of the shape functions
 order_du                = 1                                             # Order of the shape functions
-np                      = 20                                            # Number of Nodes in the Mesh in 1D
+np                      = 81                                            # Number of Nodes in the Mesh in 1D
 MaxElemSize2D           = 1                                             # Maximum element size in the 2D mesh
 
 ####################################################
@@ -102,7 +102,7 @@ learning_rate           = 1.0e-3                                         # optim
 Stagnation_threshold    = 1e-7
 Stagnation_counter      = 5
 Loss_counter            = 1000
-Points_per_element      = 10                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
+Points_per_element      = 25                                            # Number of training per elem., |Training set| = (np-1)xPoints_per_element
 w_pde                   = 10
 w_constit               = 1   
 
@@ -121,6 +121,7 @@ Visualisatoin_only      = false
 Plot_loss_mode          = true
 Plot_loss_decay_mode    = true
 n_visualization         = 1000                                          # Number of points used to plot the results 
+Show_Trajectories       = false
 
 
 ####################################################

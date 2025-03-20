@@ -22,7 +22,7 @@ order = 1
 n_integration_points = 1
                                                    # Order of the FE interpolation
 dimension = 2                                                   # Dimension of the problem
-MaxElemSize = 0.075                                                 # Maximum element size of the mesh
+MaxElemSize = 0.25                                                 # Maximum element size of the mesh
 Domain_mesh = pre.Mesh(Name,MaxElemSize, order, dimension)      # Create the mesh object
 Volume_element = 100                                            # Volume element
 
@@ -62,13 +62,12 @@ Nodes = torch.hstack([torch.linspace(1,coordinates_all.shape[0],coordinates_all.
                                           coordinates_all])
 Nodes = torch.hstack([Nodes,torch.zeros(Nodes.shape[0],1, dtype = Nodes.dtype, device = Nodes.device)])
 
-
-node1_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,0]])
-node2_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,1]])
-node3_coord =  torch.cat([Nodes[int(row)-1] for row in node_ids[:,2]])
-
+node1_coord =  torch.stack([Nodes[int(row)-1,1:3] for row in node_ids[:,0]])
+node2_coord =  torch.stack([Nodes[int(row)-1,1:3] for row in node_ids[:,1]])
+node3_coord =  torch.stack([Nodes[int(row)-1,1:3] for row in node_ids[:,2]])
 
 
 coord = (node1_coord + node2_coord + node3_coord)/3
+
 
 numpy.save("../2D_example/eval_coordinates_"+str(MaxElemSize)+".npy", numpy.array(coord))

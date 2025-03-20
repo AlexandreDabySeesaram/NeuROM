@@ -1549,7 +1549,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
         elif optimizer.__class__.__name__ == "LBFGS":
             if (epoch+1) % config['postprocess']['ModularEpochsPrint'] == 0 or epoch ==1 or epoch==model.Max_epochs or stagnation:
                 model.StoreResults()
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=6)}')
 
     time_stop = time.time()
     # print("*************** END OF TRAINING ***************\n")
@@ -1990,8 +1990,9 @@ def Training_2_3D_FEM(model, config, Mat):
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+            model.Max_epochs = 200
             Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
-            #########
+            ########
 
             model.training_recap = {"Loss_tot":Loss_tot,
                                     "Duration_tot":Duration_tot,
@@ -2542,7 +2543,7 @@ def Training_1D_Mixed_LBFGS(model_u, model_du, config, Mat):
 
     print(f'* Final training loss: {numpy.format_float_scientific( error[-1], precision=4)}')
     print()
-    Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
-    Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
+    # Pplot.Plot_Compare_Loss2l2norm(error,[],'Loss_Comaprison')
+    # Pplot.PlotTrajectories(Coord_trajectories,'Trajectories')
 
     return model_u, model_du

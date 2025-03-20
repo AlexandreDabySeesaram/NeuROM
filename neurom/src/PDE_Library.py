@@ -401,9 +401,11 @@ def VonMises_plain_strain(sigma, lmbda, mu):
     two2threeD = torch.tensor([[1, 0, 0], [0, 1, 0],[lmbda/(2*(mu+lmbda)),lmbda/(2*(mu+lmbda)),0],[0, 0, 1]],dtype=sigma.dtype, device=sigma.device)
     if sigma.shape[1] != 3:
         sigma_3D = torch.einsum('ij,ej->ei',two2threeD,sigma)
+        VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
     else:
         sigma_3D = sigma
-    VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
+        VM = torch.tensor([[2/3, -1/3, -1/3, 0, 0, 0],[-1/3, 2/3,-1/3, 0, 0, 0],[-1/3, -1/3,2/3, 0, 0, 0],[0, 0,0, torch.sqrt(two), 0, 0], [0, 0, 0, 0, torch.sqrt(two), 0], [0, 0, 0, 0, 0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
+    # VM = torch.tensor([[2/3, -1/3, -1/3, 0],[-1/3, 2/3,-1/3, 0],[-1/3, -1/3,2/3, 0],[0, 0,0, torch.sqrt(two)]],dtype=sigma.dtype, device=sigma.device)
     sigma_dev = torch.einsum('ij,ej...->ei',VM,sigma_3D) # in voigt notation 
     sigma_VM = torch.einsum('ei,ei->e',sigma_dev,sigma_dev) # in voigt notation
     return torch.sqrt((3/2)*sigma_VM)

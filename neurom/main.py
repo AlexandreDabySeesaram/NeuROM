@@ -466,11 +466,11 @@ def main():
                 if config["postprocess"]["exportVTK_history"]:
                     Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
             case 3:
+                if config["postprocess"]["exportVTK_history"]:
+                    Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
                 if config["postprocess"]["exportVTK"]:
                     Pplot.ExportFinalResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
                     # Pplot.ExportSamplesforEval(Model_FEM,Mat,config)
-                if config["postprocess"]["exportVTK_history"]:
-                    Pplot.ExportHistoryResult_VTK(Model_FEM,Mat,config["postprocess"]["Name_export"])
 
             case 1:
                 Pplot.Plot_Eval_1d(Model_FEM,config,Mat)

@@ -7,7 +7,7 @@
 def main():
     #%% Libraries import
     # import HiDeNN library
-    from .HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_1D
+    from .HiDeNN_PDE import MeshNN, NeuROM, MeshNN_2D, MeshNN_1D, MeshNN_3D
     # Import pre-processing functions
     from .src import Pre_processing as pre
     # Import torch librairies

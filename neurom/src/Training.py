@@ -1990,7 +1990,7 @@ def Training_2_3D_FEM(model, config, Mat):
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            model.Max_epochs = 200
+            model.Max_epochs = 5
             Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
             ########
 

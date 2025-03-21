@@ -2048,7 +2048,6 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
             case 3:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
-        print("After training grid 1 ")#DEBUG
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size

@@ -934,13 +934,13 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
             - phi''' 
 
 
-    E_1_float   = E[0][:,0]
-    E_2_float   = E[1][:,0]
-    alpha       = E[2][:,0]
-    theta_float = E[3][:,0]
-    phi_float   = E[4][:,0]
+    E_1_float       = E[0][:,0]
+    E_2_float       = E[1][:,0]
+    alpha           = E[2][:,0]
+    theta_float     = E[3][:,0]
+    phi_float       = E[4][:,0]
 
-    Delta_E_float = E_1_float[:,None] - E_2_float[None,:]       # lp : N_l is E_1 discretisation N_p is E_2, cross linked for smooth connection
+    Delta_E_float   = E_1_float[:,None] - E_2_float[None,:]       # pt : N_p is E_1 discretisation N_t is E_2, cross linked for smooth connection
 
     Space_modes = []
     xg_modes = []
@@ -956,7 +956,6 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
     xg_i = torch.stack(xg_modes,dim=2) 
     detJ_i = torch.stack(detJ_modes,dim=1)  
 
-    # eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
 
     match model.Space_modes[0].mesh.dim:
         case 2:

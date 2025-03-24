@@ -964,19 +964,14 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
             xg_i = torch.stack(xg_modes,dim=2) 
             eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
-
-            # To be replaced with the decoder in the full auto-encoder framework
             support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
-            # with torch.no_grad(): #No derivatino of the heavyside function
-            #     support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
+
 
         case 3:
-            # print(Space_modes[0].shape)
             u_i = torch.stack(Space_modes,dim=2)
             xg_i = torch.stack(xg_modes,dim=2) 
             eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
             K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
-            # print(xg_k.shape) #DEBUG
             # support = (1+torch.tanh(xg_k[:,:,2] - E[1][None,:,0]))*0.5
             support = (1+torch.tanh(xg_k[:,:,2] - alpha))*0.5 #DEBUG Check shapes
 
@@ -993,34 +988,8 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
         ]    
 
 
-
-
-
-
-
-
-
-
     angles = [theta_float,phi_float]
 
-    # print(f"eps_i shape is {eps_i.shape}")#DEBUG
-    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_1_float)+  \
-            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
-
-
-
-
-
-
-
-
-
-
-
-
-
-    E_1 = E[0][0,0].to(torch.float64)
-    Delta_E_float = E[0][:,0].to(torch.float64)
 
     W_int = E_1*torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4]) +  \
             torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,pt,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],Delta_E_float,support)

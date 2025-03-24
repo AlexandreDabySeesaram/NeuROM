@@ -853,7 +853,7 @@ def InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant(model,lmbda, mu,E):
 
 
 
-def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
+def InternalEnergy_2_3D_einsum_BiStiffness(model,lmbda, mu,E):
 
     Space_modes = []
     xg_modes = []
@@ -869,9 +869,32 @@ def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
     xg_i = torch.stack(xg_modes,dim=2) 
     detJ_i = torch.stack(detJ_modes,dim=1)  
 
-    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    # eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+            # To be replaced with the decoder in the full auto-encoder framework
+            support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
+            # with torch.no_grad(): #No derivatino of the heavyside function
+            #     support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
+
+        case 3:
+            # print(Space_modes[0].shape)
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+            # print(xg_k.shape) #DEBUG
+            support = (1+torch.tanh(xg_k[:,:,2] - E[1][None,:,0]))*0.5
+
+
     eps_i = torch.stack(eps_list,dim=2)  
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
+    # K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=torch.float64)
     Para_mode_Lists = [
         [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
         for mode in range(model.n_modes_truncated)
@@ -881,25 +904,133 @@ def InternalEnergy_2D_einsum_BiStiffness(model,lmbda, mu,E):
             for l in range(model.n_para)
         ]    
 
-    # To be replaced with the decoder in the full auto-encoder framework
-    # support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
-    with torch.no_grad(): #No derivatino of the heavyside function
-        support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
-
 
     E_1 = E[0][0,0].to(torch.float64)
     Delta_E_float = E[0][:,0].to(torch.float64)
 
-    W_int = E_1*torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1]) +  \
-            torch.einsum('ij,ejm,eil,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
+    W_int = E_1*torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1]) +  \
+            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
 
     # Gravity_force = Gravity_vect(theta_float,rho = 1e-9)
-    Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9).to(model.float_config.dtype).to(model.float_config.device)
+    Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)
 
     W_ext = torch.einsum('iem,i,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],torch.abs(detJ_i))
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
+
+
+InternalEnergy_2D_einsum_BiStiffness = InternalEnergy_2_3D_einsum_BiStiffness
+
+
+
+def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
+
+    '''Parameters order: 
+            - E_0
+            - E_1
+            - alpha
+            - theta
+            - phi''' 
+
+
+    E_1_float   = E[0][:,0]
+    E_2_float   = E[1][:,0]
+    alpha       = E[2][:,0]
+    theta_float = E[3][:,0]
+    phi_float   = E[4][:,0]
+
+    Delta_E_float = E_1_float[:,None] - E_2_float[None,:]       # lp : N_l is E_1 discretisation N_p is E_2, cross linked for smooth connection
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+    u_i = torch.stack(Space_modes,dim=2)
+    xg_i = torch.stack(xg_modes,dim=2) 
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    # eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+            # To be replaced with the decoder in the full auto-encoder framework
+            support = (1+torch.tanh(xg_k[:,None,1] - E[1][None,:,0]))*0.5
+            # with torch.no_grad(): #No derivatino of the heavyside function
+            #     support = (torch.heaviside(xg_k[:,None,0] - E[1][None,:,0],torch.tensor(1, dtype = torch.float64)))
+
+        case 3:
+            # print(Space_modes[0].shape)
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+            # print(xg_k.shape) #DEBUG
+            # support = (1+torch.tanh(xg_k[:,:,2] - E[1][None,:,0]))*0.5
+            support = (1+torch.tanh(xg_k[:,:,2] - alpha))*0.5 #DEBUG Check shapes
+
+
+    eps_i = torch.stack(eps_list,dim=2)  
+
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0).to(torch.float64)
+            for l in range(model.n_para)
+        ]    
+
+
+
+
+
+
+
+
+
+
+    angles = [theta_float,phi_float]
+
+    # print(f"eps_i shape is {eps_i.shape}")#DEBUG
+    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_1_float)+  \
+            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,p,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],Delta_E_float,support)
+
+
+
+
+
+
+
+
+
+
+
+
+
+    E_1 = E[0][0,0].to(torch.float64)
+    Delta_E_float = E[0][:,0].to(torch.float64)
+
+    W_int = E_1*torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4]) +  \
+            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,pt,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],Delta_E_float,support)
+
+    Gravity_force = Gravity_vect(angles,rho = 1e-9, dim = model.Space_modes[0].mesh.dim, n_angle=2).to(model.float_config.dtype).to(model.float_config.device)
+    W_ext = torch.einsum('iem,its,mp...,mt...,ms...,,mq...,mr...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],lambda_i[3],lambda_i[4],torch.abs(detJ_i))
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0])
+
+
 
 def PotentialEnergyVectorisedParametric_Gauss(model,A, E):
     """Computes the potential energy of the Beam, which will be used as the loss of the HiDeNN"""

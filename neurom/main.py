@@ -196,19 +196,29 @@ def main():
     # Parameter space-definition
 
     if config["solver"]["ParametricStudy"]:
-        match config["solver"]["N_ExtraCoordinates"]:
-            case 2:
-                ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
-                                                        config["parameters"]["para_1_max"],
-                                                        config["parameters"]["N_para_1"]],
-                                                    [   config["parameters"]["para_2_min"],
-                                                        config["parameters"]["para_2_max"],
-                                                        config["parameters"]["N_para_2"]]])
-            case 1:
-                ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
-                                                        config["parameters"]["para_1_max"],
-                                                        config["parameters"]["N_para_1"]]])
+        # match config["solver"]["N_ExtraCoordinates"]:
+        #     case 2:
+        #         ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+        #                                                 config["parameters"]["para_1_max"],
+        #                                                 config["parameters"]["N_para_1"]],
+        #                                             [   config["parameters"]["para_2_min"],
+        #                                                 config["parameters"]["para_2_max"],
+        #                                                 config["parameters"]["N_para_2"]]])
+        #     case 1:
+        #         ParameterHypercube = torch.tensor([[    config["parameters"]["para_1_min"],
+        #                                                 config["parameters"]["para_1_max"],
+        #                                                 config["parameters"]["N_para_1"]]])
 
+        N_ExtraCoordinates = config["solver"]["N_ExtraCoordinates"]
+        ParameterHypercube = torch.tensor([
+            [
+                config["parameters"][f"para_{i+1}_min"],
+                config["parameters"][f"para_{i+1}_max"],
+                config["parameters"][f"N_para_{i+1}"]
+            ]
+            for i in range(N_ExtraCoordinates)
+        ])
+        
         ROM_model = NeuROM(                                                                 # Build the surrogate (reduced-order) model
                                                         Mesh_object, 
                                                         ParameterHypercube, 
@@ -216,6 +226,7 @@ def main():
                                                         config["solver"]["n_modes_ini"],
                                                         config["solver"]["n_modes_max"]
                         )
+
 
     #%% Load coarser model  
 

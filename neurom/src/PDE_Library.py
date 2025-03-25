@@ -934,11 +934,18 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
             - phi''' 
 
 
-    E_1_float       = E[0][:,0]
-    E_2_float       = E[1][:,0]
-    alpha           = E[2][:,0]
-    theta_float     = E[3][:,0]
-    phi_float       = E[4][:,0]
+    E_1_float       = E[0][:,0] # p
+    E_2_float       = E[1][:,0] # t
+    alpha           = E[2][:,0] # s
+    theta_float     = E[3][:,0] # q
+    phi_float       = E[4][:,0] # r
+
+    # print(f"shape E_1_float is {E_1_float.shape} ")   #DEBUG
+    # print(f"shape E_2_float is {E_2_float.shape} ")#DEBUG
+    # print(f"shape alpha is {alpha.shape} ")#DEBUG
+    # print(f"shape theta_float is {theta_float.shape} ")#DEBUG
+    # print(f"shape phi_float is {phi_float.shape} ")#DEBUG
+
 
     Delta_E_float   = E_1_float[:,None] - E_2_float[None,:]       # pt : N_p is E_1 discretisation N_t is E_2, cross linked for smooth connection
 
@@ -987,16 +994,36 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
         ]    
 
 
+    # print(f"shape lambda_i[0] is {lambda_i[0].shape} ")#DEBUG
+    # print(f"shape lambda_i[1] is {lambda_i[1].shape} ")#DEBUG
+    # print(f"shape lambda_i[2] is {lambda_i[2].shape} ")#DEBUG
+    # print(f"shape lambda_i[3] is {lambda_i[3].shape} ")#DEBUG
+    # print(f"shape lambda_i[4] is {lambda_i[4].shape} ")#DEBUG
+    # print(f"shape Delta_E_float is {Delta_E_float.shape} ")#DEBUG
+
     angles = [theta_float,phi_float]
 
+    # W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4], E_1_float) 
 
-    W_int = E_1*torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4]) +  \
-            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,pt,et->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],Delta_E_float,support)
+
+    E_1 = E_2_float[0]
+    # W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,t,es->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],E_2_float,support) + \
+    #         E_1*torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4])
+
+    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,t,es->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],E_2_float,support) + \
+            torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],E_1_float)
+
+    # W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4], E_1_float) +  \
+    #         torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...,mr...,lr...,pt,es->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],lambda_i[3],lambda_i[3],lambda_i[4],lambda_i[4],Delta_E_float,support)
 
     Gravity_force = Gravity_vect(angles,rho = 1e-9, dim = model.Space_modes[0].mesh.dim, n_angle=2).to(model.float_config.dtype).to(model.float_config.device)
-    W_ext = torch.einsum('iem,its,mp...,mt...,ms...,,mq...,mr...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],lambda_i[3],lambda_i[4],torch.abs(detJ_i))
+    W_ext = torch.einsum('iem,iqr,mp...,mt...,ms...,mq...,mr...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],lambda_i[3],lambda_i[4],torch.abs(detJ_i))
 
-    return (0.5*W_int - W_ext)/(E[0].shape[0])
+
+
+
+    return (0.5*W_int - W_ext)/(E[0].shape[0]*E[1].shape[0]*E[0].shape[0]*E[0].shape[0])
+    # return (0.5*W_int - W_ext)/(E[0].shape[0]*E[1].shape[0]*E[2].shape[0]*E[3].shape[0]*E[4].shape[0])
 
 
 

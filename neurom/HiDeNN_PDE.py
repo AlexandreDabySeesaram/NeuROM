@@ -189,7 +189,7 @@ class MeshNN(nn.Module):
         # self.InterpoLayer_uu = nn.Linear(self.dofs-len(mesh.borders_nodes),1,bias=False)
 
         # Changed to border_nodes instead of NBCs for mixed formulation without BCs (TODO: confirm with NeuROM)
-        self.NodalValues_uu = nn.Parameter(data=0.1*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
+        self.NodalValues_uu = nn.Parameter(data=0.0*torch.ones(self.dofs-len(mesh.borders_nodes)), requires_grad=False)
         self.InterpoLayer_uu.weight.data = self.NodalValues_uu
         # self.InterpoLayer_uu.weight.data = self.NodalValues_uu*torch.randn_like(self.NodalValues_uu)
  
@@ -1057,7 +1057,7 @@ class MeshNN_2D(nn.Module):
 
         # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
         # self.values =0.5*torch.ones((mesh.NNodes,n_components))
-        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+        self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
 
         self.frozen_BC_node_IDs = []
         self.frozen_BC_node_IDs_x = []             
@@ -2383,7 +2383,7 @@ class MeshNN_3D(nn.Module):
                                             'mask':[]
                                             })
 
-        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+        self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
         name_mesh_string_tensor = torch.ByteTensor(list(mesh.name_mesh.encode('utf-8')))
         h_max_string_tensor = torch.ByteTensor(list(mesh.h_max_str.encode('utf-8')))
 

@@ -891,23 +891,10 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
             List_elems = torch.arange(0,Model_FEM.NElem,dtype=torch.int)
             Model_FEM.train()
             U_xg,xg,detJ = Model_FEM()
-
-            # Model_FEM.train()
-            # _,xg,detJ = Model_FEM()
-            # Model_FEM.eval()
-
-            # elem_IDs = torch.tensor(Model_FEM.mesh.GetCellIds(xg),dtype=torch.int)
-            # U_xg = Model_FEM(xg,elem_IDs)
-
+            
             eps =  Strain(U_xg,xg)
-
             sigma =  torch.stack(Stress(eps, Mat.lmbda, Mat.mu),dim=1).to(torch.device('cpu'))
             sigma_VM2  = VonMises_plain_strain(sigma, Mat.lmbda, Mat.mu).to(torch.device('cpu'))
-
-            print()
-            print("sigma : ", sigma.shape)
-            print("eps : ", eps.shape)
-            print()
 
             import numpy as np
 

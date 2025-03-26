@@ -1871,8 +1871,21 @@ def Training_2_3D_FEM(model, config, Mat):
     detJ_tot            = []                                # List of history of detJ through training
     detJ_current_tot    = []
     MaxElemSize         = config["interpolation"]["MaxElemSize2D"] # Initial value of max elem size from config file
+    refinement_factor   = config["training"]["multiscl_refinment_cf"]
+    max_refinement      = config["training"]["multiscl_max_refinment"]
+
+    if len(refinement_factor)==1:
+        refinement_list = [refinement_factor]
+    else:
+        refinement_list = refinement_factor
+        max_refinement = len(refinement_list)+1
+
+    print("refinement_list ", refinement_list)
+    print("max_refinement ", max_refinement)
+    print()
+
     import meshio
-    while n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
+    while n_refinement < max_refinement and not stagnation:
         print(f"* Refinement level: {n_refinement}\n")
         n_refinement        +=1
 
@@ -1900,7 +1913,7 @@ def Training_2_3D_FEM(model, config, Mat):
         Connectivity_tot    += model.Connectivity_interm
         detJ_current_tot    += model.Jacobian_current_interm
 
-        if config["training"]["multiscl_max_refinment"] >1:
+        if max_refinement >1:
             # Compute maximum strain 
             _,xg,detJ            = model()
             model.eval()
@@ -1926,9 +1939,11 @@ def Training_2_3D_FEM(model, config, Mat):
                     stagnation   = True
             else:
                 max_eps_old      = max_eps
-        if n_refinement < config["training"]["multiscl_max_refinment"] and not stagnation:
+        if n_refinement < max_refinement and not stagnation:
 
-            MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size
+            MaxElemSize      = MaxElemSize/refinement_list[n_refinement-1]  # Update max elem size
+            print("MaxElemSize ", MaxElemSize)
+
             Mesh_object_fine = pre.Mesh( config["geometry"]["Name"],                    # Create the mesh object
                                          MaxElemSize, 
                                          config["interpolation"]["order"], 
@@ -1990,7 +2005,7 @@ def Training_2_3D_FEM(model, config, Mat):
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            model.Max_epochs = 200
+            model.Max_epochs = 2000
             Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
             ########
 

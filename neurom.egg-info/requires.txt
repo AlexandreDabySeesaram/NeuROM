@@ -1,6 +1,0 @@
-argparse
-torch
-matplotlib
-meshio
-numpy
-ipython

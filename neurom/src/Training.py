@@ -1874,7 +1874,7 @@ def Training_2_3D_FEM(model, config, Mat):
     refinement_factor   = config["training"]["multiscl_refinment_cf"]
     max_refinement      = config["training"]["multiscl_max_refinment"]
 
-    if len(refinement_factor)==1:
+    if numpy.isscalar(refinement_factor):
         refinement_list = [refinement_factor]
     else:
         refinement_list = refinement_factor
@@ -2004,8 +2004,14 @@ def Training_2_3D_FEM(model, config, Mat):
             model.train()
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
+            if config["training"]["optimizer"] == "adam":
+                optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
+
+            model.UnFreeze_Mesh()
+            print("UnFreeze_Mesh()")
+            print()
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            model.Max_epochs = 2000
             Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
             ########
 

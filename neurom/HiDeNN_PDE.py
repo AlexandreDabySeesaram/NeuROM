@@ -875,7 +875,7 @@ class ElementBlock2D_Lin(nn.Module):
     def GP(self):
         return torch.tensor([[1/3, 1/3, 1/3]],dtype=torch.float64, requires_grad=True) # a1, a2, a3 the 3 area coordinates
 
-    def forward(self, x, cell_id, coordinates, nodal_values,coord_mask,coordinates_all,flag_training):
+    def forward(self, x, cell_id, coordinates, nodal_values, coord_mask,coordinates_all,flag_training):
         """ This is the forward function of the Linear element block that outputs 2D linear shape functions based on
         args:
             - x (tensor) : position where to evalutate the shape functions
@@ -1057,7 +1057,12 @@ class MeshNN_2D(nn.Module):
 
         # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
         # self.values =0.5*torch.ones((mesh.NNodes,n_components))
-        self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
+
+        # self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
+        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+
+
+        self.all_IDs = torch.tensor(list(range(mesh.NNodes)))
 
         self.frozen_BC_node_IDs = []
         self.frozen_BC_node_IDs_x = []             
@@ -1065,6 +1070,11 @@ class MeshNN_2D(nn.Module):
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []
         self.relation_BC_values = []
+        self.periodic_BC_source_node_IDs = []
+        self.periodic_BC_dependent_node_IDs = []
+        self.periodic_BC_values = []
+        self.periodic_BC_normals = []
+
         self.relation_BC_normals = []
         self.constit_BC_node_IDs = []
         self.relation_BC_lines = []
@@ -1087,6 +1097,7 @@ class MeshNN_2D(nn.Module):
         self.IdStored = False
 
         if mesh.NoBC==False:
+            print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         else:
@@ -1207,6 +1218,7 @@ class MeshNN_2D(nn.Module):
                     if vers == 'new_V2':
                         IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
                         IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+
                         match self.ListOfDirichletsBCsNormals[i]:
                             case 0:
                                 self.frozen_BC_node_IDs_x.append(IDs)
@@ -1220,7 +1232,16 @@ class MeshNN_2D(nn.Module):
                         self.frozen_BC_node_IDs.append(IDs)
                         self.frozen_BC_component_IDs.append(self.ListOfDirichletsBCsNormals[i])
                         self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+                else:
+                    IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                    IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
 
+                    if ListOfDirichletsBCsValues[i]>0:
+                        self.periodic_BC_source_node_IDs.append(IDs)
+                    else:
+                        self.periodic_BC_dependent_node_IDs.append(IDs)
+                    self.periodic_BC_values.append(ListOfDirichletsBCsValues[i])
+                    self.periodic_BC_normals.append(self.ListOfDirichletsBCsNormals[i])
                 
             else:
                 IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
@@ -1229,44 +1250,126 @@ class MeshNN_2D(nn.Module):
                 self.relation_BC_values.append(ListOfDirichletsBCsValues[i])
                 # self.relation_BC_normals.append(self.normals[IDs])
 
-        for i in range(len(ListOfDirichletsBCsValues)):
-            if self.ListOfDirichletsBCsConstit[i] == True:
-                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+        # Init: Source --> Dependent
+        for i in range(len(self.periodic_BC_dependent_node_IDs)):
+            print("     i = ", i , ", ids = ", self.periodic_BC_dependent_node_IDs[i])
+            self.values[self.periodic_BC_dependent_node_IDs[i],:] = self.values[self.periodic_BC_source_node_IDs[i],:]
 
-                if len(self.relation_BC_node_IDs)>0:
-                    delete_relation = torch.cat(self.relation_BC_node_IDs)
+        # for i in range(len(ListOfDirichletsBCsValues)):
+        #     if self.ListOfDirichletsBCsConstit[i] == True:
+        #         IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+        #         IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
 
-                    for elem in IDs:
-                        if elem in delete_relation:
-                            IDs = IDs[IDs!=elem]
-                if len(self.frozen_BC_node_IDs)>0:
-                    delete_simple = torch.cat(self.frozen_BC_node_IDs)
-                    for elem in IDs:
-                        if elem in delete_simple:
-                            IDs = IDs[IDs!=elem]
+        #         if len(self.relation_BC_node_IDs)>0:
+        #             delete_relation = torch.cat(self.relation_BC_node_IDs)
 
-                self.constit_BC_node_IDs.append(IDs)
+        #             for elem in IDs:
+        #                 if elem in delete_relation:
+        #                     IDs = IDs[IDs!=elem]
+
+        #         if len(self.frozen_BC_node_IDs)>0:
+        #             delete_simple = torch.cat(self.frozen_BC_node_IDs)
+        #             for elem in IDs:
+        #                 if elem in delete_simple:
+        #                     IDs = IDs[IDs!=elem]
+
+        #         self.constit_BC_node_IDs.append(IDs)
 
         if self.n_components ==2:
             if vers == 'new_V2':
-                self.IDs_frozen_BC_node_y = torch.unique(torch.stack(self.frozen_BC_node_IDs_y))
-                self.IDs_frozen_BC_node_x = torch.unique(torch.stack(self.frozen_BC_node_IDs_x))
-                self.dofs_free_x =( torch.ones_like(self.values[:,0])==1)
-                self.dofs_free_x[self.IDs_frozen_BC_node_x] = False
+
+                self.IDs_frozen_BC_node_y = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
+                self.IDs_frozen_BC_node_x = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
+                self.dofs_free_x =( torch.ones_like(self.values[:,0])==1)               # boolean tensor of shape (n_nodes,), with all values set to True
+                self.dofs_free_x[self.IDs_frozen_BC_node_x] = False                     # frozen Dirichlet components set to False
                 self.dofs_free_y =( torch.ones_like(self.values[:,0])==1)
                 self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
 
-                nodal_values_x_imposed = self.values[~self.dofs_free_x,0]
-                nodal_values_y_imposed = self.values[~self.dofs_free_y,1]
-                nodal_values_x_free = self.values[self.dofs_free_x,0]
+                self.dofs_dependent =( torch.ones_like(self.values[:,0])==0)
+                self.dofs_source =( torch.ones_like(self.values[:,0])==0)
+
+                print(self.periodic_BC_normals)
+
+                for ids_dep, ids_source, i in zip(self.periodic_BC_dependent_node_IDs, self.periodic_BC_source_node_IDs, range(len(self.periodic_BC_source_node_IDs))):
+                    # print("ids_source = ", ids_source)
+                    # print("ids_dep = ", ids_dep)
+
+                    coord_dep = self.coordinates_all[ids_dep][:,self.periodic_BC_normals[i]]
+                    coord_source = self.coordinates_all[ids_source][:,self.periodic_BC_normals[i]]
+
+                    idx_sort_dep = coord_dep.argsort()
+                    idx_sort_source = coord_source.argsort()
+
+                    # print("coord_dep = ", coord_dep)
+                    # print("coord_source = ", coord_source)
+
+                    # ids_source = ids_source[idx_sort_source]
+                    # ids_dep = ids_dep[idx_sort_dep]
+
+                    # print("ids_source = ", ids_source)
+                    # print("ids_dep = ", ids_dep)
+
+                    # self.periodic_BC_dependent_node_IDs[i] = ids_dep
+                    # self.periodic_BC_source_node_IDs[i] = ids_source
+
+
+                if len(self.periodic_BC_dependent_node_IDs)>0:
+                    self.IDs_dependent_BC_periodic_node = torch.unique(torch.cat(self.periodic_BC_dependent_node_IDs))
+                    self.IDs_source_BC_periodic_node = torch.unique(torch.cat(self.periodic_BC_source_node_IDs))
+
+                    self.dofs_free_x[self.IDs_dependent_BC_periodic_node] = False
+                    self.dofs_free_y[self.IDs_dependent_BC_periodic_node] = False
+
+                    self.dofs_dependent[self.IDs_dependent_BC_periodic_node] = True
+                    self.dofs_source[self.IDs_source_BC_periodic_node] = True
+
+
+
+                    
+
+                nodal_values_x_imposed = self.values[~self.dofs_free_x,0]               # all imposed values (x component) ~ not to be trained
+                nodal_values_y_imposed = self.values[~self.dofs_free_y,1]               # all imposed values (x component) ~ not to be trained
+                nodal_values_x_free = self.values[self.dofs_free_x,0]                   # trainable values (x component)
                 nodal_values_y_free = self.values[self.dofs_free_y,1]
+
+                # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+                IDs_free_x = self.all_IDs[self.dofs_free_x]
+                IDs_imposed_x = self.all_IDs[~self.dofs_free_x]
+
+                IDs_free_y = self.all_IDs[self.dofs_free_y]
+                IDs_imposed_y = self.all_IDs[~self.dofs_free_y]
+
+                IDs_source = self.all_IDs[self.dofs_source]
+                IDs_dependent = self.all_IDs[self.dofs_dependent]
+
+
+                print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+
+
+                self.source_free_y = ((IDs_free_y - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
+                self.source_free_x = ((IDs_free_x - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
+
+                self.dependent_y = ((IDs_imposed_y - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
+                self.dependent_x = ((IDs_imposed_x - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
+
+                self.source_free_y = self.source_free_y[idx_sort_source]
+                self.dependent_y = self.dependent_y[idx_sort_dep]
+
+                print("self.source_free_y = ", IDs_free_y[self.source_free_y])
+                print()
+                print(" self.dependent_y = ", IDs_imposed_y[self.dependent_y])
+
+                print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+                # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
                 self.nodal_values = nn.ParameterDict({
                                                     'x_free': nodal_values_x_free,
                                                     'y_free': nodal_values_y_free,
                                                     'x_imposed': nodal_values_x_imposed,
-                                                    'y_imposed': nodal_values_y_imposed
+                                                    'y_imposed': nodal_values_y_imposed,
                                                     })
+                
                 border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
                 Fixed_Ids = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
                 self.coord_free =(torch.ones_like(self.values[:,0])==1)
@@ -2063,16 +2166,12 @@ class MeshNN_1D(nn.Module):
         self.frozen_BC_component_IDs = []
         self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes
         self.ListOfDirichletsBCsValues = mesh.ListOfDirichletsBCsValues
-
         self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
-        print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
 
         if mesh.NoBC==False:
             for i in range(len(mesh.ListOfDirichletsBCsValues)):
                 IDs = torch.tensor(mesh.DirichletBoundaryNodes[i], dtype=torch.int)
-                print("IDs = ", IDs)
                 IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-                print("IDs = ", IDs)
                 self.frozen_BC_node_IDs.append(IDs)
                 self.frozen_BC_component_IDs.append(mesh.ListOfDirichletsBCsNormals[i])
                 self.values[IDs,0] = mesh.ListOfDirichletsBCsValues[i]
@@ -2541,6 +2640,7 @@ class MeshNN_3D(nn.Module):
 
             IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
             IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+
             match self.ListOfDirichletsBCsNormals[i]:
                 case 0:
                     self.frozen_BC_node_IDs_x.append(IDs)

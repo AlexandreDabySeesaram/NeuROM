@@ -1479,7 +1479,19 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
         tf = time.time()
         # print(f'epoch duration (ms): {1000*(tf-t0)}')
 
+        
         with torch.no_grad():
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+            if len(model.source_free_x)>0:
+                model.nodal_values.x_imposed[model.dependent_x] = model.nodal_values.x_free[model.source_free_x]
+            if len(model.source_free_y)>0:
+                model.nodal_values.y_imposed[model.dependent_y] = model.nodal_values.y_free[model.source_free_y]
+        
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
             detJ = detJ_new[0]
             xg = xg_new[0]
             model.detJ = detJ
@@ -1875,7 +1887,7 @@ def Training_2_3D_FEM(model, config, Mat):
     max_refinement      = config["training"]["multiscl_max_refinment"]
 
     if numpy.isscalar(refinement_factor):
-        refinement_list = [refinement_factor]
+        refinement_list = [refinement_factor]*(max_refinement-1)
     else:
         refinement_list = refinement_factor
         max_refinement = len(refinement_list)+1
@@ -1891,18 +1903,49 @@ def Training_2_3D_FEM(model, config, Mat):
 
         if config["training"]["optimizer"] == "adam":
             optimizer           = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+
+            # Call the mono-scale training routine
+            match config["solver"]["TrainingStrategy"]:
+                case "Integral":
+                    model.Max_epochs = 1000
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+                    model.Max_epochs = config["training"]["n_epochs"]
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    Duration = Duration_0 + Duration_1
+                case "Residual":
+                    model.Max_epochs = 1000
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+                    model.Max_epochs = config["training"]["n_epochs"]
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    Duration = Duration_0 + Duration_1
+                case "Mixed":
+                    model.Max_epochs = 1000
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+                    model.Max_epochs = config["training"]["n_epochs"]
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+
+                    Duration = Duration_0 + Duration_1
+
         elif config["training"]["optimizer"] == "lbfgs":
             optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
 
+            # Call the mono-scale training routine
+            match config["solver"]["TrainingStrategy"]:
+                case "Integral":
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                case "Residual":
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                case "Mixed":
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config) 
 
-        # Call the mono-scale training routine
-        match config["solver"]["TrainingStrategy"]:
-            case "Integral":
-                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
-            case "Residual":
-                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
-            case "Mixed":
-                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config) 
         # Update the training history
         Loss_tot            += Loss_vect
         Duration_tot        += Duration
@@ -1989,8 +2032,14 @@ def Training_2_3D_FEM(model, config, Mat):
             model = model_2                                                             # model is now the fine 
             model.UnFreeze_FEM()
             model.Freeze_Mesh()
+
             if not config["solver"]["FrozenMesh"]:
                 model.UnFreeze_Mesh()
+
+            if n_refinement == max_refinement-1 and config["solver"]["UnfreezeFinal"]:
+                model.UnFreeze_Mesh()
+                print("Final level: model.UnFreeze_Mesh()")
+
             model.train()
 
 
@@ -2004,15 +2053,9 @@ def Training_2_3D_FEM(model, config, Mat):
             model.train()
 
             #########   #DEBUG forces to finish with lbfgs, should limit number of epochs in this last pass
-            if config["training"]["optimizer"] == "adam":
-                optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-                Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
-
-            model.UnFreeze_Mesh()
-            print("UnFreeze_Mesh()")
-            print()
-            optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
-            Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
+            #     optimizer           = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
+            #     Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs, Mat, config)
+            #     Duration_tot        += Duration
             ########
 
             model.training_recap = {"Loss_tot":Loss_tot,

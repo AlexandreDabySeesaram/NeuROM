@@ -284,6 +284,121 @@ class Mesh:
 #* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
 # * Number of Elements:       {self.Connectivity.shape[0]}\n \
 
+    def ReadMeshHexa(self):
+            with open('Geometries/'+self.name_mesh) as mshfile:
+                line = mshfile.readline()
+                line = mshfile.readline()
+                self.MshFormat = line
+                line = mshfile.readline()
+                line = mshfile.readline()
+                line = mshfile.readline()
+                self.NNodes = int(line.strip())
+                self.Nodes = []
+                for node in range(self.NNodes):
+                    line = mshfile.readline()
+                    coordinates = line.split()  # Split the line at each space
+                    NodesList = [float(coordinate) for coordinate in coordinates]
+                    self.Nodes.append(NodesList)
+                line = mshfile.readline()
+                line = mshfile.readline()
+                line = mshfile.readline()
+                self.NElem = int(line)
+                self.Connectivity = []
+
+                if self.NoBC == False:
+                    self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
+                
+                self.ExcludedPoints = []
+
+                flagType = True
+                for elem in range(self.NElem):
+                    line = mshfile.readline()
+                    Elems = line.split()  # Split the line at each space
+                    ElemList = [float(Elem_item) for Elem_item in Elems]
+                    if ElemList[4] == self.VolumeId:
+                        if flagType:
+                            match ElemList[1]:
+                                case 1:
+                                    self.type = "2-node bar"
+                                    self.dim = 1
+                                    self.node_per_elem = 2
+                                case 2:
+                                    self.type = "t3: 3-node triangle"
+                                    self.dim = 2
+                                    self.node_per_elem = 3
+                                case 3:
+                                    self.type = "4-node quadrangle"
+                                    self.dim = 2
+                                    self.node_per_elem = 4
+                                case 4:
+                                    self.type = "4-node tetrahedron"
+                                    self.dim = 3
+                                    self.node_per_elem = 4
+                                case 8:
+                                    self.type = "3-node quadratic bar"
+                                    self.dim = 1
+                                    self.node_per_elem = 3
+                                case 9:
+                                    self.type = "T6: 6-node quadratic traingle"
+                                    self.dim = 2
+                                    self.node_per_elem = 6
+                            flagType = False  
+                        self.Connectivity.append(ElemList[-self.node_per_elem:])  
+
+                    if ElemList[4] in self.borders: 
+                        match ElemList[1]:
+                            case 1:
+                                node_per_elem = 2
+                            case 2:
+                                node_per_elem = 3
+                            case 8:
+                                node_per_elem = 3
+                            case 9:
+                                node_per_elem = 6
+                            case 15:
+                                node_per_elem = 1
+                        self.borders_nodes.append(ElemList[-node_per_elem:])  
+
+                    if self.NoBC == False:
+                        for ID_idx in range(len(self.ListOfDirichletsBCsIds)):
+                            if ElemList[4] == self.ListOfDirichletsBCsIds[ID_idx]: 
+                                match ElemList[1]:
+                                    case 1:
+                                        BCs_type = "2-node bar"
+                                        BCs_dim = 1
+                                        BCs_node_per_elem = 2
+                                    case 2:
+                                        BCs_node_per_elem = 3
+                                    case 8:
+                                        BCs_type = "3-node quadratic bar"
+                                        BCs_dim = 1
+                                        BCs_node_per_elem = 3
+                                    case 9:
+                                        BCs_node_per_elem = 6
+                                    case 15:
+                                        BCs_type = "point"
+                                        BCs_dim = 1
+                                        BCs_node_per_elem = 1
+                                self.DirichletBoundaryNodes[ID_idx].append(ElemList[-BCs_node_per_elem:])  
+
+                    if self.NoExcl == False:
+                        for ID_idx in range(len(self.ExcludeId)):
+                            if ElemList[4] == self.ExcludeId[ID_idx]: 
+                                self.ExcludedPoints.append(ElemList[-1:][0]-1)
+
+
+                self.Connectivity = np.array(self.Connectivity)
+                self.NElem = self.Connectivity.shape[0] # Only count the volume elements
+                np.save( 'Geometries/'+ self.name_mesh[:-4]+"_all_nodes.npy", np.array(self.Nodes))
+
+                print(f'\n************ MESH READING COMPLETE ************\n\n \
+    * Dimension of the problem: {self.dim}D\n \
+    * Elements type:            {self.type}\n \
+    * Number of Dofs:           {self.NNodes*int(self.dimension)}')
+    # * No excluded points:          {self.NoExcl}')
+    #* Number of free Dofs:      {self.NNodes-len(self.ListOfDirichletsBCsIds)}\n')
+    # * Number of Elements:       {self.Connectivity.shape[0]}\n \
+
 
 
     def ExportMeshVtk(self,flag_update = False):

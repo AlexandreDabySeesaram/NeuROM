@@ -770,42 +770,43 @@ class InterpolationBlock2D_Lin(nn.Module):
                 for j in range(values.shape[0]):
                     for k in range(values.shape[1]):
                         values[j,k] = nodal_values[j][k]
-            for i in range(len(relation_BC_node_IDs)):
-                nodes = relation_BC_node_IDs[i]
-                normals = relation_BC_normals[i]
-                value = relation_BC_values[i]
+                        
+            # for i in range(len(relation_BC_node_IDs)):
+            #     nodes = relation_BC_node_IDs[i]
+            #     normals = relation_BC_normals[i]
+            #     value = relation_BC_values[i]
 
-                if len(value)>1:
-                    for j in range(nodes.shape[0]):
+            #     if len(value)>1:
+            #         for j in range(nodes.shape[0]):
 
-                        ID = nodes[j]
-                        normal = normals[j]
+            #             ID = nodes[j]
+            #             normal = normals[j]
 
-                        if np.isclose(normal[0],0.0, atol=1.0e-8):
-                            values[2,ID] = value[0]/normal[1]
-                            values[1,ID] = value[1]/normal[1]
-                        elif np.isclose(normal[1],0.0, atol=1.0e-8):
-                            values[0,ID] = value[0]/normal[0]
-                            values[2,ID] = value[1]/normal[0]
-                        else:
-                            values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
-                            values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
+            #             if np.isclose(normal[0],0.0, atol=1.0e-8):
+            #                 values[2,ID] = value[0]/normal[1]
+            #                 values[1,ID] = value[1]/normal[1]
+            #             elif np.isclose(normal[1],0.0, atol=1.0e-8):
+            #                 values[0,ID] = value[0]/normal[0]
+            #                 values[2,ID] = value[1]/normal[0]
+            #             else:
+            #                 values[0,ID] = (value[0] - nodal_values[2][ID]*normal[1])/normal[0]
+            #                 values[1,ID] = (value[1] - nodal_values[2][ID]*normal[0])/normal[1]
 
-                elif len(value)==1:
-                    for j in range(nodes.shape[0]):
+            #     elif len(value)==1:
+            #         for j in range(nodes.shape[0]):
 
-                        ID = nodes[j]
-                        normal = normals[j]
+            #             ID = nodes[j]
+            #             normal = normals[j]
 
-                        if np.isclose(normal[0],0.0, atol=1.0e-8):
-                            values[2,ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
-                            values[1,ID] = torch.nn.Parameter(torch.tensor([value[0]]))
-                        elif np.isclose(normal[1],0.0, atol=1.0e-8):
-                            values[0,ID] = torch.nn.Parameter(torch.tensor([value[0]]))
-                            values[2,ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
-                        else:
-                            values[0,ID] = (value[0]*normal[0] - nodal_values[2][ID]*normal[1])/normal[0]
-                            values[1,ID] = (value[0]*normal[1] - nodal_values[2][ID]*normal[0])/normal[1]
+            #             if np.isclose(normal[0],0.0, atol=1.0e-8):
+            #                 values[2,ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
+            #                 values[1,ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+            #             elif np.isclose(normal[1],0.0, atol=1.0e-8):
+            #                 values[0,ID] = torch.nn.Parameter(torch.tensor([value[0]]))
+            #                 values[2,ID] = torch.nn.Parameter(torch.tensor([0*value[0]]))
+            #             else:
+            #                 values[0,ID] = (value[0]*normal[0] - nodal_values[2][ID]*normal[1])/normal[0]
+            #                 values[1,ID] = (value[0]*normal[1] - nodal_values[2][ID]*normal[0])/normal[1]
             match vers:
                 case 'old':
                     node1_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,0]], dim=1)
@@ -1058,8 +1059,8 @@ class MeshNN_2D(nn.Module):
         # self.values = 0.0001*torch.randint(low=-1000, high=1000, size=(mesh.NNodes,n_components))
         # self.values =0.5*torch.ones((mesh.NNodes,n_components))
 
-        # self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
-        self.register_buffer('values',0.5*torch.ones((mesh.NNodes,n_components)))
+        self.register_buffer('values',torch.zeros((mesh.NNodes,n_components)))
+        # self.register_buffer('values',0.01*torch.ones((mesh.NNodes,n_components)))
 
 
         self.all_IDs = torch.tensor(list(range(mesh.NNodes)))
@@ -1069,6 +1070,9 @@ class MeshNN_2D(nn.Module):
         self.frozen_BC_node_IDs_y = []             
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []
+        self.relation_BC_edges = []
+        self.relation_BC_normal_vectors = []
+
         self.relation_BC_values = []
         self.periodic_BC_source_node_IDs = []
         self.periodic_BC_dependent_node_IDs = []
@@ -1079,6 +1083,8 @@ class MeshNN_2D(nn.Module):
         self.constit_BC_node_IDs = []
         self.relation_BC_lines = []
 
+        # self.dofs_Neumann = []
+
 
         self.connectivity = mesh.Connectivity
         self.ExcludeFromDirichlet = mesh.ExcludedPoints
@@ -1088,7 +1094,7 @@ class MeshNN_2D(nn.Module):
         self.ListOfDirichletsBCsConstit = mesh.ListOfDirichletsBCsConstit
         self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes
         self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
-        # self.normals = mesh.normals
+        # self.normal_vectors = mesh.normals
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.n_components = n_components
@@ -1097,6 +1103,7 @@ class MeshNN_2D(nn.Module):
         self.IdStored = False
 
         if mesh.NoBC==False:
+            print("self.DirichletBoundaryNodes = ", len(self.DirichletBoundaryNodes))
             print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
@@ -1212,7 +1219,7 @@ class MeshNN_2D(nn.Module):
             Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
         """
         for i in range(len(ListOfDirichletsBCsValues)):
-            if self.ListOfDirichletsBCsRelation[i] == False:
+            if self.ListOfDirichletsBCsRelation[i] == False:    
                 if self.ListOfDirichletsBCsConstit[i] == False:
                     vers = 'new_V2'
                     if vers == 'new_V2':
@@ -1243,43 +1250,39 @@ class MeshNN_2D(nn.Module):
                     self.periodic_BC_values.append(ListOfDirichletsBCsValues[i])
                     self.periodic_BC_normals.append(self.ListOfDirichletsBCsNormals[i])
                 
-            else:
-                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+            else:  
+                # dofs_N =( torch.ones_like(self.values[:,0])==0)
+                                                                     # Neumann BC
+                Neumann_IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(Neumann_IDs.reshape(Neumann_IDs.shape[0],-1))-1
+
+                # dofs_N[IDs] = True
+                # self.dofs_Neumann.append(self.all_IDs[dofs_N])
+
+                self.relation_BC_edges.append(Neumann_IDs)
                 self.relation_BC_node_IDs.append(IDs)
                 self.relation_BC_values.append(ListOfDirichletsBCsValues[i])
-                # self.relation_BC_normals.append(self.normals[IDs])
+                normal_vectors = []
+                for edge in Neumann_IDs:
+                    vect = self.coordinates_all[edge[1]-1] - self.coordinates_all[edge[0]-1]
+                    perp_vect = torch.tensor([-vect[1], vect[0]])
+                    normal_vectors.append(perp_vect/torch.norm(perp_vect))
+
+                self.relation_BC_normal_vectors.append(normal_vectors)
 
         # Init: Source --> Dependent
         for i in range(len(self.periodic_BC_dependent_node_IDs)):
             print("     i = ", i , ", ids = ", self.periodic_BC_dependent_node_IDs[i])
             self.values[self.periodic_BC_dependent_node_IDs[i],:] = self.values[self.periodic_BC_source_node_IDs[i],:]
 
-        # for i in range(len(ListOfDirichletsBCsValues)):
-        #     if self.ListOfDirichletsBCsConstit[i] == True:
-        #         IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-        #         IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-
-        #         if len(self.relation_BC_node_IDs)>0:
-        #             delete_relation = torch.cat(self.relation_BC_node_IDs)
-
-        #             for elem in IDs:
-        #                 if elem in delete_relation:
-        #                     IDs = IDs[IDs!=elem]
-
-        #         if len(self.frozen_BC_node_IDs)>0:
-        #             delete_simple = torch.cat(self.frozen_BC_node_IDs)
-        #             for elem in IDs:
-        #                 if elem in delete_simple:
-        #                     IDs = IDs[IDs!=elem]
-
-        #         self.constit_BC_node_IDs.append(IDs)
 
         if self.n_components ==2:
             if vers == 'new_V2':
-
+                
                 self.IDs_frozen_BC_node_y = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
                 self.IDs_frozen_BC_node_x = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
+
+
                 self.dofs_free_x =( torch.ones_like(self.values[:,0])==1)               # boolean tensor of shape (n_nodes,), with all values set to True
                 self.dofs_free_x[self.IDs_frozen_BC_node_x] = False                     # frozen Dirichlet components set to False
                 self.dofs_free_y =( torch.ones_like(self.values[:,0])==1)
@@ -1288,30 +1291,13 @@ class MeshNN_2D(nn.Module):
                 self.dofs_dependent =( torch.ones_like(self.values[:,0])==0)
                 self.dofs_source =( torch.ones_like(self.values[:,0])==0)
 
-                print(self.periodic_BC_normals)
-
                 for ids_dep, ids_source, i in zip(self.periodic_BC_dependent_node_IDs, self.periodic_BC_source_node_IDs, range(len(self.periodic_BC_source_node_IDs))):
-                    # print("ids_source = ", ids_source)
-                    # print("ids_dep = ", ids_dep)
 
                     coord_dep = self.coordinates_all[ids_dep][:,self.periodic_BC_normals[i]]
                     coord_source = self.coordinates_all[ids_source][:,self.periodic_BC_normals[i]]
 
                     idx_sort_dep = coord_dep.argsort()
                     idx_sort_source = coord_source.argsort()
-
-                    # print("coord_dep = ", coord_dep)
-                    # print("coord_source = ", coord_source)
-
-                    # ids_source = ids_source[idx_sort_source]
-                    # ids_dep = ids_dep[idx_sort_dep]
-
-                    # print("ids_source = ", ids_source)
-                    # print("ids_dep = ", ids_dep)
-
-                    # self.periodic_BC_dependent_node_IDs[i] = ids_dep
-                    # self.periodic_BC_source_node_IDs[i] = ids_source
-
 
                 if len(self.periodic_BC_dependent_node_IDs)>0:
                     self.IDs_dependent_BC_periodic_node = torch.unique(torch.cat(self.periodic_BC_dependent_node_IDs))
@@ -1322,10 +1308,6 @@ class MeshNN_2D(nn.Module):
 
                     self.dofs_dependent[self.IDs_dependent_BC_periodic_node] = True
                     self.dofs_source[self.IDs_source_BC_periodic_node] = True
-
-
-
-                    
 
                 nodal_values_x_imposed = self.values[~self.dofs_free_x,0]               # all imposed values (x component) ~ not to be trained
                 nodal_values_y_imposed = self.values[~self.dofs_free_y,1]               # all imposed values (x component) ~ not to be trained
@@ -1343,24 +1325,38 @@ class MeshNN_2D(nn.Module):
                 IDs_source = self.all_IDs[self.dofs_source]
                 IDs_dependent = self.all_IDs[self.dofs_dependent]
 
-
-                print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
-
-
                 self.source_free_y = ((IDs_free_y - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.source_free_x = ((IDs_free_x - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
 
                 self.dependent_y = ((IDs_imposed_y - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.dependent_x = ((IDs_imposed_x - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
 
-                self.source_free_y = self.source_free_y[idx_sort_source]
-                self.dependent_y = self.dependent_y[idx_sort_dep]
+                mapping_free_x = ((self.all_IDs.unsqueeze(0).T) - IDs_free_x == 0).nonzero()
+                mapping_free_y = ((self.all_IDs.unsqueeze(0).T) - IDs_free_y == 0).nonzero()
+                mapping_imposed_x = ((self.all_IDs.unsqueeze(0).T - IDs_imposed_x) == 0).nonzero()
+                mapping_imposed_y = ((self.all_IDs.unsqueeze(0).T) - IDs_imposed_y == 0).nonzero()
 
-                print("self.source_free_y = ", IDs_free_y[self.source_free_y])
-                print()
-                print(" self.dependent_y = ", IDs_imposed_y[self.dependent_y])
+                self.mapping_free_x = -1*torch.ones_like(self.all_IDs)
+                self.mapping_free_x[mapping_free_x[:,0]] = mapping_free_x[:,1]
 
-                print(" - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
+                self.mapping_free_y = -1*torch.ones_like(self.all_IDs)
+                self.mapping_free_y[mapping_free_y[:,0]] = mapping_free_y[:,1]
+
+                self.mapping_imposed_x = -1*torch.ones_like(self.all_IDs)
+                self.mapping_imposed_x[mapping_imposed_x[:,0]] = mapping_imposed_x[:,1]
+
+                self.mapping_imposed_y = -1*torch.ones_like(self.all_IDs)
+                self.mapping_imposed_y[mapping_imposed_y[:,0]] = mapping_imposed_y[:,1]
+
+                if len(self.source_free_y)>0:
+                    self.source_free_y = self.source_free_y[idx_sort_source]
+                if len(self.source_free_x)>0:
+                    self.source_free_x = self.source_free_x[idx_sort_source]
+                if len(self.dependent_y)>0:
+                    self.dependent_y = self.dependent_y[idx_sort_dep]
+                if len(self.dependent_x)>0:
+                    self.dependent_x = self.dependent_x[idx_sort_dep]
+
                 # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
                 self.nodal_values = nn.ParameterDict({
@@ -1923,37 +1919,37 @@ class MeshNN_2D(nn.Module):
             self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j].unsqueeze(0)
             self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j].unsqueeze(0)
 
-    def ComputeNormalVectors(self):
-        print()
-        print(" * ComputeNormalVectors")
-        line_normals = []
+    # def ComputeNormalVectors(self):
+    #     print()
+    #     print(" * ComputeNormalVectors")
+    #     line_normals = []
 
-        if len(self.relation_BC_node_IDs)==0:
-            return []
-        else:
+    #     if len(self.relation_BC_node_IDs)==0:
+    #         return []
+    #     else:
 
-            for line in self.relation_BC_lines[0]:
-                point_a = line[0]
-                point_b = line[1]
-                coord_a = self.coordinates[point_a-1]
-                coord_b = self.coordinates[point_b-1]
-                vect = coord_b - coord_a
-                vect = vect[0,[1,0]]
-                vect[0] = -vect[0]
-                vect = vect/torch.norm(vect)
-                line_normals.append(vect)
+    #         for line in self.relation_BC_lines[0]:
+    #             point_a = line[0]
+    #             point_b = line[1]
+    #             coord_a = self.coordinates[point_a-1]
+    #             coord_b = self.coordinates[point_b-1]
+    #             vect = coord_b - coord_a
+    #             vect = vect[0,[1,0]]
+    #             vect[0] = -vect[0]
+    #             vect = vect/torch.norm(vect)
+    #             line_normals.append(vect)
 
-            normals = [[] for i in range(len(self.relation_BC_node_IDs[0])) ]
+    #         normals = [[] for i in range(len(self.relation_BC_node_IDs[0])) ]
 
-            for i in range(len(self.relation_BC_node_IDs[0])):
-                node_id = self.relation_BC_node_IDs[0][i]
+    #         for i in range(len(self.relation_BC_node_IDs[0])):
+    #             node_id = self.relation_BC_node_IDs[0][i]
 
-                for j in range(len(self.relation_BC_lines[0])): 
-                    if node_id+1 in self.relation_BC_lines[0][j]:
-                        normals[i].append(line_normals[j])
+    #             for j in range(len(self.relation_BC_lines[0])): 
+    #                 if node_id+1 in self.relation_BC_lines[0][j]:
+    #                     normals[i].append(line_normals[j])
 
-            normals = [(x[0]+x[1])/2 for x in normals]
-            self.relation_BC_normals.append(normals)
+    #         normals = [(x[0]+x[1])/2 for x in normals]
+    #         self.relation_BC_normals.append(normals)
 
     # def UnFreeze_Mesh(self):
     #     """Set the coordinates as trainable parameters"""
@@ -2149,19 +2145,16 @@ class MeshNN_1D(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([mesh.Nodes[i][1:int(mesh.dimension)+1]],dtype=torch.float64)) \
                                              for i in range(len(mesh.Nodes))])
 
-        print("mesh.NNodes = ", mesh.NNodes)
         # self.values = 0.001*torch.randint(low=-100, high=100, size=(mesh.NNodes,1))
 
         self.values =0.1*torch.ones((mesh.NNodes,1))
 
         self.connectivity = mesh.Connectivity
         self.borders_nodes = mesh.borders_nodes
-        print("border_nodes : ", self.borders_nodes)
 
         self.dofs = mesh.NNodes*mesh.dim # Number of Dofs
         self.NElem = mesh.NElem
         self.order = mesh.order
-        print("self.order = ", self.order)
         self.frozen_BC_node_IDs = []
         self.frozen_BC_component_IDs = []
         self.DirichletBoundaryNodes = mesh.DirichletBoundaryNodes

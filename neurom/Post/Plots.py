@@ -913,7 +913,7 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
                     sol = meshio.Mesh(Coord_converged, {"triangle":(Connect_converged-1)},
                     point_data={"U":u.data}, 
                     # cell_data={"eps": [eps.data], "sigma": [sigma.data],  "sigma_vm": [sigma_VM2.data]}, )
-                    cell_data={"sigma_vm": [sigma_VM2.data]}, )
+                    cell_data={"sigma_vm": [sigma_VM2.data], "sigma_xx":[sigma[:,0].data], "sigma_yy":[sigma[:,1].data], "sigma_xy":[sigma[:,2].data]} )
                     sol.write(
                         "Results/Paraview/sol_u_end_training_"+Name_export+".vtk", 
                     )

@@ -1454,7 +1454,60 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))
+                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))                    
+                        # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+                        loss_Neumann_BC = 0
+                    
+                        for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
+                            t = model.relation_BC_values[i]
+                            normal_vectors = model.relation_BC_normal_vectors[i]
+
+                            if len(t)==2:
+                                for edge in edges:
+                                    
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+
+                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+
+                            elif len(t)==1:
+                                for edge, n in zip(edges, normal_vectors):
+                                    print("n = ", n)
+
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+
+                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                            
+                        print("loss = ", loss)
+                        print("loss_Neumann_BC = ", loss_Neumann_BC)
+                        loss = loss - loss_Neumann_BC
+                        print("loss = ", loss)
+                        print()
+
+                        # print("     edge = ", (edge[0]-1).data, (edge[1]-1).data)
+                        # print("     a = ", model.coordinates_all[edge[0]-1])
+                        # print("     b = ", model.coordinates_all[edge[1]-1])
+                        # print("     id = ", model.mapping_free_x[edge[0]-1], model.mapping_free_x[edge[1]-1])
+                        # print("     n = ", n)
+                        # print()
+                        # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
@@ -1472,6 +1525,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 loss = loss + regul
 
             loss.backward(retain_graph=True)
+
+            print("Grad X:", model.nodal_values.x_free.grad[model.mapping_free_x[100]])
+            print("Grad Y:", model.nodal_values.x_free.grad[model.mapping_free_y[100]])
+            print()
             return loss
 
         optimizer.step(closure)
@@ -1483,12 +1540,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
         with torch.no_grad():
 
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
             if len(model.source_free_x)>0:
                 model.nodal_values.x_imposed[model.dependent_x] = model.nodal_values.x_free[model.source_free_x]
             if len(model.source_free_y)>0:
                 model.nodal_values.y_imposed[model.dependent_y] = model.nodal_values.y_free[model.source_free_y]
-        
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 

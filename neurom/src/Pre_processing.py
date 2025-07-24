@@ -307,7 +307,8 @@ class Mesh:
 
                 if self.NoBC == False:
                     self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
-                
+
+                print("self.ListOfDirichletsBCsValues = ", self.ListOfDirichletsBCsValues)
                 self.ExcludedPoints = []
 
                 flagType = True
@@ -423,15 +424,15 @@ class Mesh:
                 if self.order =='1':
                     mesh = meshio.Mesh(points, {"triangle":cells})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
-                    # mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
-                    # meshio.write(msh_name[0:-4]+".xml", mesh)
+                    mesh = meshio.Mesh(points[:,:2], {"triangle":cells})
+                    meshio.write(msh_name[0:-4]+".xml", mesh)
 
                 elif self.order =='2':
                     mesh = meshio.Mesh(points, {"triangle6":meshBeam.cells_dict["triangle6"]})
                     meshio.write(msh_name[0:-4]+".vtk", mesh, binary=True )
 
-                    # mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
-                    # meshio.write(msh_name[0:-4]+".xml", mesh)
+                    mesh = meshio.Mesh(points[:,:2], {"triangle":meshBeam.cells_dict["triangle6"][:,0:3]})
+                    meshio.write(msh_name[0:-4]+".xml", mesh)
             case '4-node tetrahedron':
                 if self.order =='1':
                     mesh = meshio.Mesh(points, {"tetra":cells})
@@ -447,6 +448,7 @@ class Mesh:
         reader.SetFileName(msh_name[0:-4]+".vtk",)  
         reader.Update()
         self.vtk_mesh = reader.GetOutput()
+        
     def ExportMeshVtk1D(self,flag_update = False):
 
         msh_name = 'Geometries/'+self.name_mesh

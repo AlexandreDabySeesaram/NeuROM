@@ -1414,7 +1414,7 @@ def GradDescend_Stage1_2D(Model_u, Model_du, Mesh, IDs_u, IDs_du, PlotCoordinate
 
     return Model_u, Model_du, loss
 
-def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
+def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None):
     print("**************** START TRAINING ***************\n")
     Loss_vect                           = []                  # Initialise vector of loss values
     time_start                          = time.time()
@@ -1427,6 +1427,14 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
     
     model.Initresults()                                       # Initialise the structure for saving training history
     stagnation                          = False               # Stagnation of loss decay
+
+    theta = torch.tensor(0*torch.pi/2)
+    rho = 5e-7
+
+
+    if not (mapping is None):
+        map_u = mapping[0]
+        F = mapping[1]
 
     while epoch<model.Max_epochs and not stagnation:
         t0 = time.time()
@@ -1452,36 +1460,47 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
             match config["solver"]["Problem"]:
                 case "Linear":
                     if config["solver"]["volume_forces"] == True:
-                        loss = torch.sum((0.5*InternalEnergy_2D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                        loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)-10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim)*torch.abs(detJ))                    
+                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)*torch.abs(detJ))                    
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
                         loss_Neumann_BC = 0
                     
                         for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
+                            
                             t = model.relation_BC_values[i]
                             normal_vectors = model.relation_BC_normal_vectors[i]
 
                             if len(t)==2:
                                 for edge in edges:
-                                    
                                     ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
                                     ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
                                     ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
                                     ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+                                    if not (mapping is None):
+                                        F_a = F[edge[0]-1]
+                                        F_b = F[edge[1]-1]
+                                        F_ab = (F_a+F_b)/2
+                                        t_actual = [F_ab[0,0]*t[0] + F_ab[1,0]*t[1], F_ab[0,1]*t[0] + F_ab[1,1]*t[1]] 
+                                    else:
+                                        t_actual = t
 
+
+                                    ua_x_actual = ua_x 
+                                    ua_y_actual = ua_y 
+                                    ub_x_actual = ub_x 
+                                    ub_y_actual = ub_y  
+
+                                    tu = t_actual[0] * 0.5 * (ua_x_actual + ub_x_actual) + t_actual[1] * 0.5 * (ua_y_actual + ub_y_actual)
                                     dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
                                     loss_Neumann_BC = loss_Neumann_BC + tu*dx
 
                             elif len(t)==1:
                                 for edge, n in zip(edges, normal_vectors):
-                                    print("n = ", n)
-
                                     ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
                                     ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
@@ -1494,19 +1513,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
 
                                     loss_Neumann_BC = loss_Neumann_BC + tu*dx
                             
-                        print("loss = ", loss)
-                        print("loss_Neumann_BC = ", loss_Neumann_BC)
                         loss = loss - loss_Neumann_BC
-                        print("loss = ", loss)
-                        print()
-
-                        # print("     edge = ", (edge[0]-1).data, (edge[1]-1).data)
-                        # print("     a = ", model.coordinates_all[edge[0]-1])
-                        # print("     b = ", model.coordinates_all[edge[1]-1])
-                        # print("     id = ", model.mapping_free_x[edge[0]-1], model.mapping_free_x[edge[1]-1])
-                        # print("     n = ", n)
-                        # print()
-                        # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
@@ -1525,10 +1532,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 loss = loss + regul
 
             loss.backward(retain_graph=True)
-
-            print("Grad X:", model.nodal_values.x_free.grad[model.mapping_free_x[100]])
-            print("Grad Y:", model.nodal_values.x_free.grad[model.mapping_free_y[100]])
-            print()
             return loss
 
         optimizer.step(closure)
@@ -1923,7 +1926,7 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
 
     return Loss_vect, (time_stop-time_start)
 
-def Training_2_3D_FEM(model, config, Mat):
+def Training_2_3D_FEM(model, config, Mat, mapping = None):
     n_epochs = config["training"]["n_epochs"]
     n_refinement        = 0                                 # Initialise the refinement level
     stagnation          = False                             # Stagnation flag
@@ -1963,29 +1966,29 @@ def Training_2_3D_FEM(model, config, Mat):
             match config["solver"]["TrainingStrategy"]:
                 case "Integral":
                     model.Max_epochs = 1000
-                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
                     model.Max_epochs = config["training"]["n_epochs"]
-                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     Duration = Duration_0 + Duration_1
                 case "Residual":
                     model.Max_epochs = 1000
-                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
                     model.Max_epochs = config["training"]["n_epochs"]
-                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     Duration = Duration_0 + Duration_1
                 case "Mixed":
                     model.Max_epochs = 1000
-                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_0 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     optimizer = torch.optim.LBFGS(model.parameters(), line_search_fn="strong_wolfe")
                     model.Max_epochs = config["training"]["n_epochs"]
-                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration_1 = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
                     Duration = Duration_0 + Duration_1
 
@@ -1995,11 +1998,11 @@ def Training_2_3D_FEM(model, config, Mat):
             # Call the mono-scale training routine
             match config["solver"]["TrainingStrategy"]:
                 case "Integral":
-                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
                 case "Residual":
-                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config)
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
                 case "Mixed":
-                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config) 
+                    Loss_vect, Duration = Training_2D_Integral(model, optimizer, n_epochs,Mat, config, mapping)
 
         # Update the training history
         Loss_tot            += Loss_vect

@@ -375,10 +375,12 @@ def Gravity_vect(theta,rho = 1e-9, dim = 2, n_angle = 1):
                 return (rho*g*torch.stack([component_1, component_2, component_3], dim=0))
 
 
-def VolumeForcesEnergy_2D(u,theta, rho):
+def VolumeForcesEnergy_2D(u,theta, rho, mapping = None):
     fv = Gravity(theta,rho).to(u.dtype).to(u.device)
     W_e = u.t()@fv
     return torch.squeeze(W_e)
+
+
 
 def Stress(eps, lmbda, mu):
     # Function used only for export to vtk, ordering compatible with Paraview ( 3D: XX, YY, ZZ, XY, YZ, XZ)
@@ -433,10 +435,45 @@ def Stress_tensor(eps, lmbda, mu):
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
-def InternalEnergy_2_3D_einsum(u,x,lmbda, mu, dim = 2):
+def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
     match dim:
         case 2:
             eps =  Strain_sqrt(u,x)
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+            if not (mapping is None):
+                list_F = mapping[1]
+                F = torch.stack(list_F)  # shape: [N, 2, 2]
+                F_inv = torch.linalg.inv(F)  # shape: [N, 2, 2]
+
+                # eps: [N, 3]
+                eps_xx = eps[:, 0]
+                eps_yy = eps[:, 1]
+                eps_xy = eps[:, 2] * 1/torch.sqrt(torch.tensor(2))  # scale back the shear
+
+                grad_u = torch.stack([
+                    torch.stack([eps_xx, eps_xy], dim=1),  # first row
+                    torch.stack([eps_xy, eps_yy], dim=1),  # second row
+                ], dim=1)  # shape: [N, 2, 2]
+
+                term1 = torch.bmm(grad_u, F_inv)                 # [N,2,2]
+                term2 = term1.transpose(1, 2)  # [N,2,2]
+                eps_R = 0.5 * (term1 + term2)  # [N, 2, 2]
+
+                eps_R_voigt = torch.stack([
+                    eps_R[:, 0, 0],                           # ε_xx
+                    eps_R[:, 1, 1],                           # ε_yy
+                    (eps_R[:, 0, 1] + eps_R[:, 1, 0]) / torch.tensor(2) * torch.sqrt(torch.tensor(2)) # ε_xy (engineering shear)
+                ], dim=1)
+
+                # assert torch.allclose(eps[:,0], eps_R_voigt[:,0], atol=1e-6), "0 : eps_voigt != eps_R_voigt"
+                # assert torch.allclose(eps[:,1], eps_R_voigt[:,1], atol=1e-6), "1 : eps_voigt != eps_R_voigt"
+                # assert torch.allclose(eps[:,2], eps_R_voigt[:,2], atol=1e-6), "2 : eps_voigt != eps_R_voigt"
+
+                # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+                eps = eps_R_voigt
+
+
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
             return W_e
@@ -529,7 +566,7 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
-def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
+def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E, mapping):
 
     Space_modes = []
     xg_modes = []

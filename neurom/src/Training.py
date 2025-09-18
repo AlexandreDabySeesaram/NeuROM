@@ -1429,7 +1429,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
     stagnation                          = False               # Stagnation of loss decay
 
     theta = torch.tensor(0*torch.pi/2)
-    rho = 5e-7
+    rho =5e-7
 
 
     if not (mapping is None):
@@ -1451,6 +1451,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
 
             detJ_small = detJ[torch.where(torch.abs(detJ)<1.0e-6)]
 
+
             # Check existance
             try:
                 config["solver"]["Problem"]
@@ -1460,58 +1461,65 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
             match config["solver"]["Problem"]:
                 case "Linear":
                     if config["solver"]["volume_forces"] == True:
-                        loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)-10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
+
+                        if (mapping is None):
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
+                        else:
+                            mapping_J = mapping[2]
+                            print(mapping_J)
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
+
                     else:
                         loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)*torch.abs(detJ))                    
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-                        loss_Neumann_BC = 0
-                    
-                        for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
-                            
-                            t = model.relation_BC_values[i]
-                            normal_vectors = model.relation_BC_normal_vectors[i]
+                    loss_Neumann_BC = 0
 
-                            if len(t)==2:
-                                for edge in edges:
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                    for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
+                        
+                        t = model.relation_BC_values[i]
+                        normal_vectors = model.relation_BC_normal_vectors[i]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                        if len(t)==2:
+                            for edge in edges:
+                                ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    if not (mapping is None):
-                                        F_a = F[edge[0]-1]
-                                        F_b = F[edge[1]-1]
-                                        F_ab = (F_a+F_b)/2
-                                        t_actual = [F_ab[0,0]*t[0] + F_ab[1,0]*t[1], F_ab[0,1]*t[0] + F_ab[1,1]*t[1]] 
-                                    else:
-                                        t_actual = t
+                                ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+
+                                if not (mapping is None):
+                                    F_a = F[edge[0]-1]
+                                    F_b = F[edge[1]-1]
+                                    F_ab = (F_a+F_b)/2
+                                    t_actual = [F_ab[0,0]*t[0] + F_ab[1,0]*t[1], F_ab[0,1]*t[0] + F_ab[1,1]*t[1]] 
+                                else:
+                                    t_actual = t
 
 
-                                    ua_x_actual = ua_x 
-                                    ua_y_actual = ua_y 
-                                    ub_x_actual = ub_x 
-                                    ub_y_actual = ub_y  
+                                ua_x_actual = ua_x 
+                                ua_y_actual = ua_y 
+                                ub_x_actual = ub_x 
+                                ub_y_actual = ub_y  
 
-                                    tu = t_actual[0] * 0.5 * (ua_x_actual + ub_x_actual) + t_actual[1] * 0.5 * (ua_y_actual + ub_y_actual)
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                tu = t_actual[0] * 0.5 * (ua_x_actual + ub_x_actual) + t_actual[1] * 0.5 * (ua_y_actual + ub_y_actual)
+                                dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                loss_Neumann_BC = loss_Neumann_BC + tu*dx
 
-                            elif len(t)==1:
-                                for edge, n in zip(edges, normal_vectors):
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                        elif len(t)==1:
+                            for edge, n in zip(edges, normal_vectors):
+                                ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
 
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                loss_Neumann_BC = loss_Neumann_BC + tu*dx
                             
                         loss = loss - loss_Neumann_BC
 

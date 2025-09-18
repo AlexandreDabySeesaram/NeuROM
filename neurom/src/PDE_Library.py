@@ -439,7 +439,9 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
     match dim:
         case 2:
             eps =  Strain_sqrt(u,x)
-
+            idx = 150
+            print("     eps = ", eps[idx,:])
+            
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             if not (mapping is None):
                 list_F = mapping[1]
@@ -451,24 +453,30 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
                 # eps: [N, 3]
                 eps_xx = eps[:, 0]
                 eps_yy = eps[:, 1]
-                eps_xy = eps[:, 2] /sqrt2  # scale back the shear
+                eps_xy = eps[:, 2]/sqrt2  # scale back the shear
 
                 grad_u = torch.stack([
                     torch.stack([eps_xx, eps_xy], dim=1),  # first row
                     torch.stack([eps_xy, eps_yy], dim=1),  # second row
                 ], dim=1)  # shape: [N, 2, 2]
 
+                print("     grad u = ", grad_u[idx,:])
+
+
+
                 # term1 = torch.bmm(grad_u, F_inv)                            # ∇u · F⁻¹
                 # term2 = torch.bmm(F_inv.transpose(1, 2), grad_u.transpose(1, 2))  # F⁻ᵀ · (∇u)ᵀ
 
-                term1 = grad_u @ F_inv                         
-                term2 = F_inv.transpose(1, 2) @ grad_u.transpose(1, 2)
+                term1 = grad_u @ F_inv                                      # ∇u · F⁻¹
+                term2 = F_inv.transpose(1, 2) @ grad_u.transpose(1, 2)      # F⁻ᵀ · (∇u)ᵀ
                 eps_R = 0.5 * (term1 + term2)
+
+                print("     rotation = ", eps_R[idx,:])
 
                 eps_R_voigt = torch.stack([
                     eps_R[:, 0, 0],                           # ε_xx
                     eps_R[:, 1, 1],                           # ε_yy
-                    (eps_R[:, 0, 1]) * sqrt2                    # ε_xy 
+                    (eps_R[:, 0, 1]) * sqrt2                  # ε_xy 
                 ], dim=1)
 
                 # If F = Identity, we can check
@@ -476,6 +484,10 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
 
                 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
                 eps = eps_R_voigt
+            print("     eps(mapping) = ", eps[idx,:])
+            print("________________________________")
+            print()
+
 
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)

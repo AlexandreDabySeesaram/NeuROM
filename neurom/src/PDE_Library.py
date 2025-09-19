@@ -436,11 +436,14 @@ def Stress_tensor(eps, lmbda, mu):
     return sigma
 
 def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
+
     match dim:
         case 2:
             eps =  Strain_sqrt(u,x)
+            eps_full = Strain_full(u,x)
+
             idx = 150
-            print("     eps = ", eps[idx,:])
+            # print("     eps = ", eps[idx,:])
             
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             if not (mapping is None):
@@ -450,41 +453,44 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
 
                 sqrt2 = eps.new_tensor(2.0).sqrt()
 
-                # eps: [N, 3]
-                eps_xx = eps[:, 0]
-                eps_yy = eps[:, 1]
-                eps_xy = eps[:, 2]/sqrt2  # scale back the shear
+                # # eps: [N, 3]
+                # eps_xx = eps[:, 0]
+                # eps_yy = eps[:, 1]
+                # eps_xy = eps[:, 2]/sqrt2  # scale back the shear
+
+                # grad_u = torch.stack([
+                #     torch.stack([eps_xx, eps_xy], dim=1),  # first row
+                #     torch.stack([eps_xy, eps_yy], dim=1),  # second row
+                # ], dim=1)  # shape: [N, 2, 2]
+
+                # term1 = grad_u @ F_inv                                      # ∇u · F⁻¹
+                # term2 = F_inv.transpose(1, 2) @ grad_u.transpose(1, 2)      # F⁻ᵀ · (∇u)ᵀ
+                # # term2 = term1.transpose(1, 2)                               # F⁻ᵀ · (∇u)ᵀ
+
+                # eps_R = 0.5 * (term1 + term2)
 
                 grad_u = torch.stack([
-                    torch.stack([eps_xx, eps_xy], dim=1),  # first row
-                    torch.stack([eps_xy, eps_yy], dim=1),  # second row
-                ], dim=1)  # shape: [N, 2, 2]
+                    torch.stack([eps_full[:,0], eps_full[:,1]], dim=1),  # first row
+                    torch.stack([eps_full[:,2], eps_full[:,3]], dim=1),  # second row
+                ], dim=1)
+                eps_R = (grad_u @ F_inv  + (grad_u @ F_inv).transpose(1, 2))/2
 
-                print("     grad u = ", grad_u[idx,:])
-
-
-
-                # term1 = torch.bmm(grad_u, F_inv)                            # ∇u · F⁻¹
-                # term2 = torch.bmm(F_inv.transpose(1, 2), grad_u.transpose(1, 2))  # F⁻ᵀ · (∇u)ᵀ
-
-                term1 = grad_u @ F_inv                                      # ∇u · F⁻¹
-                term2 = F_inv.transpose(1, 2) @ grad_u.transpose(1, 2)      # F⁻ᵀ · (∇u)ᵀ
-                eps_R = 0.5 * (term1 + term2)
-
-                print("     rotation = ", eps_R[idx,:])
+                if grad_u[idx,0,0]!=0:
+                    print("eps sqrt = ", eps[idx,:])
+                    print("eps full = ", eps_full[idx,:])
+                    # print("     grad u = ", grad_u[idx,:])
+                    # print("eps_R[idx,:] = ", eps_R[idx,:])
+                    # print(torch.linalg.inv(grad_u[idx,:])@eps_R[idx,:])
 
                 eps_R_voigt = torch.stack([
                     eps_R[:, 0, 0],                           # ε_xx
                     eps_R[:, 1, 1],                           # ε_yy
-                    (eps_R[:, 0, 1]) * sqrt2                  # ε_xy 
+                    (eps_R[:, 0, 1]) * sqrt2             # ε_xy 
                 ], dim=1)
-
-                # If F = Identity, we can check
-                # assert torch.allclose(eps[:,2], eps_R_voigt[:,2], atol=1e-6), "2 : eps_voigt != eps_R_voigt"
 
                 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
                 eps = eps_R_voigt
-            print("     eps(mapping) = ", eps[idx,:])
+            # print("     eps(mapping) = ", eps[idx,:])
             print("________________________________")
             print()
 
@@ -1050,6 +1056,16 @@ def Strain_sqrt(u,x, dim = 2):
             dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
             return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2],(1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
+
+def Strain_full(u,x, dim = 2):
+
+    match dim:
+        case 2:
+            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
+            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
+            return torch.stack([du[:,0], du[:,1], dv[:,0], dv[:,1]],dim=1)
+        
+
 
 def grad_u_2_3D(u,x, dim = 2):
     """ Return the gradient of u"""

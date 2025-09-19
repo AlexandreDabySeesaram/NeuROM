@@ -1429,7 +1429,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
     stagnation                          = False               # Stagnation of loss decay
 
     theta = torch.tensor(0*torch.pi/2)
-    rho =5e-7
+    rho =1e-6
 
 
     if not (mapping is None):
@@ -1463,10 +1463,9 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                     if config["solver"]["volume_forces"] == True:
 
                         if (mapping is None):
-                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted, xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
                         else:
                             mapping_J = mapping[2]
-                            print(mapping_J)
                             loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
 
                     else:

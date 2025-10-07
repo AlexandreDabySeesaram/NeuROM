@@ -1451,7 +1451,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
 
             detJ_small = detJ[torch.where(torch.abs(detJ)<1.0e-6)]
 
-
             # Check existance
             try:
                 config["solver"]["Problem"]
@@ -1463,13 +1462,13 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                     if config["solver"]["volume_forces"] == True:
 
                         if (mapping is None):
-                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted, xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted, xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
                         else:
                             mapping_J = mapping[2]
-                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - 10*VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
 
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2_3D_einsum(u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)*torch.abs(detJ))                    
+                        loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping)*torch.abs(detJ))                    
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
                     loss_Neumann_BC = 0
@@ -1478,9 +1477,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                         
                         t = model.relation_BC_values[i]
                         normal_vectors = model.relation_BC_normal_vectors[i]
-
+                        
                         if len(t)==2:
-                            for edge in edges:
+                            for edge, n in zip(edges, normal_vectors):
+
                                 ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
                                 ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
@@ -1488,39 +1488,53 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                                 ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
                                 if not (mapping is None):
-                                    F_a = F[edge[0]-1]
-                                    F_b = F[edge[1]-1]
-                                    F_ab = (F_a+F_b)/2
-                                    t_actual = [F_ab[0,0]*t[0] + F_ab[1,0]*t[1], F_ab[0,1]*t[0] + F_ab[1,1]*t[1]] 
+                                    F = mapping[4]
+                                    J = mapping[5]
+
+                                    # mapping Jacobian and gradient at midpoint
+                                    F_mid = (F[edge[0]-1]+F[edge[1]-1])/2
+                                    J_mid = (J[edge[0]-1]+J[edge[1]-1])/2
+
+                                    # surface Jacobian factor
+                                    scale = abs(J_mid * (F_mid.inverse().T @ n)).norm()
                                 else:
-                                    t_actual = t
-
-
-                                ua_x_actual = ua_x 
-                                ua_y_actual = ua_y 
-                                ub_x_actual = ub_x 
-                                ub_y_actual = ub_y  
-
-                                tu = t_actual[0] * 0.5 * (ua_x_actual + ub_x_actual) + t_actual[1] * 0.5 * (ua_y_actual + ub_y_actual)
+                                    scale=1
+                                
+                                tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
                                 dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
 
                         elif len(t)==1:
                             for edge, n in zip(edges, normal_vectors):
+
                                 ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
                                 ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
                                 ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
                                 ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                if not (mapping is None):
+                                    F = mapping[4]
+                                    J = mapping[5]
 
+                                    # mapping Jacobian and gradient at midpoint
+                                    F_mid = (F[edge[0]-1]+F[edge[1]-1])/2
+                                    J_mid = (J[edge[0]-1]+J[edge[1]-1])/2
+
+                                    # surface Jacobian factor
+                                    scale = abs(J_mid * (F_mid.inverse().T @ n)).norm()
+
+                                    n = J_mid * (F_mid.inverse().T @ n)/(J_mid * (F_mid.inverse().T @ n)).norm()
+                                else:
+                                    scale=1
+
+                                tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
                                 dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
                             
-                        loss = loss - loss_Neumann_BC
+                    loss = loss - loss_Neumann_BC
 
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
@@ -1555,7 +1569,6 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
             if len(model.source_free_y)>0:
                 model.nodal_values.y_imposed[model.dependent_y] = model.nodal_values.y_free[model.source_free_y]
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
 
             detJ = detJ_new[0]
             xg = xg_new[0]

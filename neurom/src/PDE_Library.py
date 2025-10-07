@@ -442,9 +442,7 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
             eps =  Strain_sqrt(u,x)
             eps_full = Strain_full(u,x)
 
-            idx = 150
-            # print("     eps = ", eps[idx,:])
-            
+
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             if not (mapping is None):
                 list_F = mapping[1]
@@ -453,34 +451,11 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
 
                 sqrt2 = eps.new_tensor(2.0).sqrt()
 
-                # # eps: [N, 3]
-                # eps_xx = eps[:, 0]
-                # eps_yy = eps[:, 1]
-                # eps_xy = eps[:, 2]/sqrt2  # scale back the shear
-
-                # grad_u = torch.stack([
-                #     torch.stack([eps_xx, eps_xy], dim=1),  # first row
-                #     torch.stack([eps_xy, eps_yy], dim=1),  # second row
-                # ], dim=1)  # shape: [N, 2, 2]
-
-                # term1 = grad_u @ F_inv                                      # ∇u · F⁻¹
-                # term2 = F_inv.transpose(1, 2) @ grad_u.transpose(1, 2)      # F⁻ᵀ · (∇u)ᵀ
-                # # term2 = term1.transpose(1, 2)                               # F⁻ᵀ · (∇u)ᵀ
-
-                # eps_R = 0.5 * (term1 + term2)
-
                 grad_u = torch.stack([
                     torch.stack([eps_full[:,0], eps_full[:,1]], dim=1),  # first row
                     torch.stack([eps_full[:,2], eps_full[:,3]], dim=1),  # second row
                 ], dim=1)
                 eps_R = (grad_u @ F_inv  + (grad_u @ F_inv).transpose(1, 2))/2
-
-                if grad_u[idx,0,0]!=0:
-                    print("eps sqrt = ", eps[idx,:])
-                    print("eps full = ", eps_full[idx,:])
-                    # print("     grad u = ", grad_u[idx,:])
-                    # print("eps_R[idx,:] = ", eps_R[idx,:])
-                    # print(torch.linalg.inv(grad_u[idx,:])@eps_R[idx,:])
 
                 eps_R_voigt = torch.stack([
                     eps_R[:, 0, 0],                           # ε_xx
@@ -490,13 +465,10 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
 
                 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
                 eps = eps_R_voigt
-            # print("     eps(mapping) = ", eps[idx,:])
-            print("________________________________")
-            print()
-
-
+            
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+
             return W_e
         case 3:
             eps =  Strain_sqrt(u,x, dim = dim)

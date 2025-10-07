@@ -1272,32 +1272,23 @@ class MeshNN_2D(nn.Module):
 
         # Init: Source --> Dependent
         for i in range(len(self.periodic_BC_dependent_node_IDs)):
-            print("     i = ", i , ", ids = ", self.periodic_BC_dependent_node_IDs[i])
             self.values[self.periodic_BC_dependent_node_IDs[i],:] = self.values[self.periodic_BC_source_node_IDs[i],:]
 
 
         if self.n_components ==2:
             if vers == 'new_V2':
                 
+                # IDs of nodes frozen due to Dirichlet BC, component x and y stored separately
                 self.IDs_frozen_BC_node_y = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
                 self.IDs_frozen_BC_node_x = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
-
 
                 self.dofs_free_x =( torch.ones_like(self.values[:,0])==1)               # boolean tensor of shape (n_nodes,), with all values set to True
                 self.dofs_free_x[self.IDs_frozen_BC_node_x] = False                     # frozen Dirichlet components set to False
                 self.dofs_free_y =( torch.ones_like(self.values[:,0])==1)
                 self.dofs_free_y[self.IDs_frozen_BC_node_y] = False
 
-                self.dofs_dependent =( torch.ones_like(self.values[:,0])==0)
+                self.dofs_dependent =( torch.ones_like(self.values[:,0])==0)           # boolean tensor of shape (n_nodes,) 
                 self.dofs_source =( torch.ones_like(self.values[:,0])==0)
-
-                for ids_dep, ids_source, i in zip(self.periodic_BC_dependent_node_IDs, self.periodic_BC_source_node_IDs, range(len(self.periodic_BC_source_node_IDs))):
-
-                    coord_dep = self.coordinates_all[ids_dep][:,self.periodic_BC_normals[i]]
-                    coord_source = self.coordinates_all[ids_source][:,self.periodic_BC_normals[i]]
-
-                    idx_sort_dep = coord_dep.argsort()
-                    idx_sort_source = coord_source.argsort()
 
                 if len(self.periodic_BC_dependent_node_IDs)>0:
                     self.IDs_dependent_BC_periodic_node = torch.unique(torch.cat(self.periodic_BC_dependent_node_IDs))
@@ -1308,6 +1299,7 @@ class MeshNN_2D(nn.Module):
 
                     self.dofs_dependent[self.IDs_dependent_BC_periodic_node] = True
                     self.dofs_source[self.IDs_source_BC_periodic_node] = True
+
 
                 nodal_values_x_imposed = self.values[~self.dofs_free_x,0]               # all imposed values (x component) ~ not to be trained
                 nodal_values_y_imposed = self.values[~self.dofs_free_y,1]               # all imposed values (x component) ~ not to be trained
@@ -1325,9 +1317,29 @@ class MeshNN_2D(nn.Module):
                 IDs_source = self.all_IDs[self.dofs_source]
                 IDs_dependent = self.all_IDs[self.dofs_dependent]
 
+                # IDs of source points in periodic boundary conditions
                 self.source_free_y = ((IDs_free_y - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.source_free_x = ((IDs_free_x - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
 
+
+                for ids_dep_in, ids_source_in, i in zip(self.periodic_BC_dependent_node_IDs, self.periodic_BC_source_node_IDs, range(len(self.periodic_BC_source_node_IDs))):
+                    # REMINDER: edges with periodic BC can share nodes with Dirichlet BC edges
+                    #           these points are initially in the 'source' list but also in 'imposed' (not 'free')
+                    #           we need to remove them from the 'source' ID list to avoid mismatch
+
+                    # --- intersection with IDs_free_x while preserving tensor output ---
+                    mask = torch.isin(ids_source_in, IDs_free_x)
+                    ids_source = ids_source_in[mask]
+                    ids_dep = ids_dep_in[mask]
+
+                    coord_dep = self.coordinates_all[ids_dep][:,self.periodic_BC_normals[i]]
+                    coord_source = self.coordinates_all[ids_source][:,self.periodic_BC_normals[i]]
+
+                    # ordering to ensure correct correspondense between source and dependent points
+                    idx_sort_dep = coord_dep.argsort()
+                    idx_sort_source = coord_source.argsort()
+
+                # IDs of dependent points in periodic boundary conditions
                 self.dependent_y = ((IDs_imposed_y - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.dependent_x = ((IDs_imposed_x - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
 
@@ -1386,7 +1398,32 @@ class MeshNN_2D(nn.Module):
             self.nodal_values_xy = nn.ParameterList([nn.Parameter(torch.tensor([i[2]])) for i in self.values])
             self.nodal_values = [self.nodal_values_x,self.nodal_values_y, self.nodal_values_xy]
 
+    def ReComputeNormals(self, ListOfDirichletsBCsValues):
 
+        self.relation_BC_normal_vectors = []
+        self.relation_BC_edges = []
+        self.relation_BC_node_IDs = []
+        self.relation_BC_values = []
+
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsRelation[i] == True: 
+
+                Neumann_IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(Neumann_IDs.reshape(Neumann_IDs.shape[0],-1))-1
+
+                # dofs_N[IDs] = True
+                # self.dofs_Neumann.append(self.all_IDs[dofs_N])
+
+                self.relation_BC_edges.append(Neumann_IDs)
+                self.relation_BC_node_IDs.append(IDs)
+                self.relation_BC_values.append(ListOfDirichletsBCsValues[i])
+                normal_vectors = []
+                for edge in Neumann_IDs:
+                    vect = self.coordinates_all[edge[1]-1] - self.coordinates_all[edge[0]-1]
+                    perp_vect = torch.tensor([-vect[1], vect[0]])
+                    normal_vectors.append(perp_vect/torch.norm(perp_vect))
+
+                self.relation_BC_normal_vectors.append(normal_vectors)
 
 
 

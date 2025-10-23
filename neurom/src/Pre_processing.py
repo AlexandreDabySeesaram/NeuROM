@@ -112,6 +112,11 @@ class Mesh:
         self.borders_nodes = []
         self.borders_exist = True
 
+    def AddBordersHexa(self,borders):
+        self.borders = borders
+        self.borders_nodes = [[] for id in borders]
+        self.borders_exist = True
+
     def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
         self.ExcludeId = Exclude
@@ -346,19 +351,20 @@ class Mesh:
                             flagType = False  
                         self.Connectivity.append(ElemList[-self.node_per_elem:])  
 
-                    if ElemList[4] in self.borders: 
-                        match ElemList[1]:
-                            case 1:
-                                node_per_elem = 2
-                            case 2:
-                                node_per_elem = 3
-                            case 8:
-                                node_per_elem = 3
-                            case 9:
-                                node_per_elem = 6
-                            case 15:
-                                node_per_elem = 1
-                        self.borders_nodes.append(ElemList[-node_per_elem:])  
+                    for ID_idx in range(len(self.borders)):
+                        if ElemList[4] == self.borders[ID_idx]:  
+                            match ElemList[1]:
+                                case 1:
+                                    node_per_elem = 2
+                                case 2:
+                                    node_per_elem = 3
+                                case 8:
+                                    node_per_elem = 3
+                                case 9:
+                                    node_per_elem = 6
+                                case 15:
+                                    node_per_elem = 1
+                            self.borders_nodes[ID_idx].append(ElemList[-node_per_elem:])  
 
                     if self.NoBC == False:
                         for ID_idx in range(len(self.ListOfDirichletsBCsIds)):

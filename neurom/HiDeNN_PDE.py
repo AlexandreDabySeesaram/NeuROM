@@ -1103,8 +1103,6 @@ class MeshNN_2D(nn.Module):
         self.IdStored = False
 
         if mesh.NoBC==False:
-            print("self.DirichletBoundaryNodes = ", len(self.DirichletBoundaryNodes))
-            print("mesh.ListOfDirichletsBCsValues = ", mesh.ListOfDirichletsBCsValues)
             self.SetBCs(mesh.ListOfDirichletsBCsValues)
             self.NBCs = len(mesh.ListOfDirichletsBCsIds) # Number of prescribed Dofs
         else:
@@ -1300,7 +1298,6 @@ class MeshNN_2D(nn.Module):
                     self.dofs_dependent[self.IDs_dependent_BC_periodic_node] = True
                     self.dofs_source[self.IDs_source_BC_periodic_node] = True
 
-
                 nodal_values_x_imposed = self.values[~self.dofs_free_x,0]               # all imposed values (x component) ~ not to be trained
                 nodal_values_y_imposed = self.values[~self.dofs_free_y,1]               # all imposed values (x component) ~ not to be trained
                 nodal_values_x_free = self.values[self.dofs_free_x,0]                   # trainable values (x component)
@@ -1316,6 +1313,12 @@ class MeshNN_2D(nn.Module):
 
                 IDs_source = self.all_IDs[self.dofs_source]
                 IDs_dependent = self.all_IDs[self.dofs_dependent]
+
+                print("IDs_imposed_x = ", IDs_imposed_x)
+                print("IDs_imposed_y = ", IDs_imposed_y)
+                print()
+                print("IDs_dependent = ", IDs_dependent)
+                print()
 
                 # IDs of source points in periodic boundary conditions
                 self.source_free_y = ((IDs_free_y - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]
@@ -1342,6 +1345,8 @@ class MeshNN_2D(nn.Module):
                 # IDs of dependent points in periodic boundary conditions
                 self.dependent_y = ((IDs_imposed_y - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.dependent_x = ((IDs_imposed_x - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
+
+                print("self.dependent_x = ", self.dependent_x)
 
                 mapping_free_x = ((self.all_IDs.unsqueeze(0).T) - IDs_free_x == 0).nonzero()
                 mapping_free_y = ((self.all_IDs.unsqueeze(0).T) - IDs_free_y == 0).nonzero()
@@ -1377,8 +1382,15 @@ class MeshNN_2D(nn.Module):
                                                     'x_imposed': nodal_values_x_imposed,
                                                     'y_imposed': nodal_values_y_imposed,
                                                     })
-                
-                border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
+                # Flatten if needed
+                if isinstance(self.borders_nodes[0][0], (list, tuple)):
+                    # list of lists of edges  ----> list of edges
+                    all_edges = [edge for group in self.borders_nodes for edge in group]
+                else:
+                    # already a list of edges
+                    all_edges = self.borders_nodes
+                border_nodes = torch.unique(torch.tensor(all_edges, dtype=torch.int)) - 1
+
                 Fixed_Ids = torch.unique(torch.cat([self.IDs_frozen_BC_node_x,self.IDs_frozen_BC_node_y,border_nodes]))
                 self.coord_free =(torch.ones_like(self.values[:,0])==1)
                 self.coord_free[Fixed_Ids] = False

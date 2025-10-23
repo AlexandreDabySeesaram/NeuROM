@@ -1534,7 +1534,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
 
                                 loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
                             
-                    loss = loss - loss_Neumann_BC
+                    loss = loss + loss_Neumann_BC
 
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
@@ -1563,7 +1563,9 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
         
         with torch.no_grad():
 
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+            # Periodic boundary conditions # # # # # # # # # # # # # # # # #
+            # Source values ---> Dependent values
+
             if len(model.source_free_x)>0:
                 model.nodal_values.x_imposed[model.dependent_x] = model.nodal_values.x_free[model.source_free_x]
             if len(model.source_free_y)>0:

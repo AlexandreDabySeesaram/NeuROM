@@ -560,6 +560,7 @@ class Mesh:
         ids = []
 
         for coord in TrialCoordinates:
+            
             match self.dimension:
                 case '1':
                     point = [coord, 0, 0]

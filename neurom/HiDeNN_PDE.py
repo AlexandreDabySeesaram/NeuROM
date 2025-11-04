@@ -1070,8 +1070,9 @@ class MeshNN_2D(nn.Module):
         self.frozen_BC_node_IDs_y = []             
         self.frozen_BC_component_IDs = []
         self.relation_BC_node_IDs = []
-        self.relation_BC_edges = []
+        self.relation_BC_center_nodes = []
         self.relation_BC_normal_vectors = []
+        self.relation_BC_edges = []
 
         self.relation_BC_values = []
         self.periodic_BC_source_node_IDs = []
@@ -1314,11 +1315,6 @@ class MeshNN_2D(nn.Module):
                 IDs_source = self.all_IDs[self.dofs_source]
                 IDs_dependent = self.all_IDs[self.dofs_dependent]
 
-                print("IDs_imposed_x = ", IDs_imposed_x)
-                print("IDs_imposed_y = ", IDs_imposed_y)
-                print()
-                print("IDs_dependent = ", IDs_dependent)
-                print()
 
                 # IDs of source points in periodic boundary conditions
                 self.source_free_y = ((IDs_free_y - IDs_source.unsqueeze(0).T) == 0).nonzero()[:,1]

@@ -276,7 +276,6 @@ class Mesh:
                         if ElemList[3] == self.ExcludeId[ID_idx]: 
                             self.ExcludedPoints.append(ElemList[-1:][0]-1)
 
-
             self.Connectivity = np.array(self.Connectivity)
             self.NElem = self.Connectivity.shape[0] # Only count the volume elements
             np.save( 'Geometries/'+ self.name_mesh[:-4]+"_all_nodes.npy", np.array(self.Nodes))

@@ -316,9 +316,19 @@ class InterpPara(nn.Module):
         # Interpolation (nodal values) layer
         # self.NodalValues_para = nn.Parameter(data=torch.linspace(self.mu_min,self.mu_max,self.N_mu).pow(-1), requires_grad=False)
         self.NodalValues_para = nn.Parameter(data=torch.ones(self.N_mu), requires_grad=False)  
+        #DEBUG
+        alternating_tensor = torch.ones(self.N_mu)
+        alternating_tensor[::2] = 1
+        alternating_tensor[1::2] = -1
+        self.NodalValues_para = nn.Parameter(data=alternating_tensor, requires_grad=False)  
+        #DEBUG
         self.InterpoLayer = nn.Linear(self.N_mu,1,bias=False)
         # Initialise with linear mode
-        # self.InterpoLayer.weight.data = 0.1*self.NodalValues_para
+        # self.InterpoLayer.weight.data = 0.1*self.NodalValues_para #DEBUG
+        # self.InterpoLayer.weight.data = 0.1 + 0.0*self.InterpoLayer.weight.data #DEBUG bis DEBUG OK
+        # self.InterpoLayer.weight.data = 0.01 + 0.0*self.InterpoLayer.weight.data #DEBUG ter
+        # self.InterpoLayer.weight.data = 0.1*self.NodalValues_para #DEBUG
+        # self.InterpoLayer.weight.data = 1*self.InterpoLayer.weight.data #DEBUG qua
         self.ElemList = torch.arange(self.n_elem)
 
     def forward(self,mu):
@@ -454,6 +464,8 @@ class NeuROM(nn.Module):
         if self.Mesh_status == 'Free':
             self.UnFreeze_Mesh()
         for j in range(self.n_para):
+            # self.Para_modes[self.n_modes_truncated-1][j].InterpoLayer.weight.data = *self.Para_modes[0][j].InterpoLayer.weight.data.clone() #DEBUG
+            # self.Para_modes[self.n_modes_truncated-1][j].InterpoLayer.weight.data = 1*self.Para_modes[0][j].InterpoLayer.weight.data.clone() #DEBUG
             self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
 
     def AddMode2Optimizer(self,optim):
@@ -2693,10 +2705,12 @@ class MeshNN_3D(nn.Module):
             self.nodal_values (dict): A dictionary containing tensors of node values. The `requires_grad` attribute of all tensors within the dictionary is set to False.
         """
 
-        self.nodal_values['x_free'].requires_grad = False
-        self.nodal_values['y_free'].requires_grad = False
-        self.nodal_values['z_free'].requires_grad = False
-
+        self.nodal_values['x_free'].requires_grad       = False
+        self.nodal_values['y_free'].requires_grad       = False
+        self.nodal_values['z_free'].requires_grad       = False
+        self.nodal_values['x_imposed'].requires_grad    = False
+        self.nodal_values['y_imposed'].requires_grad    = False
+        self.nodal_values['z_imposed'].requires_grad    = False
       
     def Freeze_Mesh(self):
         """

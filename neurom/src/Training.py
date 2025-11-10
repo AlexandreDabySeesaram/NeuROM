@@ -18,7 +18,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -474,7 +474,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             "Loss_decrease_vect":[]                         # Init loss decrease rate
                             }
     Usefullness             = 0                                             # Number of iteration in a row during which the last added mode helped the convergence
-
+    loss_decrease           = torch.tensor([0])
     while epoch<n_epochs and loss_counter<100:
         if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
             break 
@@ -529,12 +529,28 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                         match config["solver"]["Problem"]:
                             case "AngleStiffness":
                                 loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                        match config["solver"]["Problem"]:
+                            case "BiangleStiffnessKSV":
+                                loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
             case 5:
                 match config["interpolation"]["dimension"]:
                     case 3:  
                         match config["solver"]["Problem"]:
                             case "BiStiffnessBiAngle":
                                 loss = InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+        trainable_params_optimizer = [p for group in optimizer.param_groups for p in group['params'] if p.requires_grad] #DEBUG
+        sum_trainable_params_optimizer = sum(p.numel() for p in trainable_params_optimizer) #DEBUG
+        # print(f"trainable param: {trainable_params_optimizer}")#DEBUG
+        print(f"*** number of trainable param: {sum_trainable_params_optimizer}")#DEBUG
+
+        # for name, param in model.named_parameters():#DEBUG
+        #     if param.requires_grad:#DEBUG
+        #         # print(f"Parameter name: {name}, Size: {param.size()}, Values: {param.data}")#DEBUG
+        #         print(f"Parameter name: {name}, Size: {param.size()}")#DEBUG
+        #         print(f"Gradient of {name}: {param.grad}")#DEBUG
+
+
+        # print(f"group {optimizer.param_groups}")
 
 
 
@@ -544,10 +560,13 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         if epoch >1:
             loss_decrease           = (loss_old - loss_current)/numpy.abs(0.5*(loss_old + loss_current))
             model.training_recap["Loss_decrease_vect"].append(loss_decrease)
+            # print(f"************* Loss old {loss_old:.20f}")#DEBUG
             loss_old                = loss_current
+            # print(f"************* Loss current {loss_old:.20f}")#DEBUG
+            # print(f"************* loss_decrease {loss_decrease:.20f}")#DEBUG
             if numpy.abs(loss_decrease) < loss_decrease_c:                  # Check for stagnation of the loss
                 stagnancy_counter   = stagnancy_counter +1                  # Increment stagnation
-                Usefullness         = 0                                     # Reinit. usefullness of last added mode
+                Usefullness         = 0                                     # Reinit. usefullness of last added mode 
             else:
                 stagnancy_counter   = 0                                     # Reinit. stagnation
                 if loss_decrease    >= 0:                                   # Check that loss decreases
@@ -587,12 +606,26 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 Collision_Check(model.Space_modes[m], model.Space_modes[m].coord_old, 1.0e-6)
 
         update_time                 += time.time() - update_time_start
+        
+        
+        # for name, param in model.named_parameters():#DEBUG
+        #     if param.requires_grad:#DEBUG
+        #         # print(f"Parameter name: {name}, Size: {param.size()}, Values: {param.data}")#DEBUG
+        #         print(f"Parameter name: {name}, Values: {param.data}")#DEBUG
+        #         # print(f"Parameter name: {name}, Size: {param.size()}")#DEBUG
+        #         print(f"Gradient of {name}: {param.grad}")#DEBUG
+        
         optimizer.zero_grad()                                               # zero the gradients after updating
         model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
         if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
         # if stagnancy_counter >5 and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
+
+            # print(f"space mode 2 after addition: {model.Space_modes[1].nodal_values['x_free']}")#DEBUG
+            # print(f"para mode 2 0 after addition: {model.Para_modes[1][0].InterpoLayer.weight}")#DEBUG
+            # print(f"para mode 2 2 after addition: {model.Para_modes[1][2].InterpoLayer.weight}")#DEBUG
+
             Addition_epoch_index = epoch
             # loss_counter            = 0 loss_counter>99
             FlagAddedMode           = True
@@ -600,7 +633,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             stagnancy_counter       = 0
             Usefullness             = 0
         if FlagAddedMode:
-            if epoch == Addition_epoch_index+2:
+            if epoch == Addition_epoch_index+2:#DEBUG was 2 initially
                 model.UnfreezeTruncated()
                 if not config["training"]["multi_mode_training"]:
                     model.Freeze_N_1()
@@ -626,7 +659,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
                     print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
                 else:
-                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}')
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} dloss = {numpy.format_float_scientific(loss_decrease.item(), precision=5)} modes = {model.n_modes_truncated}')
 
     time_stop = time.time()
     model.training_recap["training_time"] += (time_stop-time_start)
@@ -760,6 +793,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                             match config["solver"]["Problem"]:
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                case "BiangleStiffnessKSV":
+                                    loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                 case 5:
                     match config["interpolation"]["dimension"]:
                         case 3:  
@@ -1920,8 +1955,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
             case 3:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                init_n_epochs = config["training"]["n_epochs"]                    #DEBUG
                 config["training"]["n_epochs"]  = 50                    #DEBUG
-                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS) #DEBUG
+                config["training"]["n_epochs"]   = init_n_epochs                 #DEBUG
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size

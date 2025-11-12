@@ -1072,6 +1072,7 @@ class MeshNN_2D(nn.Module):
         self.relation_BC_node_IDs = []
         self.relation_BC_center_nodes = []
         self.relation_BC_normal_vectors = []
+        self.Element_ID_of_Neumann_edges = []
         self.relation_BC_edges = []
 
         self.relation_BC_values = []
@@ -1433,6 +1434,26 @@ class MeshNN_2D(nn.Module):
 
                 self.relation_BC_normal_vectors.append(normal_vectors)
 
+    def ID_NeumannEdges(self, ListOfDirichletsBCsValues):
+
+        for i in range(len(ListOfDirichletsBCsValues)):
+            if self.ListOfDirichletsBCsRelation[i] == True: 
+
+                Neumann_IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                cell_IDs = []
+
+                for edge in Neumann_IDs:
+
+                    node1_indices = (self.connectivity[:, 0] == edge[0].item()) + (self.connectivity[:, 1] == edge[0].item()) + (self.connectivity[:, 2] == edge[0].item())
+                    node2_indices = (self.connectivity[:, 0] == edge[1].item()) + (self.connectivity[:, 1] == edge[1].item()) + (self.connectivity[:, 2] == edge[1].item())
+                    # Find edges where there are the nodes
+                    edge_indices = np.transpose(np.vstack((node1_indices,node2_indices)))
+                    # Find element sharing the both nodes
+                    elem_id = np.where(np.all(edge_indices == [True,True],axis=1))[0]
+                    cell_IDs.append(elem_id.item())
+
+                self.Element_ID_of_Neumann_edges.append(cell_IDs)
+        
 
 
     def SplitElem(self, el_id,point,value):
@@ -1963,48 +1984,6 @@ class MeshNN_2D(nn.Module):
             self.coordinates[int(cell_nodes_IDs[j,3])-1] = T6_Coord1[j].unsqueeze(0)
             self.coordinates[int(cell_nodes_IDs[j,4])-1] = T6_Coord2[j].unsqueeze(0)
             self.coordinates[int(cell_nodes_IDs[j,5])-1] = T6_Coord3[j].unsqueeze(0)
-
-    # def ComputeNormalVectors(self):
-    #     print()
-    #     print(" * ComputeNormalVectors")
-    #     line_normals = []
-
-    #     if len(self.relation_BC_node_IDs)==0:
-    #         return []
-    #     else:
-
-    #         for line in self.relation_BC_lines[0]:
-    #             point_a = line[0]
-    #             point_b = line[1]
-    #             coord_a = self.coordinates[point_a-1]
-    #             coord_b = self.coordinates[point_b-1]
-    #             vect = coord_b - coord_a
-    #             vect = vect[0,[1,0]]
-    #             vect[0] = -vect[0]
-    #             vect = vect/torch.norm(vect)
-    #             line_normals.append(vect)
-
-    #         normals = [[] for i in range(len(self.relation_BC_node_IDs[0])) ]
-
-    #         for i in range(len(self.relation_BC_node_IDs[0])):
-    #             node_id = self.relation_BC_node_IDs[0][i]
-
-    #             for j in range(len(self.relation_BC_lines[0])): 
-    #                 if node_id+1 in self.relation_BC_lines[0][j]:
-    #                     normals[i].append(line_normals[j])
-
-    #         normals = [(x[0]+x[1])/2 for x in normals]
-    #         self.relation_BC_normals.append(normals)
-
-    # def UnFreeze_Mesh(self):
-    #     """Set the coordinates as trainable parameters"""
-    #     for param in self.coordinates:
-    #         param.requires_grad = True
-    #     border_nodes = torch.unique(torch.tensor(self.borders_nodes, dtype=torch.int))-1
-    #     for node in border_nodes:
-    #         self.coordinates[node].requires_grad = False
-
-
 
 
 def GetRefCoord(x,y,x1,x2,x3,y1,y2,y3):

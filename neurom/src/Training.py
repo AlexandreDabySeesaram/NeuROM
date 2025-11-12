@@ -1478,62 +1478,81 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                         
                         t = model.relation_BC_values[i]
                         normal_vectors = model.relation_BC_normal_vectors[i]
-                        
-                        if len(t)==2:
-                            for edge, n in zip(edges, normal_vectors):
 
-                                ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                        if not (mapping is None):
+                            element_IDs = model.Element_ID_of_Neumann_edges[i]
+                            F = mapping[1]
+                            J = mapping[2]
 
-                                ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                            if len(t)==1:
+                                for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
+                    
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                if not (mapping is None):
-                                    F = mapping[4]
-                                    J = mapping[5]
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    # mapping Jacobian and gradient at midpoint
-                                    F_mid = (F[edge[0]-1]+F[edge[1]-1])/2
-                                    J_mid = (J[edge[0]-1]+J[edge[1]-1])/2
+                                    F_mid = F[element_id]
+                                    J_mid = J[element_id]
 
+                                    # Transformation of normal vector
+                                    n = J_mid * (F_mid.inverse().T @ n)
+
+                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+
+                            elif len(t)==2:
+                                for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
+
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+
+                                    
+                                    F_mid = F[element_id]
+                                    J_mid = J[element_id]
+                                       
                                     # surface Jacobian factor
-                                    scale = abs(J_mid * (F_mid.inverse().T @ n)).norm()
-                                else:
-                                    scale=1
-                                
-                                tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
-                                dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                    scale = (J_mid * (F_mid.inverse().T @ n)).norm()
+                                    
+                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
 
-                        elif len(t)==1:
-                            for edge, n in zip(edges, normal_vectors):
+                        else:
+                            if len(t)==2:
+                                for edge, n in zip(edges, normal_vectors):
 
-                                ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                    
+                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                if not (mapping is None):
-                                    F = mapping[4]
-                                    J = mapping[5]
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
 
-                                    # mapping Jacobian and gradient at midpoint
-                                    F_mid = (F[edge[0]-1]+F[edge[1]-1])/2
-                                    J_mid = (J[edge[0]-1]+J[edge[1]-1])/2
+                            elif len(t)==1:
+                                for edge, n in zip(edges, normal_vectors):
 
-                                    # surface Jacobian factor
-                                    scale = abs(J_mid * (F_mid.inverse().T @ n)).norm()
+                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    n = J_mid * (F_mid.inverse().T @ n)/(J_mid * (F_mid.inverse().T @ n)).norm()
-                                else:
-                                    scale=1
+                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
-                                dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
+                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
                     
                     loss = loss + loss_Neumann_BC
 

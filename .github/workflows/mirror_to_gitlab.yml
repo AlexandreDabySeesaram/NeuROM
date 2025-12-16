@@ -1,0 +1,27 @@
+on:
+  - push
+  - delete
+  
+jobs:
+  mirror_to_gitlab:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Sync repo
+      uses: keninkujovic/gitlab-sync@2.1.0
+      with:
+        gitlab_url: https://gitlab.inria.fr/aldabyse/neurom
+        # username: mgenet
+        gitlab_pat: ${{secrets.GITLAB_TOKEN}}
+
+    # - name: Sync repo
+    #   uses: wangchucheng/git-repo-sync@v0.1.0
+    #   with:
+    #     target-url: https://gitlab.inria.fr/mgenet/dolfin_mech
+    #     target-username: mgenet
+    #     target-token: ${{secrets.GITLAB_TOKEN}}

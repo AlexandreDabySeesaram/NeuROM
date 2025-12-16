@@ -1,12 +1,15 @@
 
 import matplotlib.pyplot as plt
-plt.rcParams['svg.fonttype'] = 'none'
-from IPython.display import set_matplotlib_formats
-set_matplotlib_formats('svg')
-plt.rcParams.update({
-    "text.usetex": True,
-    "font.family": "Helvetica"
-})
+try: 
+    plt.rcParams['svg.fonttype'] = 'none'
+    from IPython.display import set_matplotlib_formats
+    set_matplotlib_formats('svg')
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "Helvetica"
+    })
+except: 
+    print("Warning, cannot import name 'set_matplotlib_formats' from 'IPython.display' ")
 import numpy as np
 import matplotlib
 import torch

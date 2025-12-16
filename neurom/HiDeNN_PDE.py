@@ -148,6 +148,9 @@ class ElementBlock_Bar_Lin(nn.Module):
                 x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
                 x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
+            print("i = ", i)
+            print("x = ", x)
+            print("x_left = ", x_left)
             left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
             right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
             out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}
@@ -293,6 +296,8 @@ class InterpPara(nn.Module):
         # Parametric mesh coordinates
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
                                              for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
+
+        print("para coordinates = ", torch.linspace(self.mu_min,self.mu_max,self.N_mu))
 
         ### Assembly layer 
         self.AssemblyLayer = nn.Linear(2*(self.n_elem),self.N_mu)
@@ -541,6 +546,7 @@ class NeuROM(nn.Module):
             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(self.n_modes_truncated)], dim=0)
             for l in range(self.n_para)
         ]
+
 
         match self.dimension:
             case '1':
@@ -1342,8 +1348,6 @@ class MeshNN_2D(nn.Module):
                 # IDs of dependent points in periodic boundary conditions
                 self.dependent_y = ((IDs_imposed_y - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
                 self.dependent_x = ((IDs_imposed_x - IDs_dependent.unsqueeze(0).T) == 0).nonzero()[:,1]
-
-                print("self.dependent_x = ", self.dependent_x)
 
                 mapping_free_x = ((self.all_IDs.unsqueeze(0).T) - IDs_free_x == 0).nonzero()
                 mapping_free_y = ((self.all_IDs.unsqueeze(0).T) - IDs_free_y == 0).nonzero()

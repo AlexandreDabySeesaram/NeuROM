@@ -122,9 +122,14 @@ class Mesh:
         self.ExcludeId = Exclude
         NumberOfBCs = len(Dirichlets)
 
+        print("NumberOfBCs = ", NumberOfBCs)
+        print("len(Dirichlets[0]) = ", len(Dirichlets[0]))
+
         if NumberOfBCs == 1:
             if len(Dirichlets[0])==0:                        # Empty list : Dirichlets =  [{}] ... len = 1
                 self.NoBC = True
+            else:
+                self.NoBC = False
         else:
             self.NoBC = False
 

@@ -435,16 +435,27 @@ def Stress_tensor(eps, lmbda, mu):
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
-def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
+def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = None):
+
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            eps_macro_2 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            eps_macro_4 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
 
     match dim:
         case 2:
             eps =  Strain_sqrt(u,x)
             eps_full = Strain_full(u,x)
 
-
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             if not (mapping is None):
+
+                if 'parameters' in config:
+                    if 'x_0_x' in config['parameters']:
+                        eps_full = eps_full - eps_macro_2
+
+
                 list_F = mapping[1]
                 F = torch.stack(list_F)  # shape: [N, 2, 2]
                 F_inv = torch.linalg.inv(F)  # shape: [N, 2, 2]
@@ -456,6 +467,11 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, dim = 2, mapping = None):
                     torch.stack([eps_full[:,2], eps_full[:,3]], dim=1),  # second row
                 ], dim=1)
                 eps_R = (grad_u @ F_inv  + (grad_u @ F_inv).transpose(1, 2))/2
+
+                if 'parameters' in config:
+                    if 'x_0_x' in config['parameters']:
+                        eps_R = eps_R + eps_macro_4
+
 
                 eps_R_voigt = torch.stack([
                     eps_R[:, 0, 0],                           # ε_xx
@@ -518,11 +534,13 @@ def InternalResidual_precomputed(eps,eps_star,lmbda, mu):
     W_e = torch.einsum('ij,ej,ei->e',K,eps,eps_star)
     return W_e
 
-def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
+def InternalEnergy_2D_einsum_para(model,lmbda, mu, E):
     # Space_modes = [model.Space_modes[l]()[0] for l in range(model.n_modes_truncated)]
     # # Need to extract the u_i and xg simultaneously to keep the linkj
     # xg_modes = [model.Space_modes[l]()[1] for l in range(model.n_modes_truncated)]
     # detJ_modes = [model.Space_modes[l]()[2] for l in range(model.n_modes_truncated)]
+
+
     Space_modes = []
     xg_modes = []
     detJ_modes = []
@@ -559,7 +577,250 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu,E):
     return (0.5*W_int - W_ext)/(E[0].shape[0])
     # return (0.5*W_int)/(E[0].shape[0])
 
-def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E, mapping):
+
+
+def InternalEnergy_2D_einsum_hexa_para(model,lmbda, mu, h, config, list_F, list_J):
+    
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](h[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)        ][0]    
+    # lambda_i shape (N_modes, N_h, 1, 1)
+
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+   
+
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    J_x = torch.abs(detJ_modes[0]) 
+
+    eps_full_list = [Strain_full(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+
+    eps_full_i = torch.stack(eps_full_list,dim=2)  # ---> [N_x, 4, N_modes]
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+    F = torch.stack([torch.stack(F_in) for F_in in list_F])         # list ---> tensor shape: [N_xg, N_h, 2, 2])
+    F_inv = torch.linalg.inv(F)                                     # shape: [N_xg, N_h, 2, 2])
+
+    sqrt2 = eps_i.new_tensor(2.0).sqrt()
+
+    grad_u = torch.stack([                                                                      # shape [N_x, 2, 2, 2]
+            torch.stack([eps_full_i[:,0,:], eps_full_i[:,1,:]], dim=1),  # first row
+            torch.stack([eps_full_i[:,2,:], eps_full_i[:,3,:]], dim=1),  # second row
+    ], dim=1)
+
+    # grad u: [N_x, 2, 2, N_m] !!!
+    grad_u_2 = grad_u.permute(0, 3, 1, 2)   # -----> [N_x, N_modes, 2, 2]
+
+    # F: [N_x, N_h, 2, 2]
+    F_exp = F_inv.unsqueeze(2)       # -> [N_x, N_h, 1, 2, 2]
+    u_exp = grad_u_2.unsqueeze(1)      # -> [N_x, 1, N_m, 2, 2]
+
+    eps_R = (torch.matmul(F_exp, u_exp) + torch.matmul(F_exp, u_exp).transpose(-1,-2))/2
+    
+    eps_R_voigt = torch.stack([
+        eps_R[:, :, :, 0, 0],                           # ε_xx
+        eps_R[:, :, :, 1, 1],                           # ε_yy
+        (eps_R[:,:, :, 0, 1]) * sqrt2             # ε_xy 
+    ], dim=-2)
+
+    eps_i = eps_R_voigt    
+
+
+    # eps_i: [Nx, Nh, 3, Nm] = [3660, 5, 3, 4]
+    # lambda_i: [Nm, Nh, 1, 1]
+    # J_x: [Nx]
+    # K: [3,3]
+    # list_J: list of Nx lists of length Nh  → Jm(x,h)
+
+
+    # 0) list of lists to tensor
+    Jm = torch.abs(torch.tensor(list_J, dtype=eps_i.dtype, device=eps_i.device))   # --->  [Nx, Nh]
+
+    # ----------------------------------------------
+    # 1) prep
+    lambda_i = lambda_i.squeeze(-1).squeeze(-1)      # [Nm, Nh]
+    lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(2)
+
+    # 2) Microstrain: eps_u(x,h) = Σ_m λ_m(h) eps_m(x,h)
+    # ----------------------------------------------
+    eps_u = (eps_i * lambda_exp).sum(dim=-1)         # [Nx, Nh, 3], 3 components of Voight notation strain
+
+    # 3) Quadratic form: eps_u : K : eps_u
+    # --------------------------------------------------------------
+    prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)   # [Nx, Nh]
+
+    # 4) Final integral:
+    # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
+    # ----------------------------------------------
+    W_in = 0.5 * (prod * J_x[:, None] *Jm* Jm).sum()
+
+    return W_in
+
+
+def InternalEnergy_2D_einsum_hexa_para_v2(model,lmbda, mu, h, config, list_F, list_J):
+    
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](h[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)        ][0]    
+    # lambda_i shape (N_modes, N_h, 1, 1)
+
+    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+   
+
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    J_x = torch.abs(detJ_modes[0]) 
+
+    
+    # if 'parameters' in config:
+    #     if 'x_0_x' in config['parameters']:
+    #         # Affine part of u
+    #         # print("     eps_macro = ", eps_macro)
+
+    #         u_affine = []
+    #         for i in range(model.n_modes_truncated):
+    #             # x_aff = torch.unsqueeze(xg_modes[i] - x0,-1)
+    #             # u_aff = torch.matmul(eps_macro, x_aff )
+    #             # u_aff = torch.squeeze(u_aff,-1)
+
+    #             u_aff = (eps_macro @ (xg_modes[i] - x0).T)
+    #             u_affine.append(u_aff)
+    #             # print("     mode = ",i, ", u = ", max(Space_modes[i][0,:]).item(), max(Space_modes[i][1,:]).item() )
+
+
+    #         u_affine = torch.stack(u_affine, dim=0)
+    #         # eps_full_list = [Strain_full(Space_modes[i] + u_affine[i,:,:], xg_modes[i]) for i in range(model.n_modes_truncated)]
+    #         eps_full_list = [Strain_full(Space_modes[i], xg_modes[i]) for i in range(model.n_modes_truncated)]
+    #     else:
+
+    eps_full_list = [Strain_full(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+
+    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    eps_i = torch.stack(eps_list,dim=2)  
+
+    eps_full_i = torch.stack(eps_full_list,dim=2)  # ---> [N_x, 4, N_modes]
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+    F = torch.stack([torch.stack(F_in) for F_in in list_F])         # list ---> tensor shape: [N_xg, N_h, 2, 2])
+    F_inv = torch.linalg.inv(F)                                     # shape: [N_xg, N_h, 2, 2])
+
+    sqrt2 = eps_i.new_tensor(2.0).sqrt()
+
+    grad_u = torch.stack([                                                                      # shape [N_x, 2, 2, 2]
+            torch.stack([eps_full_i[:,0,:], eps_full_i[:,1,:]], dim=1),  # first row
+            torch.stack([eps_full_i[:,2,:], eps_full_i[:,3,:]], dim=1),  # second row
+    ], dim=1)
+
+    # grad u: [N_x, 2, 2, N_m] !!!
+    grad_u_2 = grad_u.permute(0, 3, 1, 2)   # -----> [N_x, N_modes, 2, 2]
+
+    # F: [N_x, N_h, 2, 2]
+    F_exp = F_inv.unsqueeze(2)       # -> [N_x, N_h, 1, 2, 2]
+    u_exp = grad_u_2.unsqueeze(1)      # -> [N_x, 1, N_m, 2, 2]
+
+    eps_R = (torch.matmul(F_exp, u_exp) + torch.matmul(F_exp, u_exp).transpose(-1,-2))/2
+    
+    eps_R_voigt = torch.stack([
+        eps_R[:, :, :, 0, 0],                           # ε_xx
+        eps_R[:, :, :, 1, 1],                           # ε_yy
+        (eps_R[:,:, :, 0, 1]) * sqrt2             # ε_xy 
+    ], dim=-2)
+
+    eps_i = eps_R_voigt    
+
+
+    # eps_i: [Nx, Nh, 3, Nm] = [3660, 5, 3, 4]
+    # lambda_i: [Nm, Nh, 1, 1]
+    # J_x: [Nx]
+    # K: [3,3]
+    # list_J: list of Nx lists of length Nh  → Jm(x,h)
+
+
+    # 0) list of lists to tensor
+    Jm = torch.abs(torch.tensor(list_J, dtype=eps_i.dtype, device=eps_i.device))   # --->  [Nx, Nh]
+
+    # ----------------------------------------------
+    # 1) prep
+    lambda_i = lambda_i.squeeze(-1).squeeze(-1)      # [Nm, Nh]
+    lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(2)
+
+    # 2) Microstrain: eps_u(x,h) = Σ_m λ_m(h) eps_m(x,h)
+    # ----------------------------------------------
+    eps_u = (eps_i * lambda_exp).sum(dim=-1)         # [Nx, Nh, 3], 3 components of Voight notation strain
+
+
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            sqrt2 = eps_i.new_tensor(2.0).sqrt()
+
+            eps_macro_voigt = torch.stack([
+                eps_macro[0,0],              # ε_xx
+                eps_macro[1,1],              # ε_yy
+                eps_macro[0,1] * sqrt2       # ε_xy
+            ], dim=0)                        # [3]
+
+            # reshape for broadcasting
+            eps_macro_voigt = eps_macro_voigt.view(1,1,3)       # [1,1,3]
+
+            eps_u = eps_u + eps_macro_voigt
+
+    # 3) Quadratic form: eps_u : K : eps_u
+    # --------------------------------------------------------------
+    prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)   # [Nx, Nh]
+
+    # 4) Final integral:
+    # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
+    # ----------------------------------------------
+    W_in = 0.5 * (prod * J_x[:, None] *Jm).sum()
+
+    return W_in
+
+def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
 
     Space_modes = []
     xg_modes = []
@@ -1324,3 +1585,377 @@ def CopyStress(Model_u, Model_du, Domain_mesh_u, lmbda, mu):
     for j in node_IDs_s12:
         Model_du.nodal_values[2][j] = torch.nn.Parameter(torch.tensor([s_12[j]]))
 
+
+
+# # # # # # # # # # # # # # # # # # # # # # # #
+#           HEXA mapping functions            #
+# # # # # # # # # # # # # # # # # # # # # # # #
+
+def line_point_and_slope(P,m):
+    c = P[1] -m*P[0]
+    a = m
+    b = -1
+    return a,b,c
+
+def lines_intersection(a1, b1, c1, a2, b2, c2):
+    # Returns the intersection point of two lines
+
+    determinant = a1 * b2 - a2 * b1
+    if (determinant == 0):
+        # The lines are parallel. This is simplified
+        # by returning a pair of (10.0)**19
+        return [(10.0)**19, (10.0)**19]
+    else:
+        x = (b1 * c2 - b2 * c1)/determinant
+        y = (-a1 * c2 + a2 * c1)/determinant
+        return torch.tensor([x, y])
+
+def line_2_points(P, Q):
+    # Returns the line parameters between two points    
+    m = (Q[1] - P[1])/(Q[0] - P[0])
+    c = P[1] - m * P[0]
+    return m, c
+
+def line_btw_points(P, Q):
+    # Returns the line parameters between two points
+    
+    a = -(Q[1] - P[1])
+    b = Q[0] - P[0]
+    c = -(b * P[1] + a * P[0])
+    return a, b, c
+
+def lines_intersection_v2(a1, b1, c1, a2, b2, c2, coord):
+    # Returns the intersection point of two lines
+
+    determinant = a1 * b2 - a2 * b1
+
+    x = (b1 * c2 - b2 * c1)/determinant
+    y = (-a1 * c2 + a2 * c1)/determinant
+
+    return x, y
+
+def Hexa_identify_regions(coord, important_points, center_point):
+
+
+    [P_u_l, P_u_r, P_u_middle, centre_u_l, centre_u_r, P_d_l, P_d_r, P_d_middle, centre_d_l, centre_d_r] = important_points
+
+
+    m,c = line_2_points(center_point,coord )
+    angle = (torch.arctan2(coord[1]-center_point[1],coord[0]-center_point[0]))/np.pi*180
+    if angle >-30 and angle<=30:  
+        regions=1
+    elif angle >30 and angle<=90:  
+        a, b, c = line_btw_points(P_u_r,P_u_middle)
+        if torch.sign(a*center_point[0]+b*center_point[1]+c) == torch.sign(a*coord[0]+b*coord[1]+c):
+            regions=2
+        else:
+            angle = (torch.arctan2(coord[1]-centre_u_r[1],coord[0]-centre_u_r[0]))/np.pi*180
+            if angle > -150 and angle <=-90:  
+                regions=7
+            else:
+                regions=8
+
+    elif angle >90 and angle<=150: 
+        a, b, c = line_btw_points(P_u_l,P_u_middle)
+        if torch.sign(a*center_point[0]+b*center_point[1]+c) == torch.sign(a*coord[0]+b*coord[1]+c):
+            regions=3
+        else:
+            angle = (torch.arctan2(coord[1]-centre_u_l[1],coord[0]-centre_u_l[0]))/np.pi*180
+            if angle > -30:  
+                regions=9
+            else:
+                regions=10
+
+    elif (angle >150 and angle<=180) or (angle >=-180 and angle<=-150):  
+        regions=4
+    elif angle >-150 and angle<=-90:  
+        a, b, c = line_btw_points(P_d_l,P_d_middle)
+        if torch.sign(a*center_point[0]+b*center_point[1]+c) == torch.sign(a*coord[0]+b*coord[1]+c):
+            regions=5
+        else:
+            angle = (torch.arctan2(coord[1]-centre_d_l[1],coord[0]-centre_d_l[0]))/np.pi*180
+            if angle > 30:  
+                regions=11
+            else:
+                regions=12
+
+    elif angle >-90 and angle<=-30:  
+        a, b, c = line_btw_points(P_d_r,P_d_middle)
+        if torch.sign(a*center_point[0]+b*center_point[1]+c) == torch.sign(a*coord[0]+b*coord[1]+c):
+            regions=6
+        else:
+            angle = (torch.arctan2(coord[1]-centre_d_r[1],coord[0]-centre_d_r[0]))/np.pi*180
+            if abs(angle) > 150:  
+                regions=13
+            else:
+                regions=14
+
+    return regions
+
+def Hexa_domain_constants(Mesh_object):
+
+    tags_unique = np.arange(151,169)
+
+    # Inner edges 
+    inner_edges = [np.where(tags_unique==167)[0][0], np.where(tags_unique==168)[0][0], np.where(tags_unique==163)[0][0],\
+                np.where(tags_unique==164)[0][0], np.where(tags_unique==165)[0][0], np.where(tags_unique==166)[0][0],\
+                np.where(tags_unique==158)[0][0], np.where(tags_unique==157)[0][0],
+                np.where(tags_unique==155)[0][0], np.where(tags_unique==154)[0][0],
+                np.where(tags_unique==152)[0][0], np.where(tags_unique==151)[0][0],
+                np.where(tags_unique==161)[0][0], np.where(tags_unique==160)[0][0]
+                ]
+
+    top_bottom_edges = [np.where(tags_unique==162)[0][0], np.where(tags_unique==156)[0][0]]
+
+    domain_y = 1.0
+    domain_x = domain_y * np.sqrt(3)/1.5/2 
+
+    y_min = min(node[2] for node in Mesh_object.Nodes)
+    y_max = max(node[2] for node in Mesh_object.Nodes)
+
+    x_min = min(node[1] for node in Mesh_object.Nodes)
+    x_max = max(node[1] for node in Mesh_object.Nodes)
+
+    edge_right_a, edge_right_b, edge_right_c = line_btw_points([domain_x,0], [domain_x,domain_y])        
+    edge_left_a, edge_left_b, edge_left_c = line_btw_points([0,0], [0,domain_y])        
+    edge_middle_a, edge_middle_b, edge_middle_c = line_btw_points([domain_x/2,0], [domain_x/2,domain_y])  
+
+    edge_bottom_a, edge_bottom_b, edge_bottom_c = line_btw_points([x_min,y_min], [x_max,y_min])        
+    edge_top_a, edge_top_b, edge_top_c = line_btw_points([x_min,y_max], [x_max,y_max])        
+
+    # # # # # # # # # # # # # # # # # #
+    # NOTE: the center of the hexagon is not neceserily in the center of the RVE!
+    center_edges = np.where(tags_unique==164)[0][0]
+    # print(center_edges)
+
+    center_ids = np.unique(Mesh_object.borders_nodes[center_edges])
+    coord_y = []
+    for c_i in center_ids:
+        coord_y.append(Mesh_object.Nodes[int(c_i-1)][2])
+    center_y = (np.mean(coord_y))
+
+    center_point = torch.tensor((domain_x/2, center_y ), requires_grad=True)
+    # print("center_point : ", center_point)
+    # print("y min = ", y_min)
+    # print("y max = ", y_max)
+    # print()
+    # # # # # # # # # # # # # # # # # #
+
+
+    # print(max(node[2] for node in Mesh_object.Nodes) - min(node[2] for node in Mesh_object.Nodes))
+    # # # # ----- UP ------ # # #
+    # print("UP")
+    line_a, line_b, line_c = line_point_and_slope(center_point,np.tan(np.pi/180*30))
+    # print(line_a, line_b, line_c)
+    P_u_r = lines_intersection(line_a, line_b, line_c, edge_right_a, edge_right_b, edge_right_c).data
+    # print(" P right = ", P_u_r)
+
+    line_a, line_b, line_c = line_point_and_slope(center_point,np.tan(np.pi/180*150))
+    P_u_l = lines_intersection(line_a, line_b, line_c, edge_left_a, edge_left_b, edge_left_c).data
+    # print(" P left = ", P_u_l)
+
+    line_a, line_b, line_c = line_point_and_slope(P_u_l,np.tan(np.pi/180*30))
+    P_u_middle = lines_intersection(line_a, line_b, line_c,edge_middle_a, edge_middle_b, edge_middle_c).data
+    # print(" P middle = ", P_u_middle)
+
+    centre_u_r = lines_intersection(line_a, line_b, line_c, edge_right_a, edge_right_b, edge_right_c).data
+    # print(" centre neighbour right = ", centre_u_r)
+
+    centre_u_r_c = lines_intersection(line_a, line_b, line_c, edge_top_a, edge_top_b, edge_top_c).data
+    # print(" centre neighbour right center = ", centre_u_r_c)
+
+    centre_u_l = np.array([0, centre_u_r[1]])
+    # print(" centre neighbour = ", centre_u_l)
+
+    centre_u_l_c = np.array([ - (centre_u_r_c[0] - x_max), y_max])
+    # print(" centre neighbour left center = ", centre_u_l_c)
+    # print()
+
+
+    # # # # ---- DOWN ----- # # #
+    # print("DOWN")
+
+    line_a, line_b, line_c = line_point_and_slope(center_point,np.tan(np.pi/180*150))
+    P_d_r = lines_intersection(line_a, line_b, line_c, edge_right_a, edge_right_b, edge_right_c).data
+    # print(" P right = ", P_d_r)
+
+    line_a, line_b, line_c = line_point_and_slope(center_point,np.tan(np.pi/180*30))
+    P_d_l = lines_intersection(line_a, line_b, line_c, edge_left_a, edge_left_b, edge_left_c).data
+    # print(" P left = ", P_d_l)
+
+
+
+    line_a, line_b, line_c = line_point_and_slope(P_d_r,np.tan(np.pi/180*30))
+    P_d_middle = lines_intersection(line_a, line_b, line_c, edge_middle_a, edge_middle_b, edge_middle_c).data
+    # print(" P middle = ", P_d_middle)
+
+    centre_d_l = lines_intersection(line_a, line_b, line_c, edge_left_a, edge_left_b, edge_left_c).data
+    # print(" centre neighbour left = ", centre_d_l)
+
+    centre_d_l_c = lines_intersection(line_a, line_b, line_c, edge_bottom_a, edge_bottom_b, edge_bottom_c).data
+    # print(" centre neighbour left c = ", centre_d_l_c)
+
+
+    centre_d_r = np.array([domain_x, centre_d_l[1]])
+    # print(" centre neighbour right = ", centre_d_r)
+
+    centre_d_r_c = np.array([domain_x - centre_d_l_c[0], centre_d_l_c[1]])
+
+    # print(" centre neighbour right c = ", centre_d_r_c)
+
+        # region    1               2           3           4               5           6           7           8
+    P1 = [[domain_x,0],         P_u_r,      P_u_l,      [0,0],          P_d_l,      P_d_r,      P_u_r,      [domain_x/2,0],\
+        #     9               10          11         12               13              14
+            [domain_x/2,0],     P_u_l,      P_d_l,     [domain_x/2,0],  [domain_x/2,0], P_d_r ]
+
+    # region    1               2           3           4               5           6           7           8
+    P2 = [[domain_x,domain_y],  P_u_middle, P_u_middle, [0,domain_y],   P_d_middle, P_d_middle, P_u_middle, [domain_x/2,domain_y],\
+            #     9                 10           11          12                    13                       14
+            [domain_x/2,domain_y], P_u_middle, P_d_middle, [domain_x/2,domain_y], [domain_x/2,domain_y], P_d_middle]
+
+    centers = [center_point, center_point, center_point, center_point, center_point, center_point, centre_u_r, centre_u_r_c,\
+            centre_u_l_c, centre_u_l, centre_d_l, centre_d_l_c, centre_d_r_c, centre_d_r ]
+    
+    impo_points = [P_u_l, P_u_r, P_u_middle, centre_u_l, centre_u_r, P_d_l, P_d_r, P_d_middle, centre_d_l, centre_d_r]
+
+    return P1, P2, centers, impo_points, inner_edges, center_point
+
+def Hexa_scaling_new_coord(center_point, coord, end_a, end_b, end_c, start_a, start_b, start_c, new_h, current_h):
+    # end point = inner edge of the microstructure ~ centerline
+    # start point = actual outer edge (given by boundary tag)
+    
+    eps = 1.0e-16
+    line_a, line_b, line_c = line_btw_points(center_point, coord)
+
+
+    end_point_x, end_point_y  = lines_intersection_v2(line_a, line_b, line_c, end_a, end_b, end_c, coord)
+    start_point_x, start_point_y = lines_intersection_v2(line_a, line_b, line_c, start_a, start_b, start_c, coord)
+    
+    r_x = (end_point_x - coord[0] )/(end_point_x - start_point_x + eps)  
+    r_y = (end_point_y - coord[1] )/(end_point_y - start_point_y + eps)  
+
+    k_new_x = (new_h/current_h)*r_x
+    k_new_y = (new_h/current_h)*r_y
+
+    new_coord_x = (1-k_new_x)*end_point_x + (k_new_x)*start_point_x
+    new_coord_y = (1-k_new_y)*end_point_y + (k_new_y)*start_point_y
+
+    return new_coord_x, new_coord_y
+
+
+def Hexa_mapping(mesh, xg, current_h, new_h):
+
+    P1, P2, centers, impo_points, inner_edges, center_point = Hexa_domain_constants(mesh)
+
+    F = []
+    u = []
+    J = []
+    J_export = []
+    xg_modes = []
+
+    for i in range(len(xg)):
+        coord = torch.tensor(xg[i],requires_grad=True)
+
+        region = Hexa_identify_regions(coord, impo_points, center_point.data)
+        end_a, end_b, end_c = line_btw_points(P1[region-1], P2[region-1])   
+
+        n = len(mesh.borders_nodes[inner_edges[region-1]])
+        if n==2:
+            idx_a, idx_b = mesh.borders_nodes[inner_edges[region-1]][0], mesh.borders_nodes[inner_edges[region-1]][-1]
+        else:
+            mid = n // 2
+            idx_a = mesh.borders_nodes[inner_edges[region-1]][mid - 1]
+            idx_b = mesh.borders_nodes[inner_edges[region-1]][mid + 1] if mid + 1 < n else mesh.borders_nodes[inner_edges[region-1]][mid]
+
+        A = mesh.Nodes[int(idx_a[0])-1][1:3]
+        B = mesh.Nodes[int(idx_b[0])-1][1:3]
+        start_a, start_b, start_c = line_btw_points(A, B)   
+
+        new_coord_x, new_coord_y = Hexa_scaling_new_coord(torch.tensor(centers[region-1], requires_grad=True), coord, end_a, end_b, end_c, start_a, start_b, start_c, new_h, current_h)
+
+        new_coord = torch.vstack((new_coord_x, new_coord_y))
+
+        dx_dX = torch.autograd.grad(new_coord_x, coord, grad_outputs=torch.ones_like(new_coord_x), create_graph=True)[0]
+        dy_dX = torch.autograd.grad(new_coord_y, coord, grad_outputs=torch.ones_like(new_coord_y), create_graph=True)[0]
+
+        # print("new h = ", new_h)
+        # print("coord = ", coord)
+
+        # print("new_coord_x = ", new_coord_x)
+        # print("dx_dX = ", dx_dX)
+        # print("J = ", dx_dX[0]*dy_dX[1] - dx_dX[1]*dy_dX[0])
+        # print()
+
+
+        u.append(new_coord - torch.unsqueeze(coord,dim=1))
+        F.append(torch.tensor([[dx_dX[0],dx_dX[1]],[dy_dX[0],dy_dX[1]]]))
+        J.append(dx_dX[0]*dy_dX[1] - dx_dX[1]*dy_dX[0])
+        J_export.append((dx_dX[0]*dy_dX[1] - dx_dX[1]*dy_dX[0]).detach())
+    return u, F, J, J_export
+
+
+
+def Hexa_mapping_non_vect(model, current_h, new_h):
+
+    space_model = model.Space_modes[0]
+
+    P1, P2, centers, impo_points, inner_edges, center_point = Hexa_domain_constants(space_model.mesh)
+
+    xg_modes = []
+
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        xg_modes.append(xg_k)
+    xg = xg_modes[0]
+
+    F = []
+    u = []
+    J = []
+
+    for i in range(len(xg)):
+        coord = torch.tensor(xg[i],requires_grad=True)
+
+        region = Hexa_identify_regions(coord, impo_points, center_point.data)
+        end_a, end_b, end_c = line_btw_points(P1[region-1], P2[region-1])   
+
+        n = len(space_model.mesh.borders_nodes[inner_edges[region-1]])
+        if n==2:
+            idx_a, idx_b = space_model.mesh.borders_nodes[inner_edges[region-1]][0], space_model.mesh.borders_nodes[inner_edges[region-1]][-1]
+        else:
+            mid = n // 2
+            idx_a = space_model.mesh.borders_nodes[inner_edges[region-1]][mid - 1]
+            idx_b = space_model.mesh.borders_nodes[inner_edges[region-1]][mid + 1] if mid + 1 < n else space_model.mesh.borders_nodes[inner_edges[region-1]][mid]
+
+        A = space_model.mesh.Nodes[int(idx_a[0])-1][1:3]
+        B = space_model.mesh.Nodes[int(idx_b[0])-1][1:3]
+        start_a, start_b, start_c = line_btw_points(A, B)   
+
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+        # new_coord_x, new_coord_y = Hexa_scaling_new_coord(torch.tensor(centers[region-1], requires_grad=True), coord, end_a, end_b, end_c, start_a, start_b, start_c, new_h, current_h)
+        # new_coord = torch.vstack((new_coord_x, new_coord_y))
+        # dx_dX = torch.autograd.grad(new_coord_x, coord, grad_outputs=torch.ones_like(new_coord_x), create_graph=True)[0]
+        # dy_dX = torch.autograd.grad(new_coord_y, coord, grad_outputs=torch.ones_like(new_coord_y), create_graph=True)[0]
+
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+        F_in = []
+        u_in = []
+        J_in = []
+
+        for j in range(new_h.shape[0]):
+            new_coord_x, new_coord_y = Hexa_scaling_new_coord(torch.tensor(centers[region-1], requires_grad=True), coord, end_a, end_b, end_c, start_a, start_b, start_c, new_h[j], current_h[j])
+            new_coord = torch.vstack((new_coord_x, new_coord_y))
+
+            dx_dX = torch.autograd.grad(new_coord_x, coord, grad_outputs=torch.ones_like(new_coord_x), create_graph=True)[0]
+            dy_dX = torch.autograd.grad(new_coord_y, coord, grad_outputs=torch.ones_like(new_coord_y), create_graph=True)[0]
+
+            u_in.append(new_coord - torch.unsqueeze(coord,dim=1))
+            F_in.append(torch.tensor([[dx_dX[0],dx_dX[1]],[dy_dX[0],dy_dX[1]]]))
+            J_in.append(dx_dX[0]*dy_dX[1] - dx_dX[1]*dy_dX[0])
+
+        u.append(u_in)
+        J.append(J_in)
+        F.append(F_in)
+
+    return F, J

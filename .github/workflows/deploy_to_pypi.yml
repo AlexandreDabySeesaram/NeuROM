@@ -10,7 +10,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
-
+      with:
+        fetch-depth: 0 # required to get full history and therefore have tags
+        
     - name: Install build dependencies
       run: python -m pip install --upgrade pip build
       

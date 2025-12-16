@@ -16,7 +16,7 @@ jobs:
       uses: keninkujovic/gitlab-sync@2.1.0
       with:
         gitlab_url: https://gitlab.inria.fr/aldabyse/neurom
-        # username: mgenet
+        username: aldabyse
         gitlab_pat: ${{secrets.GITLAB_TOKEN}}
 
     # - name: Sync repo

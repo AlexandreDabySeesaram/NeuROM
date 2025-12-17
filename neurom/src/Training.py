@@ -237,9 +237,6 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
             break 
 
-    # while epoch<n_epochs and loss_counter<120:
-    #     if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-    #         break 
 
         # Compute loss
         loss_time_start             = time.time()

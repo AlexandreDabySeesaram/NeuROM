@@ -676,149 +676,149 @@ def InternalEnergy_2D_einsum_hexa_para(model,lmbda, mu, h, config, list_F, list_
     # 4) Final integral:
     # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
     # ----------------------------------------------
-    W_in = 0.5 * (prod * J_x[:, None] *Jm* Jm).sum()
-
-    return W_in
-
-
-def InternalEnergy_2D_einsum_hexa_para_v2(model,lmbda, mu, h, config, list_F, list_J):
-    
-    if 'parameters' in config:
-        if 'x_0_x' in config['parameters']:
-            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-            eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-            eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-
-    Space_modes = []
-    xg_modes = []
-    detJ_modes = []
-    
-    Para_mode_Lists = [
-        [model.Para_modes[mode][l](h[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
-        for mode in range(model.n_modes_truncated)
-        ]
-    
-    lambda_i = [
-            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
-            for l in range(model.n_para)        ][0]    
-    # lambda_i shape (N_modes, N_h, 1, 1)
-
-    K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
-   
-
-    for i in range(model.n_modes_truncated):
-        u_k,xg_k,detJ_k = model.Space_modes[i]()
-        Space_modes.append(u_k)
-        xg_modes.append(xg_k)
-        detJ_modes.append(detJ_k)
-
-    J_x = torch.abs(detJ_modes[0]) 
-
-    
-    # if 'parameters' in config:
-    #     if 'x_0_x' in config['parameters']:
-    #         # Affine part of u
-    #         # print("     eps_macro = ", eps_macro)
-
-    #         u_affine = []
-    #         for i in range(model.n_modes_truncated):
-    #             # x_aff = torch.unsqueeze(xg_modes[i] - x0,-1)
-    #             # u_aff = torch.matmul(eps_macro, x_aff )
-    #             # u_aff = torch.squeeze(u_aff,-1)
-
-    #             u_aff = (eps_macro @ (xg_modes[i] - x0).T)
-    #             u_affine.append(u_aff)
-    #             # print("     mode = ",i, ", u = ", max(Space_modes[i][0,:]).item(), max(Space_modes[i][1,:]).item() )
-
-
-    #         u_affine = torch.stack(u_affine, dim=0)
-    #         # eps_full_list = [Strain_full(Space_modes[i] + u_affine[i,:,:], xg_modes[i]) for i in range(model.n_modes_truncated)]
-    #         eps_full_list = [Strain_full(Space_modes[i], xg_modes[i]) for i in range(model.n_modes_truncated)]
-    #     else:
-
-    eps_full_list = [Strain_full(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
-
-
-    eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
-    eps_i = torch.stack(eps_list,dim=2)  
-
-    eps_full_i = torch.stack(eps_full_list,dim=2)  # ---> [N_x, 4, N_modes]
-
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-
-    F = torch.stack([torch.stack(F_in) for F_in in list_F])         # list ---> tensor shape: [N_xg, N_h, 2, 2])
-    F_inv = torch.linalg.inv(F)                                     # shape: [N_xg, N_h, 2, 2])
-
-    sqrt2 = eps_i.new_tensor(2.0).sqrt()
-
-    grad_u = torch.stack([                                                                      # shape [N_x, 2, 2, 2]
-            torch.stack([eps_full_i[:,0,:], eps_full_i[:,1,:]], dim=1),  # first row
-            torch.stack([eps_full_i[:,2,:], eps_full_i[:,3,:]], dim=1),  # second row
-    ], dim=1)
-
-    # grad u: [N_x, 2, 2, N_m] !!!
-    grad_u_2 = grad_u.permute(0, 3, 1, 2)   # -----> [N_x, N_modes, 2, 2]
-
-    # F: [N_x, N_h, 2, 2]
-    F_exp = F_inv.unsqueeze(2)       # -> [N_x, N_h, 1, 2, 2]
-    u_exp = grad_u_2.unsqueeze(1)      # -> [N_x, 1, N_m, 2, 2]
-
-    eps_R = (torch.matmul(F_exp, u_exp) + torch.matmul(F_exp, u_exp).transpose(-1,-2))/2
-    
-    eps_R_voigt = torch.stack([
-        eps_R[:, :, :, 0, 0],                           # ε_xx
-        eps_R[:, :, :, 1, 1],                           # ε_yy
-        (eps_R[:,:, :, 0, 1]) * sqrt2             # ε_xy 
-    ], dim=-2)
-
-    eps_i = eps_R_voigt    
-
-
-    # eps_i: [Nx, Nh, 3, Nm] = [3660, 5, 3, 4]
-    # lambda_i: [Nm, Nh, 1, 1]
-    # J_x: [Nx]
-    # K: [3,3]
-    # list_J: list of Nx lists of length Nh  → Jm(x,h)
-
-
-    # 0) list of lists to tensor
-    Jm = torch.abs(torch.tensor(list_J, dtype=eps_i.dtype, device=eps_i.device))   # --->  [Nx, Nh]
-
-    # ----------------------------------------------
-    # 1) prep
-    lambda_i = lambda_i.squeeze(-1).squeeze(-1)      # [Nm, Nh]
-    lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(2)
-
-    # 2) Microstrain: eps_u(x,h) = Σ_m λ_m(h) eps_m(x,h)
-    # ----------------------------------------------
-    eps_u = (eps_i * lambda_exp).sum(dim=-1)         # [Nx, Nh, 3], 3 components of Voight notation strain
-
-
-    if 'parameters' in config:
-        if 'x_0_x' in config['parameters']:
-            sqrt2 = eps_i.new_tensor(2.0).sqrt()
-
-            eps_macro_voigt = torch.stack([
-                eps_macro[0,0],              # ε_xx
-                eps_macro[1,1],              # ε_yy
-                eps_macro[0,1] * sqrt2       # ε_xy
-            ], dim=0)                        # [3]
-
-            # reshape for broadcasting
-            eps_macro_voigt = eps_macro_voigt.view(1,1,3)       # [1,1,3]
-
-            eps_u = eps_u + eps_macro_voigt
-
-    # 3) Quadratic form: eps_u : K : eps_u
-    # --------------------------------------------------------------
-    prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)   # [Nx, Nh]
-
-    # 4) Final integral:
-    # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
-    # ----------------------------------------------
     W_in = 0.5 * (prod * J_x[:, None] *Jm).sum()
 
     return W_in
+
+
+# def InternalEnergy_2D_einsum_hexa_para_v2(model,lmbda, mu, h, config, list_F, list_J):
+    
+#     if 'parameters' in config:
+#         if 'x_0_x' in config['parameters']:
+#             x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+#             eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+#             eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+
+#     Space_modes = []
+#     xg_modes = []
+#     detJ_modes = []
+    
+#     Para_mode_Lists = [
+#         [model.Para_modes[mode][l](h[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+#         for mode in range(model.n_modes_truncated)
+#         ]
+    
+#     lambda_i = [
+#             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+#             for l in range(model.n_para)        ][0]    
+#     # lambda_i shape (N_modes, N_h, 1, 1)
+
+#     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+   
+
+#     for i in range(model.n_modes_truncated):
+#         u_k,xg_k,detJ_k = model.Space_modes[i]()
+#         Space_modes.append(u_k)
+#         xg_modes.append(xg_k)
+#         detJ_modes.append(detJ_k)
+
+#     J_x = torch.abs(detJ_modes[0]) 
+
+    
+#     # if 'parameters' in config:
+#     #     if 'x_0_x' in config['parameters']:
+#     #         # Affine part of u
+#     #         # print("     eps_macro = ", eps_macro)
+
+#     #         u_affine = []
+#     #         for i in range(model.n_modes_truncated):
+#     #             # x_aff = torch.unsqueeze(xg_modes[i] - x0,-1)
+#     #             # u_aff = torch.matmul(eps_macro, x_aff )
+#     #             # u_aff = torch.squeeze(u_aff,-1)
+
+#     #             u_aff = (eps_macro @ (xg_modes[i] - x0).T)
+#     #             u_affine.append(u_aff)
+#     #             # print("     mode = ",i, ", u = ", max(Space_modes[i][0,:]).item(), max(Space_modes[i][1,:]).item() )
+
+
+#     #         u_affine = torch.stack(u_affine, dim=0)
+#     #         # eps_full_list = [Strain_full(Space_modes[i] + u_affine[i,:,:], xg_modes[i]) for i in range(model.n_modes_truncated)]
+#     #         eps_full_list = [Strain_full(Space_modes[i], xg_modes[i]) for i in range(model.n_modes_truncated)]
+#     #     else:
+
+#     eps_full_list = [Strain_full(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+
+
+#     eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+#     eps_i = torch.stack(eps_list,dim=2)  
+
+#     eps_full_i = torch.stack(eps_full_list,dim=2)  # ---> [N_x, 4, N_modes]
+
+#     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+#     F = torch.stack([torch.stack(F_in) for F_in in list_F])         # list ---> tensor shape: [N_xg, N_h, 2, 2])
+#     F_inv = torch.linalg.inv(F)                                     # shape: [N_xg, N_h, 2, 2])
+
+#     sqrt2 = eps_i.new_tensor(2.0).sqrt()
+
+#     grad_u = torch.stack([                                                                      # shape [N_x, 2, 2, 2]
+#             torch.stack([eps_full_i[:,0,:], eps_full_i[:,1,:]], dim=1),  # first row
+#             torch.stack([eps_full_i[:,2,:], eps_full_i[:,3,:]], dim=1),  # second row
+#     ], dim=1)
+
+#     # grad u: [N_x, 2, 2, N_m] !!!
+#     grad_u_2 = grad_u.permute(0, 3, 1, 2)   # -----> [N_x, N_modes, 2, 2]
+
+#     # F: [N_x, N_h, 2, 2]
+#     F_exp = F_inv.unsqueeze(2)       # -> [N_x, N_h, 1, 2, 2]
+#     u_exp = grad_u_2.unsqueeze(1)      # -> [N_x, 1, N_m, 2, 2]
+
+#     eps_R = (torch.matmul(F_exp, u_exp) + torch.matmul(F_exp, u_exp).transpose(-1,-2))/2
+    
+#     eps_R_voigt = torch.stack([
+#         eps_R[:, :, :, 0, 0],                           # ε_xx
+#         eps_R[:, :, :, 1, 1],                           # ε_yy
+#         (eps_R[:,:, :, 0, 1]) * sqrt2             # ε_xy 
+#     ], dim=-2)
+
+#     eps_i = eps_R_voigt    
+
+
+#     # eps_i: [Nx, Nh, 3, Nm] = [3660, 5, 3, 4]
+#     # lambda_i: [Nm, Nh, 1, 1]
+#     # J_x: [Nx]
+#     # K: [3,3]
+#     # list_J: list of Nx lists of length Nh  → Jm(x,h)
+
+
+#     # 0) list of lists to tensor
+#     Jm = torch.abs(torch.tensor(list_J, dtype=eps_i.dtype, device=eps_i.device))   # --->  [Nx, Nh]
+
+#     # ----------------------------------------------
+#     # 1) prep
+#     lambda_i = lambda_i.squeeze(-1).squeeze(-1)      # [Nm, Nh]
+#     lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(2)
+
+#     # 2) Microstrain: eps_u(x,h) = Σ_m λ_m(h) eps_m(x,h)
+#     # ----------------------------------------------
+#     eps_u = (eps_i * lambda_exp).sum(dim=-1)         # [Nx, Nh, 3], 3 components of Voight notation strain
+
+
+#     if 'parameters' in config:
+#         if 'x_0_x' in config['parameters']:
+#             sqrt2 = eps_i.new_tensor(2.0).sqrt()
+
+#             eps_macro_voigt = torch.stack([
+#                 eps_macro[0,0],              # ε_xx
+#                 eps_macro[1,1],              # ε_yy
+#                 eps_macro[0,1] * sqrt2       # ε_xy
+#             ], dim=0)                        # [3]
+
+#             # reshape for broadcasting
+#             eps_macro_voigt = eps_macro_voigt.view(1,1,3)       # [1,1,3]
+
+#             eps_u = eps_u + eps_macro_voigt
+
+#     # 3) Quadratic form: eps_u : K : eps_u
+#     # --------------------------------------------------------------
+#     prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)   # [Nx, Nh]
+
+#     # 4) Final integral:
+#     # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
+#     # ----------------------------------------------
+#     W_in = 0.5 * (prod * J_x[:, None] *Jm).sum()
+
+#     return W_in
 
 def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
 

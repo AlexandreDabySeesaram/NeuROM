@@ -19,7 +19,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
                                 InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum,\
-                                InternalEnergy_2D_einsum_hexa_para, Hexa_mapping_non_vect
+                                InternalEnergy_2D_einsum_hexa_para, InternalEnergy_2D_einsum_hexa_para_fix, Hexa_mapping_non_vect
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -227,10 +227,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     h_new_tensor = Training_para_coordinates_list[0][:,0]
     h_current_tensor = h_current*torch.ones_like(h_new_tensor)
 
-    list_F, list_J = Hexa_mapping_non_vect(model, h_current_tensor, h_new_tensor)
+    list_F, list_J, list_h = Hexa_mapping_non_vect(model, h_current_tensor, h_new_tensor)
 
-    print("Training_para_coordinates_list = ", Training_para_coordinates_list)
-    print()
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
     while epoch<n_epochs and loss_counter<100:
@@ -251,7 +249,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
                     case 2:
                         # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                        loss = InternalEnergy_2D_einsum_hexa_para(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)
+                        loss = InternalEnergy_2D_einsum_hexa_para_fix(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J, list_h)
 
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             case 2:
@@ -541,10 +539,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
     h_new_tensor = Training_para_coordinates_list[0][:,0]
     h_current_tensor = h_current*torch.ones_like(h_new_tensor)
 
-    list_F, list_J = Hexa_mapping_non_vect(model, h_current_tensor, h_new_tensor)
+    list_F, list_J, list_h = Hexa_mapping_non_vect(model, h_current_tensor, h_new_tensor)
 
-    print(Training_para_coordinates_list)
-    print()
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
 
@@ -572,7 +568,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
                                     loss = PotentialEnergyVectorisedParametric(model,A,Training_para_coordinates_list,model(Training_coordinates,Training_para_coordinates_list),Training_coordinates,RHS(Training_coordinates))
                         case 2:
                             # loss = InternalEnergy_2D_einsum_para(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                            loss = InternalEnergy_2D_einsum_hexa_para(model,Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)
+                            loss = InternalEnergy_2D_einsum_hexa_para_fix(model,Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J, list_h)
                         case 3:
                             assert 0, "Single extra-parameter non implemented in 3D. Aborting."
                 case 2:
@@ -1085,6 +1081,8 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
     theta = torch.tensor(0*torch.pi/2)
     rho =1e-7
 
+    print("lambda, mu = ", Mat.lmbda, Mat.mu)
+
 
     if not (mapping is None):
         map_u = mapping[0]
@@ -1139,7 +1137,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                             loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)) 
                         else:
                             mapping_J = mapping[2]
-                            loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)*torch.abs(mapping_J))                    
+                            loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted, xg, Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)*torch.abs(mapping_J))                    
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
                     loss_Neumann_BC = 0
 

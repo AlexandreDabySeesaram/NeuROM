@@ -681,144 +681,184 @@ def InternalEnergy_2D_einsum_hexa_para(model,lmbda, mu, h, config, list_F, list_
     return W_in
 
 
-# def InternalEnergy_2D_einsum_hexa_para_v2(model,lmbda, mu, h, config, list_F, list_J):
-    
-#     if 'parameters' in config:
-#         if 'x_0_x' in config['parameters']:
-#             x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-#             eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-#             eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-
-#     Space_modes = []
-#     xg_modes = []
-#     detJ_modes = []
-    
-#     Para_mode_Lists = [
-#         [model.Para_modes[mode][l](h[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
-#         for mode in range(model.n_modes_truncated)
-#         ]
-    
-#     lambda_i = [
-#             torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
-#             for l in range(model.n_para)        ][0]    
-#     # lambda_i shape (N_modes, N_h, 1, 1)
-
-#     K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
-   
-
-#     for i in range(model.n_modes_truncated):
-#         u_k,xg_k,detJ_k = model.Space_modes[i]()
-#         Space_modes.append(u_k)
-#         xg_modes.append(xg_k)
-#         detJ_modes.append(detJ_k)
-
-#     J_x = torch.abs(detJ_modes[0]) 
-
-    
-#     # if 'parameters' in config:
-#     #     if 'x_0_x' in config['parameters']:
-#     #         # Affine part of u
-#     #         # print("     eps_macro = ", eps_macro)
-
-#     #         u_affine = []
-#     #         for i in range(model.n_modes_truncated):
-#     #             # x_aff = torch.unsqueeze(xg_modes[i] - x0,-1)
-#     #             # u_aff = torch.matmul(eps_macro, x_aff )
-#     #             # u_aff = torch.squeeze(u_aff,-1)
-
-#     #             u_aff = (eps_macro @ (xg_modes[i] - x0).T)
-#     #             u_affine.append(u_aff)
-#     #             # print("     mode = ",i, ", u = ", max(Space_modes[i][0,:]).item(), max(Space_modes[i][1,:]).item() )
 
 
-#     #         u_affine = torch.stack(u_affine, dim=0)
-#     #         # eps_full_list = [Strain_full(Space_modes[i] + u_affine[i,:,:], xg_modes[i]) for i in range(model.n_modes_truncated)]
-#     #         eps_full_list = [Strain_full(Space_modes[i], xg_modes[i]) for i in range(model.n_modes_truncated)]
-#     #     else:
+def InternalEnergy_2D_einsum_hexa_para_fix(
+    model, lmbda, mu, h, config, list_F, list_J, list_h
+):
+    """
+    Computes internal energy:
+        W = 1/2 ∑_{x,h} ε(x,h)^T K ε(x,h) |J_x(x)| |J_m(x,h)|
 
-#     eps_full_list = [Strain_full(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+    where:
+        ε(x,h) = sym( ∑_m λ_m(h) ∇u_m(x) F^{-1}(x,h) )
+    """
+
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+
+    # ============================================================
+    # 0. Build material stiffness matrix (plane strain)
+    # ============================================================
+    K = torch.tensor(
+        [[2*mu + lmbda, lmbda, 0.0],
+         [lmbda, 2*mu + lmbda, 0.0],
+         [0.0, 0.0, 2*mu]],
+        dtype=model.float_config.dtype,
+        device=model.float_config.device
+    )
+
+    # ============================================================
+    # 1. Evaluate spatial modes u_m(x)
+    # ============================================================
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+
+    for m in range(model.n_modes_truncated):
+        u_m, xg_m, detJ_m = model.Space_modes[m]()
+        Space_modes.append(u_m)
+        xg_modes.append(xg_m)
+        detJ_modes.append(detJ_m)
+
+    # Physical Jacobian |J_x(x)| (same for all modes)
+    J_x = torch.abs(detJ_modes[0])     # [Nx]
+
+    # ============================================================
+    # 2. Compute full displacement gradients ∇u_m(x)
+    # ============================================================
+    # Strain_full returns: [ε_xx, ε_xy, ε_yx, ε_yy]
+    eps_full_list = [
+        Strain_full(Space_modes[m], xg_modes[m])
+        for m in range(model.n_modes_truncated)
+    ]
+
+    # Stack over modes → [Nx, 4, Nm]
+    eps_full_i = torch.stack(eps_full_list, dim=2)
+
+    # Build ∇u tensor explicitly
+    # grad_u[m] =
+    #   [ du_x/dx  du_x/dy ]
+    #   [ du_y/dx  du_y/dy ]
+    grad_u = torch.stack([
+        torch.stack([eps_full_i[:, 0, :], eps_full_i[:, 1, :]], dim=1),
+        torch.stack([eps_full_i[:, 2, :], eps_full_i[:, 3, :]], dim=1),
+    ], dim=1)                          # [Nx, 2, 2, Nm]
+
+    # Reorder to mode-major: [Nx, Nm, 2, 2]
+    grad_u_modes = grad_u.permute(0, 3, 1, 2)
+
+    # ============================================================
+    # 3. Build modal coefficients λ_m(h)
+    # ============================================================
+    Para_mode_Lists = [
+        [
+            model.Para_modes[m][l](h[l][:, 0].view(-1, 1))[:, None]
+            for l in range(model.n_para)
+        ]
+        for m in range(model.n_modes_truncated)
+    ]
+
+    # λ_m(h) → [Nm, Nh]
+    lambda_i = torch.cat(
+        [Para_mode_Lists[m][0].unsqueeze(0)
+         for m in range(model.n_modes_truncated)],
+        dim=0
+    ).squeeze(-1).squeeze(-1)
+
+    # Broadcast-ready λ: [1, Nh, Nm, 1]
+    lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(-1)
+
+    # ============================================================
+    # 4. Modal superposition of gradients
+    # ============================================================
+    # grad_u_modes: [Nx, Nm, 2, 2]
+    # → add singleton h-dimension
+    grad_u_modes = grad_u_modes.unsqueeze(1)      # [Nx, 1, Nm, 2, 2]
+
+    # Weighted sum over modes
+    grad_u_sum = (grad_u_modes * lambda_exp.unsqueeze(-1)).sum(dim=2)
+    # grad_u_sum: [Nx, Nh, 2, 2]
+
+    # ============================================================
+    # 5. Apply mapping and symmetrize strain
+    # ============================================================
+    # Deformation gradient inverse
+    F = torch.stack([torch.stack(Fx) for Fx in list_F])  # [Nx, Nh, 2, 2]
+
+    # # just for check
+    # h_F = torch.stack([torch.stack(hx) for hx in list_h])  # [Nx, Nh, 2, 2]
+    # print("hF = ", h_F)
+
+    F_inv = torch.linalg.inv(F)
+
+    # Symmetric mapped strain tensor
+    eps_R = (
+        torch.matmul(grad_u_sum, F_inv)
+        + torch.matmul(grad_u_sum, F_inv).transpose(-1, -2)
+    ) / 2.0                                              # [Nx, Nh, 2, 2]
 
 
-#     eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
-#     eps_i = torch.stack(eps_list,dim=2)  
+    # ============================================================
+    # 5b. Add macroscopic strain (if present)
+    # ============================================================
+    if 'parameters' in config and 'x_0_x' in config['parameters']:
+        # eps_macro is [2, 2]
+        eps_macro = eps_macro.to(dtype=eps_R.dtype, device=eps_R.device)
 
-#     eps_full_i = torch.stack(eps_full_list,dim=2)  # ---> [N_x, 4, N_modes]
+        # reshape to [1, 1, 2, 2] so it broadcasts over x and h
+        eps_macro_exp = eps_macro.unsqueeze(0).unsqueeze(0)
 
-#     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+        # add to microscopic strain
+        eps_R = eps_R + eps_macro_exp
 
-#     F = torch.stack([torch.stack(F_in) for F_in in list_F])         # list ---> tensor shape: [N_xg, N_h, 2, 2])
-#     F_inv = torch.linalg.inv(F)                                     # shape: [N_xg, N_h, 2, 2])
+    # ============================================================
+    # 6. Convert to Voigt notation (√2 on shear)
+    # ============================================================
+    sqrt2 = eps_R.new_tensor(2.0).sqrt()
 
-#     sqrt2 = eps_i.new_tensor(2.0).sqrt()
+    eps_u = torch.stack([
+        eps_R[..., 0, 0],            # ε_xx
+        eps_R[..., 1, 1],            # ε_yy
+        eps_R[..., 0, 1] * sqrt2     # √2 ε_xy
+    ], dim=-1)                        # [Nx, Nh, 3]
 
-#     grad_u = torch.stack([                                                                      # shape [N_x, 2, 2, 2]
-#             torch.stack([eps_full_i[:,0,:], eps_full_i[:,1,:]], dim=1),  # first row
-#             torch.stack([eps_full_i[:,2,:], eps_full_i[:,3,:]], dim=1),  # second row
-#     ], dim=1)
+    # ============================================================
+    # 7. Quadratic energy density εᵀ K ε
+    # ============================================================
+    prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)
 
-#     # grad u: [N_x, 2, 2, N_m] !!!
-#     grad_u_2 = grad_u.permute(0, 3, 1, 2)   # -----> [N_x, N_modes, 2, 2]
+    # ============================================================
+    # 8. Integration with Jacobians
+    # ============================================================
+    Jm = torch.abs(
+        torch.tensor(list_J, dtype=eps_u.dtype, device=eps_u.device)
+    )                                 # [Nx, Nh]
 
-#     # F: [N_x, N_h, 2, 2]
-#     F_exp = F_inv.unsqueeze(2)       # -> [N_x, N_h, 1, 2, 2]
-#     u_exp = grad_u_2.unsqueeze(1)      # -> [N_x, 1, N_m, 2, 2]
-
-#     eps_R = (torch.matmul(F_exp, u_exp) + torch.matmul(F_exp, u_exp).transpose(-1,-2))/2
-    
-#     eps_R_voigt = torch.stack([
-#         eps_R[:, :, :, 0, 0],                           # ε_xx
-#         eps_R[:, :, :, 1, 1],                           # ε_yy
-#         (eps_R[:,:, :, 0, 1]) * sqrt2             # ε_xy 
-#     ], dim=-2)
-
-#     eps_i = eps_R_voigt    
-
-
-#     # eps_i: [Nx, Nh, 3, Nm] = [3660, 5, 3, 4]
-#     # lambda_i: [Nm, Nh, 1, 1]
-#     # J_x: [Nx]
-#     # K: [3,3]
-#     # list_J: list of Nx lists of length Nh  → Jm(x,h)
-
-
-#     # 0) list of lists to tensor
-#     Jm = torch.abs(torch.tensor(list_J, dtype=eps_i.dtype, device=eps_i.device))   # --->  [Nx, Nh]
-
-#     # ----------------------------------------------
-#     # 1) prep
-#     lambda_i = lambda_i.squeeze(-1).squeeze(-1)      # [Nm, Nh]
-#     lambda_exp = lambda_i.T.unsqueeze(0).unsqueeze(2)
-
-#     # 2) Microstrain: eps_u(x,h) = Σ_m λ_m(h) eps_m(x,h)
-#     # ----------------------------------------------
-#     eps_u = (eps_i * lambda_exp).sum(dim=-1)         # [Nx, Nh, 3], 3 components of Voight notation strain
+    # # just for check
+    # hm = torch.abs(
+    #     torch.tensor(list_h, dtype=eps_u.dtype, device=eps_u.device)
+    # )     
 
 
-#     if 'parameters' in config:
-#         if 'x_0_x' in config['parameters']:
-#             sqrt2 = eps_i.new_tensor(2.0).sqrt()
 
-#             eps_macro_voigt = torch.stack([
-#                 eps_macro[0,0],              # ε_xx
-#                 eps_macro[1,1],              # ε_yy
-#                 eps_macro[0,1] * sqrt2       # ε_xy
-#             ], dim=0)                        # [3]
+    W_in = 0.5 * (prod * J_x[:, None] * Jm).sum()
 
-#             # reshape for broadcasting
-#             eps_macro_voigt = eps_macro_voigt.view(1,1,3)       # [1,1,3]
+    return W_in
 
-#             eps_u = eps_u + eps_macro_voigt
 
-#     # 3) Quadratic form: eps_u : K : eps_u
-#     # --------------------------------------------------------------
-#     prod = torch.einsum("xhi,ij,xhj->xh", eps_u, K, eps_u)   # [Nx, Nh]
 
-#     # 4) Final integral:
-#     # W = 1/2 Σ_x Σ_h prod(x,h) * J(x) * Jm(x,h)
-#     # ----------------------------------------------
-#     W_in = 0.5 * (prod * J_x[:, None] *Jm).sum()
 
-#     return W_in
+
+
+
+
+
+
+
 
 def InternalEnergy_2_3D_einsum_Bipara(model,lmbda, mu,E):
 
@@ -1716,6 +1756,8 @@ def Hexa_domain_constants(Mesh_object):
     x_min = min(node[1] for node in Mesh_object.Nodes)
     x_max = max(node[1] for node in Mesh_object.Nodes)
 
+    print("x max = ", x_max)
+
     edge_right_a, edge_right_b, edge_right_c = line_btw_points([domain_x,0], [domain_x,domain_y])        
     edge_left_a, edge_left_b, edge_left_c = line_btw_points([0,0], [0,domain_y])        
     edge_middle_a, edge_middle_b, edge_middle_c = line_btw_points([domain_x/2,0], [domain_x/2,domain_y])  
@@ -1902,15 +1944,17 @@ def Hexa_mapping_non_vect(model, current_h, new_h):
     P1, P2, centers, impo_points, inner_edges, center_point = Hexa_domain_constants(space_model.mesh)
 
     xg_modes = []
+    F = []
+    u = []
+    J = []
+    h = []
 
     for i in range(model.n_modes_truncated):
         u_k,xg_k,detJ_k = model.Space_modes[i]()
         xg_modes.append(xg_k)
     xg = xg_modes[0]
 
-    F = []
-    u = []
-    J = []
+
 
     for i in range(len(xg)):
         coord = torch.tensor(xg[i],requires_grad=True)
@@ -1942,8 +1986,10 @@ def Hexa_mapping_non_vect(model, current_h, new_h):
         F_in = []
         u_in = []
         J_in = []
+        h_in = []
 
         for j in range(new_h.shape[0]):
+            # print("current h = ", current_h[j], "  --->  new_h = ", new_h[j])
             new_coord_x, new_coord_y = Hexa_scaling_new_coord(torch.tensor(centers[region-1], requires_grad=True), coord, end_a, end_b, end_c, start_a, start_b, start_c, new_h[j], current_h[j])
             new_coord = torch.vstack((new_coord_x, new_coord_y))
 
@@ -1953,9 +1999,16 @@ def Hexa_mapping_non_vect(model, current_h, new_h):
             u_in.append(new_coord - torch.unsqueeze(coord,dim=1))
             F_in.append(torch.tensor([[dx_dX[0],dx_dX[1]],[dy_dX[0],dy_dX[1]]]))
             J_in.append(dx_dX[0]*dy_dX[1] - dx_dX[1]*dy_dX[0])
+            h_in.append(new_h[j])
+            # list of J, F for one x and all h
+        # print()
+
 
         u.append(u_in)
         J.append(J_in)
         F.append(F_in)
+        h.append(h_in)
+        
+        #[[x0, all h],[x1 all h], .., [xn all h]]
 
-    return F, J
+    return F, J, h

@@ -297,8 +297,6 @@ class InterpPara(nn.Module):
         self.coordinates = nn.ParameterList([nn.Parameter(torch.tensor([[i]])) \
                                              for i in torch.linspace(self.mu_min,self.mu_max,self.N_mu)])    
 
-        print("para coordinates = ", torch.linspace(self.mu_min,self.mu_max,self.N_mu))
-
         ### Assembly layer 
         self.AssemblyLayer = nn.Linear(2*(self.n_elem),self.N_mu)
         weights_assembly = torch.zeros((self.N_mu,2*self.n_elem))

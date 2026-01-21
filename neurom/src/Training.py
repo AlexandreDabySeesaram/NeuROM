@@ -19,7 +19,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
                                 InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum,\
-                                InternalEnergy_2D_einsum_hexa_para, InternalEnergy_2D_einsum_hexa_para_fix, Hexa_mapping_non_vect
+                                InternalEnergy_2D_einsum_hexa_para_fix, Hexa_mapping_non_vect
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):

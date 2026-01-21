@@ -317,7 +317,6 @@ class Mesh:
                 if self.NoBC == False:
                     self.DirichletBoundaryNodes = [[] for id in self.ListOfDirichletsBCsValues]
 
-                print("self.ListOfDirichletsBCsValues = ", self.ListOfDirichletsBCsValues)
                 self.ExcludedPoints = []
 
                 flagType = True

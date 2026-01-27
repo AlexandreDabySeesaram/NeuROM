@@ -580,8 +580,189 @@ def InternalEnergy_2D_einsum_para(model,lmbda, mu, E):
 
 
 
+def InternalEnergy_2D_einsum_hexa_2param(
+    model, lmbda, mu, parameters, config, list_F, list_J
+):
+    """
+    Internal energy averaged over parametric space B = H × E
+
+    parameters[0] : h samples        [Nh, 1]
+    parameters[1] : eps_yy samples   [Ne, 1]
+
+    ROM:
+        u(x,h,eps) = sum_m u_m(x) λ_m^(h)(h) λ_m^(eps)(eps)
+
+    Strain:
+        eps = sym( ∑_m λ_m^(h)(h) λ_m^(eps)(eps) ∇u_m F^{-1}(x,h) )
+              + eps_macro(eps)
+    """
+
+    # ============================================================
+    # 0. Parameters
+    # ============================================================
+    h_vals   = parameters[0][:, 0]      # [Nh]
+    eps_vals = parameters[1][:, 0]      # [Ne]
+
+    Nh = h_vals.shape[0]
+    Ne = eps_vals.shape[0]
+    Nm = model.n_modes_truncated
+
+    dtype  = h_vals.dtype
+    device = h_vals.device
+
+    # ============================================================
+    # 1. Stiffness matrix (Voigt, plane strain)
+    # ============================================================
+    K = torch.tensor(
+        [[2*mu + lmbda, lmbda, 0.0],
+         [lmbda, 2*mu + lmbda, 0.0],
+         [0.0, 0.0, 2*mu]],
+        dtype=dtype, device=device
+    )
+
+    # ============================================================
+    # 2. Spatial modes and physical Jacobian
+    # ============================================================
+    Space_modes, xg_modes, detJ_modes = [], [], []
+
+    for m in range(Nm):
+        u_m, xg_m, detJ_m = model.Space_modes[m]()
+        Space_modes.append(u_m)
+        xg_modes.append(xg_m)
+        detJ_modes.append(detJ_m)
+
+    J_x = torch.abs(detJ_modes[0])   # [Nx]
+
+    # ============================================================
+    # 3. Gradients of spatial modes ∇u_m(x)
+    # ============================================================
+    eps_full = [
+        Strain_full(Space_modes[m], xg_modes[m])  # [Nx, 4]
+        for m in range(Nm)
+    ]
+
+    eps_full = torch.stack(eps_full, dim=2)       # [Nx, 4, Nm]
+
+    grad_u = torch.stack([
+        torch.stack([eps_full[:, 0, :], eps_full[:, 1, :]], dim=1),
+        torch.stack([eps_full[:, 2, :], eps_full[:, 3, :]], dim=1)
+    ], dim=1)                                     # [Nx, 2, 2, Nm]
+
+    grad_u = grad_u.permute(0, 3, 1, 2)            # [Nx, Nm, 2, 2]
+
+    # ============================================================
+    # 4. Parametric coefficients λ_m^(h), λ_m^(eps)
+    # ============================================================
+    # Build parametric modes exactly as in your previous 2-param case
+    Para_mode_Lists = [
+        [
+            model.Para_modes[m][l](parameters[l][:, 0].view(-1, 1))
+            for l in range(model.n_para)
+        ]
+        for m in range(Nm)
+    ]
+
+    lambda_i = [
+        torch.stack(
+            [Para_mode_Lists[m][l] for m in range(Nm)],
+            dim=0
+        )                                           # [Nm, N_l]
+        for l in range(model.n_para)
+    ]
+
+    # Extract lambdas
+    lambda_h   = lambda_i[0]                        # [Nm, Nh]
+    lambda_eps = lambda_i[1]                        # [Nm, Ne]
+
+    # Tensor-product coefficients
+    # λ_m(h,eps) = λ_m^(h)(h) λ_m^(eps)(eps)
+    lambda_full = lambda_h[:, :, None] * lambda_eps[:, None, :]   # [Nm, Nh, Ne,1]
+    lambda_full = lambda_full.squeeze(-1)                         # [Nm, Nh, Ne]
+
+    # Prepare for broadcasting with grad_u
+    lambda_full = (
+        lambda_full
+        .permute(1, 2, 0)                           # [Nh, Ne, Nm]
+        .unsqueeze(0)                               # [1, Nh, Ne, Nm]
+        .unsqueeze(-1)                              # [1, Nh, Ne, Nm, 1]
+    )
+
+    # ============================================================
+    # 5. Modal superposition (micro strain, before mapping)
+    # ============================================================
+    grad_u = grad_u.unsqueeze(1).unsqueeze(1)       # [Nx, 1, 1, Nm, 2, 2]
+
+    grad_u_sum = (grad_u * lambda_full.unsqueeze(-1)).sum(dim=3)
+    # [Nx, Nh, Ne, 2, 2]
+
+    # ============================================================
+    # 6. Mapping with F(x,h)
+    # ============================================================
+    F = torch.stack([torch.stack(Fx) for Fx in list_F])   # [Nx, Nh, 2, 2]
+    F_inv = torch.linalg.inv(F)
+    F_inv = F_inv[:, :, None, :, :]                       # [Nx, Nh, 1, 2, 2]
+
+    eps_micro = (
+        grad_u_sum @ F_inv
+        + (grad_u_sum @ F_inv).transpose(-1, -2)
+    ) * 0.5                                               # [Nx, Nh, Ne, 2, 2]
+
+    # ============================================================
+    # 7. Add macroscopic strain ε_yy
+    # ============================================================
+    eps_macro = torch.zeros((Ne, 2, 2), dtype=dtype, device=device)
+    eps_macro[:, 1, 1] = eps_vals
+
+    eps_total = eps_micro + eps_macro[None, None, :, :, :]
+    # [Nx, Nh, Ne, 2, 2]
+
+    # ============================================================
+    # 8. Voigt notation
+    # ============================================================
+    sqrt2 = torch.sqrt(torch.tensor(2.0, dtype=dtype, device=device))
+
+    eps_u = torch.stack([
+        eps_total[..., 0, 0],
+        eps_total[..., 1, 1],
+        eps_total[..., 0, 1] * sqrt2
+    ], dim=-1)                                        # [Nx, Nh, Ne, 3]
+
+    # ============================================================
+    # 9. Energy density εᵀ K ε
+    # ============================================================
+    prod = torch.einsum(
+        "xhni,ij,xhnj->xhn", eps_u, K, eps_u
+    )                                                  # [Nx, Nh, Ne]
+
+    # ============================================================
+    # 10. Integrate over physical domain
+    # ============================================================
+    Jm = torch.abs(
+        torch.tensor(list_J, dtype=dtype, device=device)
+    )                                                  # [Nx, Nh]
+
+    E_p = 0.5 * (
+        prod * J_x[:, None, None] * Jm[:, :, None]
+    ).sum(dim=0)                                      # [Nh, Ne]
+
+    # ============================================================
+    # 11. Average over parametric space B = H × E
+    # ============================================================
+    loss = E_p.mean()
+
+    return loss
+
+
+
+    #
+
+
+
+
+
+
 def InternalEnergy_2D_einsum_hexa_para_fix(
-    model, lmbda, mu, h, config, list_F, list_J, list_h
+    model, lmbda, mu, parameters, config, list_F, list_J, list_h
 ):
     """
     Computes internal energy:
@@ -591,11 +772,12 @@ def InternalEnergy_2D_einsum_hexa_para_fix(
         ε(x,h) = sym( ∑_m λ_m(h) ∇u_m(x) F^{-1}(x,h) )
     """
 
+
     if 'parameters' in config:
         if 'x_0_x' in config['parameters']:
             x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-            eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-            eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            # eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            # eps_macro_vect = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
 
     # ============================================================
     # 0. Build stiffness matrix 

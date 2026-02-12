@@ -613,6 +613,22 @@ class NeuROM(nn.Module):
                         P2 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         P3 = (Para_modes[1].view(self.n_modes_truncated,Para_modes[1].shape[1])).to(torch.float64)
                         out = torch.einsum('xyk,kj,kp,kl->xyjpl',u_i,P1,P2,P3)
+
+                    case 4:
+                        Space_modes = []
+                        for i in range(self.n_modes_truncated):
+                            IDs_elems = torch.tensor(self.Space_modes[i].mesh.GetCellIds(x), dtype=torch.int)
+                            u_k = self.Space_modes[i](torch.tensor(x), IDs_elems)
+                            Space_modes.append(u_k)
+                        u_i = torch.stack(Space_modes, dim=2)  # [Nx, Ndof, Nm]
+
+                        P1 = Para_modes[0].view(self.n_modes_truncated, Para_modes[0].shape[1]).to(torch.float64)
+                        P2 = Para_modes[1].view(self.n_modes_truncated, Para_modes[1].shape[1]).to(torch.float64)
+                        P3 = Para_modes[2].view(self.n_modes_truncated, Para_modes[2].shape[1]).to(torch.float64)
+                        P4 = Para_modes[3].view(self.n_modes_truncated, Para_modes[3].shape[1]).to(torch.float64)
+
+                        # Perform full 4D contraction: [Nx, Ndof, Nm] x [Nm, N1] x [Nm, N2] x [Nm, N3] x [Nm, N4]
+                        out = torch.einsum('xyk,kj,kp,kl,km->xyjplm', u_i, P1, P2, P3, P4)
             case '3':
                 match self.n_para:
                     case 1:

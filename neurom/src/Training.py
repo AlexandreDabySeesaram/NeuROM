@@ -140,88 +140,88 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             #                                                     )
             #                                                 )
 
+            if config["training"]["random_sampling"]:
 
-            eps_xx = torch.linspace(
-                config["parameters"]["para_2_min"],
-                config["parameters"]["para_2_max"],
-                config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
-
-            eps_xy = torch.linspace(
-                config["parameters"]["para_3_min"],
-                config["parameters"]["para_3_max"],
-                config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
-
-            eps_yy = torch.linspace(
-                config["parameters"]["para_4_min"],
-                config["parameters"]["para_4_max"],
-                config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
-
-            perm_xx = torch.randperm(config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
-            perm_xy = torch.randperm(config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], device=model.float_config.device)
-            perm_yy = torch.randperm(config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], device=model.float_config.device)
-
-            eps_vals = torch.stack([eps_xx[perm_xx], eps_xy[perm_xy],eps_yy[perm_yy],],dim=1)  # [Ne, 3]
-
-
-            Training_para_coordinates_list = nn.ParameterList(
-                (
-                    Training_para_coordinates_1,  # h samples
-                    eps_vals                      # sampled strains
+                eps_xx = torch.linspace(
+                    config["parameters"]["para_2_min"],
+                    config["parameters"]["para_2_max"],
+                    config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
                 )
-            )
 
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+                eps_xy = torch.linspace(
+                    config["parameters"]["para_3_min"],
+                    config["parameters"]["para_3_max"],
+                    config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
+                )
 
-            # Training_para_coordinates_2 = torch.linspace(
-            #                                             config["parameters"]["para_2_min"],
-            #                                             config["parameters"]["para_2_max"],
-            #                                             config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_2 = Training_para_coordinates_2[:, None]
+                eps_yy = torch.linspace(
+                    config["parameters"]["para_4_min"],
+                    config["parameters"]["para_4_max"],
+                    config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
+                )
 
-            # Training_para_coordinates_3 = torch.linspace(
-            #                                             config["parameters"]["para_3_min"],
-            #                                             config["parameters"]["para_3_max"],
-            #                                             config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_3 = Training_para_coordinates_3[:, None]
+                perm_xx = torch.randperm(config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
+                perm_xy = torch.randperm(config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], device=model.float_config.device)
+                perm_yy = torch.randperm(config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], device=model.float_config.device)
 
-            # Training_para_coordinates_4 = torch.linspace(
-            #                                             config["parameters"]["para_4_min"],
-            #                                             config["parameters"]["para_4_max"],
-            #                                             config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_4 = Training_para_coordinates_4[:, None]
+                eps_vals = torch.stack([eps_xx[perm_xx], eps_xy[perm_xy],eps_yy[perm_yy],],dim=1)  # [Ne, 3]
 
-            # Training_para_coordinates_list = nn.ParameterList(
-            #                                                     (
-            #                                                     Training_para_coordinates_1,
-            #                                                     Training_para_coordinates_2,
-            #                                                     Training_para_coordinates_3,
-            #                                                     Training_para_coordinates_4
-            #                                                     )
-            #                                                 )
+
+                Training_para_coordinates_list = nn.ParameterList(
+                    (
+                        Training_para_coordinates_1,  # h samples
+                        eps_vals                      # sampled strains
+                    )
+                )
+
+            else:
+                Training_para_coordinates_2 = torch.linspace(
+                                                            config["parameters"]["para_2_min"],
+                                                            config["parameters"]["para_2_max"],
+                                                            config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_2 = Training_para_coordinates_2[:, None]
+
+                Training_para_coordinates_3 = torch.linspace(
+                                                            config["parameters"]["para_3_min"],
+                                                            config["parameters"]["para_3_max"],
+                                                            config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_3 = Training_para_coordinates_3[:, None]
+
+                Training_para_coordinates_4 = torch.linspace(
+                                                            config["parameters"]["para_4_min"],
+                                                            config["parameters"]["para_4_max"],
+                                                            config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_4 = Training_para_coordinates_4[:, None]
+
+                Training_para_coordinates_list = nn.ParameterList(
+                                                                    (
+                                                                    Training_para_coordinates_1,
+                                                                    Training_para_coordinates_2,
+                                                                    Training_para_coordinates_3,
+                                                                    Training_para_coordinates_4
+                                                                    )
+                                                                )
             
         case 3:
             Training_para_coordinates_1 = torch.linspace(
@@ -364,7 +364,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     #         print("FlagAddedMode_usefull = ", FlagAddedMode_usefull)
     #         break 
 
-        if config["solver"]["N_ExtraCoordinates"]>1:
+        if config["training"]["random_sampling"]:
             if epoch % 50 == 0:
                 
                 perm_xx = torch.randperm(config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
@@ -608,91 +608,92 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
                                                         )
             Training_para_coordinates_1 = Training_para_coordinates_1[:, None]
 
-            
-            factor = 8
+            if config["training"]["random_sampling"]:
 
-            eps_xx = torch.linspace(
-                config["parameters"]["para_2_min"],
-                config["parameters"]["para_2_max"],
-                factor*config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
+                factor = 8
 
-            eps_xy = torch.linspace(
-                config["parameters"]["para_3_min"],
-                config["parameters"]["para_3_max"],
-                factor*config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
-
-            eps_yy = torch.linspace(
-                config["parameters"]["para_4_min"],
-                config["parameters"]["para_4_max"],
-                factor*config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
-                dtype=model.float_config.dtype, 
-                device=model.float_config.device,
-                requires_grad=True
-            )
-
-            perm_xx = torch.randperm(factor*config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
-            perm_xy = torch.randperm(factor*config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], device=model.float_config.device)
-            perm_yy = torch.randperm(factor*config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], device=model.float_config.device)
-
-            eps_vals = torch.stack([eps_xx[perm_xx], eps_xy[perm_xy],eps_yy[perm_yy],],dim=1)  # [Ne, 3]
-
-            Training_para_coordinates_list = nn.ParameterList(
-                (
-                    Training_para_coordinates_1,  # h samples
-                    eps_vals                      # sampled strains
+                eps_xx = torch.linspace(
+                    config["parameters"]["para_2_min"],
+                    config["parameters"]["para_2_max"],
+                    factor*config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
                 )
-            )
 
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+                eps_xy = torch.linspace(
+                    config["parameters"]["para_3_min"],
+                    config["parameters"]["para_3_max"],
+                    factor*config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
+                )
 
+                eps_yy = torch.linspace(
+                    config["parameters"]["para_4_min"],
+                    config["parameters"]["para_4_max"],
+                    factor*config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
+                    dtype=model.float_config.dtype, 
+                    device=model.float_config.device,
+                    requires_grad=True
+                )
 
-            # Training_para_coordinates_2 = torch.linspace(
-            #                                             config["parameters"]["para_2_min"],
-            #                                             config["parameters"]["para_2_max"],
-            #                                             config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_2 = Training_para_coordinates_2[:, None]
+                perm_xx = torch.randperm(factor*config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
+                perm_xy = torch.randperm(factor*config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], device=model.float_config.device)
+                perm_yy = torch.randperm(factor*config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], device=model.float_config.device)
 
-            # Training_para_coordinates_3 = torch.linspace(
-            #                                             config["parameters"]["para_3_min"],
-            #                                             config["parameters"]["para_3_max"],
-            #                                             config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_3 = Training_para_coordinates_3[:, None]
+                eps_vals = torch.stack([eps_xx[perm_xx], eps_xy[perm_xy],eps_yy[perm_yy],],dim=1)  # [Ne, 3]
 
-            # Training_para_coordinates_4 = torch.linspace(
-            #                                             config["parameters"]["para_4_min"],
-            #                                             config["parameters"]["para_4_max"],
-            #                                             config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
-            #                                             dtype=model.float_config.dtype, 
-            #                                             device=model.float_config.device,
-            #                                             requires_grad=True
-            #                                             )
-            # Training_para_coordinates_4 = Training_para_coordinates_4[:, None]
+                Training_para_coordinates_list = nn.ParameterList(
+                    (
+                        Training_para_coordinates_1,  # h samples
+                        eps_vals                      # sampled strains
+                    )
+                )
 
-            # Training_para_coordinates_list = nn.ParameterList(
-            #                                                     (
-            #                                                     Training_para_coordinates_1,
-            #                                                     Training_para_coordinates_2,
-            #                                                     Training_para_coordinates_3,
-            #                                                     Training_para_coordinates_4
-            #                                                     )
-            #                                                 )
+            else:
+
+                Training_para_coordinates_2 = torch.linspace(
+                                                            config["parameters"]["para_2_min"],
+                                                            config["parameters"]["para_2_max"],
+                                                            config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_2 = Training_para_coordinates_2[:, None]
+
+                Training_para_coordinates_3 = torch.linspace(
+                                                            config["parameters"]["para_3_min"],
+                                                            config["parameters"]["para_3_max"],
+                                                            config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_3 = Training_para_coordinates_3[:, None]
+
+                Training_para_coordinates_4 = torch.linspace(
+                                                            config["parameters"]["para_4_min"],
+                                                            config["parameters"]["para_4_max"],
+                                                            config["parameters"]["N_samples_integration_4"]*config["parameters"]["N_para_4"], 
+                                                            dtype=model.float_config.dtype, 
+                                                            device=model.float_config.device,
+                                                            requires_grad=True
+                                                            )
+                Training_para_coordinates_4 = Training_para_coordinates_4[:, None]
+
+                Training_para_coordinates_list = nn.ParameterList(
+                                                                    (
+                                                                    Training_para_coordinates_1,
+                                                                    Training_para_coordinates_2,
+                                                                    Training_para_coordinates_3,
+                                                                    Training_para_coordinates_4
+                                                                    )
+                                                                )
             
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
         case 3:
             Training_para_coordinates_1 = torch.linspace(
@@ -808,7 +809,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
     while  epoch<n_epochs and stagnancy_counter < 3:
 
         # Compute loss
-        if config["solver"]["N_ExtraCoordinates"]>1:
+        if config["training"]["random_sampling"]:
             if epoch>2 and epoch % 5 == 0:
                 print("     Change of data")
                 

@@ -45,12 +45,13 @@ class ElementEvaluator1D(nn.Module):
         N = self.sf.N(xi)
         # Sum along N_nodes index
         # Product of tensor (N_e, N_nodes, dim) x (N_e, N_q, N_nodes)
+        # This gives tensor (N_e, N_q, dim)
         return torch.einsum("en...,eqn...->eq...", field_at_elements, N)
 
     def measure(self):
         # Compute weighted measure
         w = self.quad.weights()
-        dx = self.mapping.element_size(x_el_nodes)
+        dx = self.mapping.element_size(self.mesh.element_nodes_positions)
         measure = dx * w
         return measure
 
@@ -61,65 +62,37 @@ class ElementEvaluator1D(nn.Module):
         # (N_e, N_q, dim)
         field_at_elements = self.field_at_elements(field)
 
-        interpolate_at(xi_g, field_at_elements)
         # (N_e, N_q, dim)
-        x_g = self.mapping.map(xi_g, x_el_nodes)
-        # Required for autograd
-        x_g.requires_grad_(True)
+        interpolated_field = interpolate_at(xi_g, field_at_elements)
 
-        # (N_e, N_q, dim)
-        xi_q = self.mapping.inverse_map(x_g, x_el_nodes)
+        # Mark it for later autograd
+        interpolated_field.requires_grad_(True)
 
-        # (N_e, N_q, N_nodes)
-        N = self.sf.N(xi_q)
-
-        # Gather nodal values per element
-        # (N_e, N_nodes, dim)
-        element_values = self.field.full_values()[self.mesh.conn]
-        element_values = element_values.to(N.dtype)
-
-        # Interpolate field
-        # Product of tensor (N_e, N_nodes, dim) x (N_e, N_q, N_nodes) over N_nodes
-        # This gives tensor (N_e, N_q, dim)
-        u_q = torch.einsum("en...,eqn...->eq...", element_values, N)
-        return x_g, u_q, measure
+        return interpolated_field
 
     def evaluate(self):
-        # (N_q, N_nodes)
-        x_q_barycentric = self.quad.points()
-        # (N_q, dim )
-        xi = elements.barycentric_to_reference(
-            x_lambda=x_q_barycentric, element=self.quad.reference_element
-        )
         # (N_e, N_q, dim)
-        xi_g = xi.unsqueeze(0).expand(self.mesh.n_elements, -1, -1)
-        # (N_e, N_nodes)
-        x_el_nodes = self.mesh.element_nodes_positions
+        xi_g = self.get_quadrature_points()
+
         # (N_e, N_q, dim)
-        x_g = self.mapping.map(xi_g, x_el_nodes)
-        # Required for autograd
+        x_g = self.interpolate_at(xi_g, self.mesh.element_nodes_positions)
+
+        # Mark it for later autograd
         x_g.requires_grad_(True)
 
         # (N_e, N_q, dim)
-        xi_q = self.mapping.inverse_map(x_g, x_el_nodes)
-
-        # (N_e, N_q, N_nodes)
-        N = self.sf.N(xi_q)
-
-        # Compute weighted measure
-        w = self.quad.weights()
-        dx = self.mapping.element_size(x_el_nodes)
-        measure = dx * w
+        xi_q = self.mapping.inverse_map(x_g, self.mesh.element_nodes_positions)
 
         # Gather nodal values per element
         # (N_e, N_nodes, dim)
         element_values = self.field.full_values()[self.mesh.conn]
-        element_values = element_values.to(N.dtype)
 
-        # Interpolate field
-        # Product of tensor (N_e, N_nodes, dim) x (N_e, N_q, N_nodes) over N_nodes
-        # This gives tensor (N_e, N_q, dim)
-        u_q = torch.einsum("en...,eqn...->eq...", element_values, N)
+        # (N_e, N_q, dim)
+        u_q = self.interpolate_at(xi_q, element_values)
+
+        # Compute weighted measure
+        measure = self.measure()
+
         return x_g, u_q, measure
 
     def evaluate_at(self, x):

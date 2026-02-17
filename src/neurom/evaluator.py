@@ -55,18 +55,6 @@ class ElementEvaluator1D(nn.Module):
         measure = dx * w
         return measure
 
-    def interpolate(self, field):
-        # Get tensor of quadrature points
-        xi_g = self.get_quadrature_points()
-        # Transform field at nodes into field at elements
-        field_at_elements = self.field_at_elements(field)
-        interpolated_field = interpolate_at(xi_g, field_at_elements)
-
-        # Mark it for later autograd
-        interpolated_field.requires_grad_(True)
-
-        return interpolated_field
-
     def evaluate(self):
         # (N_e, N_q, dim)
         xi_g = self.get_quadrature_points()
@@ -90,28 +78,15 @@ class ElementEvaluator1D(nn.Module):
         return x_g, u_q, measure
 
     def evaluate_at(self, x):
-        x = x.unsqueeze(1).unsqueeze(2)
-        # List elements to which `x` belongs to.
-        ids = []
-        for x_i in x:
-            for e, conn in enumerate(self.mesh.topology.conn):
-                x_first = self.mesh.nodes_positions.full_values()[conn[0]]
-                x_second = self.mesh.nodes_positions.full_values()[conn[1]]
-                if x_i >= x_first and x_i <= x_second:
-                    ids.append(e)
-                    break
+        element_ids = self.mesh.elements_at(x)
 
-        device = self.mesh.nodes_positions.dofs_free.device
-        element_ids = torch.tensor(ids, device=device)
-
+        # Get connectivity for those elements
         element_nodes_ids = self.mesh.topology.conn[element_ids, :]
+
         # (N_e, N_q, dim)
         x_nodes = self.mesh.nodes_positions.at_elements()[element_ids]
 
         xi = self.mapping.inverse_map(x, x_nodes)
-        N = self.sf.N(xi)
-        u_full = self.field.full_values()
-        nodes_values = u_full[element_nodes_ids]
-        nodes_values = nodes_values.to(N.dtype)
-        u_q = torch.einsum("en...,eqn...->eq...", nodes_values, N)
-        return u_q.detach()
+        u = self.interpolate_at(xi, self.field.full_values()[element_nodes_ids])
+        breakpoint()
+        return u.detach()

@@ -16,3 +16,22 @@ class Mesh(nn.Module):
 
         self.topology = topology
         self.nodes_positions = nodes_positions
+
+    def elements_at(self, x):
+        """
+        Extract mesh elements ids at which x belongs
+        """
+        x = x.unsqueeze(1).unsqueeze(2)
+
+        # List elements to which `x` belongs to.
+        ids = []
+        for x_i in x:
+            for e, conn in enumerate(self.topology.conn):
+                x_first = self.nodes_positions.full_values()[conn[0]]
+                x_second = self.nodes_positions.full_values()[conn[1]]
+                if x_i >= x_first and x_i <= x_second:
+                    ids.append(e)
+                    break
+
+        element_ids = torch.tensor(ids)
+        return element_ids

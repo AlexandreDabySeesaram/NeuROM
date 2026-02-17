@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-import hidenn_playground.elements as elements
+import neurom.elements as elements
 
 
 class ElementEvaluator1D(nn.Module):

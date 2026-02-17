@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from hidenn_playground.shape_functions import ShapeFunction
+from neurom.shape_functions import ShapeFunction
 
 
 class IsoparametricMapping1D(nn.Module):

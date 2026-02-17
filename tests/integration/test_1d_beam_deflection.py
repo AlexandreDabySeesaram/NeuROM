@@ -4,14 +4,14 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from hidenn_playground.quadratures import MidPoint1D, TwoPoints1D
-from hidenn_playground.shape_functions import LinearSegment
-from hidenn_playground.geometry import IsoparametricMapping1D
-from hidenn_playground.mesh import Mesh
-from hidenn_playground.field import Field
-from hidenn_playground.integrator import Integrator
-from hidenn_playground.evaluator import ElementEvaluator1D
-from hidenn_playground.fem_model import FEMModel
+from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.shape_functions import LinearSegment
+from neurom.geometry import IsoparametricMapping1D
+from neurom.mesh import Mesh
+from neurom.field import Field
+from neurom.integrator import Integrator
+from neurom.evaluator import ElementEvaluator1D
+from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
 

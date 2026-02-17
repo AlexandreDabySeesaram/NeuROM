@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-import hidenn_playground.elements as elements
+import neurom.elements as elements
 
 
 class ShapeFunction(nn.Module, ABC):

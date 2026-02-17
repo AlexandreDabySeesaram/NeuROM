@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from hidenn_playground.shape_functions import LinearSegment
-from hidenn_playground.geometry import IsoparametricMapping1D
+from neurom.shape_functions import LinearSegment
+from neurom.geometry import IsoparametricMapping1D
 
 torch.set_default_dtype(torch.float32)
 

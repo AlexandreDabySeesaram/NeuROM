@@ -337,7 +337,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             "Loss_decrease_vect":[]                         # Init loss decrease rate
                             }
     Usefullness             = 0                                             # Number of iteration in a row during which the last added mode helped the convergence
-
+    with_new_mode          = 0
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
@@ -350,22 +350,30 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         list_F, list_J, list_h = Hexa_mapping_non_vect(model, h_current_tensor, h_new_tensor)
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-    while epoch<n_epochs and loss_counter<100:
-        if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-            print("     stagnancy_counter = ", stagnancy_counter)
-            print("     loss counter = ", loss_counter)
-            print("     FlagAddedMode_usefull = ", FlagAddedMode_usefull)
-            break 
-
-
-    # while epoch<n_epochs and loss_counter<300:
-    #     if stagnancy_counter>5 and epoch>100 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-    #         print("stagnancy_counter = ", stagnancy_counter)
-    #         print("FlagAddedMode_usefull = ", FlagAddedMode_usefull)
+    # while epoch<n_epochs and loss_counter<100:
+    #     if stagnancy_counter>5 and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes):               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+    #         print("     stagnancy_counter = ", stagnancy_counter)
+    #         print("     loss counter = ", loss_counter)
+    #         print("     FlagAddedMode_usefull = ", FlagAddedMode_usefull)
     #         break 
 
+    if config["training"]["random_sampling"]:
+        loss_counter_max = 300
+        n_switch = 20
+        stagnation_max = 5
+    else:
+        loss_counter_max = 100
+        stagnation_max = 5
+
+
+    while epoch<n_epochs and loss_counter<loss_counter_max:
+        if stagnancy_counter>stagnation_max and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes) and epoch>50:               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
+            print("stagnancy_counter = ", stagnancy_counter)
+            print("FlagAddedMode_usefull = ", FlagAddedMode_usefull)
+            break 
+
         if config["training"]["random_sampling"]:
-            if epoch % 50 == 0:
+            if epoch % n_switch == 0:
                 
                 perm_xx = torch.randperm(config["parameters"]["N_samples_integration_2"]*config["parameters"]["N_para_2"], device=model.float_config.device)
                 perm_xy = torch.randperm(config["parameters"]["N_samples_integration_3"]*config["parameters"]["N_para_3"], device=model.float_config.device)
@@ -462,6 +470,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                     Usefullness     +=1                                      # Increment usefullness of of the last added mode
                     if Usefullness>=15:                                     # Check if mode was usefull for more than 15 iterations in a raw
                         FlagAddedMode_usefull = True                        # Flag stating that the new mode did help speeding-up the convergence
+     
+
+
+
 
             if loss_min > loss_current:  
                 loss_min    = loss_current
@@ -499,13 +511,20 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
         optimizer.zero_grad()                                               # zero the gradients after updating
         model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
         
-        # if (stagnancy_counter >5 or loss_counter>200) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
         # original: 
-        if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+        # if (stagnancy_counter >5 or loss_counter>90) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
+
+        if (stagnancy_counter >5 or loss_counter>loss_counter_max*0.9) and model.n_modes_truncated < model.n_modes and FlagAddedMode_usefull:
             print("Modes +1 ")
             print("     stagnancy_counter = ", stagnancy_counter, ", loss_counter = ", loss_counter)
-            # change !!!!
-            # loss_counter = 0
+
+
+            if config["training"]["random_sampling"]:
+                if loss_counter >= with_new_mode-1:
+                    break
+
+                loss_counter = 0
+                with_new_mode = 0
 
             model.AddMode()
             model.AddMode2Optimizer(optimizer)
@@ -523,6 +542,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
         with torch.no_grad():
             epoch+=1
+            with_new_mode+=1
+
             model.training_recap["Loss_vect"].append(loss.item())
             numel_E = Training_para_coordinates_list[0].shape[0]
             match config["solver"]["N_ExtraCoordinates"]: 
@@ -540,8 +561,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 if config["solver"]["Problem"] == "AngleStiffnessNeoHookean":
                     print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)}, loss_1 = {numpy.format_float_scientific(loss_1.item(), precision=5)}, loss_2 = {numpy.format_float_scientific(loss_2.item(), precision=5)} modes = {model.n_modes_truncated}')
                 else:
-                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}      loss counter = {loss_counter}') #  loss min = {numpy.format_float_scientific(loss_min, precision=3)}' )
-
+                    print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=5)} modes = {model.n_modes_truncated}    loss counter = {loss_counter}    with new mode = {with_new_mode}') #  loss min = {numpy.format_float_scientific(loss_min, precision=3)}' )
 
     time_stop = time.time()
     model.training_recap["training_time"] += (time_stop-time_start)
@@ -805,7 +825,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-    n_epochs = 100
+    n_epochs = 50
 
     # while  epoch<n_epochs and stagnancy_counter < 5:
     while  epoch<n_epochs and stagnancy_counter < 3:

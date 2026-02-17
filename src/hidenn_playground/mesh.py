@@ -25,11 +25,7 @@ class Mesh(nn.Module):
 
         self.register_buffer("element_nodes_ids", element_nodes_ids)
 
-        element_nodes_positions = torch.gather(
-            self.nodes_positions[:, None, :].repeat(1, 2, 1),
-            0,
-            element_nodes_ids.repeat(1, 1, 1),
-        )
+        element_nodes_positions = self.nodes_positions[self.conn]
 
         self.register_buffer(
             "element_nodes_positions",

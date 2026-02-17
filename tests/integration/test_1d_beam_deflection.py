@@ -62,6 +62,8 @@ class Test1dBeamDeflection:
     def test_beam_mid_point_quadrature(self):
         """
         Test that the displacement field corresponds to the analytical one.
+
+        Use quadratures.TwoPoints1D.
         """
         # --- Prepare parameters ---
         # Domain dimensions
@@ -87,6 +89,90 @@ class Test1dBeamDeflection:
         sf = LinearSegment()
         # Quadrature strategy
         quad = MidPoint1D()
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf)
+        # Field
+        field = Field(mesh, dirichlet_nodes=[0, N - 1])
+        # Evaluator
+        evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+        # What physics we cnosider
+        physics = PoissonPhysics(f)
+        # How to integrate the physics on a domain
+        integrator = Integrator()
+
+        # Define FEM model - main orchestrator
+        model = FEMModel(
+            mesh=mesh,
+            field=field,
+            evaluator=evaluator,
+            physics=physics,
+            integrator=integrator,
+        )
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+        for i in range(n_epochs):
+            loss = model()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        # Evaluate at quadrature points
+        x_q, u_q, _ = model.evaluator.evaluate()
+
+        # Compute analytical solution
+        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
+        u_sol_train = solution.eval(x_q)
+
+        # Check values
+        assert u_q.detach().numpy() == pytest.approx(
+            u_sol_train.detach().numpy(), rel=self.relative_tolerance
+        )
+
+        # Generate test points and evaluate
+        # This also tests the boundary condition
+        x_test = torch.linspace(x_min, x_max, 30)
+        u_test = model.evaluator.evaluate_at(x_test).squeeze()
+
+        # Compute analytical solution
+        u_sol_test = solution.eval(x_test)
+
+        # Check values
+        # Note: absolute tolerance because there are 0 at boundaries
+        assert u_test.detach().numpy() == pytest.approx(
+            u_sol_test, abs=self.relative_tolerance * max(abs(u_sol_test))
+        )
+
+    def test_beam_two_points_quadrature(self):
+        """
+        Test that the displacement field corresponds to the analytical one.
+
+        Use quadratures.TwoPoints1D.
+        """
+        # --- Prepare parameters ---
+        # Domain dimensions
+        x_min = 0.0
+        x_max = 10.0
+        # Number of points in the domain
+        N = 100
+        # Load applied to the beam
+        f = 1000.0
+        # Number of training steps
+        n_epochs = 5000
+        # Learning rate
+        lr = 10.0
+
+        # Generate vertices and connectivity
+        nodes = torch.linspace(x_min, x_max, N)[:, None]
+        elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+
+        # Generate mesh
+        mesh = Mesh(nodes, elements)
+
+        # Shape function
+        sf = LinearSegment()
+        # Quadrature strategy
+        quad = TwoPoints1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
         # Field

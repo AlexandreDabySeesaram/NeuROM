@@ -26,7 +26,7 @@ class ElementEvaluator1D(nn.Module):
         )
 
         # (N_e, N_q, dim)
-        xi_g = xi.unsqueeze(0).expand(self.mesh.n_elements, -1, -1)
+        xi_g = xi.unsqueeze(0).expand(self.mesh.topology.n_elements, -1, -1)
 
         return xi_g
 
@@ -51,18 +51,15 @@ class ElementEvaluator1D(nn.Module):
     def measure(self):
         # Compute weighted measure
         w = self.quad.weights()
-        dx = self.mapping.element_size(self.mesh.element_nodes_positions)
+        dx = self.mapping.element_size(self.mesh.nodes_positions.at_elements())
         measure = dx * w
         return measure
 
     def interpolate(self, field):
-        # (N_e, N_q, dim)
+        # Get tensor of quadrature points
         xi_g = self.get_quadrature_points()
-
-        # (N_e, N_q, dim)
+        # Transform field at nodes into field at elements
         field_at_elements = self.field_at_elements(field)
-
-        # (N_e, N_q, dim)
         interpolated_field = interpolate_at(xi_g, field_at_elements)
 
         # Mark it for later autograd
@@ -75,20 +72,17 @@ class ElementEvaluator1D(nn.Module):
         xi_g = self.get_quadrature_points()
 
         # (N_e, N_q, dim)
-        x_g = self.interpolate_at(xi_g, self.mesh.element_nodes_positions)
+        x_g = self.interpolate_at(xi_g, self.mesh.nodes_positions.at_elements())
 
         # Mark it for later autograd
         x_g.requires_grad_(True)
 
         # (N_e, N_q, dim)
-        xi_q = self.mapping.inverse_map(x_g, self.mesh.element_nodes_positions)
+        xi_q = self.mapping.inverse_map(x_g, self.mesh.nodes_positions.at_elements())
 
         # Gather nodal values per element
-        # (N_e, N_nodes, dim)
-        element_values = self.field.full_values()[self.mesh.conn]
-
         # (N_e, N_q, dim)
-        u_q = self.interpolate_at(xi_q, element_values)
+        u_q = self.interpolate_at(xi_q, self.field.at_elements())
 
         # Compute weighted measure
         measure = self.measure()
@@ -96,23 +90,23 @@ class ElementEvaluator1D(nn.Module):
         return x_g, u_q, measure
 
     def evaluate_at(self, x):
-        device = self.mesh.nodes_positions.device
         x = x.unsqueeze(1).unsqueeze(2)
         # List elements to which `x` belongs to.
         ids = []
         for x_i in x:
-            for e, conn in enumerate(self.mesh.conn):
-                x_first = self.mesh.nodes_positions[conn[0]]
-                x_second = self.mesh.nodes_positions[conn[1]]
+            for e, conn in enumerate(self.mesh.topology.conn):
+                x_first = self.mesh.nodes_positions.full_values()[conn[0]]
+                x_second = self.mesh.nodes_positions.full_values()[conn[1]]
                 if x_i >= x_first and x_i <= x_second:
                     ids.append(e)
                     break
 
+        device = self.mesh.nodes_positions.dofs_free.device
         element_ids = torch.tensor(ids, device=device)
 
-        element_nodes_ids = self.mesh.conn[element_ids, :]
+        element_nodes_ids = self.mesh.topology.conn[element_ids, :]
         # (N_e, N_q, dim)
-        x_nodes = self.mesh.element_nodes_positions[element_ids]
+        x_nodes = self.mesh.nodes_positions.at_elements()[element_ids]
 
         xi = self.mapping.inverse_map(x, x_nodes)
         N = self.sf.N(xi)

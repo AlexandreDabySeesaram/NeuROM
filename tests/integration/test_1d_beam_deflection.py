@@ -8,6 +8,7 @@ from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.mesh import Mesh
+from neurom.topology import Topology
 from neurom.field import Field
 from neurom.integrator import Integrator
 from neurom.evaluator import ElementEvaluator1D
@@ -79,11 +80,12 @@ class Test1dBeamDeflection:
         lr = 10.0
 
         # Generate vertices and connectivity
-        nodes = torch.linspace(x_min, x_max, N)[:, None]
+        x_array = torch.linspace(x_min, x_max, N)[:, None]
+        nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
-        # Generate mesh
-        mesh = Mesh(nodes, elements)
+        # Generate topology
+        topology = Topology(nodes, elements)
 
         # Shape function
         sf = LinearSegment()
@@ -91,10 +93,15 @@ class Test1dBeamDeflection:
         quad = MidPoint1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Field
-        field = Field(mesh, dirichlet_nodes=[0, N - 1])
+        # Unknown
+        u_init = 0.5 * torch.ones(N, 1)
+        u = Field(topology, values=u_init, dirichlet_nodes=[0, N - 1])
+        # Positions
+        x = Field(topology, values=x_array, dirichlet_nodes=[], trainable=False)
+        # Generate mesh
+        mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
-        evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+        evaluator = ElementEvaluator1D(mesh, u, sf, quad, mapping)
         # What physics we cnosider
         physics = PoissonPhysics(f)
         # How to integrate the physics on a domain
@@ -103,7 +110,7 @@ class Test1dBeamDeflection:
         # Define FEM model - main orchestrator
         model = FEMModel(
             mesh=mesh,
-            field=field,
+            field=u,
             evaluator=evaluator,
             physics=physics,
             integrator=integrator,
@@ -163,11 +170,12 @@ class Test1dBeamDeflection:
         lr = 10.0
 
         # Generate vertices and connectivity
-        nodes = torch.linspace(x_min, x_max, N)[:, None]
+        x_array = torch.linspace(x_min, x_max, N)[:, None]
+        nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
-        # Generate mesh
-        mesh = Mesh(nodes, elements)
+        # Generate topology
+        topology = Topology(nodes, elements)
 
         # Shape function
         sf = LinearSegment()
@@ -175,10 +183,15 @@ class Test1dBeamDeflection:
         quad = TwoPoints1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Field
-        field = Field(mesh, dirichlet_nodes=[0, N - 1])
+        # Unknown
+        u_init = 0.5 * torch.ones(N, 1)
+        u = Field(topology, values=u_init, dirichlet_nodes=[0, N - 1])
+        # Positions
+        x = Field(topology, values=x_array, dirichlet_nodes=[], trainable=False)
+        # Generate mesh
+        mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
-        evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+        evaluator = ElementEvaluator1D(mesh, u, sf, quad, mapping)
         # What physics we cnosider
         physics = PoissonPhysics(f)
         # How to integrate the physics on a domain
@@ -187,7 +200,7 @@ class Test1dBeamDeflection:
         # Define FEM model - main orchestrator
         model = FEMModel(
             mesh=mesh,
-            field=field,
+            field=u,
             evaluator=evaluator,
             physics=physics,
             integrator=integrator,

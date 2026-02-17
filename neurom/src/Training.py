@@ -440,8 +440,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                 match config["solver"]["Problem"]:
                     case "Hexa":
 
-                        # lossd = InternalEnergy_2D_einsum_hexa_4param(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)  
-                        loss = InternalEnergy_2D_einsum_hexa_strain_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
+                        if config["training"]["random_sampling"]:
+                            loss = InternalEnergy_2D_einsum_hexa_strain_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
+                        else:
+                            loss = InternalEnergy_2D_einsum_hexa_4param(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)  
 
 
         eval_time                   += time.time() - loss_time_start

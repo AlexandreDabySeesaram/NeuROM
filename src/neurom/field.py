@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from neurom.constraint import Constraint
+from neurom.constraints import Constraint
 
 
 class Field(nn.Module):

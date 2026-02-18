@@ -8,7 +8,7 @@ from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.field import Field
-from neurom.constraint import NoConstraint, Dirichlet
+from neurom.constraints import NoConstraint, Dirichlet
 from neurom.interpolator import Interpolator
 from neurom.integrator import Integrator
 from neurom.fem_model import FEMModel

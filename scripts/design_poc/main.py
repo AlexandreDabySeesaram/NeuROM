@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
+from neurom.topology import Topology
 from neurom.mesh import Mesh
 from neurom.field import Field
 from neurom.integrator import Integrator
-from neurom.evaluator import ElementEvaluator1D
+from neurom.interpolator import Interpolator
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
@@ -43,24 +44,31 @@ def f(x):
 def main():
 
     N = 40
-    nodes = torch.linspace(0, 6.28, N)[:, None]
+    x_array = torch.linspace(0.0, 6.28, N)[:, None]
+    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
-    mesh = Mesh(nodes, elements)
+    topology = Topology(nodes, elements)
 
     sf = LinearSegment()
     quad = MidPoint1D()
     # quad = quadratures.TwoPoints1D()
     mapping = IsoparametricMapping1D(sf)
-    field = Field(mesh, dirichlet_nodes=[0, N - 1])
-    evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+    # Unknown
+    u_init = 0.5 * torch.ones(N, 1)
+    u = Field(topology, values=u_init, dirichlet_nodes=[0, N - 1])
+    # Positions
+    x = Field(topology, values=x_array, dirichlet_nodes=[], trainable=False)
+    # Generate mesh
+    mesh = Mesh(topology=topology, nodes_positions=x)
+    interpolator = Interpolator(mesh, u, sf, quad, mapping)
     physics = PoissonPhysics(f)
     integrator = Integrator()
 
     model = FEMModel(
         mesh=mesh,
-        field=field,
-        evaluator=evaluator,
+        field=u,
+        interpolator=interpolator,
         physics=physics,
         integrator=integrator,
     )
@@ -85,11 +93,11 @@ def main():
 
     print("\n* Evaluation")
     # At quadrature points
-    x_q, u_q, _ = model.evaluator.evaluate()
+    x_q, u_q, _ = model.interpolator.interpolate()
 
     # At test points
     x_test = torch.linspace(0, 6, 30)
-    u_test = model.evaluator.evaluate_at(x_test).squeeze()
+    u_test = model.interpolator.interpolate_at(x_test).squeeze()
     if plot_loss:
         plt.figure()
         plt.plot(loss_history)

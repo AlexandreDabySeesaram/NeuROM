@@ -1,36 +1,36 @@
 import torch
 import torch.nn as nn
 
+from neurom.constraint import Constraint
+
 
 class Field(nn.Module):
-    def __init__(self, topology, values, dirichlet_nodes, trainable=True):
+    def __init__(
+        self,
+        name,
+        topology,
+        init_values,
+        constraint,
+        trainable,
+    ):
         super().__init__()
+
         self.topology = topology
-        self.trainable = trainable
+        self.constraint = constraint
 
-        n_nodes = self.topology.n_nodes
-
-        dofs_free = torch.ones(n_nodes, dtype=torch.bool)
-        dofs_free[dirichlet_nodes] = False
-
+        # Ask constraint for free DOFs
+        dofs_free = self.constraint.get_dofs_free(topology.n_nodes)
         self.register_buffer("dofs_free", dofs_free)
-        if trainable:
-            self.values_free = nn.Parameter(values[dofs_free])
-        else:
-            self.register_buffer("values_free", values[dofs_free])
 
-        self.register_buffer("values_imposed", torch.zeros((~dofs_free).sum(), 1))
+        # Initialize reduced DOFs
+        reduced_init = init_values[dofs_free]
+        if trainable:
+            self.values_reduced = nn.Parameter(reduced_init)
+        else:
+            self.register_buffer("values_reduced", reduced_init)
 
     def full_values(self):
-        full = torch.zeros(
-            self.dofs_free.shape[0],
-            1,
-            device=self.values_free.device,
-            dtype=self.values_free.dtype,
-        )
-        full[self.dofs_free] = self.values_free
-        full[~self.dofs_free] = self.values_imposed
-        return full
+        return self.constraint.expand(self.values_reduced, self.dofs_free)
 
     def at_elements(self):
         return self.full_values()[self.topology.conn]

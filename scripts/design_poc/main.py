@@ -8,6 +8,7 @@ from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
+from neurom.constraint import NoConstraint, Dirichlet
 from neurom.field import Field
 from neurom.integrator import Integrator
 from neurom.interpolator import Interpolator
@@ -55,9 +56,21 @@ def main():
     mapping = IsoparametricMapping1D(sf)
     # Unknown
     u_init = 0.5 * torch.ones(N, 1)
-    u = Field(topology, values=u_init, dirichlet_nodes=[0, N - 1])
+    u = Field(
+        name="displacement",
+        topology=topology,
+        init_values=u_init,
+        constraint=Dirichlet([0, N - 1]),
+        trainable=True,
+    )
     # Positions
-    x = Field(topology, values=x_array, dirichlet_nodes=[], trainable=False)
+    x = Field(
+        name="positions",
+        topology=topology,
+        init_values=x_array,
+        constraint=NoConstraint(),
+        trainable=False,
+    )
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
     interpolator = Interpolator(mesh, u, sf, quad, mapping)

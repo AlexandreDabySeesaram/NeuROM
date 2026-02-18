@@ -10,8 +10,8 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.mesh import Mesh
 from neurom.topology import Topology
 from neurom.field import Field
+from neurom.interpolator import Interpolator
 from neurom.integrator import Integrator
-from neurom.evaluator import ElementEvaluator1D
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
@@ -101,7 +101,7 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
-        evaluator = ElementEvaluator1D(mesh, u, sf, quad, mapping)
+        interpolator = Interpolator(mesh, u, sf, quad, mapping)
         # What physics we cnosider
         physics = PoissonPhysics(f)
         # How to integrate the physics on a domain
@@ -111,7 +111,7 @@ class Test1dBeamDeflection:
         model = FEMModel(
             mesh=mesh,
             field=u,
-            evaluator=evaluator,
+            interpolator=interpolator,
             physics=physics,
             integrator=integrator,
         )
@@ -125,7 +125,7 @@ class Test1dBeamDeflection:
             optimizer.step()
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.evaluator.evaluate()
+        x_q, u_q, _ = model.interpolator.interpolate()
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
@@ -136,10 +136,10 @@ class Test1dBeamDeflection:
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
-        # Generate test points and evaluate
+        # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.evaluator.evaluate_at(x_test).squeeze()
+        u_test = model.interpolator.interpolate_at(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
@@ -191,7 +191,7 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
-        evaluator = ElementEvaluator1D(mesh, u, sf, quad, mapping)
+        interpolator = Interpolator(mesh, u, sf, quad, mapping)
         # What physics we cnosider
         physics = PoissonPhysics(f)
         # How to integrate the physics on a domain
@@ -201,7 +201,7 @@ class Test1dBeamDeflection:
         model = FEMModel(
             mesh=mesh,
             field=u,
-            evaluator=evaluator,
+            interpolator=interpolator,
             physics=physics,
             integrator=integrator,
         )
@@ -215,7 +215,7 @@ class Test1dBeamDeflection:
             optimizer.step()
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.evaluator.evaluate()
+        x_q, u_q, _ = model.interpolator.interpolate()
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
@@ -226,10 +226,10 @@ class Test1dBeamDeflection:
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
-        # Generate test points and evaluate
+        # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.evaluator.evaluate_at(x_test).squeeze()
+        u_test = model.interpolator.interpolate_at(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

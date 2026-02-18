@@ -16,7 +16,7 @@ class FEMModel(nn.Module):
         self,
         mesh,
         field,
-        evaluator,
+        interpolator,
         physics,
         integrator,
     ):
@@ -25,7 +25,7 @@ class FEMModel(nn.Module):
         # Core pipeline
         self.mesh = mesh
         self.field = field
-        self.evaluator = evaluator
+        self.interpolator = interpolator
         self.physics = physics
         self.integrator = integrator
 
@@ -34,7 +34,7 @@ class FEMModel(nn.Module):
         Returns:
             scalar loss / energy
         """
-        x_q, u_q, measure = self.evaluator.evaluate()
+        x_q, u_q, measure = self.interpolator.interpolate()
         integrand = self.physics.integrand(x_q, u_q)
         loss = self.integrator.integrate(integrand, measure)
 

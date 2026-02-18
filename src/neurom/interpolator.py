@@ -4,7 +4,7 @@ import torch.nn as nn
 import neurom.elements as elements
 
 
-class ElementEvaluator1D(nn.Module):
+class Interpolator(nn.Module):
     def __init__(self, mesh, field, sf, quad, mapping):
         super().__init__()
         self.mesh = mesh
@@ -30,7 +30,7 @@ class ElementEvaluator1D(nn.Module):
 
         return xi_g
 
-    def interpolate_at(self, xi, field_at_elements):
+    def interpolate_at_reference(self, xi, field_at_elements):
         """
         Interpolate field on reference coordinates.
 
@@ -55,12 +55,14 @@ class ElementEvaluator1D(nn.Module):
         measure = dx * w
         return measure
 
-    def evaluate(self):
+    def interpolate(self):
         # (N_e, N_q, dim)
         xi_g = self.get_quadrature_points()
 
         # (N_e, N_q, dim)
-        x_g = self.interpolate_at(xi_g, self.mesh.nodes_positions.at_elements())
+        x_g = self.interpolate_at_reference(
+            xi_g, self.mesh.nodes_positions.at_elements()
+        )
 
         # Mark it for later autograd
         x_g.requires_grad_(True)
@@ -70,14 +72,14 @@ class ElementEvaluator1D(nn.Module):
 
         # Gather nodal values per element
         # (N_e, N_q, dim)
-        u_q = self.interpolate_at(xi_q, self.field.at_elements())
+        u_q = self.interpolate_at_reference(xi_q, self.field.at_elements())
 
         # Compute weighted measure
         measure = self.measure()
 
         return x_g, u_q, measure
 
-    def evaluate_at(self, x):
+    def interpolate_at(self, x):
         x = x.unsqueeze(1).unsqueeze(2)
         element_ids = self.mesh.elements_at(x)
 
@@ -88,6 +90,8 @@ class ElementEvaluator1D(nn.Module):
         x_nodes = self.mesh.nodes_positions.at_elements()[element_ids]
 
         xi = self.mapping.inverse_map(x, x_nodes)
-        u = self.interpolate_at(xi, self.field.full_values()[element_nodes_ids])
+        u = self.interpolate_at_reference(
+            xi, self.field.full_values()[element_nodes_ids]
+        )
 
         return u.detach()

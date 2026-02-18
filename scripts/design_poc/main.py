@@ -7,8 +7,7 @@ import matplotlib.pyplot as plt
 from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
-from neurom.topology import Topology
-from neurom.mesh import Mesh
+from neurom.meshes import Topology, Mesh
 from neurom.field import Field
 from neurom.integrator import Integrator
 from neurom.interpolator import Interpolator

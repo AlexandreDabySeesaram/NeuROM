@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-import neurom.elements as elements
+from neurom.geometry import barycentric_to_reference
 
 
 class Interpolator(nn.Module):
@@ -21,7 +21,7 @@ class Interpolator(nn.Module):
         x_q_barycentric = self.quad.points()
 
         # (N_q, dim )
-        xi = elements.barycentric_to_reference(
+        xi = barycentric_to_reference(
             x_lambda=x_q_barycentric, element=self.quad.reference_element
         )
 

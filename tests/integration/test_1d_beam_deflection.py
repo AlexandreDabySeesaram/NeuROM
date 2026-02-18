@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import pytest
 import torch
 import torch.nn as nn
@@ -7,8 +6,7 @@ import torch.nn as nn
 from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
-from neurom.mesh import Mesh
-from neurom.topology import Topology
+from neurom.meshes import Mesh, Topology
 from neurom.field import Field
 from neurom.interpolator import Interpolator
 from neurom.integrator import Integrator

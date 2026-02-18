@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from neurom.topology import Topology
+from neurom.meshes.topology import Topology
 
 
 class Mesh(nn.Module):

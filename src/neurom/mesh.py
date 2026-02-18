@@ -21,7 +21,6 @@ class Mesh(nn.Module):
         """
         Extract mesh elements ids at which x belongs
         """
-        x = x.unsqueeze(1).unsqueeze(2)
 
         # List elements to which `x` belongs to.
         ids = []

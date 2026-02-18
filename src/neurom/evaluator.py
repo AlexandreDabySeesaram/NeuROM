@@ -78,6 +78,7 @@ class ElementEvaluator1D(nn.Module):
         return x_g, u_q, measure
 
     def evaluate_at(self, x):
+        x = x.unsqueeze(1).unsqueeze(2)
         element_ids = self.mesh.elements_at(x)
 
         # Get connectivity for those elements
@@ -88,5 +89,5 @@ class ElementEvaluator1D(nn.Module):
 
         xi = self.mapping.inverse_map(x, x_nodes)
         u = self.interpolate_at(xi, self.field.full_values()[element_nodes_ids])
-        breakpoint()
+
         return u.detach()

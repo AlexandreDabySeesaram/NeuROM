@@ -1,6 +1,6 @@
 import torch
 
-from neurom.constraints import Constraint
+from neurom.constraints.constraint import Constraint
 
 
 class NoConstraint(Constraint):
@@ -26,10 +26,10 @@ class NoConstraint(Constraint):
         Returns:
             The fully assembled values with only reduces values.
         """
+        breakpoint()
         # full vector
         full = torch.zeros(
             dofs_free.shape[0],
-            1,
             device=reduced_values.device,
             dtype=reduced_values.dtype,
         )

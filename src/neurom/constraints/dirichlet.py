@@ -10,6 +10,8 @@ class Dirichlet(Constraint):
         super().__init__()
         dirichlet_nodes = torch.as_tensor(dirichlet_nodes)
         self.register_buffer("dirichlet_nodes", dirichlet_nodes)
+        if values_imposed is not None:
+            values_imposed = torch.as_tensor(values_imposed)
         self.register_buffer("values_imposed", values_imposed)
 
     def get_dofs_free(self, n_nodes):
@@ -33,7 +35,6 @@ class Dirichlet(Constraint):
         """
         full = torch.zeros(
             dofs_free.shape[0],
-            1,
             device=reduced_values.device,
             dtype=reduced_values.dtype,
         )

@@ -44,7 +44,9 @@ def f(x):
 def main():
 
     N = 40
-    x_array = torch.linspace(0.0, 6.28, N)[:, None]
+    x_min = 0.0
+    x_max = 6.28
+    x_array = torch.linspace(x_min, x_max, N)[:, None]
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
@@ -68,8 +70,8 @@ def main():
         name="positions",
         topology=topology,
         init_values=x_array,
-        constraint=NoConstraint(),
-        trainable=False,
+        constraint=Dirichlet(dirichlet_nodes=[0, N - 1], values_imposed=[x_min, x_max]),
+        trainable=True,
     )
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
@@ -92,7 +94,7 @@ def main():
     plot_test = True
 
     print("* Training")
-    n_epochs = 7000
+    n_epochs = 70000
     for i in range(n_epochs):
         loss = model()
 

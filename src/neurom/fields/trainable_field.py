@@ -2,19 +2,8 @@ import torch
 import torch.nn as nn
 
 from neurom.constraints.constraint import Constraint
-from neurom.meshes import Topology
-
-
-class FieldBase(nn.Module):
-    def __init__(
-        self,
-        name: str,
-        topology: Topology,
-    ):
-        super().__init__()
-
-        self.name = name
-        self.topology = topology
+from neurom.fields.field_base import FieldBase
+from neurom.meshes.topology import Topology
 
 
 class TrainableField(FieldBase):
@@ -58,7 +47,7 @@ class TrainableField(FieldBase):
     def full_values(self):
         """Get the full values
 
-        Expand the reduced values over free dofs with the constraine ones.
+        Expand the reduced values over free dofs with the constrained ones.
         """
         return self.constraint.expand(self.values_reduced, self.dofs_free)
 
@@ -67,43 +56,4 @@ class TrainableField(FieldBase):
 
         Get the full values but per element following the topology connectivity.
         """
-        return self.full_values()[self.topology.conn]
-
-
-class Field(FieldBase):
-    """Interface of a Field
-
-    A Field is defined at the nodal points where the interpolation is performed, based on the topology.
-    The values of the field are registered as a buffer.
-
-    Note:
-        Compared to a TrainableField, a Field cannot be trained  (its values are fixed).
-
-    Args:
-        name (str): The Field's name.
-        topology (Topology): The topology on which the Field is based.
-        init_values (torch.Tensor): The initial values of the Field
-        constraint (Constraint): The constraint which is imposed on the Field.
-
-    Attributes:
-        name (str): The Field's name.
-        topology (Topology): The topology on which the Field is based.
-        values (torch.nn.parameter.Buffer): The reduced values, i.e. the full values without the constrained ones.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        topology: Topology,
-        values,
-    ):
-        super().__init__(name=name, topology=topology)
-
-        # Initialize reduced DOFs
-        self.register_buffer("values", values)
-
-    def full_values(self):
-        return self.values
-
-    def at_elements(self):
         return self.full_values()[self.topology.conn]

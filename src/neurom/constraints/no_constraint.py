@@ -26,7 +26,6 @@ class NoConstraint(Constraint):
         Returns:
             The fully assembled values with only reduces values.
         """
-        breakpoint()
         # full vector
         full = torch.zeros(
             dofs_free.shape[0],

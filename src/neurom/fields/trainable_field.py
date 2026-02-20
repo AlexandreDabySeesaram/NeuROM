@@ -9,7 +9,7 @@ from neurom.meshes.topology import Topology
 class TrainableField(FieldBase):
     """Interface of a TrainableField
 
-    A TrainableField is defined at the nodal points where the interpolation is performed, based on the topology.
+    A TrainableField is defined at the nodal points where the interpolation is performed, based on the topology. As such a TrainableField tensor has shape (N_vertices, dim) where dim is the dimension of the field.
     It owns a Constraint which defines a mask over indices of values which can actually vary (`values_reduced`) and the one that are imposed.
 
     Args:

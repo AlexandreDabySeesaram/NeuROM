@@ -44,10 +44,12 @@ class Dirichlet(Constraint):
             The fully assembled values over reduced and imposed dofs.
         """
         full = torch.zeros(
-            reduced_values.shape,
+            reduced_values.shape[0] + self.values_imposed.shape[0],
+            reduced_values.shape[1],
             device=reduced_values.device,
             dtype=reduced_values.dtype,
         )
-        full[dofs_free] = reduced_values[dofs_free]
-        full[~dofs_free] = self.values_imposed
+
+        full[dofs_free, :] = reduced_values
+        full[~dofs_free, :] = self.values_imposed
         return full

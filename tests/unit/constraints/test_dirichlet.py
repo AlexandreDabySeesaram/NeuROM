@@ -17,7 +17,7 @@ def dirichlet():
     """
     name = "test"
     nodes = torch.tensor([0, 2, 4], dtype=int)
-    values_imposed = torch.tensor([3.0, 7.0, 6.0])
+    values_imposed = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
     bc = Dirichlet(nodes=nodes, values_imposed=values_imposed)
 
     return bc
@@ -48,7 +48,7 @@ class TestDirichlet:
         assert "values_imposed" in dirichlet._buffers
         assert isinstance(getattr(dirichlet, "values_imposed"), torch.Tensor)
 
-        expected_values = torch.tensor([3.0, 7.0, 6.0])
+        expected_values = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
         assert dirichlet.values_imposed == pytest.approx(
             expected_values, rel=self.relative_tolerance
         )
@@ -75,8 +75,7 @@ class TestDirichlet:
 
         For Dirichlet, it should it should contain the original values for all but the Dirichlet nodes.
         """
-        reduced_values = torch.tensor([5, 6.25, 7.5, 8.75, 10.0, 11.25])
-        n_nodes = reduced_values.shape[0]
+        reduced_values = torch.tensor([6.25, 8.75, 11.25]).unsqueeze(-1)
         dofs_free = torch.tensor(
             [False, True, False, True, False, True], dtype=torch.bool
         )
@@ -85,5 +84,5 @@ class TestDirichlet:
 
         # Check values
         # Expected values are Dirichlet values for nodes 0, 2, 4 and original values otherwise.
-        expected_values = torch.tensor([3.0, 6.25, 7.0, 8.75, 6.0, 11.25])
+        expected_values = torch.tensor([3.0, 6.25, 7.0, 8.75, 6.0, 11.25]).unsqueeze(-1)
         assert values == pytest.approx(expected_values, rel=self.relative_tolerance)

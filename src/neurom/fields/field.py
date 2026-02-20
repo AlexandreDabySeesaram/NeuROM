@@ -7,7 +7,7 @@ from neurom.meshes import Topology
 class Field(FieldBase):
     """Interface of a Field
 
-    A Field is defined at the nodal points where the interpolation is performed, based on the topology.
+    A Field is defined at the nodal points (number of vertices) where the interpolation is performed, based on the topology. As such a Field tensor has shape (N_vertices, dim) where dim is the dimension of the field.
     The values of the field are registered as a buffer.
 
     Note:
@@ -22,7 +22,7 @@ class Field(FieldBase):
     Attributes:
         name (str): The Field's name.
         topology (Topology): The topology on which the Field is based.
-        values (torch.nn.parameter.Buffer): The reduced values, i.e. the full values without the constrained ones.
+        values (torch.nn.parameter.Buffer): The values at vertices.
     """
 
     def __init__(

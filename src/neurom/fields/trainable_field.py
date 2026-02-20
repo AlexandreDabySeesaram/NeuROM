@@ -15,7 +15,7 @@ class TrainableField(FieldBase):
     Args:
         name (str): The TrainableField's name.
         topology (Topology): The topology on which the TrainableField is based.
-        init_values (torch.Tensor): The initial values of the TrainableField
+        init_values (torch.Tensor): The initial values of the TrainableField at the nodes.
         constraint (Constraint): The constraint which is imposed on the TrainableField.
 
     Attributes:

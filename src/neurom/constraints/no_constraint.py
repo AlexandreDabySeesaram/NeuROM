@@ -4,9 +4,7 @@ from neurom.constraints.constraint import Constraint
 
 
 class NoConstraint(Constraint):
-    """
-    Case where is no constraint.
-    """
+    """Case where is no constraint."""
 
     def get_dofs_free(self, n_nodes):
         """
@@ -28,7 +26,7 @@ class NoConstraint(Constraint):
         """
         # full vector
         full = torch.zeros(
-            dofs_free.shape[0],
+            reduced_values.shape,
             device=reduced_values.device,
             dtype=reduced_values.dtype,
         )

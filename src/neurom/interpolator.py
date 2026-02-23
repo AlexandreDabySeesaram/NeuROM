@@ -51,8 +51,8 @@ class Interpolator(nn.Module):
     def measure(self):
         # Compute weighted measure
         w = self.quad.weights()
-        dx = self.mapping.element_size(self.mesh.nodes_positions.at_elements())
-        measure = dx * w
+        dx = self.mapping.det_jacobian(self.mesh.nodes_positions.at_elements())
+        measure = torch.abs(dx) * w
         return measure
 
     def interpolate(self):
@@ -60,9 +60,7 @@ class Interpolator(nn.Module):
         xi_g = self.get_quadrature_points()
 
         # (N_e, N_q, dim)
-        x_g = self.interpolate_at_reference(
-            xi_g, self.mesh.nodes_positions.at_elements()
-        )
+        x_g = self.mapping.map(xi_g, self.mesh.nodes_positions.at_elements())
 
         # Mark it for later autograd
         x_g.requires_grad_(True)

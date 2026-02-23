@@ -76,3 +76,18 @@ class TestIsoparametricMapping1D:
 
         # Check values
         assert xi == pytest.approx(xi_expected, rel=self.relative_tolerance)
+
+    def test_det_jacobian(self, setup):
+        """
+        Test computation of determinant of jacobian
+        """
+        x_nodes = setup[0]
+        mapping = setup[1]
+
+        # Compute mapping
+        det_J = mapping.det_jacobian(x_nodes)
+
+        det_J_expected = torch.tensor([2.5]).unsqueeze(-1)
+
+        # Check values
+        assert det_J == pytest.approx(det_J_expected, rel=self.relative_tolerance)

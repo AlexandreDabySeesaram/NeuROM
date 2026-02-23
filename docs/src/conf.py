@@ -77,7 +77,7 @@ autoapi_options = [
 ]
 
 # HTML output
-html_theme = "furo"
+html_theme = "sphinx_rtd_theme"
 html_title = project
 html_static_path = ["_static"]
 html_theme_options = {

@@ -25,7 +25,7 @@ class Mesh(nn.Module):
         # List elements to which `x` belongs to.
         ids = []
         for x_i in x:
-            for e, conn in enumerate(self.topology.conn):
+            for e, conn in enumerate(self.topology.connectivity):
                 x_first = self.nodes_positions.full_values()[conn[0]]
                 x_second = self.nodes_positions.full_values()[conn[1]]
                 if x_i >= x_first and x_i <= x_second:

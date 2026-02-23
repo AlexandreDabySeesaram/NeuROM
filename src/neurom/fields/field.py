@@ -48,4 +48,4 @@ class Field(FieldBase):
 
         Get the full values but per element following the topology connectivity.
         """
-        return self.full_values()[self.topology.conn]
+        return self.full_values()[self.topology.connectivity]

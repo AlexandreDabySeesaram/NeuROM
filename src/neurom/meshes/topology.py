@@ -5,21 +5,28 @@ import torch.nn as nn
 class Topology(nn.Module):
     """
     The topology is described by:
-    * The vertices (indices)
-    * The connectivity (vertex indices forming simplex)
+    * The nodes (indices)
+    * The connectivity (nodes indices forming simplex)
+
+    Args:
+        nodes (torch.Tensor): The mesh nodes indices, tensor of shape (N_nodes).
+        connectivity (torch.Tensor): The connectivity, i.e. nodes indices. Tensor of shape (N_elements, N_simplex) where N_simplex is the number of points defining the simplex.
+
+    Attributes:
+        nodes (torch.Tensor): The mesh nodes indices. Registered in buffer.
+        connectivity (torch.Tensor): The connectivity, i.e. nodes indices. Registered in buffer.
+        n_nodes (int): The number of nodes.
+        n_elements (int): The number of elements.
+
+    Note:
+        No checks are done on whether indices in `connectivity` correspond to actual indices in `nodes`.
     """
 
     def __init__(self, nodes, connectivity):
         super().__init__()
 
-        self.nodes = nodes
-        self.register_buffer("conn", connectivity)
+        self.register_buffer("nodes", nodes)
+        self.register_buffer("connectivity", connectivity)
 
         self.n_nodes = self.nodes.shape[0]
-        self.n_elements = connectivity.shape[0]
-
-        element_ids = torch.arange(self.conn.size(0))
-        element_nodes_ids = self.conn[element_ids, :].T
-        element_nodes_ids = element_nodes_ids.t()[:, :, None]
-
-        self.register_buffer("element_nodes_ids", element_nodes_ids)
+        self.n_elements = self.connectivity.shape[0]

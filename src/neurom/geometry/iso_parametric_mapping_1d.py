@@ -5,6 +5,8 @@ from neurom.shape_functions.shape_function import ShapeFunction
 
 
 class IsoparametricMapping1D(nn.Module):
+    """Class encapsulating mapping from physical to reference coordinates"""
+
     def __init__(self, shape_function: ShapeFunction):
         super().__init__()
         self.sf = shape_function

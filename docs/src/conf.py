@@ -6,9 +6,9 @@ import sys
 # -----------------------------------------------------------------------------
 # Project information
 # -----------------------------------------------------------------------------
-project = "python-template"
-author = "Jules Dichamp"
-copyright = "2026, Jules Dichamp"
+project = "neurom"
+author = "Alexandre Daby, et al. [TODO]"
+copyright = "2026, Alexandre Daby"
 release = "0.1.0"
 
 # -----------------------------------------------------------------------------
@@ -59,9 +59,7 @@ python_use_unqualified_type_names = True
 
 # AutoAPI configuration — scan the installed package
 autoapi_type = "python"
-autoapi_dirs = [
-    "../../src/hidenn_playground"
-]  # Empty because we use the installed package
+autoapi_dirs = ["../../src/neurom"]  # Empty because we use the installed package
 autoapi_root = "api"  # AutoAPI output directory
 autoapi_add_toctree_entry = True  # Include in TOC automatically
 autoapi_keep_files = False  # Keep generated Markdown files for inspection
@@ -79,7 +77,7 @@ autoapi_options = [
 ]
 
 # HTML output
-html_theme = "furo"
+html_theme = "sphinx_rtd_theme"
 html_title = project
 html_static_path = ["_static"]
 html_theme_options = {

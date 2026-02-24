@@ -1,0 +1,3 @@
+from neurom.shape_functions.shape_function import ShapeFunction
+from neurom.shape_functions.linear_segment import LinearSegment
+from neurom.shape_functions.quadratic_segment import QuadraticSegment

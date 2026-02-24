@@ -5,6 +5,11 @@ from neurom.geometry import barycentric_to_reference
 
 
 class Interpolator(nn.Module):
+    """Class encapsulating interpolation of a function on a mesh.
+
+    The class provides methods to interpolate a function at arbitrary positions or at quadrature points.
+    """
+
     def __init__(self, mesh, field, sf, quad, mapping):
         super().__init__()
         self.mesh = mesh

@@ -5,13 +5,18 @@ from neurom.shape_functions.shape_function import ShapeFunction
 
 
 class LinearSegment(ShapeFunction):
+    """Linear shape function on a Segment"""
+
     def __init__(self):
         super().__init__(Segment())
 
     def N(self, xi):
-        """
-        xi: (N_e, N_q, dim_ref)
-        returns (N_e, N_q, N_nodes)
+        """Shape function
+
+        Args:
+            xi (torch.Tensor) : The reference coordinate, tensor of shape (N_e, N_q, dim_ref).
+        Returns:
+            Shape function evaluated at `xi`, tensor of shpae (N_e, N_q, N_nodes)
         """
         xi0 = xi[..., 0]
 

@@ -9,7 +9,7 @@ from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
 from neurom.constraints import NoConstraint, Dirichlet
-from neurom.field import Field
+from neurom.fields import Field, TrainableField
 from neurom.integrator import Integrator
 from neurom.interpolator import Interpolator
 from neurom.fem_model import FEMModel
@@ -46,7 +46,7 @@ def main():
     N = 40
     x_min = 0.0
     x_max = 6.28
-    x_array = torch.linspace(x_min, x_max, N)[:, None]
+    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
@@ -54,25 +54,17 @@ def main():
 
     sf = LinearSegment()
     quad = MidPoint1D()
-    # quad = quadratures.TwoPoints1D()
     mapping = IsoparametricMapping1D(sf)
     # Unknown
     u_init = 0.5 * torch.ones(N, 1)
-    u = Field(
+    u = TrainableField(
         name="displacement",
         topology=topology,
         init_values=u_init,
-        constraint=Dirichlet([0, N - 1]),
-        trainable=True,
+        constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
     )
     # Positions
-    x = Field(
-        name="positions",
-        topology=topology,
-        init_values=x_array,
-        constraint=Dirichlet(dirichlet_nodes=[0, N - 1], values_imposed=[x_min, x_max]),
-        trainable=True,
-    )
+    x = Field(name="positions", topology=topology, values=x_array)
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
     interpolator = Interpolator(mesh, u, sf, quad, mapping)
@@ -94,7 +86,7 @@ def main():
     plot_test = True
 
     print("* Training")
-    n_epochs = 70000
+    n_epochs = 2000
     for i in range(n_epochs):
         loss = model()
 

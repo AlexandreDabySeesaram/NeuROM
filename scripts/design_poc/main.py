@@ -11,7 +11,7 @@ from neurom.meshes import Topology, Mesh
 from neurom.constraints import NoConstraint, Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.integrator import Integrator
-from neurom.interpolator import Interpolator
+from neurom.interpolation import PointWiseInterpolator, Interpolator
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
@@ -64,6 +64,14 @@ def main():
         constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
     )
     # Positions
+    # x = TrainableField(
+    #    name="positions",
+    #    topology=topology,
+    #    init_values=x_array,
+    #    constraint=Dirichlet(
+    #        nodes=[0, N - 1], values_imposed=torch.tensor([x_min, x_max]).unsqueeze(-1)
+    #    ),
+    # )
     x = Field(name="positions", topology=topology, values=x_array)
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
@@ -91,19 +99,21 @@ def main():
         loss = model()
 
         optimizer.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph=True)
         optimizer.step()
 
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
+        # print(f"x = {x.full_values()}")
 
     print("\n* Evaluation")
     # At quadrature points
-    x_q, u_q, _ = model.interpolator.interpolate()
+    result = model.interpolator.interpolate()
 
     # At test points
     x_test = torch.linspace(0, 6, 30)
-    u_test = model.interpolator.interpolate_at(x_test).squeeze()
+    pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+    u_test = pwi.at_position(x_test).squeeze()
     if plot_loss:
         plt.figure()
         plt.plot(loss_history)
@@ -115,7 +125,10 @@ def main():
     if plot_test:
         plt.figure()
         plt.plot(
-            x_q.flatten().detach(), u_q.flatten().detach(), "+", label="Gauss points"
+            result.x.flatten().detach(),
+            result.u.flatten().detach(),
+            "+",
+            label="Gauss points",
         )
         plt.plot(x_test, u_test, "o", label="Test points")
         plt.xlabel("x [mm]")

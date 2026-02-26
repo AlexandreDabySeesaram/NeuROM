@@ -34,8 +34,8 @@ class FEMModel(nn.Module):
         Returns:
             scalar loss / energy
         """
-        x_q, u_q, measure = self.interpolator.interpolate()
-        integrand = self.physics.integrand(x_q, u_q)
-        loss = self.integrator.integrate(integrand, measure)
+        result = self.interpolator.interpolate()
+        integrand = self.physics.integrand(result.x, result.u)
+        loss = self.integrator.integrate(integrand, result.measure)
 
         return loss

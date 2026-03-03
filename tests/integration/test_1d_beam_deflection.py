@@ -9,7 +9,7 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
 from neurom.constraints import NoConstraint, Dirichlet
-from neurom.interpolator import Interpolator
+from neurom.interpolation import Interpolator, PointWiseInterpolator
 from neurom.integrator import Integrator
 from neurom.fem_model import FEMModel
 
@@ -125,25 +125,26 @@ class Test1dBeamDeflection:
         for i in range(n_epochs):
             loss = model()
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.interpolator.interpolate()
+        result = model.interpolator.interpolate()
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(x_q)
+        u_sol_train = solution.eval(result.x)
 
         # Check values
-        assert u_q.detach().numpy() == pytest.approx(
+        assert result.u.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.interpolator.interpolate_at(x_test).squeeze()
+        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        u_test = pwi.at_position(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
@@ -220,25 +221,26 @@ class Test1dBeamDeflection:
         for i in range(n_epochs):
             loss = model()
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.interpolator.interpolate()
+        result = model.interpolator.interpolate()
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(x_q)
+        u_sol_train = solution.eval(result.x)
 
         # Check values
-        assert u_q.detach().numpy() == pytest.approx(
+        assert result.u.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.interpolator.interpolate_at(x_test).squeeze()
+        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        u_test = pwi.at_position(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

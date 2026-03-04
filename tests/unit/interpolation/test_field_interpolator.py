@@ -24,7 +24,7 @@ def field():
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
     topology = Topology(nodes, elements)
-    values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+    values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     field = Field(name="test", topology=topology, values=values)
 
     return field
@@ -44,7 +44,7 @@ def trainable_field():
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
     topology = Topology(nodes, elements)
-    values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+    values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     field = TrainableField(
         name="test", topology=topology, init_values=values, constraint=NoConstraint()
     )
@@ -71,22 +71,22 @@ class TestFieldInterpolator:
         values = [  # Midpoint
             {
                 "xi": torch.tensor([0.0, 0.0, 0.0])[:, None, None],
-                "expected": torch.tensor([5.0, 6.5, 0.5]).unsqueeze(-1),
+                "expected": torch.tensor([5.0, 6.5, 0.5])[:, None, None],
             },
             # Start
             {
                 "xi": torch.tensor([-1.0, -1.0, -1.0])[:, None, None],
-                "expected": torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1),
+                "expected": torch.tensor([3.0, 7.0, 6.0])[:, None, None],
             },
             # End
             {
                 "xi": torch.tensor([1.0, 1.0, 1.0])[:, None, None],
-                "expected": torch.tensor([7.0, 6.0, -5.0]).unsqueeze(-1),
+                "expected": torch.tensor([7.0, 6.0, -5.0])[:, None, None],
             },
             # Mix
             {
                 "xi": torch.tensor([0.5, -0.75, -0.5])[:, None, None],
-                "expected": torch.tensor([6.0, 6.875, 3.25]).unsqueeze(-1),
+                "expected": torch.tensor([6.0, 6.875, 3.25])[:, None, None],
             },
         ]
 
@@ -112,22 +112,22 @@ class TestFieldInterpolator:
         values = [  # Midpoint
             {
                 "xi": torch.tensor([0.0, 0.0, 0.0])[:, None, None],
-                "expected": torch.tensor([5.0, 6.5, 0.5]).unsqueeze(-1),
+                "expected": torch.tensor([5.0, 6.5, 0.5])[:, None, None],
             },
             # Start
             {
                 "xi": torch.tensor([-1.0, -1.0, -1.0])[:, None, None],
-                "expected": torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1),
+                "expected": torch.tensor([3.0, 7.0, 6.0])[:, None, None],
             },
             # End
             {
                 "xi": torch.tensor([1.0, 1.0, 1.0])[:, None, None],
-                "expected": torch.tensor([7.0, 6.0, -5.0]).unsqueeze(-1),
+                "expected": torch.tensor([7.0, 6.0, -5.0])[:, None, None],
             },
             # Mix
             {
                 "xi": torch.tensor([0.5, -0.75, -0.5])[:, None, None],
-                "expected": torch.tensor([6.0, 6.875, 3.25]).unsqueeze(-1),
+                "expected": torch.tensor([6.0, 6.875, 3.25])[:, None, None],
             },
         ]
 

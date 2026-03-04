@@ -28,7 +28,7 @@ class TestMesh:
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
         topology = Topology(nodes, elements)
-        nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0])
+        nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
         x = Field(name="x", topology=topology, values=nodes_positions)
         mesh = Mesh(topology, x)
 
@@ -102,8 +102,8 @@ class TestMesh:
             nodes_positions, rel=self.relative_tolerance
         )
 
-    def test_mesh_wrong_number_of_nodes_positions(self):
-        """Test we fail properly when having inconsistent number of nodes and nodes positions"""
+    def test_incompatible_topologies(self):
+        """Tries to create a mesh with nodes positions having a different topology than the one owned by mesh"""
         # Number of vertices
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
@@ -113,16 +113,8 @@ class TestMesh:
         x = Field(
             name="x",
             topology=topology,
-            values=torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0]),
+            values=torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1),
         )
+        other_topology = Topology(nodes, elements)
         with pytest.raises(ValueError):
-            mesh = Mesh(topology, x)
-
-        # More nodes positions than nodes
-        x = Field(
-            name="x",
-            topology=topology,
-            values=torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0, 55.0]),
-        )
-        with pytest.raises(ValueError):
-            mesh = Mesh(topology, x)
+            mesh = Mesh(other_topology, x)

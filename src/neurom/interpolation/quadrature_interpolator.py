@@ -17,6 +17,7 @@ class QuadratureInterpolator(nn.Module):
         mesh (Mesh): The mesh on which to interpolate.
         quad (QuadratureRule): The QuadratureRule to use for setting the points.
         mapping (object): The mapping to use to translate positions from physical to reference space.
+
     Attributes:
         mesh (Mesh): The mesh on which to interpolate.
         mapping (object): The mapping to use to translate positions from physical to reference space.
@@ -38,7 +39,8 @@ class QuadratureInterpolator(nn.Module):
         Returns:
             A dataclass QuadraturePositions which contains the positions.
         """
-        # map to physical space
+        # map to physical space for all quadrature points
+        # Tensor of shape (N_e, N_q, dim)
         x_phys = self.mapping.map(self.xi_ref, self.mesh.nodes_positions.at_elements())
 
         # back‑to‑reference (needed for autograd‑safe field interpolation)

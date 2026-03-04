@@ -42,7 +42,7 @@ class IsoparametricMapping1D(nn.Module):
         Note:
             This linear mapping only works for linear shape functions and segment element.
         """
-        # Center pointer per element
+        # Center point per element
         # (N_e, dim)
         x_half = 0.5 * (x_nodes[:, 1, :] + x_nodes[:, 0, :])
 

@@ -358,8 +358,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
     #         break 
 
     if config["training"]["random_sampling"]:
-        loss_counter_max = 300
-        n_switch = 20
+        loss_counter_max = 350
+        n_switch = 5
         stagnation_max = 5
     else:
         loss_counter_max = 100
@@ -368,8 +368,9 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
     while epoch<n_epochs and loss_counter<loss_counter_max:
         if stagnancy_counter>stagnation_max and (not FlagAddedMode_usefull or model.n_modes_truncated >= model.n_modes) and epoch>50:               # Break if stagnation not solved by adding modes (hopefully that means convergence reached)
-            print("stagnancy_counter = ", stagnancy_counter)
-            print("FlagAddedMode_usefull = ", FlagAddedMode_usefull)
+            print(" Training ends")
+            print("     Stagnancy counter = ", stagnancy_counter)
+            print("     FlagAddedMode_usefull = ", FlagAddedMode_usefull)
             break 
 
         if config["training"]["random_sampling"]:
@@ -2218,7 +2219,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN', mapping = None):
             # Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
 
             # # # # # # # # # # # # # # # # # # # # # # # # # 
-            config["geometry"]["Name"] = 'Hexa' 
+            if config["geometry"]["Name"] == 'Hexa_init_coarse':
+                config["geometry"]["Name"] = 'Hexa_coarse'
 
             Mesh_object_fine = pre.Mesh( 
                                 config["geometry"]["Name"],                 # Create the mesh object
@@ -2253,6 +2255,19 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN', mapping = None):
             if config["interpolation"]["dimension"] ==1 and config["solver"]["IntegralMethod"] == "Trapezoidal":
                 Mesh_object_fine.AssemblyMatrix() 
             match config["solver"]["N_ExtraCoordinates"]:
+                case 4:
+                    ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
+                                                            config["parameters"]["para_1_max"],
+                                                            config["parameters"]["N_para_1"]],
+                                                        [   config["parameters"]["para_2_min"],
+                                                            config["parameters"]["para_2_max"],
+                                                            config["parameters"]["N_para_2"]],
+                                                        [   config["parameters"]["para_3_min"],
+                                                            config["parameters"]["para_3_max"],
+                                                            config["parameters"]["N_para_3"]],
+                                                        [   config["parameters"]["para_4_min"],
+                                                            config["parameters"]["para_4_max"],
+                                                            config["parameters"]["N_para_4"]]])
                 case 3:
                     ParameterHypercube = torch.tensor([ [   config["parameters"]["para_1_min"],
                                                             config["parameters"]["para_1_max"],

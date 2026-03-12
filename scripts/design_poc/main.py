@@ -17,9 +17,84 @@ from neurom.fem_model import FEMModel
 torch.set_default_dtype(torch.float32)
 
 
-# =========================================================
-# Physics
-# =========================================================
+class Term(ABC):
+    @abstractmethod
+    def integrand(self, fields_layout):
+        pass
+
+    def __add__(self, other):
+        return SumTerm([self, other])
+
+    def __sub__(self, other):
+        return SumTerm([self, -other])
+
+    def __neg__(self):
+        return NegTerm(self)
+
+
+class SumTerm(Term):
+    def __init__(self, terms):
+        self.terms = []
+        for t in terms:
+            if isinstance(t, SumTerm):
+                self.terms.extend(t.terms)
+            else:
+                self.terms.append(t)
+
+    def integrand(self, fields_layout):
+        expr = 0
+        for t in self.terms:
+            expr = expr + t.integrand(fields_layout)
+        return expr
+
+
+class NegTerm(Term):
+    def __init__(self, term):
+        self.term = term
+
+    def integrand(self, fields_layout):
+        return -self.term.integrand(fields_layout)
+
+
+def grad(x, u):
+    du_dx = torch.autograd.grad(
+        u, x, grad_outputs=torch.ones_like(u), create_graph=True
+    )[0]
+
+    return du_dx
+
+
+class QuadraticEnergy(Term):
+    def __init__(self, field):
+        self.field_name = field.name
+
+    def integrand(self, fields_layout):
+        quad_interp_res = fields_layout[self.field_name]
+        x = quad_interp_res.x
+        u = quad_interp_res.u
+        dx = quad_interp_res.measure
+
+        # Compute du_dx**2
+        du_dx = grad(x, u)
+        inner = torch.einsum("eq...,eq...->eq...", du_dx, du_dx).squeeze()
+
+        return (0.5 * inner) * dx
+
+
+class Potential(Term):
+    def __init__(self, field, f):
+        self.field_name = field.name
+        self.f = f
+
+    def integrand(self, fields_layout):
+        quad_interp_res = fields_layout[self.field_name]
+        x = quad_interp_res.x
+        u = quad_interp_res.u
+        dx = quad_interp_res.measure
+
+        return -(self.f(x) * u).squeeze() * dx
+
+
 class PoissonPhysics:
     def __init__(self, f):
         self.f = f
@@ -31,30 +106,21 @@ class PoissonPhysics:
         return 0.5 * du_dx**2 - self.f(x) * u
 
 
-# =========================================================
-# Force function
-# =========================================================
 def f(x):
     return 1000.0
 
 
-# =========================================================
-# Main
-# =========================================================
 def main():
-
     N = 40
-    x_min = 0.0
-    x_max = 6.28
-    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
     topology = Topology(nodes, elements)
 
     sf = LinearSegment()
-    quad = MidPoint1D()
+    quad = TwoPoints1D()
     mapping = IsoparametricMapping1D(sf)
+
     # Unknown
     u_init = 0.5 * torch.ones(N, 1)
     u = TrainableField(
@@ -63,20 +129,18 @@ def main():
         init_values=u_init,
         constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
     )
+
     # Positions
-    # x = TrainableField(
-    #    name="positions",
-    #    topology=topology,
-    #    init_values=x_array,
-    #    constraint=Dirichlet(
-    #        nodes=[0, N - 1], values_imposed=torch.tensor([x_min, x_max]).unsqueeze(-1)
-    #    ),
-    # )
+    x_min = 0.0
+    x_max = 6.28
+    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
     x = Field(name="positions", topology=topology, values=x_array)
+
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
     interpolator = Interpolator(mesh, u, sf, quad, mapping)
-    physics = PoissonPhysics(f)
+
+    physics = QuadraticEnergy(field=u) + Potential(field=u, f=f)
     integrator = Integrator()
 
     model = FEMModel(

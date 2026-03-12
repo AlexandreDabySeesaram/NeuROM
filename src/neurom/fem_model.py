@@ -35,7 +35,8 @@ class FEMModel(nn.Module):
             scalar loss / energy
         """
         result = self.interpolator.interpolate()
-        integrand = self.physics.integrand(result.x, result.u)
-        loss = self.integrator.integrate(integrand, result.measure)
+        layout = {self.field.name: result}
+        integrand = self.physics.integrand(layout)
+        loss = torch.einsum("eq...->", integrand)
 
         return loss

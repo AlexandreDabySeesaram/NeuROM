@@ -12,98 +12,10 @@ from neurom.constraints import NoConstraint, Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.integrator import Integrator
 from neurom.interpolation import PointWiseInterpolator, Interpolator
+from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
-
-
-class Term(ABC):
-    @abstractmethod
-    def integrand(self, fields_layout):
-        pass
-
-    def __add__(self, other):
-        return SumTerm([self, other])
-
-    def __sub__(self, other):
-        return SumTerm([self, -other])
-
-    def __neg__(self):
-        return NegTerm(self)
-
-
-class SumTerm(Term):
-    def __init__(self, terms):
-        self.terms = []
-        for t in terms:
-            if isinstance(t, SumTerm):
-                self.terms.extend(t.terms)
-            else:
-                self.terms.append(t)
-
-    def integrand(self, fields_layout):
-        expr = 0
-        for t in self.terms:
-            expr = expr + t.integrand(fields_layout)
-        return expr
-
-
-class NegTerm(Term):
-    def __init__(self, term):
-        self.term = term
-
-    def integrand(self, fields_layout):
-        return -self.term.integrand(fields_layout)
-
-
-def grad(x, u):
-    du_dx = torch.autograd.grad(
-        u, x, grad_outputs=torch.ones_like(u), create_graph=True
-    )[0]
-
-    return du_dx
-
-
-class QuadraticEnergy(Term):
-    def __init__(self, field):
-        self.field_name = field.name
-
-    def integrand(self, fields_layout):
-        quad_interp_res = fields_layout[self.field_name]
-        x = quad_interp_res.x
-        u = quad_interp_res.u
-        dx = quad_interp_res.measure
-
-        # Compute du_dx**2
-        du_dx = grad(x, u)
-        inner = torch.einsum("eq...,eq...->eq...", du_dx, du_dx).squeeze()
-
-        return (0.5 * inner) * dx
-
-
-class Potential(Term):
-    def __init__(self, field, f):
-        self.field_name = field.name
-        self.f = f
-
-    def integrand(self, fields_layout):
-        quad_interp_res = fields_layout[self.field_name]
-        x = quad_interp_res.x
-        u = quad_interp_res.u
-        dx = quad_interp_res.measure
-
-        return -(self.f(x) * u).squeeze() * dx
-
-
-class PoissonPhysics:
-    def __init__(self, f):
-        self.f = f
-
-    def integrand(self, x, u):
-        du_dx = torch.autograd.grad(
-            u, x, grad_outputs=torch.ones_like(u), create_graph=True
-        )[0]
-        return 0.5 * du_dx**2 - self.f(x) * u
 
 
 def f(x):
@@ -140,7 +52,7 @@ def main():
     mesh = Mesh(topology=topology, nodes_positions=x)
     interpolator = Interpolator(mesh, u, sf, quad, mapping)
 
-    physics = QuadraticEnergy(field=u) + Potential(field=u, f=f)
+    physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
     integrator = Integrator()
 
     model = FEMModel(

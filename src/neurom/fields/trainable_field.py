@@ -43,6 +43,7 @@ class TrainableField(FieldBase):
 
         # Initialize reduced DOFs
         self.values_reduced = nn.Parameter(init_values[dofs_free])
+        self.dim = init_values.shape[1]
 
     def full_values(self):
         """Get the full values

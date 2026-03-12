@@ -52,6 +52,7 @@ class Field(FieldBase):
 
         # Initialize reduced DOFs
         self.register_buffer("values", values)
+        self.dim = values.shape[1]
 
     def full_values(self):
         """Get the full values

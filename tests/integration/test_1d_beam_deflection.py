@@ -10,27 +10,10 @@ from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
 from neurom.constraints import NoConstraint, Dirichlet
 from neurom.interpolation import Interpolator, PointWiseInterpolator
-from neurom.integrator import Integrator
+from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
-
-
-class PoissonPhysics:
-    """
-    Represents potential energy of 1D beam under uniform load.
-    .. math::
-        \frac{1}{2}u''(x) + f u(x)
-    """
-
-    def __init__(self, f):
-        self.f = f
-
-    def integrand(self, x, u):
-        du_dx = torch.autograd.grad(
-            u, x, grad_outputs=torch.ones_like(u), create_graph=True
-        )[0]
-        return 0.5 * du_dx**2 + self.f * u
 
 
 class AnalyticalSolution:
@@ -46,7 +29,7 @@ class AnalyticalSolution:
         self.x_max = x_max
 
     def eval(self, x):
-        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
+        return 0.5 * self.f(x) * (x - self.x_min) * (x - self.x_max)
 
 
 class Test1dBeamDeflection:
@@ -71,8 +54,11 @@ class Test1dBeamDeflection:
         x_max = 10.0
         # Number of points in the domain
         N = 100
+
         # Load applied to the beam
-        f = 1000.0
+        def f(x):
+            return 1000.0
+
         # Number of training steps
         n_epochs = 5000
         # Learning rate
@@ -106,10 +92,8 @@ class Test1dBeamDeflection:
         mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
         interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we cnosider
-        physics = PoissonPhysics(f)
-        # How to integrate the physics on a domain
-        integrator = Integrator()
+        # What physics we consider
+        physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
 
         # Define FEM model - main orchestrator
         model = FEMModel(
@@ -117,7 +101,6 @@ class Test1dBeamDeflection:
             field=u,
             interpolator=interpolator,
             physics=physics,
-            integrator=integrator,
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -167,8 +150,11 @@ class Test1dBeamDeflection:
         x_max = 10.0
         # Number of points in the domain
         N = 100
+
         # Load applied to the beam
-        f = 1000.0
+        def f(x):
+            return 1000.0
+
         # Number of training steps
         n_epochs = 5000
         # Learning rate
@@ -202,10 +188,8 @@ class Test1dBeamDeflection:
         mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
         interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we cnosider
-        physics = PoissonPhysics(f)
-        # How to integrate the physics on a domain
-        integrator = Integrator()
+        # What physics we consider
+        physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
 
         # Define FEM model - main orchestrator
         model = FEMModel(
@@ -213,7 +197,6 @@ class Test1dBeamDeflection:
             field=u,
             interpolator=interpolator,
             physics=physics,
-            integrator=integrator,
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)

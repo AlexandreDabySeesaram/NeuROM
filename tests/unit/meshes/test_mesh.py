@@ -67,7 +67,7 @@ class TestMesh:
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
         topology = Topology(nodes, elements)
-        nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0])
+        nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
         x = TrainableField(
             name="x",
             topology=topology,

@@ -10,7 +10,6 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
 from neurom.constraints import NoConstraint, Dirichlet
 from neurom.fields import Field, TrainableField
-from neurom.integrator import Integrator
 from neurom.interpolation import PointWiseInterpolator, Interpolator
 from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.fem_model import FEMModel
@@ -53,14 +52,12 @@ def main():
     interpolator = Interpolator(mesh, u, sf, quad, mapping)
 
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
-    integrator = Integrator()
 
     model = FEMModel(
         mesh=mesh,
         field=u,
         interpolator=interpolator,
         physics=physics,
-        integrator=integrator,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=10)

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from neurom.integrate import integrate
+
 
 class FEMModel(nn.Module):
     """
@@ -18,7 +20,6 @@ class FEMModel(nn.Module):
         field,
         interpolator,
         physics,
-        integrator,
     ):
         super().__init__()
 
@@ -27,7 +28,6 @@ class FEMModel(nn.Module):
         self.field = field
         self.interpolator = interpolator
         self.physics = physics
-        self.integrator = integrator
 
     def forward(self):
         """
@@ -36,7 +36,9 @@ class FEMModel(nn.Module):
         """
         result = self.interpolator.interpolate()
         layout = {self.field.name: result}
-        integrand = self.physics.integrand(layout)
-        loss = torch.einsum("eq...->", integrand)
 
-        return loss
+        def physics_loss(phys, lay):
+            integrand = phys.integrand(layout)
+            return integrate(integrand)
+
+        return physics_loss(self.physics, layout)

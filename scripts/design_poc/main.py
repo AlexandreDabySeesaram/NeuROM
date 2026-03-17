@@ -16,7 +16,6 @@ from neurom.interpolation import (
     Interpolator,
     FieldInterpolator,
     QuadratureInterpolator,
-    measure,
 )
 
 from neurom.physics import ElasticEnergy, LoadPotential
@@ -35,17 +34,27 @@ def main():
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
+    # Positions
+    x_min = 0.0
+    x_max = 6.28
+    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
+
+    # Initialize displacement value
+    u_init = 0.5 * torch.ones(N, 1)
+
     topology = Topology(nodes, elements)
 
+    # Define shape function to use
     sf = LinearSegment()
+    # Define quadrature method
     quad = TwoPoints1D()
+    # Define mapping (for positions only)
     mapping = IsoparametricMapping1D(sf)
 
-    # Field layout
+    # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
 
-    # Unknown
-    u_init = 0.5 * torch.ones(N, 1)
+    # Displacement
     u = field_layout.add(
         TrainableField(
             name="displacement",
@@ -56,23 +65,21 @@ def main():
     )
 
     # Positions
-    x_min = 0.0
-    x_max = 6.28
-    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
     x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
 
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
 
-    def measure_func():
-        return measure(mesh, mapping, quad)
-
-    # Prepare interpolator
+    # Define interpolator
     interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
 
+    # Define physics to solve
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
+
+    # The loss to use is purely based on physics
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
+    # Define FEM model
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,

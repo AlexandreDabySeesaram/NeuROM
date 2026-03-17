@@ -1,2 +1,4 @@
 from neurom.interpolation.interpolator import Interpolator
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+from neurom.interpolation.field_interpolator import FieldInterpolator
+from neurom.interpolation.quadrature_interpolator import QuadratureInterpolator

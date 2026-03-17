@@ -17,28 +17,23 @@ class FEMModel(nn.Module):
     def __init__(
         self,
         mesh,
-        field,
+        field_layout,
         interpolator,
-        physics,
+        loss,
     ):
         super().__init__()
 
         # Core pipeline
         self.mesh = mesh
-        self.field = field
+        self.field_layout = field_layout
         self.interpolator = interpolator
-        self.physics = physics
+        self.loss = loss
 
     def forward(self):
         """
         Returns:
             scalar loss / energy
         """
-        result = self.interpolator.interpolate()
-        layout = {self.field.name: result}
-
-        def physics_loss(phys, lay):
-            integrand = phys.integrand(layout)
-            return integrate(integrand)
-
-        return physics_loss(self.physics, layout)
+        # Returns a list of QuadratureInterpolationResult
+        self.interpolator.interpolate(self.field_layout)
+        return self.loss()

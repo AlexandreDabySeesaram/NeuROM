@@ -10,8 +10,17 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
 from neurom.constraints import NoConstraint, Dirichlet
 from neurom.fields import Field, TrainableField
-from neurom.interpolation import PointWiseInterpolator, Interpolator
+from neurom.field_layout import FieldLayout
+from neurom.interpolation import (
+    PointWiseInterpolator,
+    Interpolator,
+    FieldInterpolator,
+    QuadratureInterpolator,
+    measure,
+)
+
 from neurom.physics import ElasticEnergy, LoadPotential
+from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
@@ -32,32 +41,43 @@ def main():
     quad = TwoPoints1D()
     mapping = IsoparametricMapping1D(sf)
 
+    # Field layout
+    field_layout = FieldLayout()
+
     # Unknown
     u_init = 0.5 * torch.ones(N, 1)
-    u = TrainableField(
-        name="displacement",
-        topology=topology,
-        init_values=u_init,
-        constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+    u = field_layout.add(
+        TrainableField(
+            name="displacement",
+            topology=topology,
+            init_values=u_init,
+            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+        )
     )
 
     # Positions
     x_min = 0.0
     x_max = 6.28
     x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
-    x = Field(name="positions", topology=topology, values=x_array)
+    x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
 
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
-    interpolator = Interpolator(mesh, u, sf, quad, mapping)
+
+    def measure_func():
+        return measure(mesh, mapping, quad)
+
+    # Prepare interpolator
+    interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
 
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
+    physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
     model = FEMModel(
         mesh=mesh,
-        field=u,
+        field_layout=field_layout,
         interpolator=interpolator,
-        physics=physics,
+        loss=physics_loss,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=10)
@@ -81,7 +101,7 @@ def main():
 
     print("\n* Evaluation")
     # At quadrature points
-    result = model.interpolator.interpolate()
+    result = field_layout["displacement"]
 
     # At test points
     x_test = torch.linspace(0, 6, 30)

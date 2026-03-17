@@ -9,8 +9,16 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
 from neurom.constraints import NoConstraint, Dirichlet
-from neurom.interpolation import Interpolator, PointWiseInterpolator
+from neurom.field_layout import FieldLayout
+from neurom.interpolation import (
+    PointWiseInterpolator,
+    Interpolator,
+    FieldInterpolator,
+    QuadratureInterpolator,
+)
+
 from neurom.physics import ElasticEnergy, LoadPotential
+from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
@@ -69,6 +77,9 @@ class Test1dBeamDeflection:
         nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
+        # Initialize displacement values
+        u_init = 0.5 * torch.ones(N, 1)
+
         # Generate topology
         topology = Topology(nodes, elements)
 
@@ -78,29 +89,43 @@ class Test1dBeamDeflection:
         quad = MidPoint1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Unknown
-        u_init = 0.5 * torch.ones(N, 1)
-        u = TrainableField(
-            name="displacement",
-            topology=topology,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+
+        # Prepare Field layout and fill it with actual fields
+        field_layout = FieldLayout()
+
+        # Displacement
+        u = field_layout.add(
+            TrainableField(
+                name="displacement",
+                topology=topology,
+                init_values=u_init,
+                constraint=Dirichlet(
+                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
+                ),
+            )
         )
+
         # Positions
-        x = Field(name="positions", topology=topology, values=x_array)
+        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
-        # Evaluator
-        interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we consider
+
+        # Define interpolator
+        interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
+
+        # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
 
-        # Define FEM model - main orchestrator
+        # The loss to use is purely based on physics
+        physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+        # Define FEM model
         model = FEMModel(
             mesh=mesh,
-            field=u,
+            field_layout=field_layout,
             interpolator=interpolator,
-            physics=physics,
+            loss=physics_loss,
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -112,7 +137,7 @@ class Test1dBeamDeflection:
             optimizer.step()
 
         # Evaluate at quadrature points
-        result = model.interpolator.interpolate()
+        result = field_layout["displacement"]
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
@@ -165,6 +190,9 @@ class Test1dBeamDeflection:
         nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
+        # Initialize displacement values
+        u_init = 0.5 * torch.ones(N, 1)
+
         # Generate topology
         topology = Topology(nodes, elements)
 
@@ -174,29 +202,43 @@ class Test1dBeamDeflection:
         quad = TwoPoints1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Unknown
-        u_init = 0.5 * torch.ones(N, 1)
-        u = TrainableField(
-            name="displacement",
-            topology=topology,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+
+        # Prepare Field layout and fill it with actual fields
+        field_layout = FieldLayout()
+
+        # Displacement
+        u = field_layout.add(
+            TrainableField(
+                name="displacement",
+                topology=topology,
+                init_values=u_init,
+                constraint=Dirichlet(
+                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
+                ),
+            )
         )
+
         # Positions
-        x = Field(name="positions", topology=topology, values=x_array)
+        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
-        # Evaluator
-        interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we consider
+
+        # Define interpolator
+        interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
+
+        # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
 
-        # Define FEM model - main orchestrator
+        # The loss to use is purely based on physics
+        physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+        # Define FEM model
         model = FEMModel(
             mesh=mesh,
-            field=u,
+            field_layout=field_layout,
             interpolator=interpolator,
-            physics=physics,
+            loss=physics_loss,
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -208,7 +250,7 @@ class Test1dBeamDeflection:
             optimizer.step()
 
         # Evaluate at quadrature points
-        result = model.interpolator.interpolate()
+        result = field_layout["displacement"]
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)

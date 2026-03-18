@@ -46,6 +46,6 @@ class ElasticEnergy(Term):
 
         # Compute du_dx**2
         du_dx = differential.jacobian_field(x, u)
-        inner = torch.einsum("eq...,eq...->eq...", du_dx, du_dx).squeeze()
-
-        return (0.5 * inner) * dx
+        inner = torch.einsum("eq...,eq...->eq", du_dx, du_dx).squeeze()
+        result = (0.5 * inner) * dx.squeeze()
+        return result

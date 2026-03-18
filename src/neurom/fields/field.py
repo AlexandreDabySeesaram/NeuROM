@@ -1,7 +1,7 @@
 import torch
 
 from neurom.fields.field_base import FieldBase
-from neurom.meshes import Topology
+from neurom.meshes.topology import Topology
 
 
 class Field(FieldBase):

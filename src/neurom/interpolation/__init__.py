@@ -1,4 +1,8 @@
-from neurom.interpolation.interpolator import Interpolator
-from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+from neurom.interpolation.quadrature_interpolation_result import (
+    QuadratureInterpolationResult,
+)
+from neurom.interpolation.quadrature_positions import QuadraturePositions
 from neurom.interpolation.field_interpolator import FieldInterpolator
 from neurom.interpolation.quadrature_interpolator import QuadratureInterpolator
+from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+from neurom.interpolation.interpolator import Interpolator

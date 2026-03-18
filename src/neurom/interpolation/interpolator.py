@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
+from typing import TYPE_CHECKING
 
 from neurom.fields.trainable_field import TrainableField
-from neurom.field_layout import FieldLayout
 from neurom.meshes.mesh import Mesh
 from neurom.quadratures.quadrature_rule import QuadratureRule
 from neurom.interpolation.field_interpolator import FieldInterpolator
@@ -10,6 +10,9 @@ from neurom.interpolation.quadrature_interpolator import QuadratureInterpolator
 from neurom.interpolation.quadrature_interpolation_result import (
     QuadratureInterpolationResult,
 )
+
+if TYPE_CHECKING:
+    from neurom.field_layout import FieldLayout
 
 
 class Interpolator(nn.Module):
@@ -60,7 +63,7 @@ class Interpolator(nn.Module):
         m = torch.abs(dx) * w
         return m
 
-    def interpolate(self, field_layout: FieldLayout) -> None:
+    def interpolate(self, field_layout: "FieldLayout") -> None:
         """The main interpolation method
 
         If the self.mesh.nodes_positions are a TrainableField, reperform interpolation of positions.
@@ -70,6 +73,8 @@ class Interpolator(nn.Module):
         Args:
             field_layout (FieldLayout) : The field layout on which we will write the result of the interpolation.
         """
+        from neurom.field_layout import FieldLayout
+
         if isinstance(self.mesh.nodes_positions, TrainableField):
             self.quad_pos = self.quad_inter.interpolate()
 

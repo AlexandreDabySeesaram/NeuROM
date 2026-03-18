@@ -14,7 +14,7 @@ from neurom.interpolation import (
     PointWiseInterpolator,
     Interpolator,
     FieldInterpolator,
-    QuadratureInterpolator,
+    QuadratureInterpolationResult,
 )
 
 from neurom.physics import ElasticEnergy, LoadPotential

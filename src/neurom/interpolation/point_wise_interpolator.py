@@ -3,19 +3,20 @@ import torch.nn as nn
 
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.fields.field_base import FieldBase
+from neurom.meshes.mesh import Mesh
 
 
 class PointWiseInterpolator(nn.Module):
     """Class encapsulating interpolation of a field at arbitrary points"""
 
-    def __init__(self, mesh, sf, field, mapping):
+    def __init__(self, mesh: Mesh, sf: ShapeFunction, field: FieldBase, mapping):
         super().__init__()
         self.mesh = mesh
         self.sf = sf
         self.field = field
         self._mapping = mapping
 
-    def at_position(self, x):
+    def at_position(self, x: torch.Tensor):
         x = x.unsqueeze(1).unsqueeze(2)
         element_ids = self.mesh.elements_at(x)
 

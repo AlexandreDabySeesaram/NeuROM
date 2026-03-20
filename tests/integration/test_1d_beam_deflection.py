@@ -37,7 +37,7 @@ class AnalyticalSolution:
         self.x_max = x_max
 
     def eval(self, x):
-        return 0.5 * self.f(x) * (x - self.x_min) * (x - self.x_max)
+        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
 
 
 class Test1dBeamDeflection:
@@ -63,10 +63,6 @@ class Test1dBeamDeflection:
         # Number of points in the domain
         N = 100
 
-        # Load applied to the beam
-        def f(x):
-            return 1000.0
-
         # Number of training steps
         n_epochs = 5000
         # Learning rate
@@ -79,6 +75,10 @@ class Test1dBeamDeflection:
 
         # Initialize displacement values
         u_init = 0.5 * torch.ones(N, 1)
+
+        # Define constant load
+        load_value = 1000.0
+        load = load_value * torch.ones(N, 1)
 
         # Generate topology
         topology = Topology(nodes, elements)
@@ -108,11 +108,16 @@ class Test1dBeamDeflection:
         # Positions
         x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
 
+        # Load
+        f = field_layout.add(Field(name="load", topology=topology, values=load))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
         # Define interpolator
-        interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
+        interpolator = Interpolator(
+            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
+        )
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -140,7 +145,7 @@ class Test1dBeamDeflection:
         result = field_layout["displacement"]
 
         # Compute analytical solution
-        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
+        solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
         u_sol_train = solution.eval(result.x)
 
         # Check values
@@ -193,6 +198,10 @@ class Test1dBeamDeflection:
         # Initialize displacement values
         u_init = 0.5 * torch.ones(N, 1)
 
+        # Define constant load
+        load_value = 1000.0
+        load = load_value * torch.ones(N, 1)
+
         # Generate topology
         topology = Topology(nodes, elements)
 
@@ -221,11 +230,16 @@ class Test1dBeamDeflection:
         # Positions
         x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
 
+        # Load
+        f = field_layout.add(Field(name="load", topology=topology, values=load))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
         # Define interpolator
-        interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
+        interpolator = Interpolator(
+            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
+        )
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -253,7 +267,7 @@ class Test1dBeamDeflection:
         result = field_layout["displacement"]
 
         # Compute analytical solution
-        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
+        solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
         u_sol_train = solution.eval(result.x)
 
         # Check values

@@ -61,7 +61,9 @@ class Interpolator(nn.Module):
         w = self.quad.weights()
         dx = self.mapping.det_jacobian(self.mesh.nodes_positions.at_elements())
         m = torch.abs(dx) * w
-        return m
+        n_e = dx.shape[0]
+        n_q = w.shape[0]
+        return m.reshape(n_e, n_q, 1)
 
     def interpolate(self, field_layout: "FieldLayout") -> None:
         """The main interpolation method

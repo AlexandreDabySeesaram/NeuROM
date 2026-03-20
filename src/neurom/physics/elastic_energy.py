@@ -1,7 +1,8 @@
 import torch
 
 from neurom.physics.term import Term
-import neurom.differential as differential
+from neurom.differential import jacobian_field
+from neurom.inner import inner
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
 
@@ -45,7 +46,7 @@ class ElasticEnergy(Term):
         dx = quad_interp_res.measure
 
         # Compute du_dx**2
-        du_dx = differential.jacobian_field(x, u)
-        inner = torch.einsum("eq...,eq...->eq", du_dx, du_dx).squeeze()
-        result = (0.5 * inner) * dx.squeeze()
+        du_dx = jacobian_field(x, u)
+        inner_product = inner(du_dx, du_dx)
+        result = (0.5 * inner_product) * dx
         return result

@@ -25,10 +25,6 @@ from neurom.fem_model import FEMModel
 torch.set_default_dtype(torch.float32)
 
 
-def f(x):
-    return 1000.0
-
-
 def main():
     N = 40
     nodes = torch.arange(0, N)
@@ -42,6 +38,10 @@ def main():
     # Initialize displacement value
     u_init = 0.5 * torch.ones(N, 1)
 
+    # Define constant load
+    load = 1000.0 * torch.ones(N, 1)
+
+    # Initialize topology
     topology = Topology(nodes, elements)
 
     # Define shape function to use
@@ -67,11 +67,16 @@ def main():
     # Positions
     x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
 
+    # Load
+    f = field_layout.add(Field(name="load", topology=topology, values=load))
+
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
 
     # Define interpolator
-    interpolator = Interpolator(mesh, quad, mapping, [FieldInterpolator(sf, u)])
+    interpolator = Interpolator(
+        mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
+    )
 
     # Define physics to solve
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)

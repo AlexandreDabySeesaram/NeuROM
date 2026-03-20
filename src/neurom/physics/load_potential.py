@@ -1,7 +1,9 @@
+import torch
+
+from neurom.inner import inner
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-import torch
 
 
 class LoadPotential(Term):
@@ -27,21 +29,21 @@ class LoadPotential(Term):
     :math:`-\\,f(x)\\,u\\,dx` evaluated at each quadrature point.
     """
 
-    def __init__(self, field: FieldBase, f) -> None:
+    def __init__(self, field: FieldBase, f: FieldBase) -> None:
         """Store the field name and load function.
 
         Args:
             field (FieldBase): Displacement (or primary) field.
-            f (Callable[[torch.Tensor], torch.Tensor]): Load density function.
+            f (FieldBase): Body force density.
         """
         self.field_name = field.name
-        self.f = f
+        self.f_name = f.name
 
     def integrand(self, field_layout: FieldLayout) -> torch.Tensor:
         """Compute the load potential integrand.
 
         The method performs:
-        1. Retrieve the interpolation result for the stored field.
+        1. Retrieve the interpolation results for the stored fields.
         2. Evaluate the load function ``f`` at the quadrature points ``x``.
         3. Multiply by the field values ``u`` and the quadrature measure ``dx``
            with a leading minus sign as dictated by the potential energy
@@ -53,9 +55,12 @@ class LoadPotential(Term):
         Returns:
             torch.Tensor: Tensor representing :math:`-\\,f(x)\\,u\\,dx` at each quadrature point.
         """
-        quad_interp_res = field_layout[self.field_name]
-        x = quad_interp_res.x
-        u = quad_interp_res.u
-        dx = quad_interp_res.measure
+        u_interp = field_layout[self.field_name]
+        u = u_interp.u
+        dx = u_interp.measure
 
-        return -(self.f(x) * u).squeeze() * dx
+        f_interp = field_layout[self.f_name]
+        load = f_interp.u
+        inner_product = inner(load, u)
+        result = -inner_product * dx
+        return result

@@ -67,19 +67,58 @@ class TestElasticEnergy:
         """
 
         field = DummyField(name="u")
-        # Two elements, one quadrature point each, 1‑D coordinates
-        x = torch.tensor([[[2.0]], [[5.0]]], requires_grad=True)  # shape (2, 1, 1)
+        # Three elements, two quadratures point each, 1‑D coordinates
+        x = torch.tensor([3.0, 2.0, 2.0, 4.0, 5.0, -6.0], requires_grad=True).reshape(
+            3, 2, 1
+        )  # (3,2,1)
         u = x**2  # u = x^2, retains graph
-        dx = torch.tensor([[[0.5], [0.5]]])  # measure per element
+        dx = 0.5 * torch.ones(3, 2, 1)  # (3,2,1)
+
+        assert x.shape == (3, 2, 1)
+        assert u.shape == (3, 2, 1)
+
         layout = self._setup_layout(field, x, u, dx)
         term = ElasticEnergy(field)
         result = term.integrand(layout)
 
         # 0.5 * (u'(x)))**2 = 2 * x**2
         # dx = 0.5 -> expected = x**2
-        expected = torch.tensor([4.0, 25.0])
-        assert result.squeeze().detach() == pytest.approx(
-            expected, rel=self.relative_tolerance
+        expected = x**2
+        assert expected.shape == (3, 2, 1)
+        assert result.detach() == pytest.approx(
+            expected.detach(), rel=self.relative_tolerance
+        )
+
+    def test_linear_scalar_field_one_quadrature_point(self):
+        """Elastic energy for a non‑constant scalar field on multiple elements.
+
+        Check behavior in case of a single quadrature point to check we don't accidently squeeze out dimensions.
+        We use a 1‑D domain split into two elements with one quadrature point
+        The field is ``u(x) = x**2`` so that ``∇u = 2x`` and the elastic energy density is ``½‖∇u‖² = 2x²``.
+        With a constant measure ``dx = 0.5`` per element the analytical energy is x².
+        """
+
+        field = DummyField(name="u")
+        # Three elements, two quadratures point each, 1‑D coordinates
+        x = torch.tensor([3.0, 2.0, 2.0], requires_grad=True).reshape(
+            3, 1, 1
+        )  # (3,1,1)
+        u = x**2  # u = x^2, retains graph
+        dx = 0.5 * torch.ones(3, 1, 1)  # (3,1,1)
+
+        assert x.shape == (3, 1, 1)
+        assert u.shape == (3, 1, 1)
+
+        layout = self._setup_layout(field, x, u, dx)
+        term = ElasticEnergy(field)
+        result = term.integrand(layout)
+
+        # 0.5 * (u'(x)))**2 = 2 * x**2
+        # dx = 0.5 -> expected = x**2
+        expected = x**2
+        assert expected.shape == (3, 1, 1)
+        assert result.detach() == pytest.approx(
+            expected.detach(), rel=self.relative_tolerance
         )
 
     def test_vector_field_2d(self):
@@ -90,26 +129,30 @@ class TestElasticEnergy:
         With a constant measure ``dx = 0.5`` per element the analytical energy is x²+y².
         """
         field = DummyField(name="u_vec")
-        # Two elements, one quadrature point, 2‑D coordinates
         x = torch.tensor(
-            [[[3.0, 4.0]], [[2.0, 5.0]]], requires_grad=True
-        )  # shape (2, 1, 2)
-
+            [
+                [[3.0, 2.0], [4.0, 45.0]],
+                [[1.0, -4.0], [-4.0, 55.0]],
+                [[7.0, 5.0], [4.0, -9.0]],
+            ],
+            requires_grad=True,
+        )  # (3,2,2)
         # Define u(x,y) = (x**2, y**2)
-        u = torch.zeros(2, 1, 2)
+        u = torch.zeros(3, 2, 2)
         u[:, :, 0] = x[:, :, 0] ** 2
         u[:, :, 1] = x[:, :, 1] ** 2
 
-        dx = torch.tensor([[[0.5], [0.5]]])  # measure per element
+        dx = 0.5 * torch.ones(3, 2, 1)  # (3,2,1)
+
+        assert x.shape == (3, 2, 2)
+        assert u.shape == (3, 2, 2)
 
         layout = self._setup_layout(field, x, u, dx)
 
         term = ElasticEnergy(field)
         result = term.integrand(layout)
 
-        # 3**2 + 4**2 = 25
-        # 2**2 + 5**2 = 29
-        expected = torch.tensor([25.0, 29.0])
-        assert result.squeeze().detach() == pytest.approx(
-            expected, rel=self.relative_tolerance
+        expected = (x[:, :, 0] ** 2 + x[:, :, 1] ** 2).unsqueeze(-1)
+        assert result.detach() == pytest.approx(
+            expected.detach(), rel=self.relative_tolerance
         )

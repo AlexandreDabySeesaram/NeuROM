@@ -13,20 +13,21 @@ class LoadPotential(Term):
         field (FieldBase): The field representing the displacement (or other
             primary variable) to which the load is applied. Its ``name`` attribute
             is stored for later lookup.
-        f (Callable[[torch.Tensor], torch.Tensor]): A callable that evaluates the
-            load density at the quadrature points ``x``. It must return a tensor
-            compatible with the field values ``u``.
+        f (FieldBase): The field representing the load density at quadrature points ``x``
+            load density at the quadrature points ``x``. Its ``name`` attribute
+            is stored for later lookup.
 
     Attributes:
         field_name (str): Name of the associated field used to retrieve the
             interpolation result from a :class:`~neurom.field_layout.FieldLayout`.
-        f (Callable): The load density function.
+        f_name (str): Name of the associated load density field used to retrieve the
+            interpolation result from a :class:`~neurom.field_layout.FieldLayout`.
 
     The potential energy contributed by an external load ``f`` acting on a
     field ``u`` is
-    :math:`-\\int f(x)\\,u\\,dx`.
+    :math:`-\\int f(x)\\,u(x)\\,dx`.
     This class implements the integrand
-    :math:`-\\,f(x)\\,u\\,dx` evaluated at each quadrature point.
+    :math:`-\\,f(x)\\,u(x)\\,dx` evaluated at each quadrature point.
     """
 
     def __init__(self, field: FieldBase, f: FieldBase) -> None:
@@ -53,7 +54,10 @@ class LoadPotential(Term):
             field_layout (FieldLayout): Layout providing access to interpolated field data.
 
         Returns:
-            torch.Tensor: Tensor representing :math:`-\\,f(x)\\,u\\,dx` at each quadrature point.
+            torch.Tensor: Tensor representing :math:`-\\,f(x)\\,u(x)\\,dx` at each quadrature point.
+
+        Note:
+            No checks are performed to know if the same quadrature rule and the same elements were used to interpolate both ``field`` and ``f``.
         """
         u_interp = field_layout[self.field_name]
         u = u_interp.u

@@ -60,7 +60,17 @@ def main():
     )
 
     # Positions
-    x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+    x = field_layout.add(
+        TrainableField(
+            name="positions",
+            topology=topology,
+            init_values=x_array,
+            constraint=Dirichlet(
+                nodes=[0, N - 1],
+                values_imposed=torch.tensor([x_min, x_max]).unsqueeze(-1),
+            ),
+        ),
+    )
 
     # Load
     f = field_layout.add(Field(name="load", topology=topology, values=load))
@@ -77,16 +87,43 @@ def main():
     )
 
     # Define physics to solve
+    mu = 1e12
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
+
+    class FlipLoss(nn.Module):
+        def __init__(self, x, mu: float):
+            super().__init__()
+            self.x = x
+            self.mu = mu
+
+        def forward(self) -> float:
+            x_nodes = self.x.at_elements()
+            J = 0.5 * (x_nodes[:, 1, :] - x_nodes[:, 0, :])
+            result = self.mu * torch.sum(torch.relu(-J) ** 2)
+            return result
+
+    class TotalLoss(nn.Module):
+        def __init__(self, losses):
+            super().__init__()
+            self.losses = losses
+
+        def forward(self) -> float:
+            result = sum([l.forward() for l in self.losses])
+            return result
+
     # Potential energy part of the loss
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+    flip_loss = FlipLoss(x=x, mu=mu)
+
+    total_loss = TotalLoss([physics_loss, flip_loss])
 
     # Define FEM model
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
         interpolator=interpolator,
-        loss=physics_loss,
+        loss=total_loss,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=10)
@@ -97,6 +134,28 @@ def main():
 
     print("* Training")
     n_epochs = 6000
+    for i in range(n_epochs):
+        loss = model()
+
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
+
+        loss_history.append(loss.item())
+        print(f"{i=} loss={loss.item():.3e}", end="\r")
+
+    # Freeze position
+    x.freeze()
+
+    model = FEMModel(
+        mesh=mesh,
+        field_layout=field_layout,
+        interpolator=interpolator,
+        loss=physics_loss,
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-1)
+    print("* Second training")
     for i in range(n_epochs):
         loss = model()
 

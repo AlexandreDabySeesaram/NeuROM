@@ -58,3 +58,6 @@ class TrainableField(FieldBase):
         Get the full values but per element following the topology connectivity.
         """
         return self.full_values()[self.topology.connectivity]
+
+    def freeze(self):
+        self.values_reduced.requires_grad_(False)

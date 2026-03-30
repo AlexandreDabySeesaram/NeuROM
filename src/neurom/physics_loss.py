@@ -26,4 +26,5 @@ class PhysicsLoss(nn.Module):
 
     def forward(self):
         integrand = self.physics.integrand(self.field_layout)
-        return integrate(integrand)
+        result = integrate(integrand)
+        return result

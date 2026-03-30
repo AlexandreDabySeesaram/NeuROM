@@ -39,6 +39,9 @@ class AnalyticalSolution:
     def eval(self, x):
         return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
 
+    def potential_energy(self):
+        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
+
 
 class Test1dBeamDeflection:
     """

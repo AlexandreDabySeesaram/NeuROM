@@ -9,9 +9,13 @@ description = "Various POC for HideNN framework using pytorch."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "gmsh>=4.15.2",
+    "h5py>=3.16.0",
     "matplotlib>=3.10.8",
+    "meshio>=5.3.5",
     "numpy>=2.2.6",
     "torch>=2.10.0",
+    "xmlformatter>=0.2.8",
 ]
 
 #Install with:

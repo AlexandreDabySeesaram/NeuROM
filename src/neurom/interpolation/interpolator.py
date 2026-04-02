@@ -59,7 +59,7 @@ class Interpolator(nn.Module):
         """
         # Compute weighted measure
         w = self.quad.weights()
-        dx = self.mapping.det_jacobian(self.mesh.nodes_positions.at_elements())
+        dx = self.mapping.det_jacobian
         m = torch.abs(dx) * w
         n_e = dx.shape[0]
         n_q = w.shape[0]

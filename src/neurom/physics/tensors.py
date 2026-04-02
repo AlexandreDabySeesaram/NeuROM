@@ -113,7 +113,7 @@ def stress_deviator(stress):
 def stress_von_mises(stress_dev):
     from neurom.inner import inner
 
-    torch.sqrt(1.5 * inner(stress_dev, stress_dev))
+    return torch.sqrt(1.5 * inner(stress_dev, stress_dev))
 
 
 def cauchy_stress(

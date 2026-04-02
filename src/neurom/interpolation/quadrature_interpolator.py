@@ -41,11 +41,8 @@ class QuadratureInterpolator(nn.Module):
         """
         # map to physical space for all quadrature points
         # Tensor of shape (N_e, N_q, dim)
-        x_phys = self.mapping.map(self.xi_ref, self.mesh.nodes_positions.at_elements())
+        x_phys = self.mapping.map(self.xi_ref)
 
         # back‑to‑reference (needed for autograd‑safe field interpolation)
-        xi_back = self.mapping.inverse_map(
-            x_phys, self.mesh.nodes_positions.at_elements()
-        )
-
+        xi_back = self.mapping.inverse_map(x_phys)
         return QuadraturePositions(xi_ref=self.xi_ref, x_phys=x_phys, xi_back=xi_back)

@@ -13,13 +13,14 @@ from neurom.meshes import Topology, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import Interpolator, FieldInterpolator
+from neurom.interpolation import PointWiseInterpolator, Interpolator, FieldInterpolator
 from neurom.physics import SolidElasticEnergy
 from neurom.physics.tensors import *
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 
 from read_mesh import read_mesh
+from is_valid_mesh import is_valid_mesh
 from write_mesh import write_mesh
 
 torch.set_default_dtype(torch.float32)
@@ -61,13 +62,16 @@ def main():
     # Set boundary conditions
     # Tags: 3 == top, 1 == bottom
     dim_tags = data["point_data"]["gmsh:dim_tags"]
+
     mask_top = torch.logical_and(dim_tags[:, 1] == 3, dim_tags[:, 0] == 1)
     mask_bottom = torch.logical_and(dim_tags[:, 1] == 1, dim_tags[:, 0] == 1)
+
     nodes_top = topology.nodes[mask_top]
     nodes_bottom = topology.nodes[mask_bottom]
+    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
+
     u_top = torch.tensor([0.0, -1.0]).expand(nodes_top.shape[0], 2)
     u_bottom = torch.tensor([0.0, 0.0]).expand(nodes_bottom.shape[0], 2)
-    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
     u_bc = torch.cat([u_top, u_bottom])
 
     # Initialize displacement value
@@ -77,8 +81,6 @@ def main():
     sf = LinearTriangle()
     # Define quadrature method
     quad = MidPoint2D()
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping2D(sf)
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
@@ -98,6 +100,10 @@ def main():
 
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
+    if not is_valid_mesh(mesh):
+        raise ValueError("There is an issue with the processed mesh.")
+    # Define mapping (for positions only)
+    mapping = IsoparametricMapping2D(sf, mesh)
 
     # Write init mesh with all fields
     fname = output_dir / "init.xdmf"
@@ -136,7 +142,7 @@ def main():
     loss_history = []
 
     print("* Training")
-    n_epochs = 2000
+    n_epochs = 5000
     for i in range(n_epochs):
         loss = model()
 
@@ -147,11 +153,40 @@ def main():
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
 
-    x = field_layout.add(Field(name="cauchy_stress", topology=topology, values=points))
+    x_nodes = x.full_values().unsqueeze(1)
+    x_nodes.requires_grad_(True)
+
+    pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+    u_interp = pwi.at_position(x_nodes)
+
+    grad_u = jacobian_field(x_nodes, u_interp)
+    strain = green_lagrange_strain(x_nodes, u_interp)
+    sigma = cauchy_stress(
+        x_nodes, u_interp, green_lagrange_strain, linear_elastic_stress_capture
+    )
+    sigma_dev = stress_deviator(sigma)
+    von_mises = stress_von_mises(sigma_dev)
+
+    field_layout.add(Field(name="grad_u", topology=topology, values=grad_u.squeeze(1)))
+    field_layout.add(Field(name="strain", topology=topology, values=strain.squeeze(1)))
+    field_layout.add(Field(name="sigma", topology=topology, values=sigma.squeeze(1)))
+    field_layout.add(
+        Field(name="sigma_dev", topology=topology, values=sigma_dev.squeeze(1))
+    )
+    field_layout.add(
+        Field(name="von_mises", topology=topology, values=von_mises.squeeze(1))
+    )
 
     # Write final mesh with all fields
     fname = output_dir / "result.xdmf"
     write_mesh(fname, mesh, field_layout)
+
+    plt.figure()
+    plt.plot(loss_history)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss")
+    plt.show()
 
 
 if __name__ == "__main__":

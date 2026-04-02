@@ -18,7 +18,7 @@ class MidPoint2D(QuadratureRule):
         # midpoint barycentric
         points = torch.tensor([[1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]])  # (1,2)
 
-        weights = ref.measure[None]  # (1,)
+        weights = torch.tensor([0.5])  # (1,)
 
         self.register_buffer("points_barycentric", points)
         self.register_buffer("weights_ref", weights)

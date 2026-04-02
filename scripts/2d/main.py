@@ -6,7 +6,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 # Import library modules
-from neurom.quadratures import MidPoint2D
+from neurom.quadratures import MidPoint2D, ThreePoints2D
 from neurom.shape_functions import LinearTriangle
 from neurom.geometry import IsoparametricMapping2D
 from neurom.meshes import Topology, Mesh
@@ -138,17 +138,25 @@ def main():
         loss=physics_loss,
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1)
+    optimizer = torch.optim.LBFGS(
+        model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+    )
+
+    def closure():
+        optimizer.zero_grad()
+        loss = model()
+        loss.backward(retain_graph=True)
+        return loss
+
     loss_history = []
 
     print("* Training")
-    n_epochs = 5000
+    n_epochs = 25
     for i in range(n_epochs):
         loss = model()
 
-        optimizer.zero_grad()
-        loss.backward(retain_graph=True)
-        optimizer.step()
+        optimizer.step(closure)
 
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
@@ -166,6 +174,10 @@ def main():
     )
     sigma_dev = stress_deviator(sigma)
     von_mises = stress_von_mises(sigma_dev)
+
+    sigma_yy = sigma[nodes_bottom, 0, 1, 1]
+    sigma_inf = (sigma_yy).sum() / len(nodes_bottom)
+    print(f"sigma_inf = {sigma_inf}")
 
     field_layout.add(Field(name="grad_u", topology=topology, values=grad_u.squeeze(1)))
     field_layout.add(Field(name="strain", topology=topology, values=strain.squeeze(1)))

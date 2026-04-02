@@ -30,12 +30,12 @@ from dataclasses import dataclass
 @dataclass
 class PlateWithHole:
     # Parameters
-    l_x: float = 2.0  # plate width  (x-direction)
-    l_y: float = 2.0  # plate height (y-direction)
-    r: float = 0.3  # hole radius  (must be < min(Lx, Ly) / 2)
+    l_x: float = 10.0  # plate width  (x-direction)
+    l_y: float = 10.0  # plate height (y-direction)
+    r: float = 2.5  # hole radius  (must be < min(Lx, Ly) / 2)
 
-    lc_far: float = 0.15  # mesh size far from the hole (plate corners)
-    lc_hole: float = 0.03  # mesh size on the hole boundary (refined)
+    lc_far: float = 0.5  # mesh size far from the hole (plate corners)
+    lc_hole: float = 0.25  # mesh size on the hole boundary (refined)
 
 
 def generate_mesh(fname: Path, plate: PlateWithHole):

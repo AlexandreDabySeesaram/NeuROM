@@ -8,13 +8,12 @@ from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
-from neurom.constraints import NoConstraint, Dirichlet
+from neurom.constraints import Dirichlet
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     PointWiseInterpolator,
     Interpolator,
     FieldInterpolator,
-    QuadratureInterpolationResult,
 )
 
 from neurom.physics import ElasticEnergy, LoadPotential
@@ -67,7 +66,7 @@ class Test1dBeamDeflection:
         N = 100
 
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -136,13 +135,19 @@ class Test1dBeamDeflection:
             loss=physics_loss,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
         result = field_layout["displacement"]
@@ -189,7 +194,7 @@ class Test1dBeamDeflection:
             return 1000.0
 
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -258,13 +263,19 @@ class Test1dBeamDeflection:
             loss=physics_loss,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
         result = field_layout["displacement"]

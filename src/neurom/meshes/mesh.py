@@ -4,27 +4,62 @@ import torch.nn as nn
 from neurom.meshes.topology import Topology
 
 
-def is_in_triangle(p, a, b, c):
-    p = torch.cat([p, torch.zeros(1, dtype=p.dtype, device=p.device)])
-    a = torch.cat([a, torch.zeros(1, dtype=a.dtype, device=a.device)])
-    b = torch.cat([b, torch.zeros(1, dtype=b.dtype, device=b.device)])
-    c = torch.cat([c, torch.zeros(1, dtype=c.dtype, device=c.device)])
+def is_in_triangle(pts, vertices):
+    """Find if points are in a triangle defined by its vertices
+    Args:
+        pts (torch.Tensor): The points we want to check (N_pts, 2).
+        vertices (torch.Tensor): The triangle vertices (3, N_e)
+    Returns:
+        A boolean torch.Tensor of shape (N_pts, N_e)
+    """
+    # a ---- c
+    #  \   /
+    #   \ /
+    #    b
+    # Get individual vertices positions
+    a, b, c = vertices[:, 0], vertices[:, 1], vertices[:, 2]
 
-    # a ---- b
-    #  \    /
-    #   \  /
-    #    c
-    n = torch.tensor([0.0, 0.0, 1.0])
-    if torch.dot(p - a, torch.linalg.cross(n, b - a)) < 0.0:
-        # print("First")
-        return False
-    if torch.dot(p - b, torch.linalg.cross(n, c - b)) < 0.0:
-        # print("Second")
-        return False
-    if torch.dot(p - c, torch.linalg.cross(n, a - c)) < 0.0:
-        # print("Third")
-        return False
-    return True
+    # Expand for broadcasting: (N_pts, 1, 2) vs (1, N_e, 2)
+    pts = pts[:, None, :]  # (N_pts, 1, 2)
+    a = a[None, :, :]  # (1, N_e, 2)
+    b = b[None, :, :]
+    c = c[None, :, :]
+
+    # 2D cross product (p-a) x (b-a): scalar z-component
+    def cross2d(u, v):
+        return u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]
+
+    # (N_pts, N_e)
+    d0 = cross2d(pts - a, b - a)
+    d1 = cross2d(pts - b, c - b)
+    d2 = cross2d(pts - c, a - c)
+
+    return (d0 <= 0) & (d1 <= 0) & (d2 <= 0)  # (N_pts, N_e)
+
+
+def elements_at_2d(x, nodes_positions, connectivity):
+    """Find all elements corresponding in which pts lie
+
+    Args:
+        x (torch.Tensor): The points to look for (N_pts, 2)
+        nodes_positions (torch.Tensor): The nodes positions (N_nodes, 2)
+        connectivity: The vertices indices (N_e, 3)
+    Returns:
+        elem_ids (torch.Tensor): The element indices found that correspond to the positions of the points (N_pts,)
+    """
+    vertices = nodes_positions[connectivity]  # (N_e, 3, 2)
+    inside = is_in_triangle(x, vertices)  # (N_pts, N_e)
+
+    # First valid element for each query point
+    elem_ids = inside.long().argmax(dim=1)  # (N_pts,)
+
+    # Detect points not in any element
+    not_found = ~inside.any(dim=1)
+    if not_found.any():
+        missing = x[not_found]
+        raise ValueError(f"No element found for points: '{missing}'")
+
+    return elem_ids
 
 
 class Mesh(nn.Module):
@@ -66,41 +101,26 @@ class Mesh(nn.Module):
         return self.topology.n_elements
 
     def elements_at(self, x):
-        """
-        Extract mesh elements ids at which x belongs
+        nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
+        connectivity = self.topology.connectivity  # (N_e, n_nodes_per_elem)
 
-        Args:
-            x (torch.Tensor): The positions for which we will look for an element of the mesh.
-
-        Returns:
-            A tensor with all element ids which own `x`.
-
-        Note:
-            Only works for 1D mesh for now.
-        """
-
-        # List elements to which `x` belongs to.
-        ids = []
         if self.dim == 1:
-            for x_i in x:
-                for e, conn in enumerate(self.topology.connectivity):
-                    x_first = self.nodes_positions.full_values()[conn[0]]
-                    x_second = self.nodes_positions.full_values()[conn[1]]
-                    if x_i >= x_first and x_i <= x_second:
-                        ids.append(e)
-                        break
-        if self.dim == 2:
-            for x_i in x:
-                num = len(ids)
-                for e, conn in enumerate(self.topology.connectivity):
-                    x_0, x_1, x_2 = self.nodes_positions.full_values()[conn]
-                    if is_in_triangle(x_i.squeeze(), x_0, x_1, x_2):
-                        ids.append(e)
-                        break
-                if num == len(ids):
-                    raise ValueError(
-                        f"Did not found element corrsponding to position '{x_i}'"
-                    )
+            # (N_nodes,) -> element intervals
+            x_nodes = nodes[connectivity]  # (N_e, 2)
+            x_lo = x_nodes[:, 0]  # (N_e,)
+            x_hi = x_nodes[:, 1]  # (N_e,)
 
-        element_ids = torch.tensor(ids)
-        return element_ids
+            inside = (x[:, None] >= x_lo[None, :]) & (
+                x[:, None] <= x_hi[None, :]
+            )  # (N_pts, N_e)
+
+            elem_ids = inside.long().argmax(dim=1)
+
+            not_found = ~inside.any(dim=1)
+            if not_found.any():
+                raise ValueError(f"No element found for points: {x[not_found]}")
+
+            return elem_ids
+
+        elif self.dim == 2:
+            return elements_at_2d(x.squeeze(), nodes, connectivity)

@@ -152,7 +152,7 @@ def main():
     loss_history = []
 
     print("* Training")
-    n_epochs = 25
+    n_epochs = 5
     for i in range(n_epochs):
         loss = model()
 

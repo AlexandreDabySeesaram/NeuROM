@@ -89,20 +89,26 @@ def main():
         loss=physics_loss,
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=10)
+    optimizer = torch.optim.LBFGS(
+        model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+    )
+
+    def closure():
+        optimizer.zero_grad()
+        loss = model()
+        loss.backward(retain_graph=True)
+        return loss
+
     loss_history = []
 
     plot_loss = True
     plot_test = True
 
     print("* Training")
-    n_epochs = 6000
+    n_epochs = 5
     for i in range(n_epochs):
         loss = model()
-
-        optimizer.zero_grad()
-        loss.backward(retain_graph=True)
-        optimizer.step()
+        optimizer.step(closure)
 
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")

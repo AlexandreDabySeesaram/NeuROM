@@ -88,24 +88,29 @@ def ElementSize(dimension, **kwargs):
     return MaxElemSize
     
 class Mesh:
-    def __init__(self, name, h_max, order, dimension, welcome =True):
-        """inputs the name of the geometry and the maximum size of the element"""
+    def __init__(self, name, h_max, order, dimension, welcome =True, raw_mesh = False):
+        """inputs the name of the geometry and the maximum size of the element; flag to input raw meshes directly"""
         if welcome:
             PrintWelcome()
-        self.h_max_str      = str(np.around(h_max, decimals=3))
-        self.h_max          = h_max
-        self.order          = str(order)
-        self.dimension      = str(dimension)
-        self.name           = name
-        self.name_mesh      = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
-        self.name_geo       = self.name+'.geo'
-        self.borders_exist  = False
-        if not os.path.isdir("Results"):
-            subprocess.run(["mkdir", "Results"])
-        if not os.path.isdir("Results/Paraview"):
-            subprocess.run(["mkdir", "Results/Paraview"])
-        if not os.path.isdir("Results/Paraview/TimeSeries/"):
-            subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
+        if raw_mesh: 
+            self.name_mesh      = name
+            print("*************** RAW Mesh provided  ****************")
+            print("* Ignoring meshing options")
+        else :
+            self.h_max_str      = str(np.around(h_max, decimals=3))
+            self.h_max          = h_max
+            self.order          = str(order)
+            self.dimension      = str(dimension)
+            self.name           = name
+            self.name_mesh      = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
+            self.name_geo       = self.name+'.geo'
+            self.borders_exist  = False
+            if not os.path.isdir("Results"):
+                subprocess.run(["mkdir", "Results"])
+            if not os.path.isdir("Results/Paraview"):
+                subprocess.run(["mkdir", "Results/Paraview"])
+            if not os.path.isdir("Results/Paraview/TimeSeries/"):
+                subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
     
     def AddBorders(self,borders):
         self.borders = borders

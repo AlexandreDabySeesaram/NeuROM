@@ -11,7 +11,13 @@ from neurom.meshes import Topology, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import PointWiseInterpolator, Interpolator, FieldInterpolator
+from neurom.interpolation import (
+    FieldInterpolator,
+    PointWiseInterpolator,
+    QuadratureContext,
+    QuadratureAssembly,
+    IntegrationDomain,
+)
 
 from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.physics_loss import PhysicsLoss
@@ -68,24 +74,26 @@ def main():
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
 
-    # Define interpolator
-    interpolator = Interpolator(
-        mesh,
-        quad,
-        mapping,
-        [FieldInterpolator(sf, u), FieldInterpolator(sf, f)],
-    )
-
     # Define physics to solve
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
+
     # Potential energy part of the loss
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+    # Define quadrature context
+    ctx = QuadratureContext(mesh, quad, mapping)
+
+    # Define quadrature assemblies
+    assembly_u = QuadratureAssembly(ctx, sf, u)
+    assembly_f = QuadratureAssembly(ctx, sf, f)
+
+    domain = IntegrationDomain([assembly_u, assembly_f])
 
     # Define FEM model
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
-        interpolator=interpolator,
+        integration_domain=domain,
         loss=physics_loss,
     )
 

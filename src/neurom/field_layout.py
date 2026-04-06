@@ -1,9 +1,7 @@
 import torch.nn as nn
 
 from neurom.fields.field_base import FieldBase
-from neurom.interpolation.quadrature_interpolation_result import (
-    QuadratureInterpolationResult,
-)
+from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 
 
 class FieldLayout(nn.Module):
@@ -13,7 +11,7 @@ class FieldLayout(nn.Module):
 
     Attributes:
         _fields : a nn.ModuleDict that holds all the fields that are added to the layout
-        _interp (dict[str, QuadratureInterpolationResult]) : Holds the interpolation results for each field.
+        _interp (dict[str, QuadratureAssemblyResult]) : Holds the interpolation results for each field.
     Note:
         One cannot add() two fields with the same name nor update() an interpolation result of an unregistered field.
     """
@@ -21,7 +19,7 @@ class FieldLayout(nn.Module):
     def __init__(self):
         super().__init__()
         self._fields = nn.ModuleDict()
-        self._interp: dict[str, QuadratureInterpolationResult] = {}
+        self._interp: dict[str, QuadratureAssemblyResult] = {}
 
     def add(self, field: FieldBase) -> FieldBase:
         """Adds a field to the layout
@@ -40,14 +38,14 @@ class FieldLayout(nn.Module):
         self._fields[field.name] = field
         return field
 
-    def update(self, field: FieldBase, result: QuadratureInterpolationResult) -> None:
+    def update(self, field: FieldBase, result: QuadratureAssemblyResult) -> None:
         """Update a field interpolation
 
         Modifies the entry in self._interp with field.name with the new result.
 
         Args:
             field (FieldBase): The field to which we will update the interpolation result.
-            result (QuadratureInterpolationResult): The interpolation result to associate to the field.
+            result (QuadratureAssemblyResult): The interpolation result to associate to the field.
         Raises:
             KeyError if the field.name is not present in the self._fields dictionnary.
         """
@@ -55,7 +53,7 @@ class FieldLayout(nn.Module):
             raise KeyError(f"No field named '{field.name}' registered.")
         self._interp[field.name] = result
 
-    def __getitem__(self, name: str) -> QuadratureInterpolationResult:
+    def __getitem__(self, name: str) -> QuadratureAssemblyResult:
         """Get the result of interpolation of a field
 
         Returns the entry in the self._interp dictionnary for the given name

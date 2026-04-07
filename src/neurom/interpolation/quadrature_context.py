@@ -15,13 +15,16 @@ class QuadratureContext(nn.Module):
 
     Args:
         mesh (Mesh): The mesh on which to interpolate.
-        quad (QuadratureRule): The QuadratureRule to use for setting the points.
         mapping (object): The mapping to use to translate positions from physical to reference space.
+        quad (QuadratureRule): The QuadratureRule to use for setting the points.
 
     Attributes:
-        mesh (Mesh): The mesh on which to interpolate.
-        mapping (object): The mapping to use to translate positions from physical to reference space.
-        xi_ref (torch.Tensor): The positions in reference space duplicated over the number of elements in the mesh.
+        _mesh (Mesh): The mesh on which to interpolate.
+        _mapping (object): The mapping to use to translate positions from physical to reference space.
+        _quad (QuadratureRule): The QuadratureRule to use for setting the points.
+        _xi_ref (torch.Tensor): The positions in reference space duplicated over the number of elements in the mesh.
+        _quad_pos (QuadraturePositions): The quadrature positions at physical, reference, and back from physical to reference.
+        _measure (torch.Tensor): The measure for the all elements and quadrature points, weight * |det_J|. Tensor of shape (N_e,N_q,1).
     """
 
     def __init__(self, mesh: Mesh, quad: QuadratureRule, mapping):
@@ -34,17 +37,18 @@ class QuadratureContext(nn.Module):
         self._setup()
 
     def _setup(self):
-        """Compute all geometry-dependent quantities."""
+        """Compute all geometry-dependent quantities.
+
+        Re-compute measure and quadrature positions.
+        """
         self._compute_measure()
         self._compute_quad_pos()
 
-    def _compute_quad_pos(self) -> QuadraturePositions:
+    def _compute_quad_pos(self) -> None:
         """Interpolate the positions on the mesh
 
         Interpolates the positions from reference to physical positions and then back from physcial to reference.
-
-        Returns:
-            A dataclass QuadraturePositions which contains the positions.
+        Set self._quad_pos with interpolated positions.
         """
         # map to physical space for all quadrature points
         # Tensor of shape (N_e, N_q, dim)
@@ -64,8 +68,8 @@ class QuadratureContext(nn.Module):
     def _compute_measure(self) -> torch.Tensor:
         """Helper method to compute the 'measure'
 
-        Returns:
-            The product of the determinant of the jacobian from physical to reference coordinates mapping times the quadrature weights. Tensor of shape (N_e, N_q).
+        Computes the product of the determinant of the jacobian from physical to reference coordinates mapping times the quadrature weights. Tensor of shape (N_e, N_q, 1).
+        Set self._measure with computed measure.
         """
         # Compute weighted measure
         w = self._quad.weights()
@@ -77,13 +81,23 @@ class QuadratureContext(nn.Module):
         self._measure = m.reshape(n_e, n_q, 1)
 
     @property
-    def measure(self):
+    def measure(self) -> torch.Tensor:
+        """Compute measure
+
+        Returns:
+            (torch.Tensor) of shape (N_e,N_q,1) representing weight * |det_J|.
+        """
         return self._measure
 
     @property
-    def interpolate(self):
+    def interpolate(self) -> QuadraturePositions:
+        """Interpolate positions at quadrature points
+
+        Returns:
+            (QuadraturePositions) with all positions at physical, reference and back from physical to reference.
+        """
         return self._quad_pos
 
     def update(self):
-        self._interpolate()
-        self._measure()
+        self._compute_quad_pos()
+        self._compute_measure()

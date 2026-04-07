@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from typing import TYPE_CHECKING
 
 from neurom.interpolation.field_interpolator import FieldInterpolator
 from neurom.interpolation.quadrature_context import QuadratureContext
@@ -16,17 +15,14 @@ class QuadratureAssembly(nn.Module):
     """Assemble the interpolation at quadrature points
 
     Args:
-        mesh (Mesh): The mesh on which the interpolation is performed.
-        quad (QuadratureRule): The actual quadrature rule to consider for integration.
-        mapping: The mapping to use from reference to physical coordinates.
-        field_interpolators (list[FieldInterpolator]): The list of FieldInterpolator. Represents all the fields we wish to interpolate.
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
     Attributes:
-        mesh (Mesh): The mesh on which the interpolation is performed.
-        quad (QuadratureRule): The actual quadrature rule to consider for integration.
-        mapping: The mapping to use from reference to physical coordinates.
-        field_interpolators (list[FieldInterpolator]): The list of FieldInterpolator. Represents all the fields we wish to interpolate.
-        quad_inter (QuadratureInterpolator): The interpolator strategy for positions at quadrature points.
-        quad_pos (QuadratureInterpolator): The initial result of interpolation of positions. Provides the reference coordinates on which interpolation of ``.field_interpolators`` will be done.
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
+        _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
     """
 
     def __init__(self, context: QuadratureContext, sf: ShapeFunction, field: FieldBase):
@@ -38,11 +34,11 @@ class QuadratureAssembly(nn.Module):
 
     def interpolate(self) -> QuadratureAssemblyResult:
         """The main interpolation method
-        )
-                If the self.mesh.nodes_positions are a TrainableField, reperform interpolation of positions.
-                Finally, iterate for each field in self.field_interpolators and compute interpolation at reference coordinate (self.quad_pos.xi_back) and update() the result in the field_layout.
 
-                Args:
+        Interpolate the field and associates it with the quadrature positions at which it is interpolated and the measure of the element and quadrature points.
+
+        Returns:
+            (QuadratureAssemblyResult) which encapsulates the positions and the interpolated field at the given positions as well as the measure.
         """
         # Get measure and quadrature positions from context
         measure = self.context.measure

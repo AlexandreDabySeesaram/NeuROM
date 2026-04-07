@@ -3,8 +3,8 @@ import torch
 
 from neurom.physics.elastic_energy import ElasticEnergy
 from neurom.field_layout import FieldLayout
-from neurom.interpolation.quadrature_interpolation_result import (
-    QuadratureInterpolationResult,
+from neurom.interpolation.quadrature_assembly_result import (
+    QuadratureAssemblyResult,
 )
 from neurom.fields.field_base import FieldBase
 
@@ -54,7 +54,7 @@ class TestElasticEnergy:
         """
         layout = FieldLayout()
         layout.add(field)
-        result = QuadratureInterpolationResult(x=x, u=u, measure=dx)
+        result = QuadratureAssemblyResult(x=x, u=u, measure=dx)
         layout.update(field, result)
         return layout
 

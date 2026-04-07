@@ -12,8 +12,10 @@ from neurom.constraints import Dirichlet
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     PointWiseInterpolator,
-    Interpolator,
+    QuadratureContext,
+    QuadratureAssembly,
     FieldInterpolator,
+    IntegrationDomain,
 )
 
 from neurom.physics import ElasticEnergy, LoadPotential
@@ -116,9 +118,11 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
-        # Define interpolator
-        interpolator = Interpolator(
-            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
+        # Define quadrature context
+        quad_interp = QuadratureContext(
+            mesh=mesh,
+            quad=quad,
+            mapping=mapping,
         )
 
         # Define physics to solve
@@ -127,11 +131,20 @@ class Test1dBeamDeflection:
         # The loss to use is purely based on physics
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
         # Define FEM model
         model = FEMModel(
             mesh=mesh,
             field_layout=field_layout,
-            interpolator=interpolator,
+            integration_domain=domain,
             loss=physics_loss,
         )
 
@@ -244,22 +257,26 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
-        # Define interpolator
-        interpolator = Interpolator(
-            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
-        )
-
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
 
         # The loss to use is purely based on physics
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
         # Define FEM model
         model = FEMModel(
             mesh=mesh,
             field_layout=field_layout,
-            interpolator=interpolator,
+            integration_domain=domain,
             loss=physics_loss,
         )
 

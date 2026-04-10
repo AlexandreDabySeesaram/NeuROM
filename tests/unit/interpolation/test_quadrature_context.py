@@ -50,7 +50,7 @@ class TestQuadratureContext:
             quad=MidPoint1D(),
             mapping=IsoparametricMapping1D(
                 LinearSegment(),
-                mesh.nodes_positions.at_elements(),
+                mesh,
             ),
         )
 
@@ -103,7 +103,7 @@ class TestQuadratureContext:
         # Call update() and check the interpolation and the measure are now properly computed
         quad_context.update()
 
-        # Check the interpolation and the measure did not change
+        # Check the interpolation and the measure did change
         interp = quad_context.interpolate
         interp_expected = QuadraturePositions(
             xi_ref=torch.tensor([0.0, 0.0, 0.0])[:, None, None],

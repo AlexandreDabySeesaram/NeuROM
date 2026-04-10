@@ -40,9 +40,6 @@ class AnalyticalSolution:
     def eval(self, x):
         return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
 
-    def potential_energy(self):
-        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
-
 
 class Test1dBeamDeflection:
     """
@@ -117,7 +114,7 @@ class Test1dBeamDeflection:
         mesh = Mesh(topology=topology, nodes_positions=x)
 
         # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf, x.at_elements())
+        mapping = IsoparametricMapping1D(sf, mesh)
 
         # Define quadrature context
         quad_interp = QuadratureContext(
@@ -179,11 +176,10 @@ class Test1dBeamDeflection:
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-        u_test = pwi.at_position(x_test).squeeze()
+        u_test = pwi.at_position(x_test)
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
-
         # Check values
         # Note: absolute tolerance because there are 0 at boundaries
         assert u_test.detach().numpy() == pytest.approx(
@@ -257,7 +253,7 @@ class Test1dBeamDeflection:
         mesh = Mesh(topology=topology, nodes_positions=x)
 
         # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf, x.at_elements())
+        mapping = IsoparametricMapping1D(sf, mesh)
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -310,9 +306,9 @@ class Test1dBeamDeflection:
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-        u_test = pwi.at_position(x_test).squeeze()
+        u_test = pwi.at_position(x_test)
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

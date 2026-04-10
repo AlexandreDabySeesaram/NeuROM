@@ -4,6 +4,8 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.shape_functions import LinearSegment
+from neurom.meshes import Topology, Mesh
+from neurom.fields.field import Field
 from neurom.geometry import IsoparametricMapping1D
 
 torch.set_default_dtype(torch.float32)
@@ -12,17 +14,19 @@ torch.set_default_dtype(torch.float32)
 @pytest.fixture
 def mapping():
     """
-    Prepare element with positions and mapping to use.
+    Prepare a mesh with single element with positions and mapping to use.
     """
-    # Create an element: [5., 10.]
+    # Create a mesh with a single element: [5., 10.]
     # (N_e, N_nodes, dim) = (1,2,1)
-    x_nodes = torch.tensor([[5.0, 10.0]]).reshape(1, 2, 1)
-
-    # Shape function
-    sf = LinearSegment()
+    nodes = torch.tensor([0, 1])
+    elements = torch.tensor([0, 1]).reshape(1, 2)
+    topology = Topology(nodes, elements)
+    values = torch.tensor([5.0, 10.0]).reshape(2, 1)
+    x = Field(name="x", topology=topology, values=values)
+    mesh = Mesh(topology=topology, nodes_positions=x)
 
     # Mapping from/to reference/physical coordinates
-    mapping = IsoparametricMapping1D(sf, x_nodes)
+    mapping = IsoparametricMapping1D(LinearSegment(), mesh)
 
     return mapping
 

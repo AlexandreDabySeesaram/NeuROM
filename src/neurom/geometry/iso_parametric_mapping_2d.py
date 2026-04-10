@@ -8,10 +8,11 @@ from neurom.meshes.mesh import Mesh
 class IsoparametricMapping2D(nn.Module):
     """Class encapsulating mapping from physical to reference coordinates"""
 
-    def __init__(self, shape_function: ShapeFunction, x_nodes):
+    def __init__(self, shape_function: ShapeFunction, mesh: Mesh):
         super().__init__()
         self.sf = shape_function
-        self.x_nodes = x_nodes
+        self._mesh = mesh
+        self.x_nodes = self._mesh.nodes_positions.at_elements()
         self._compute_J_inv()
 
     def _compute_J_inv(self):
@@ -110,4 +111,5 @@ class IsoparametricMapping2D(nn.Module):
         return xi
 
     def update(self):
+        self.x_nodes = self._mesh.nodes_positions.at_elements()
         self._compute_J_inv()

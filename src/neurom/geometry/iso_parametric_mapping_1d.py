@@ -2,15 +2,17 @@ import torch
 import torch.nn as nn
 
 from neurom.shape_functions.shape_function import ShapeFunction
+from neurom.meshes.mesh import Mesh
 
 
 class IsoparametricMapping1D(nn.Module):
     """Class encapsulating mapping from physical to reference coordinates"""
 
-    def __init__(self, shape_function: ShapeFunction, x_nodes):
+    def __init__(self, shape_function: ShapeFunction, mesh: Mesh):
         super().__init__()
         self.sf = shape_function
-        self.x_nodes = x_nodes
+        self._mesh = mesh
+        self.x_nodes = self._mesh.nodes_positions.at_elements()
 
     def map(self, xi):
         """
@@ -101,4 +103,4 @@ class IsoparametricMapping1D(nn.Module):
         return 0.5 * (self.x_nodes[:, 1, :] - self.x_nodes[:, 0, :])
 
     def update(self):
-        pass
+        self.x_nodes = self._mesh.nodes_positions.at_elements()

@@ -1,9 +1,10 @@
 import argparse
 from pathlib import Path
-import meshio
+
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
+
 
 # Import library modules
 from neurom.quadratures import MidPoint2D, ThreePoints2D
@@ -11,9 +12,14 @@ from neurom.shape_functions import LinearTriangle
 from neurom.geometry import IsoparametricMapping2D
 from neurom.meshes import Topology, Mesh
 from neurom.constraints import Dirichlet
-from neurom.fields import Field, TrainableField
+from neurom.fields import Field, TrainableField, ElementField
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import PointWiseInterpolator, Interpolator, FieldInterpolator
+from neurom.interpolation import (
+    PointWiseInterpolator,
+    QuadratureContext,
+    QuadratureAssembly,
+    IntegrationDomain,
+)
 from neurom.physics import SolidElasticEnergy
 from neurom.physics.tensors import *
 from neurom.physics_loss import PhysicsLoss
@@ -103,19 +109,16 @@ def main():
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
     # Define mapping (for positions only)
-    mapping = IsoparametricMapping2D(sf, mesh)
+    mapping = IsoparametricMapping2D(sf, x.at_elements())
 
     # Write init mesh with all fields
     fname = output_dir / "init.xdmf"
     write_mesh(fname, mesh, field_layout)
 
-    # Define interpolator
-    interpolator = Interpolator(
-        mesh,
-        quad,
-        mapping,
-        [FieldInterpolator(sf, u)],
-    )
+    # Define interpolation at quadrature
+    ctx = QuadratureContext(mesh, quad, mapping)
+    assembly_u = QuadratureAssembly(ctx, sf, u)
+    domain = IntegrationDomain([assembly_u])
 
     def linear_elastic_stress_capture(strain):
         return linear_elastic_stress(strain, lame_lambda, lame_mu)
@@ -134,7 +137,7 @@ def main():
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
-        interpolator=interpolator,
+        integration_domain=domain,
         loss=physics_loss,
     )
 
@@ -161,32 +164,31 @@ def main():
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
 
-    x_nodes = x.full_values().unsqueeze(1)
-    x_nodes.requires_grad_(True)
+    def project_to_elements(values: torch.Tensor) -> torch.Tensor:
+        """
+        Average quadrature-point values per element.
+        Useful for VTK cell data output of quadrature-level fields (e.g. stress).
+        """
+        return values.mean(dim=1)
 
-    pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-    u_interp = pwi.at_position(x_nodes)
+    result = assembly_u.interpolate()
 
-    grad_u = jacobian_field(x_nodes, u_interp)
-    strain = green_lagrange_strain(x_nodes, u_interp)
+    grad_u = jacobian_field(result.x, result.u)
+    strain = green_lagrange_strain(result.x, result.u)
     sigma = cauchy_stress(
-        x_nodes, u_interp, green_lagrange_strain, linear_elastic_stress_capture
+        result.x, result.u, green_lagrange_strain, linear_elastic_stress_capture
     )
     sigma_dev = stress_deviator(sigma)
     von_mises = stress_von_mises(sigma_dev)
 
-    sigma_yy = sigma[nodes_bottom, 0, 1, 1]
-    sigma_inf = (sigma_yy).sum() / len(nodes_bottom)
-    print(f"sigma_inf = {sigma_inf}")
-
-    field_layout.add(Field(name="grad_u", topology=topology, values=grad_u.squeeze(1)))
-    field_layout.add(Field(name="strain", topology=topology, values=strain.squeeze(1)))
-    field_layout.add(Field(name="sigma", topology=topology, values=sigma.squeeze(1)))
+    field_layout.add(ElementField(name="grad_u", values=project_to_elements(grad_u)))
+    field_layout.add(ElementField(name="strain", values=project_to_elements(strain)))
+    field_layout.add(ElementField(name="sigma", values=project_to_elements(sigma)))
     field_layout.add(
-        Field(name="sigma_dev", topology=topology, values=sigma_dev.squeeze(1))
+        ElementField(name="sigma_dev", values=project_to_elements(sigma_dev))
     )
     field_layout.add(
-        Field(name="von_mises", topology=topology, values=von_mises.squeeze(1))
+        ElementField(name="von_mises", values=project_to_elements(von_mises))
     )
 
     # Write final mesh with all fields

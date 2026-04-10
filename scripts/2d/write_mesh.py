@@ -1,10 +1,10 @@
 import meshio
 from pathlib import Path
 import numpy as np
-import torch
 from typing import Tuple
 
 from neurom.field_layout import FieldLayout
+from neurom.fields import Field, TrainableField, ElementField
 from neurom.meshes import Mesh
 
 
@@ -14,10 +14,11 @@ def write_mesh(fname: Path, mesh: Mesh, field_layout: FieldLayout) -> None:
     Args:
         mesh (Mesh): The mesh.
         field_layout (FieldLayout): The field layout to save.
-        filename epathlib.Path): File name to write the mesh.
+        fname (Path): File name to write the mesh.
 
     The function relies on *meshio* for the actual file writing.
     """
+
     # Convert tensors to NumPy – meshio works with plain NumPy arrays.
     points_np: np.ndarray = mesh.nodes_positions.full_values().detach().cpu().numpy()
 
@@ -29,19 +30,28 @@ def write_mesh(fname: Path, mesh: Mesh, field_layout: FieldLayout) -> None:
     connectivity_np: np.ndarray = mesh.topology.connectivity.detach().cpu().numpy()
     cells = [("triangle", connectivity_np)]
 
-    # Gather point‑wise data from the supplied fields.
-    point_data: dict[str, np.ndarray] = {}
-    # TODO: add iteration over field_layout
-    for field_name, field in field_layout._fields.items():
-        values = field.full_values()
-        # Ensure shape (N, ?) – flatten scalar fields to (N,)
-        values_np = values.detach().cpu().numpy()
-        if values_np.ndim == 2 and values_np.shape[1] == 1:
-            values_np = values_np.squeeze(1)
-        point_data[field_name] = values_np
+    # Containers for mesh data.
+    point_data = {}
+    cell_data = {}
 
-    # Write the file with meshio.
-    mesh = meshio.Mesh(points=points_np, cells=cells, point_data=point_data)
+    # Fill mesh data
+    for name, field in field_layout._fields.items():
+        match field:
+            case Field():
+                point_data[name] = field.full_values().detach().cpu().numpy()
+            case TrainableField():
+                point_data[name] = field.full_values().detach().cpu().numpy()
+            case ElementField():
+                arr = field.values.detach().cpu().numpy()
+                cell_data[name] = [arr]
+
+            case _:
+                raise TypeError(f"{field}")
+
+    mesh = meshio.Mesh(
+        points=points_np, cells=cells, point_data=point_data, cell_data=cell_data
+    )
     fname.parent.mkdir(parents=True, exist_ok=True)
     meshio.write(fname, mesh, file_format="xdmf")
+
     print(f"Exported mesh + fields to {fname}")

@@ -37,6 +37,34 @@ def is_in_triangle(pts, vertices):
     return (d0 <= 0) & (d1 <= 0) & (d2 <= 0)  # (N_pts, N_e)
 
 
+def elements_at_1d(x, nodes_positions, connectivity):
+    """Find all elements corresponding in which pts lie
+
+    Args:
+        x (torch.Tensor): The points to look for (N_pts, 1)
+        nodes_positions (torch.Tensor): The nodes positions (N_nodes, 1)
+        connectivity: The vertices indices (N_e, 3)
+    Returns:
+        elem_ids (torch.Tensor): The element indices found that correspond to the positions of the points (N_pts,)
+    """
+    # (N_nodes,) -> element intervals
+    x_nodes = nodes_positions[connectivity]  # (N_e, 2, 1)
+    x_lo = x_nodes[:, 0]  # (N_e,)
+    x_hi = x_nodes[:, 1]  # (N_e,)
+
+    inside = (x[:, None] >= x_lo[None, :]) & (
+        x[:, None] <= x_hi[None, :]
+    )  # (N_pts, N_e)
+
+    elem_ids = inside.long().argmax(dim=1)
+
+    not_found = ~inside.any(dim=1)
+    if not_found.any():
+        raise ValueError(f"No element found for points: {x[not_found]}")
+
+    return elem_ids.squeeze(-1)
+
+
 def elements_at_2d(x, nodes_positions, connectivity):
     """Find all elements corresponding in which pts lie
 
@@ -105,22 +133,6 @@ class Mesh(nn.Module):
         connectivity = self.topology.connectivity  # (N_e, n_nodes_per_elem)
 
         if self.dim == 1:
-            # (N_nodes,) -> element intervals
-            x_nodes = nodes[connectivity]  # (N_e, 2)
-            x_lo = x_nodes[:, 0]  # (N_e,)
-            x_hi = x_nodes[:, 1]  # (N_e,)
-
-            inside = (x[:, None] >= x_lo[None, :]) & (
-                x[:, None] <= x_hi[None, :]
-            )  # (N_pts, N_e)
-
-            elem_ids = inside.long().argmax(dim=1)
-
-            not_found = ~inside.any(dim=1)
-            if not_found.any():
-                raise ValueError(f"No element found for points: {x[not_found]}")
-
-            return elem_ids
-
+            return elements_at_1d(x.squeeze().unsqueeze(-1), nodes, connectivity)
         elif self.dim == 2:
             return elements_at_2d(x.squeeze(), nodes, connectivity)

@@ -3,8 +3,8 @@ import torch
 
 from neurom.physics.load_potential import LoadPotential
 from neurom.field_layout import FieldLayout
-from neurom.interpolation.quadrature_interpolation_result import (
-    QuadratureInterpolationResult,
+from neurom.interpolation.quadrature_assembly_result import (
+    QuadratureAssemblyResult,
 )
 from neurom.fields.field_base import FieldBase
 
@@ -42,7 +42,7 @@ class TestLoadPotential:
         u: torch.Tensor,
         dx: torch.Tensor,
     ) -> None:
-        """Create a ``FieldLayout`` containing a single ``QuadratureInterpolationResult``.
+        """Create a ``FieldLayout`` containing a single ``QuadratureAssemblyResult``.
 
         Args:
             layout: The FieldLayout to which we will update the given field
@@ -52,7 +52,7 @@ class TestLoadPotential:
             dx: Quadrature measure, shape ``(N_e, N_q, 1)``.
         """
         layout.add(field)
-        result = QuadratureInterpolationResult(x=x, u=u, measure=dx)
+        result = QuadratureAssemblyResult(x=x, u=u, measure=dx)
         layout.update(field, result)
 
     def test_scalar_load(self):

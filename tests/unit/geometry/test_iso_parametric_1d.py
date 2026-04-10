@@ -10,7 +10,7 @@ torch.set_default_dtype(torch.float32)
 
 
 @pytest.fixture
-def setup():
+def mapping():
     """
     Prepare element with positions and mapping to use.
     """
@@ -22,9 +22,9 @@ def setup():
     sf = LinearSegment()
 
     # Mapping from/to reference/physical coordinates
-    mapping = IsoparametricMapping1D(sf)
+    mapping = IsoparametricMapping1D(sf, x_nodes)
 
-    return (x_nodes, mapping)
+    return mapping
 
 
 class TestIsoparametricMapping1D:
@@ -37,19 +37,16 @@ class TestIsoparametricMapping1D:
 
     relative_tolerance: float = 1e-9
 
-    def test_map_reference_to_physical(self, setup):
+    def test_map_reference_to_physical(self, mapping):
         """
         Test mapping from the reference coordinate to the physcal positions
         """
-        x_nodes = setup[0]
-        mapping = setup[1]
-
         # Check a few references coordinates: -1, -0.5, 0, 0.5, 1
         # (N_e, N_q, dim) = (1, 5, 1)
         xi = torch.tensor([[-1, -0.5, 0, 0.5, 1]]).unsqueeze(-1)
 
         # Compute mapping
-        x = mapping.map(xi, x_nodes)
+        x = mapping.map(xi)
 
         # Expected positions in physical space
         x_expected = torch.tensor([[5, 6.25, 7.5, 8.75, 10.0]]).unsqueeze(-1)
@@ -57,18 +54,15 @@ class TestIsoparametricMapping1D:
         # Check values
         assert x == pytest.approx(x_expected, rel=self.relative_tolerance)
 
-    def test_inverse_map_physical_to_reference(self, setup):
+    def test_inverse_map_physical_to_reference(self, mapping):
         """
         Test mapping from the physcal positions to the reference coordinates
         """
-        x_nodes = setup[0]
-        mapping = setup[1]
-
         # Check a few physical positions: -1, -0.5, 0, 0.5, 1
         x = torch.tensor([[5, 6.25, 7.5, 8.75, 10.0]]).unsqueeze(-1)
 
         # Compute mapping
-        xi = mapping.inverse_map(x, x_nodes)
+        xi = mapping.inverse_map(x)
 
         # Expected reference coordinates
         # (N_e, N_q, dim) = (1, 5, 1)
@@ -77,15 +71,13 @@ class TestIsoparametricMapping1D:
         # Check values
         assert xi == pytest.approx(xi_expected, rel=self.relative_tolerance)
 
-    def test_det_jacobian(self, setup):
+    def test_det_jacobian(self, mapping):
         """
         Test computation of determinant of jacobian
         """
-        x_nodes = setup[0]
-        mapping = setup[1]
 
         # Compute mapping
-        det_J = mapping.det_jacobian(x_nodes)
+        det_J = mapping.det_jacobian
 
         det_J_expected = torch.tensor([2.5]).unsqueeze(-1)
 

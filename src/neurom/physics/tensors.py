@@ -117,7 +117,7 @@ def stress_von_mises(stress_dev):
 
 
 def cauchy_stress(
-    x: torch.Tensor, u: torch.Tensor, strain: torch.Tensor, constitutive_law
+    x: torch.Tensor, u: torch.Tensor, strain, constitutive_law
 ) -> torch.Tensor:
     """Compute Cauchy stress based on a displacement field and constitutive law"""
     strain_ = strain(x, u)

@@ -3,8 +3,10 @@ import torch
 
 
 @dataclass(frozen=True)
-class QuadratureInterpolationResult:
-    """Dataclass containing what's needed to integrate a field on quadrature points
+class QuadratureAssemblyResult:
+    """The result of a QuadratureAssembly
+
+    This contains what's needed to integrate a field on quadrature points
 
     Attributes:
         x (torch.Tensor): The physical positions, tensor of shape (N_e, N_q, x_dim).

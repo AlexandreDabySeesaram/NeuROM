@@ -8,13 +8,14 @@ from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
-from neurom.constraints import NoConstraint, Dirichlet
+from neurom.constraints import Dirichlet
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     PointWiseInterpolator,
-    Interpolator,
+    QuadratureContext,
+    QuadratureAssembly,
     FieldInterpolator,
-    QuadratureInterpolationResult,
+    IntegrationDomain,
 )
 
 from neurom.physics import ElasticEnergy, LoadPotential
@@ -67,7 +68,7 @@ class Test1dBeamDeflection:
         N = 100
 
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -90,8 +91,6 @@ class Test1dBeamDeflection:
         sf = LinearSegment()
         # Quadrature strategy
         quad = MidPoint1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
 
         # Prepare Field layout and fill it with actual fields
         field_layout = FieldLayout()
@@ -117,9 +116,14 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
-        # Define interpolator
-        interpolator = Interpolator(
-            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf, x.at_elements())
+
+        # Define quadrature context
+        quad_interp = QuadratureContext(
+            mesh=mesh,
+            quad=quad,
+            mapping=mapping,
         )
 
         # Define physics to solve
@@ -128,21 +132,36 @@ class Test1dBeamDeflection:
         # The loss to use is purely based on physics
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
         # Define FEM model
         model = FEMModel(
             mesh=mesh,
             field_layout=field_layout,
-            interpolator=interpolator,
+            integration_domain=domain,
             loss=physics_loss,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
         result = field_layout["displacement"]
@@ -158,7 +177,7 @@ class Test1dBeamDeflection:
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
         u_test = pwi.at_position(x_test).squeeze()
 
@@ -189,7 +208,7 @@ class Test1dBeamDeflection:
             return 1000.0
 
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -212,8 +231,6 @@ class Test1dBeamDeflection:
         sf = LinearSegment()
         # Quadrature strategy
         quad = TwoPoints1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
 
         # Prepare Field layout and fill it with actual fields
         field_layout = FieldLayout()
@@ -239,10 +256,8 @@ class Test1dBeamDeflection:
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
 
-        # Define interpolator
-        interpolator = Interpolator(
-            mesh, quad, mapping, [FieldInterpolator(sf, u), FieldInterpolator(sf, f)]
-        )
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf, x.at_elements())
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -250,21 +265,36 @@ class Test1dBeamDeflection:
         # The loss to use is purely based on physics
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
         # Define FEM model
         model = FEMModel(
             mesh=mesh,
             field_layout=field_layout,
-            interpolator=interpolator,
+            integration_domain=domain,
             loss=physics_loss,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
         result = field_layout["displacement"]

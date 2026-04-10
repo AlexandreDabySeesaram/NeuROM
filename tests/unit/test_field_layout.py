@@ -3,8 +3,8 @@ import torch
 
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-from neurom.interpolation.quadrature_interpolation_result import (
-    QuadratureInterpolationResult,
+from neurom.interpolation.quadrature_assembly_result import (
+    QuadratureAssemblyResult,
 )
 
 torch.set_default_dtype(torch.float32)
@@ -60,7 +60,7 @@ def test_add_returns_field():
 def test_update_and_access():
     """After ``update`` the stored interpolation can be accessed via ``[]``.
 
-    The test creates a dummy ``QuadratureInterpolationResult`` and checks
+    The test creates a dummy ``QuadratureAssemblyResult`` and checks
     that ``layout[field.name]`` returns the same object.
     """
     layout = FieldLayout()
@@ -68,7 +68,7 @@ def test_update_and_access():
     layout.add(field)
 
     # Create a dummy interpolation result.
-    result = QuadratureInterpolationResult(
+    result = QuadratureAssemblyResult(
         x=torch.randn(2, 3, 1),
         u=torch.randn(2, 3, 1),
         measure=torch.randn(2, 3, 1),
@@ -90,7 +90,7 @@ def test_update_missing_field_raises():
     field = DummyField(name="pressure")
 
     # Prepare dummy QIR
-    result = QuadratureInterpolationResult(
+    result = QuadratureAssemblyResult(
         x=torch.empty(0), u=torch.empty(0), measure=torch.empty(0)
     )
 

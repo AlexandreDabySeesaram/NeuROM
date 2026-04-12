@@ -93,9 +93,15 @@ class Mesh:
         if welcome:
             PrintWelcome()
         if raw_mesh: 
-            self.name_mesh      = name
+            self.name_mesh      = name+".msh"
             print("*************** RAW Mesh provided  ****************")
             print("* Ignoring meshing options")
+            self.borders_exist  = False
+            self.order          = str(order)
+            self.dimension      = str(dimension)
+            self.name           = name
+            self.h_max_str      = str(np.around(h_max, decimals=3))
+            self.h_max          = h_max
         else :
             self.h_max_str      = str(np.around(h_max, decimals=3))
             self.h_max          = h_max
@@ -105,12 +111,12 @@ class Mesh:
             self.name_mesh      = self.name+'_order_'+self.order+'_'+self.h_max_str+'.msh'
             self.name_geo       = self.name+'.geo'
             self.borders_exist  = False
-            if not os.path.isdir("Results"):
-                subprocess.run(["mkdir", "Results"])
-            if not os.path.isdir("Results/Paraview"):
-                subprocess.run(["mkdir", "Results/Paraview"])
-            if not os.path.isdir("Results/Paraview/TimeSeries/"):
-                subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
+        if not os.path.isdir("Results"):
+            subprocess.run(["mkdir", "Results"])
+        if not os.path.isdir("Results/Paraview"):
+            subprocess.run(["mkdir", "Results/Paraview"])
+        if not os.path.isdir("Results/Paraview/TimeSeries/"):
+            subprocess.run(["mkdir", "Results/Paraview/TimeSeries/"])
     
     def AddBorders(self,borders):
         self.borders = borders

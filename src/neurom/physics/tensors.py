@@ -7,7 +7,7 @@ from neurom.differential import jacobian_field
 def trace(u: torch.Tensor) -> torch.Tensor:
     """Compute trace of a field
 
-    The inner product is computed over the field dimensions for all elements and quadrature points N_e an N_q.
+    The trace  is computed over the field dimensions for all elements and quadrature points N_e an N_q.
 
     Args:
         u (torch.Tensor): First (N_e, N_q, *u_shape)
@@ -21,7 +21,6 @@ def trace(u: torch.Tensor) -> torch.Tensor:
             f"Need at least 3 dimensions but got tensor with shape: '{u.shape}'"
         )
 
-    n_e, n_q = u.shape[:2]
     dim = u.shape[2:]
 
     if dim == (1,):

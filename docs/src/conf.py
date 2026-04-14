@@ -7,7 +7,7 @@ import sys
 # Project information
 # -----------------------------------------------------------------------------
 project = "neurom"
-author = "Alexandre Daby, et al. [TODO]"
+author = "Alexandre Daby, Jules Dichamp, Martin Genet and Kateřina Škardová."
 copyright = "2026, Alexandre Daby"
 release = "0.1.0"
 

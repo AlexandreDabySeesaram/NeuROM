@@ -3,7 +3,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
+import torch.profiler
 import torch.nn as nn
+import pandas as pd
 
 
 # Import library modules
@@ -109,7 +111,7 @@ def main():
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
     # Define mapping (for positions only)
-    mapping = IsoparametricMapping2D(sf, x.at_elements())
+    mapping = IsoparametricMapping2D(sf, mesh)
 
     # Write init mesh with all fields
     fname = output_dir / "init.xdmf"
@@ -149,18 +151,61 @@ def main():
     def closure():
         optimizer.zero_grad()
         loss = model()
-        loss.backward(retain_graph=True)
+        if loss.requires_grad:
+            loss.backward()
         return loss
+
+    # Profile using torch.profiler
+    profile = False
+    if profile:
+
+        def profile_training(n_steps=1):
+            with torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                profile_memory=True,
+                with_stack=True,
+                record_shapes=True,
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=n_steps),
+            ) as prof:
+                for _ in range(n_steps + 2):
+                    optimizer.step(closure)
+                    prof.step()
+
+            # export operator table and memory timeline
+            # prof.export_memory_timeline("mem_timeline.json", device="cpu")
+            print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+            prof.export_chrome_trace("trace.json")
+            events = prof.key_averages()
+
+            return prof
+
+        prof = profile_training(n_steps=5)
+        events = prof.key_averages()
+        data = [
+            {
+                "name": e.key,
+                "cpu_time_total": e.cpu_time_total,
+                "self_cpu_time_total": e.self_cpu_time_total,
+                "cpu_memory": e.cpu_memory_usage,
+                "calls": e.count,
+            }
+            for e in events
+        ]
+
+        df = pd.DataFrame(data)
+
+        # Save for later plotting
+        df.to_json("aggregated_profile.json", orient="records")
 
     loss_history = []
 
     print("* Training")
     n_epochs = 5
     for i in range(n_epochs):
-        loss = model()
-
-        optimizer.step(closure)
-
+        loss = optimizer.step(closure)
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
 

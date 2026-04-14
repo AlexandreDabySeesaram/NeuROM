@@ -6,6 +6,8 @@ from neurom.quadratures.quadrature_rule import QuadratureRule
 from neurom.interpolation.quadrature_positions import QuadraturePositions
 from neurom.meshes.mesh import Mesh
 
+from neurom.samplings import QuadratureSampling
+
 
 class QuadratureContext(nn.Module):
     """Provides context of interpolation at quadrature points
@@ -58,7 +60,9 @@ class QuadratureContext(nn.Module):
         xi_back = self._mapping.inverse_map(x_phys)
 
         self._quad_pos = QuadraturePositions(
-            xi_ref=self._xi_ref, x_phys=x_phys, xi_back=xi_back
+            xi_ref=QuadratureSampling(self._xi_ref),
+            x_phys=QuadratureSampling(x_phys),
+            xi_back=QuadratureSampling(xi_back),
         )
 
     def _compute_measure(self) -> torch.Tensor:
@@ -74,7 +78,7 @@ class QuadratureContext(nn.Module):
         n_e = dx.shape[0]
         n_q = w.shape[0]
 
-        self._measure = m.reshape(n_e, n_q, 1)
+        self._measure = QuadratureSampling(m.reshape(n_e, n_q, 1))
 
     @property
     def measure(self) -> torch.Tensor:

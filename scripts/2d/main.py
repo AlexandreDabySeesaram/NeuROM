@@ -217,11 +217,13 @@ def main():
         return values.mean(dim=1)
 
     result = assembly_u.interpolate()
+    x_final = result.x.values
+    u_final = result.u.values
 
-    grad_u = jacobian(result.x, result.u)
-    strain = green_lagrange_strain(result.x, result.u)
+    grad_u = jacobian(x_final, u_final)
+    strain = green_lagrange_strain(x_final, u_final)
     sigma = cauchy_stress(
-        result.x, result.u, green_lagrange_strain, linear_elastic_stress_capture
+        x_final, u_final, green_lagrange_strain, linear_elastic_stress_capture
     )
     sigma_dev = stress_deviator(sigma)
     von_mises = stress_von_mises(sigma_dev)

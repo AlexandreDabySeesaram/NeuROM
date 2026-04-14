@@ -49,8 +49,6 @@ def main():
     sf = LinearSegment()
     # Define quadrature method
     quad = TwoPoints1D()
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping1D(sf)
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
@@ -73,6 +71,9 @@ def main():
 
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
+
+    # Define mapping (for positions only)
+    mapping = IsoparametricMapping1D(sf, mesh)
 
     # Define physics to solve
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
@@ -128,7 +129,7 @@ def main():
     # At test points
     x_test = torch.linspace(0, 6, 30)
     pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-    u_test = pwi.at_position(x_test).squeeze()
+    u_test = pwi.at_position(x_test).squeeze().detach()
     if plot_loss:
         plt.figure()
         plt.plot(loss_history)

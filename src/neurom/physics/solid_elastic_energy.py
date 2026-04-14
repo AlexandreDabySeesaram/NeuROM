@@ -2,7 +2,7 @@ import torch
 
 from neurom.physics.term import Term
 from neurom.physics.tensors import cauchy_stress
-from neurom.inner import inner
+from neurom.math.inner import inner
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
 

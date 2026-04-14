@@ -1,12 +1,15 @@
 import torch
-from torch.func import jacrev, vmap
 
 
-def jacobian_field(x, u):
-    """
-    x: (N_e, N_q, d)
-    u: (N_e, N_q, *u_shape)
-    returns: (N_e, N_q, *u_shape, d)
+def jacobian(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+    """Compute the Jacobian of u w.r.t. x using autograd.
+
+    Args:
+        x (torch.Tensor) : The variable with respect to which gradient is computed. Shape is (N_e, N_q, x_dim).
+        u (torch.Tensor) : The field whose Jacobian we want. Shape is (N_e, N_q, *u_shape).
+
+    Returns:
+        torch.Tensor: The Jacobian of u w.r.t. x. Shape is (N_e, N_q, *u_shape, x_dim).
     """
     N_e, N_q, d = x.shape
     u_shape = u.shape[2:]

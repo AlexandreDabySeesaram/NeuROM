@@ -1,14 +1,14 @@
 import torch
 
 
-def inner(u: torch.Tensor, v: torch.Tensor):
+def inner(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     """Compute inner product
 
     The inner product is computed over the field dimensions for all elements and quadrature points N_e an N_q.
 
     Args:
         u (torch.Tensor): First (N_e, N_q, *u_shape)
-        v: (N_e, N_q, *u_shape)
+        v (torch.Tensor): (N_e, N_q, *v_shape)
     Returns:
         A torch.Tensor of shape (N_e, N_q, 1) representing the inner product over the fields dimensions.
     Raises:

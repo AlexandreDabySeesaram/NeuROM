@@ -1,6 +1,6 @@
 import torch
 
-from neurom.inner import inner
+from neurom.math.inner import inner
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase

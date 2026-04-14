@@ -218,7 +218,7 @@ def main():
 
     result = assembly_u.interpolate()
 
-    grad_u = jacobian_field(result.x, result.u)
+    grad_u = jacobian(result.x, result.u)
     strain = green_lagrange_strain(result.x, result.u)
     sigma = cauchy_stress(
         result.x, result.u, green_lagrange_strain, linear_elastic_stress_capture

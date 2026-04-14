@@ -1,7 +1,7 @@
 import torch
-from typing import Callable
 
-from neurom.differential import jacobian_field
+from neurom.math.jacobian import jacobian
+from neurom.math.inner import inner
 
 
 def trace(u: torch.Tensor) -> torch.Tensor:
@@ -100,7 +100,7 @@ def linear_elastic_stress(
 
 def green_lagrange_strain(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
     """Compute green lagrange strain based on displacement field"""
-    du_dx = jacobian_field(x, u)
+    du_dx = jacobian(x, u)
     epsilon = 0.5 * (du_dx + transpose(du_dx))
     return epsilon
 
@@ -110,7 +110,7 @@ def stress_deviator(stress):
 
 
 def stress_von_mises(stress_dev):
-    from neurom.inner import inner
+    from neurom.math.inner import inner
 
     return torch.sqrt(1.5 * inner(stress_dev, stress_dev))
 

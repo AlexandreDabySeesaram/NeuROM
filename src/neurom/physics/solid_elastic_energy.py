@@ -38,9 +38,9 @@ class SolidElasticEnergy(Term):
             torch.Tensor: Tensor representing the elastic energy density multiplied by the measure at each quadrature point.
         """
         quad_interp_res = field_layout[self.field_name]
-        x = quad_interp_res.x.values
-        u = quad_interp_res.u.values
-        dx = quad_interp_res.measure.values
+        x = quad_interp_res.x
+        u = quad_interp_res.u
+        dx = quad_interp_res.measure
         epsilon = self.strain(x, u)
         sigma = cauchy_stress(x, u, self.strain, self.constitutive_law)
 

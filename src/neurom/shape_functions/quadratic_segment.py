@@ -1,12 +1,12 @@
 import torch
 
-from neurom.reference_elements.segment import Segment
+from neurom.reference_elements.bar import Bar
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
 class QuadraticSegment(ShapeFunction):
     def __init__(self):
-        super().__init__(Segment())
+        super().__init__(Bar())
 
     def N(self, xi_q):
 

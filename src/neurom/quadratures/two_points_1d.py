@@ -2,7 +2,7 @@ from abc import ABC
 import torch
 import torch.nn as nn
 
-from neurom.reference_elements.segment import Segment
+from neurom.reference_elements.bar import Bar
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -12,7 +12,7 @@ class TwoPoints1D(QuadratureRule):
     """
 
     def __init__(self):
-        ref = Segment()
+        ref = Bar()
         super().__init__(ref)
 
         # Gauss points in barycentric coordinates

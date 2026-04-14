@@ -3,9 +3,9 @@ import torch
 from neurom.reference_elements.reference_element import ReferenceElement
 
 
-class Segment(ReferenceElement):
+class Bar(ReferenceElement):
     """
-    Segment [-1, 1] embedded in 1D reference space.
+    Bar element [-1, 1] embedded in 1D reference space.
 
     simplex size: (N_nodes, dim_ref) = (2, 1)
     """

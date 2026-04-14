@@ -12,7 +12,7 @@ class Triangle(ReferenceElement):
     """
 
     def __init__(self):
-        simplex = torch.tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 1.0]])  # (3,2)
+        simplex = torch.tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0]])  # (3,2)
 
         measure = torch.tensor(0.5 * math.sqrt(3.0))
 

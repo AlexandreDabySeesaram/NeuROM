@@ -23,13 +23,25 @@ def green_lagrange_strain(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
     return epsilon
 
 
-def stress_deviator(stress):
+def stress_deviator(stress: torch.Tensor) -> torch.Tensor:
+    """Compute the deviatoric part of the stress tensor
+
+    Args:
+        stress (torch.Tensor): Cauchy stress tensor of shape (N_e, N_q, d, d)
+    Returns:
+        torch.Tensor: Deviatoric stress tensor of shape (N_e, N_q, d, d)
+    """
     return stress - 1.0 / 3.0 * trace(stress).unsqueeze(-1) * identity(stress.shape)
 
 
 def stress_von_mises(stress_dev):
-    from neurom.math.inner import inner
+    """Compute the von Mises equivalent stress from the deviatoric stress tensor
 
+    Args:
+        stress_dev (torch.Tensor): Deviatoric stress tensor of shape (N_e, N_q, d, d)
+    Returns:
+        torch.Tensor: Von Mises equivalent stress of shape (N_e, N_q)
+    """
     return torch.sqrt(1.5 * inner(stress_dev, stress_dev))
 
 

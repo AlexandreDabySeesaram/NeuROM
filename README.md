@@ -1,5 +1,27 @@
 # NeuROM, a NN-PGD architecture based on the HiDeNN Framework
 
+## ⚠️ Important Notice
+
+The code is currently under a complete **refactor**. If you want to work on the version associated with the publications, it is advised to use the [latest release](https://github.com/AlexandreDabySeesaram/NeuROM/releases/tag/v4.0.5.post0). To clone it and work from there:
+```bash
+git clone https://github.com/AlexandreDabySeesaram/NeuROM.git --branch v4.0.5.post0 source
+cd source
+git checkout -B my-branch
+```
+
+You can also use the package available on the [`PyPI` repo](https://pypi.org/project/neurom/). To install it in a `conda` environment: 
+```bash
+conda create -n neurom-env python=3.12
+pip3 install neurom-py
+```
+
+To improve performances it is recommanded to further install the optimisation of einsum using conda as follows
+```bash
+conda install opt_einsum -c conda-forge
+```
+
+## Project's description
+
 <h1 align="center">
 <img src="https://alexandredabyseesaram.github.io/Resources/Images/NeuROM_ter.svg" width="350">
 </h1><br>
@@ -20,126 +42,10 @@ This code implements a Finite Element Neural Network Interpolation (FENNI) based
 
 ## Installation
 
-Start by creating a `conda` environment as follow:
-
-```
-conda create -n neurom-env python=3.12
-```
-
-### From PyPI
-You can install the latest stable version of NeuROM directly from PyPI using pip:
-
+NeuROM uses [`uv`](https://docs.astral.sh/uv/) as a package and project manager. To install the code from source:
 ```bash
-pip install neurom-py
+uv pip install -e .
 ```
-
-
-### From the sources (`GitHub`) in editable mode
-
-The package can also be installed from the sources in editable mode so that the user can modifiy the sources and run the modified version in a straightforward manner by
-
-```bash
-git clone https://github.com/AlexandreDabySeesaram/NeuROM.git neurom
-cd neurom
-pip install -e .
-```
-
-### Recommendation 
-
-To improve performances it is recommanded to further install the optimisation of einsum using conda as follows
-
-````
-conda install opt_einsum -c conda-forge
-````
-
-## Using the code
-
-**TODO**
-
-## Repository's structure
-``````
-.
-├── docs
-│   ├── Makefile
-│   └── src
-│       ├── conf.py
-│       └── index.md
-├── pyproject.toml
-├── README.md
-├── scripts
-│   ├── 1d_notebook
-│   │   └── main.py
-│   └── design_poc
-│       └── main.py
-├── src
-│   ├── neurom
-│   │   ├── constraints
-│   │   │   ├── constraint.py
-│   │   │   ├── dirichlet.py
-│   │   │   ├── __init__.py
-│   │   │   └── no_constraint.py
-│   │   ├── fem_model.py
-│   │   ├── field.py
-│   │   ├── geometry
-│   │   │   ├── barycentric_to_reference.py
-│   │   │   ├── __init__.py
-│   │   │   └── iso_parametric_mapping_1d.py
-│   │   ├── __init__.py
-│   │   ├── integrator.py
-│   │   ├── interpolator.py
-│   │   ├── meshes
-│   │   │   ├── __init__.py
-│   │   │   ├── mesh.py
-│   │   │   └── topology.py
-│   │   ├── quadratures
-│   │   │   ├── __init__.py
-│   │   │   ├── mid_point_1d.py
-│   │   │   ├── quadrature_rule.py
-│   │   │   └── two_points_1d.py
-│   │   ├── reference_elements
-│   │   │   ├── __init__.py
-│   │   │   ├── reference_element.py
-│   │   │   └── segment.py
-│   │   └── shape_functions
-│   │       ├── __init__.py
-│   │       ├── linear_segment.py
-│   │       ├── quadratic_segment.py
-│   │       └── shape_function.py
-│   └── neurom.egg-info
-│       ├── dependency_links.txt
-│       ├── PKG-INFO
-│       ├── requires.txt
-│       ├── SOURCES.txt
-│       └── top_level.txt
-├── tests
-│   ├── integration
-│   │   └── test_1d_beam_deflection.py
-│   └── unit
-│       └── test_iso_parametric_1d.py
-└── uv.lock
-
-
-## Architecture of the NN
-
-**TODO**
-
-### Data entry
-
-**TODO**
-
-### Space interpolation
-
-**TODO**
-
-
-### Reduced-order modelling
-
-**TODO**
-
-
-## Training the NN 
-
-**TODO**
 
 ## Licensing
 

@@ -9,7 +9,7 @@ accessing the shape, batch dimensions, and field dimensions.
 
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-import torch
+import torch  # type: ignore
 
 
 @dataclass
@@ -23,6 +23,27 @@ class Sampling(ABC):
     """
 
     values: torch.Tensor
+
+    def __add__(self, o):
+        if not isinstance(o, Sampling):
+            return NotImplemented
+        return self.__class__(self.values + o.values)
+
+    def __sub__(self, o):
+        if not isinstance(o, Sampling):
+            return NotImplemented
+        return self.__class__(self.values - o.values)
+
+    def __neg__(self):
+        return self.__class__(-self.values)
+
+    def __mul__(self, s: float):
+        breakpoint()
+        return self.__class__(s * self.values)
+
+    def __rmul__(self, s: float):
+        breakpoint()
+        return self.__class__(s * self.values)
 
     @property
     def shape(self) -> torch.Size:

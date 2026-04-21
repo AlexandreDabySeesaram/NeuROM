@@ -1,7 +1,26 @@
 import torch
 
+from neurom.samplings import Sampling
+from neurom.apply import apply
 
-def trace(u: torch.Tensor) -> torch.Tensor:
+
+def trace_point(u: torch.Tensor) -> torch.Tensor:
+    """Compute trace of a field
+
+    The trace is computed over the field dimensions for a single point.
+
+    Args:
+        u (torch.Tensor): Tensor of which we will compute the trace (*u_shape)
+    Returns:
+        A torch.Tensor of shape (1,) representing the trace of the field.
+    """
+    if u.ndim == 1:
+        return u.clone()
+
+    return u.diagonal().sum()
+
+
+def trace(u: Sampling) -> Sampling:
     """Compute trace of a field
 
     The trace is computed over the field dimensions for all elements and quadrature points N_e an N_q.
@@ -13,17 +32,4 @@ def trace(u: torch.Tensor) -> torch.Tensor:
     Raises:
         ValueError if u.shape is not a tensor
     """
-    if u.ndim < 3:
-        raise ValueError(
-            f"Need at least 3 dimensions but got tensor with shape: '{u.shape}'"
-        )
-
-    dim = u.shape[2:]
-
-    if dim == (1,):
-        return u
-
-    if len(dim) == 2 and dim[0] == dim[1]:
-        return torch.einsum("eqii->eq", u).unsqueeze(-1)
-
-    raise ValueError(f"Cannot compute identity for tensor with shape: '{u.shape}'")
+    return apply(trace_point, u)

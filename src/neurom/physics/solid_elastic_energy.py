@@ -1,10 +1,10 @@
 import torch
 
 from neurom.physics.term import Term
-from neurom.physics.tensors import cauchy_stress
-from neurom.math.inner import inner
+from neurom.math.inner import inner, inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
+from neurom.apply import apply
 
 
 class SolidElasticEnergy(Term):
@@ -38,13 +38,13 @@ class SolidElasticEnergy(Term):
             torch.Tensor: Tensor representing the elastic energy density multiplied by the measure at each quadrature point.
         """
         quad_interp_res = field_layout[self.field_name]
-        x = quad_interp_res.x.values
-        u = quad_interp_res.u.values
-        dx = quad_interp_res.measure.values
+        x = quad_interp_res.x
+        u = quad_interp_res.u
+        dx = quad_interp_res.measure
+
         epsilon = self.strain(x, u)
-        sigma = cauchy_stress(x, u, self.strain, self.constitutive_law)
 
         # Compute sigma(u):epsilon(u)
-        inner_product = inner(sigma, epsilon)
-        result = (0.5 * inner_product) * dx
+        inner_product = apply(inner_point, epsilon, self.constitutive_law(epsilon))
+        result = (0.5 * inner_product.values) * dx.values
         return result

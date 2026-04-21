@@ -122,14 +122,14 @@ def main():
     assembly_u = QuadratureAssembly(ctx, sf, u)
     domain = IntegrationDomain([assembly_u])
 
-    def linear_elastic_stress_capture(strain):
+    def law(strain):
         return linear_elastic_stress(strain, lame_lambda, lame_mu)
 
     # Define physics to solve
     physics = SolidElasticEnergy(
         field=u,
         strain=green_lagrange_strain,
-        constitutive_law=linear_elastic_stress_capture,
+        constitutive_law=law,
     )
 
     # Potential energy part of the loss
@@ -155,51 +155,6 @@ def main():
             loss.backward()
         return loss
 
-    # Profile using torch.profiler
-    profile = False
-    if profile:
-
-        def profile_training(n_steps=1):
-            with torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                ],
-                profile_memory=True,
-                with_stack=True,
-                record_shapes=True,
-                schedule=torch.profiler.schedule(wait=1, warmup=1, active=n_steps),
-            ) as prof:
-                for _ in range(n_steps + 2):
-                    optimizer.step(closure)
-                    prof.step()
-
-            # export operator table and memory timeline
-            # prof.export_memory_timeline("mem_timeline.json", device="cpu")
-            print(prof.key_averages().table(sort_by="self_cpu_time_total"))
-            prof.export_chrome_trace("trace.json")
-            events = prof.key_averages()
-
-            return prof
-
-        prof = profile_training(n_steps=5)
-        events = prof.key_averages()
-        data = [
-            {
-                "name": e.key,
-                "cpu_time_total": e.cpu_time_total,
-                "self_cpu_time_total": e.self_cpu_time_total,
-                "cpu_memory": e.cpu_memory_usage,
-                "calls": e.count,
-            }
-            for e in events
-        ]
-
-        df = pd.DataFrame(data)
-
-        # Save for later plotting
-        df.to_json("aggregated_profile.json", orient="records")
-
     loss_history = []
 
     print("* Training")
@@ -209,22 +164,20 @@ def main():
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")
 
-    def project_to_elements(values: torch.Tensor) -> torch.Tensor:
+    def project_to_elements(s: Sampling) -> torch.Tensor:
         """
         Average quadrature-point values per element.
         Useful for VTK cell data output of quadrature-level fields (e.g. stress).
         """
-        return values.mean(dim=1)
+        return s.values.mean(dim=1)
 
     result = assembly_u.interpolate()
-    x_final = result.x.values
-    u_final = result.u.values
+    x_final = result.x
+    u_final = result.u
 
     grad_u = jacobian(x_final, u_final)
     strain = green_lagrange_strain(x_final, u_final)
-    sigma = cauchy_stress(
-        x_final, u_final, green_lagrange_strain, linear_elastic_stress_capture
-    )
+    sigma = linear_elastic_stress(strain, lame_lambda, lame_mu)
     sigma_dev = stress_deviator(sigma)
     von_mises = stress_von_mises(sigma_dev)
 

@@ -1,32 +1,48 @@
 import torch
 
+from neurom.samplings import Sampling
+from neurom.apply import apply
 
-def identity(shape, dtype=torch.float32, device="cpu") -> torch.Tensor:
+
+def identity_point(u: torch.Tensor) -> torch.Tensor:
     """Compute identity tensor
 
-    The identity is computed over the field dimensions for all elements and quadrature points N_e an N_q.
+    The identity computed from a tensor over a single point.
 
     Args:
-        shape (torch.Size): Shape of the field for which we want to compute the identity
+        u (torch.Tensor): Single point tensor from which we want to build identity.
     Returns:
-        A torch.Tensor of shape (N_e, N_q, *field_shape) representing the identity of the field.
+        torch.Tensor: Identity tensor of same shape than given tensor.
+    Raises:
+        ValueError if ``f_shape`` is not scalar or square matrix
     """
-    if len(shape) < 3:
-        raise ValueError(f"Need at least 3 dimensions but got '{shape}'")
-
-    n_e, n_q = shape[:2]
-    dim = shape[2:]
+    f_shape = u.shape
 
     # Scalar case
-    if dim == (1,):
-        return torch.ones(n_e, n_q, 1, dtype=dtype, device=device)
+    if f_shape == (1,):
+        return torch.ones(1, dtype=u.dtype, device=u.device)
 
-    # Matrix field
-    if len(dim) == 2 and dim[0] == dim[1]:
-        d = dim[0]
-        I = torch.eye(d, dtype=dtype, device=device)
-        return I.expand(n_e, n_q, d, d)
+    # Matrix case
+    if len(f_shape) == 2 and f_shape[0] == f_shape[1]:
+        d = f_shape[0]
+        I = torch.eye(d, dtype=u.dtype, device=u.device)
+        return I
 
     raise ValueError(
-        f"Identity only defined for scalar (1,) or square matrix (d,d), got shape: '{shape}'"
+        f"Identity only defined for scalar (1,) or square matrix (d,d), got tensor with shape: '{f_shape}'"
     )
+
+
+def identity(s: Sampling) -> Sampling:
+    """Compute identity tensor
+
+    The identity is computed based on a ``sampling`` which provides a field shape ``f_shape`` and a ``batch_shape`` over which it is expanded.
+
+    Args:
+        s (Sampling): Sampling providing field and batch shape to generate the identity.
+    Returns:
+        torch.Tensor: Identity tensor of shape ``batch_shape + f_shape``
+    Raises:
+        ValueError if ``f_shape`` is not scalar or square matrix
+    """
+    return apply(identity_point, s)

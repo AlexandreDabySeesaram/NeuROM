@@ -23,10 +23,10 @@ class SolidElasticEnergy(Term):
     where :math:`dx` is the quadrature measure.
     """
 
-    def __init__(self, field: FieldBase, strain, constitutive_law) -> None:
+    def __init__(self, field: FieldBase, strain, stress_point) -> None:
         self.field_name = field.name
         self.strain = strain
-        self.constitutive_law = constitutive_law
+        self.stress_point = stress_point
 
     def integrand(self, field_layout: FieldLayout) -> torch.Tensor:
         """Compute the elastic energy integrand.
@@ -44,7 +44,7 @@ class SolidElasticEnergy(Term):
 
         epsilon = self.strain(x, u)
 
-        # Compute sigma(u):epsilon(u)
-        inner_product = apply(inner_point, epsilon, self.constitutive_law(epsilon))
-        result = (0.5 * inner_product.values) * dx.values
-        return result
+        def elastic_energy_point(eps, dx):
+            return 0.5 * inner_point(self.stress_point(eps), eps) * dx
+
+        return apply(elastic_energy_point, epsilon, dx).values

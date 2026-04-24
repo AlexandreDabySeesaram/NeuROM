@@ -122,14 +122,14 @@ def main():
     assembly_u = QuadratureAssembly(ctx, sf, u)
     domain = IntegrationDomain([assembly_u])
 
-    def law(strain):
-        return linear_elastic_stress(strain, lame_lambda, lame_mu)
+    def stress(strain):
+        return linear_elastic_stress_point(strain, lame_lambda, lame_mu)
 
     # Define physics to solve
     physics = SolidElasticEnergy(
         field=u,
         strain=green_lagrange_strain,
-        constitutive_law=law,
+        stress_point=stress,
     )
 
     # Potential energy part of the loss

@@ -763,10 +763,6 @@ class InterpolationBlock2D_Lin(nn.Module):
         '''
         vers = 'new_V2'                                                             # Enables 'old' slow implementation or 'New_V2' more efficient implementation
         if flag_training:
-            if vers == 'old':
-                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
-                if cell_nodes_IDs.ndim == 1:
-                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
 
             if self.updated_connectivity:
                 cell_nodes_IDs = self.connectivity[cell_id,:] - 1
@@ -777,25 +773,15 @@ class InterpolationBlock2D_Lin(nn.Module):
                     self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
                 else:
                     self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values[0][0].device).t()[:,None,:]
-            match vers:
-                case 'old':
-                    node1_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,0]]) for val in nodal_values], dim=0)
-                    node2_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,1]]) for val in nodal_values], dim=0)
-                    node3_value =  torch.stack([torch.cat([val[row] for row in cell_nodes_IDs[:,2]]) for val in nodal_values], dim=0)
-                    self.nodes_values = torch.stack([node1_value,node2_value,node3_value])                
-                    u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
-                case 'new':
-                    nodal_values_tensor = torch.stack([torch.cat(tuple(val)) for val in nodal_values], dim=0)
-                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),2, self.Ids.repeat(1,2,1))
-                    u = torch.einsum('ixg,gi->xg',self.nodes_values,shape_functions)
-                case 'new_V2':
-                    nodal_values_tensor = torch.ones_like(nodal_values_tensor)
-                    nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
-                    nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
-                    nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
-                    self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,2))
-                    u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
+
+
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,2))
+            u = torch.einsum('igx,gi->xg',self.nodes_values,shape_functions)
             return u
 
         else:
@@ -843,21 +829,15 @@ class InterpolationBlock2D_Lin(nn.Module):
                         else:
                             values[0,ID] = (value[0]*normal[0] - nodal_values[2][ID]*normal[1])/normal[0]
                             values[1,ID] = (value[0]*normal[1] - nodal_values[2][ID]*normal[0])/normal[1]
-            match vers:
-                case 'old':
-                    node1_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,0]], dim=1)
-                    node2_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,1]], dim=1)
-                    node3_value =  torch.stack([values[:,row] for row in cell_nodes_IDs[:,2]], dim=1)
-                    u = shape_functions[:,0]*node1_value + shape_functions[:,1]*node2_value + shape_functions[:,2]*node3_value
-                case 'new_V2':
-                    nodal_values_tensor = torch.ones_like(nodal_values_tensor)
-                    nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
-                    nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
-                    nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-                    nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']
-                    Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
-                    nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
-                    u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
+
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']
+            Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+            u = torch.einsum('igx,gi->xg',nodes_values,shape_functions)
             return u
 
 
@@ -925,66 +905,24 @@ class ElementBlock2D_Lin(nn.Module):
         cell_nodes_IDs = self.connectivity[cell_id,:]
         if cell_nodes_IDs.ndim == 1:
             cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-        vers = 'new_V2'
-        match vers:
-            case 'old':
-                node1_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,0]])
-                node2_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,1]])
-                node3_coord =  torch.cat([coordinates[row-1] for row in cell_nodes_IDs[:,2]])
-            case 'new':
-                nodal_coord_tensor =torch.cat(tuple(coordinates),dim = 0)
-                Ids = torch.as_tensor(cell_nodes_IDs-1).to(nodal_coord_tensor.device).t()[:,:,None]
-                nodes_coord =  torch.gather(nodal_coord_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
-            case 'new_V2':
-                coordinates_all = torch.ones_like(coordinates_all)
-                coordinates_all[coord_mask] = coordinates['free']
-                coordinates_all[~coord_mask] = coordinates['imposed']
-                Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
-                nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+
+        coordinates_all = torch.ones_like(coordinates_all)
+        coordinates_all[coord_mask] = coordinates['free']
+        coordinates_all[~coord_mask] = coordinates['imposed']
+        Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
+        nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
         if flag_training:
-
             refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1)
-
             w_g = 0.5                           # Gauss weight
-            match vers:
-                case 'old':
-                    Ng = torch.stack((refCoordg[:,0], refCoordg[:,1], refCoordg[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-                case 'new' | 'new_V2':
-                    Ng = refCoordg
-
-            match vers:
-                case 'old':
-                    x_g = torch.stack([Ng[:,0]*node1_coord[:,0] + Ng[:,1]*node2_coord[:,0] + Ng[:,2]*node3_coord[:,0],Ng[:,0]*node1_coord[:,1] + Ng[:,1]*node2_coord[:,1] + Ng[:,2]*node3_coord[:,1]],dim=1)
-                case 'new' | 'new_V2':
-                    x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
-
-            match vers:
-                case 'old':
-                    refCoord = GetRefCoord(x_g[:,0],x_g[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-                case 'new' | 'new_V2':
-                    refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
-
-            match vers:
-                case 'old':
-                    N = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-                case 'new' | 'new_V2':
-                    N = refCoord
-
-            match vers:
-                case 'old':
-                    detJ = (node1_coord[:,0] - node3_coord[:,0])*(node2_coord[:,1] - node3_coord[:,1]) - (node2_coord[:,0] - node3_coord[:,0])*(node1_coord[:,1] - node3_coord[:,1])
-                case 'new' | 'new_V2':
-                    detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
+            Ng = refCoordg
+            x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
+            refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+            N = refCoord
+            detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
             return N,x_g, detJ*w_g
-
         else:
-            match vers:
-                case 'old':
-                    refCoord = GetRefCoord(x[:,0],x[:,1],node1_coord[:,0],node2_coord[:,0],node3_coord[:,0],node1_coord[:,1],node2_coord[:,1],node3_coord[:,1])
-                case 'new'| 'new_V2':
-                    refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+            refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
             out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-
 
             return out
 

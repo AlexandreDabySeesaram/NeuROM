@@ -123,6 +123,17 @@ class Mesh:
         self.borders_nodes = []
         self.borders_exist = True
 
+    def ComputeNormals(self):
+        
+        import pyvista as pv
+        import torch
+        pv_mesh = pv.wrap(self.vtk_mesh)
+        outer_surface = pv_mesh.extract_geometry()
+        outer_surface.compute_normals(cell_normals=True, point_normals=False, inplace=True, auto_orient_normals=True)
+        self.normals = torch.from_numpy(outer_surface.cell_data['Normals']).float()
+
+
+
     def AddBCs(self,Volume,Exclude,Dirichlets):
         self.VolumeId = Volume
         self.ExcludeId = Exclude

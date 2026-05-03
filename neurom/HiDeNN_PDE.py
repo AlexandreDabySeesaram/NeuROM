@@ -878,14 +878,16 @@ class ElementBlock2D_Lin(nn.Module):
     """
     Returns:
          N_i(x)'s for each nodes within each element"""
-    def __init__(self, connectivity):
+    def __init__(self, connectivity, is_boundary = False):
         """ Initialise the Linear Bar element 
         Args:
             connectivity (Interger table): Connectivity matrix of the 1D mesh
+            is_boundary (Boolean): Boolean telling if 2D boundary of 3D structure or if standalone 2D element
         """
         super(ElementBlock2D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
         self.register_buffer('GaussPoint',self.GP())
+        self.is_boundary = is_boundary
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
 
@@ -910,16 +912,32 @@ class ElementBlock2D_Lin(nn.Module):
         coordinates_all[coord_mask] = coordinates['free']
         coordinates_all[~coord_mask] = coordinates['imposed']
         Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
-        nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
+        if self.is_boundary:
+            nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,3))
+        else:
+            nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,2))
         if flag_training:
             refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1)
             w_g = 0.5                           # Gauss weight
             Ng = refCoordg
             x_g = torch.einsum('nex,en->ex',nodes_coord,Ng)
-            refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
-            N = refCoord
-            detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
-            return N,x_g, detJ*w_g
+
+            if self.is_boundary:
+                DN = torch.tensor([
+                        [1.0, 0.0, -1.0], # dN/dxi
+                        [0.0, 1.0, -1.0]  # dN/deta
+                    ], dtype=nodes_coord.dtype, device=nodes_coord.device)
+                Jacobian = torch.einsum('xn,neX->exX', DN, nodes_coord) # Warning: Jacobian is size (num_elements, 2, 3)
+                v1 = Jacobian[:, 0, :] # Vector along xi
+                v2 = Jacobian[:, 1, :] # Vector along eta
+                cross_product = torch.linalg.cross(v1, v2)
+                detJ = torch.linalg.norm(cross_product, dim=1)
+                return Ng, x_g, detJ*w_g
+            else :
+                refCoord = GetRefCoord(x_g[:,0],x_g[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
+                N = refCoord
+                detJ = (nodes_coord[0,:,0] - nodes_coord[2,:,0])*(nodes_coord[1,:,1] - nodes_coord[2,:,1]) - (nodes_coord[1,:,0] - nodes_coord[2,:,0])*(nodes_coord[0,:,1] - nodes_coord[2,:,1])
+                return N,x_g, detJ*w_g
         else:
             refCoord = GetRefCoord(x[:,0],x[:,1],nodes_coord[0,:,0],nodes_coord[1,:,0],nodes_coord[2,:,0],nodes_coord[0,:,1],nodes_coord[1,:,1],nodes_coord[2,:,1])
             out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle

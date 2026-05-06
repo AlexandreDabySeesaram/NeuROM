@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from neurom.integrate import integrate
+
 
 class FEMModel(nn.Module):
     """
@@ -15,27 +17,23 @@ class FEMModel(nn.Module):
     def __init__(
         self,
         mesh,
-        field,
-        interpolator,
-        physics,
-        integrator,
+        field_layout,
+        integration_domain,
+        loss,
     ):
         super().__init__()
 
         # Core pipeline
         self.mesh = mesh
-        self.field = field
-        self.interpolator = interpolator
-        self.physics = physics
-        self.integrator = integrator
+        self.field_layout = field_layout
+        self.integration_domain = integration_domain
+        self.loss = loss
 
     def forward(self):
         """
         Returns:
             scalar loss / energy
         """
-        x_q, u_q, measure = self.interpolator.interpolate()
-        integrand = self.physics.integrand(x_q, u_q)
-        loss = self.integrator.integrate(integrand, measure)
+        self.integration_domain.interpolate_all(self.field_layout)
 
-        return loss
+        return self.loss()

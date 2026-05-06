@@ -19,7 +19,7 @@ class Mesh(nn.Module):
         nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
 
     Raises:
-        ValueError: If there is a different amount of nodes than there are positions, i.e. if  self.nodes_positions.full_values().shape[0] does not match self.nodes_positions.shape[0]
+        ValueError: If self.topology differs from nodes_positions.topology.
     """
 
     def __init__(self, topology, nodes_positions):
@@ -28,11 +28,9 @@ class Mesh(nn.Module):
         self.topology = topology
         self.nodes_positions = nodes_positions
 
-        shape_pos = self.nodes_positions.full_values().shape[0]
-        shape_nodes = self.topology.nodes.shape[0]
-        if shape_pos != shape_nodes:
+        if self.topology is not self.nodes_positions.topology:
             raise ValueError(
-                f"self.nodes_positions has a different tensor' shape ({shape_pos}) than self.topology.nodes ({shape_nodes})"
+                f"Mesh self.topology does not correspond to self.nodes_positions.topology"
             )
 
     def elements_at(self, x):

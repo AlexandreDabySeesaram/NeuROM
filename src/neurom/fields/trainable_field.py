@@ -43,6 +43,7 @@ class TrainableField(FieldBase):
 
         # Initialize reduced DOFs
         self.values_reduced = nn.Parameter(init_values[dofs_free])
+        self.dim = init_values.shape[1]
 
     def full_values(self):
         """Get the full values
@@ -57,3 +58,6 @@ class TrainableField(FieldBase):
         Get the full values but per element following the topology connectivity.
         """
         return self.full_values()[self.topology.connectivity]
+
+    def freeze(self):
+        self.values_reduced.requires_grad_(False)

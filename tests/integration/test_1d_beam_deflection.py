@@ -8,29 +8,21 @@ from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
-from neurom.constraints import NoConstraint, Dirichlet
-from neurom.interpolator import Interpolator
-from neurom.integrator import Integrator
+from neurom.constraints import Dirichlet
+from neurom.field_layout import FieldLayout
+from neurom.interpolation import (
+    PointWiseInterpolator,
+    QuadratureContext,
+    QuadratureAssembly,
+    FieldInterpolator,
+    IntegrationDomain,
+)
+
+from neurom.physics import ElasticEnergy, LoadPotential
+from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
-
-
-class PoissonPhysics:
-    """
-    Represents potential energy of 1D beam under uniform load.
-    .. math::
-        \frac{1}{2}u''(x) + f u(x)
-    """
-
-    def __init__(self, f):
-        self.f = f
-
-    def integrand(self, x, u):
-        du_dx = torch.autograd.grad(
-            u, x, grad_outputs=torch.ones_like(u), create_graph=True
-        )[0]
-        return 0.5 * du_dx**2 + self.f * u
 
 
 class AnalyticalSolution:
@@ -46,6 +38,9 @@ class AnalyticalSolution:
         self.x_max = x_max
 
     def eval(self, x):
+        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
+
+    def potential_energy(self):
         return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
 
 
@@ -71,10 +66,9 @@ class Test1dBeamDeflection:
         x_max = 10.0
         # Number of points in the domain
         N = 100
-        # Load applied to the beam
-        f = 1000.0
+
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -82,6 +76,13 @@ class Test1dBeamDeflection:
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
         nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+
+        # Initialize displacement values
+        u_init = 0.5 * torch.ones(N, 1)
+
+        # Define constant load
+        load_value = 1000.0
+        load = load_value * torch.ones(N, 1)
 
         # Generate topology
         topology = Topology(nodes, elements)
@@ -92,58 +93,92 @@ class Test1dBeamDeflection:
         quad = MidPoint1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Unknown
-        u_init = 0.5 * torch.ones(N, 1)
-        u = TrainableField(
-            name="displacement",
-            topology=topology,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+
+        # Prepare Field layout and fill it with actual fields
+        field_layout = FieldLayout()
+
+        # Displacement
+        u = field_layout.add(
+            TrainableField(
+                name="displacement",
+                topology=topology,
+                init_values=u_init,
+                constraint=Dirichlet(
+                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
+                ),
+            )
         )
+
         # Positions
-        x = Field(name="positions", topology=topology, values=x_array)
+        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+
+        # Load
+        f = field_layout.add(Field(name="load", topology=topology, values=load))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
-        # Evaluator
-        interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we cnosider
-        physics = PoissonPhysics(f)
-        # How to integrate the physics on a domain
-        integrator = Integrator()
 
-        # Define FEM model - main orchestrator
-        model = FEMModel(
+        # Define quadrature context
+        quad_interp = QuadratureContext(
             mesh=mesh,
-            field=u,
-            interpolator=interpolator,
-            physics=physics,
-            integrator=integrator,
+            quad=quad,
+            mapping=mapping,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        # Define physics to solve
+        physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
+
+        # The loss to use is purely based on physics
+        physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
+        # Define FEM model
+        model = FEMModel(
+            mesh=mesh,
+            field_layout=field_layout,
+            integration_domain=domain,
+            loss=physics_loss,
+        )
+
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.interpolator.interpolate()
+        result = field_layout["displacement"]
 
         # Compute analytical solution
-        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(x_q)
+        solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
+        u_sol_train = solution.eval(result.x)
 
         # Check values
-        assert u_q.detach().numpy() == pytest.approx(
+        assert result.u.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.interpolator.interpolate_at(x_test).squeeze()
+        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        u_test = pwi.at_position(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
@@ -166,10 +201,13 @@ class Test1dBeamDeflection:
         x_max = 10.0
         # Number of points in the domain
         N = 100
+
         # Load applied to the beam
-        f = 1000.0
+        def f(x):
+            return 1000.0
+
         # Number of training steps
-        n_epochs = 5000
+        n_epochs = 3
         # Learning rate
         lr = 10.0
 
@@ -177,6 +215,13 @@ class Test1dBeamDeflection:
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
         nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+
+        # Initialize displacement values
+        u_init = 0.5 * torch.ones(N, 1)
+
+        # Define constant load
+        load_value = 1000.0
+        load = load_value * torch.ones(N, 1)
 
         # Generate topology
         topology = Topology(nodes, elements)
@@ -187,58 +232,85 @@ class Test1dBeamDeflection:
         quad = TwoPoints1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Unknown
-        u_init = 0.5 * torch.ones(N, 1)
-        u = TrainableField(
-            name="displacement",
-            topology=topology,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+
+        # Prepare Field layout and fill it with actual fields
+        field_layout = FieldLayout()
+
+        # Displacement
+        u = field_layout.add(
+            TrainableField(
+                name="displacement",
+                topology=topology,
+                init_values=u_init,
+                constraint=Dirichlet(
+                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
+                ),
+            )
         )
+
         # Positions
-        x = Field(name="positions", topology=topology, values=x_array)
+        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+
+        # Load
+        f = field_layout.add(Field(name="load", topology=topology, values=load))
+
         # Generate mesh
         mesh = Mesh(topology=topology, nodes_positions=x)
-        # Evaluator
-        interpolator = Interpolator(mesh, u, sf, quad, mapping)
-        # What physics we cnosider
-        physics = PoissonPhysics(f)
-        # How to integrate the physics on a domain
-        integrator = Integrator()
 
-        # Define FEM model - main orchestrator
+        # Define physics to solve
+        physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
+
+        # The loss to use is purely based on physics
+        physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
+
+        # Define quadrature context
+        ctx = QuadratureContext(mesh, quad, mapping)
+
+        # Define quadrature assemblies
+        assembly_u = QuadratureAssembly(ctx, sf, u)
+        assembly_f = QuadratureAssembly(ctx, sf, f)
+
+        domain = IntegrationDomain([assembly_u, assembly_f])
+
+        # Define FEM model
         model = FEMModel(
             mesh=mesh,
-            field=u,
-            interpolator=interpolator,
-            physics=physics,
-            integrator=integrator,
+            field_layout=field_layout,
+            integration_domain=domain,
+            loss=physics_loss,
         )
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.LBFGS(
+            model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = model()
+            loss.backward(retain_graph=True)
+            return loss
 
         for i in range(n_epochs):
-            loss = model()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            model()
+            optimizer.step(closure)
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.interpolator.interpolate()
+        result = field_layout["displacement"]
 
         # Compute analytical solution
-        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(x_q)
+        solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
+        u_sol_train = solution.eval(result.x)
 
         # Check values
-        assert u_q.detach().numpy() == pytest.approx(
+        assert result.u.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.interpolator.interpolate_at(x_test).squeeze()
+        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        u_test = pwi.at_position(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

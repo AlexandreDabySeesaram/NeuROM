@@ -15,8 +15,6 @@ class Topology(nn.Module):
     Attributes:
         nodes (torch.Tensor): The mesh nodes indices. Registered in buffer.
         connectivity (torch.Tensor): The connectivity, i.e. nodes indices. Registered in buffer.
-        n_nodes (int): The number of nodes.
-        n_elements (int): The number of elements.
 
     Note:
         No checks are done on whether indices in `connectivity` correspond to actual indices in `nodes`.
@@ -28,5 +26,20 @@ class Topology(nn.Module):
         self.register_buffer("nodes", nodes)
         self.register_buffer("connectivity", connectivity)
 
-        self.n_nodes = self.nodes.shape[0]
-        self.n_elements = self.connectivity.shape[0]
+    @property
+    def n_nodes(self) -> int:
+        """The number of nodes in the topology
+
+        Returns:
+            (int) The number of nodes.
+        """
+        return self.nodes.shape[0]
+
+    @property
+    def n_elements(self):
+        """The number of elements in the topology
+
+        Returns:
+            (int) The number of elements.
+        """
+        return self.connectivity.shape[0]

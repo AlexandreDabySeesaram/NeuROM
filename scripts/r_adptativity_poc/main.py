@@ -11,13 +11,7 @@ from neurom.meshes import Topology, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import (
-    FieldInterpolator,
-    PointWiseInterpolator,
-    QuadratureContext,
-    QuadratureAssembly,
-    IntegrationDomain,
-)
+from neurom.interpolation import PointWiseInterpolator, Interpolator, FieldInterpolator
 
 from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.physics_loss import PhysicsLoss
@@ -66,7 +60,17 @@ def main():
     )
 
     # Positions
-    x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+    x = field_layout.add(
+        TrainableField(
+            name="positions",
+            topology=topology,
+            init_values=x_array,
+            constraint=Dirichlet(
+                nodes=[0, N - 1],
+                values_imposed=torch.tensor([x_min, x_max]).unsqueeze(-1),
+            ),
+        ),
+    )
 
     # Load
     f = field_layout.add(Field(name="load", topology=topology, values=load))
@@ -74,49 +78,90 @@ def main():
     # Generate mesh
     mesh = Mesh(topology=topology, nodes_positions=x)
 
+    # Define interpolator
+    interpolator = Interpolator(
+        mesh,
+        quad,
+        mapping,
+        [FieldInterpolator(sf, u), FieldInterpolator(sf, f)],
+    )
+
     # Define physics to solve
+    mu = 1e12
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
+
+    class FlipLoss(nn.Module):
+        def __init__(self, x, mu: float):
+            super().__init__()
+            self.x = x
+            self.mu = mu
+
+        def forward(self) -> float:
+            x_nodes = self.x.at_elements()
+            J = 0.5 * (x_nodes[:, 1, :] - x_nodes[:, 0, :])
+            result = self.mu * torch.sum(torch.relu(-J) ** 2)
+            return result
+
+    class TotalLoss(nn.Module):
+        def __init__(self, losses):
+            super().__init__()
+            self.losses = losses
+
+        def forward(self) -> float:
+            result = sum([l.forward() for l in self.losses])
+            return result
 
     # Potential energy part of the loss
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
-    # Define quadrature context
-    ctx = QuadratureContext(mesh, quad, mapping)
+    flip_loss = FlipLoss(x=x, mu=mu)
 
-    # Define quadrature assemblies
-    assembly_u = QuadratureAssembly(ctx, sf, u)
-    assembly_f = QuadratureAssembly(ctx, sf, f)
-
-    domain = IntegrationDomain([assembly_u, assembly_f])
+    total_loss = TotalLoss([physics_loss, flip_loss])
 
     # Define FEM model
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
-        integration_domain=domain,
-        loss=physics_loss,
+        interpolator=interpolator,
+        loss=total_loss,
     )
 
-    optimizer = torch.optim.LBFGS(
-        model.parameters(), lr=1e-1, max_iter=50, line_search_fn="strong_wolfe"
-    )
-
-    def closure():
-        optimizer.zero_grad()
-        loss = model()
-        loss.backward(retain_graph=True)
-        return loss
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=10)
     loss_history = []
 
     plot_loss = True
     plot_test = True
 
     print("* Training")
-    n_epochs = 5
+    n_epochs = 6000
     for i in range(n_epochs):
         loss = model()
-        optimizer.step(closure)
+
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
+
+        loss_history.append(loss.item())
+        print(f"{i=} loss={loss.item():.3e}", end="\r")
+
+    # Freeze position
+    x.freeze()
+
+    model = FEMModel(
+        mesh=mesh,
+        field_layout=field_layout,
+        interpolator=interpolator,
+        loss=physics_loss,
+    )
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-1)
+    print("* Second training")
+    for i in range(n_epochs):
+        loss = model()
+
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
 
         loss_history.append(loss.item())
         print(f"{i=} loss={loss.item():.3e}", end="\r")

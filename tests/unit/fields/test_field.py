@@ -22,7 +22,7 @@ def field():
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
     topology = Topology(nodes, elements)
-    values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+    values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     field = Field(name="test", topology=topology, values=values)
 
     return field
@@ -46,27 +46,58 @@ class TestField:
 
         assert "values" in field._buffers
         assert isinstance(getattr(field, "values"), torch.Tensor)
+        assert field.values.shape == (4, 1)
+        expected_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
 
-        expected_values = torch.tensor([3.0, 7.0, 6.0, -5.0])
         assert field.values == pytest.approx(
             expected_values, rel=self.relative_tolerance
         )
+
+    def test_invalid_values_shape(self, field):
+        """
+        Test creating a Field with invalid shape.
+        """
+        topology = field.topology
+        values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+        with pytest.raises(ValueError):
+            wrong_field = Field(
+                name="missing field dimension", topology=topology, values=values
+            )
+
+    def test_incompatible_field_and_topology(self, field):
+        """
+        Test creating a Field with invalid shape.
+        """
+        topology = field.topology
+        more = torch.tensor([3.0, 7.0, 6.0, -5.0, 4.0]).unsqueeze(-1)
+        with pytest.raises(ValueError):
+            wrong_field = Field(
+                name="more field values than nodes", topology=topology, values=more
+            )
+
+        less = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
+        with pytest.raises(ValueError):
+            wrong_field = Field(
+                name="less field values than nodes", topology=topology, values=more
+            )
 
     def test_full_values(self, field):
         """
         Test method Field.full_values()
         """
-        expected_values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+        expected_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
         assert field.full_values() == pytest.approx(
             expected_values, rel=self.relative_tolerance
         )
 
-    def at_elements(self, field):
+    def test_at_elements(self, field):
         """
         Test method Field.at_elements()
         """
 
-        expected_values = torch.tensor([[3.0, 7.0], [7.0, 6.0], [6.0, -5.0]])
+        expected_values = torch.tensor([[3.0, 7.0], [7.0, 6.0], [6.0, -5.0]]).unsqueeze(
+            -1
+        )
         assert field.at_elements() == pytest.approx(
             expected_values, rel=self.relative_tolerance
         )

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from neurom.meshes import Topology
+from neurom.meshes.topology import Topology
 
 
 class FieldBase(nn.Module, ABC):

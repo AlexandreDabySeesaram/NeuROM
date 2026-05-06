@@ -2396,7 +2396,10 @@ class MeshNN_3D(nn.Module):
         self.ExcludeFromDirichlet       = mesh.ExcludedPoints
         self.borders_nodes              = mesh.borders_nodes
         self.elements_generation        = np.ones(self.connectivity.shape[0])
-        self.DirichletBoundaryNodes     = mesh.DirichletBoundaryNodes
+        try:
+            self.DirichletBoundaryNodes     = mesh.DirichletBoundaryNodes
+        except:
+            DirichletBoundaryNodes = None
         self.ListOfDirichletsBCsNormals = mesh.ListOfDirichletsBCsNormals
         # self.normals = mesh.normals
         self.dofs                       = mesh.NNodes*mesh.dim # Number of Dofs
@@ -2531,21 +2534,30 @@ class MeshNN_3D(nn.Module):
             Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
         """
         for i in range(len(ListOfDirichletsBCsValues)):
-
-            IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
-            IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
-            match self.ListOfDirichletsBCsNormals[i]:
-                case 0:
-                    self.frozen_BC_node_IDs_x.append(IDs)
-                case 1:
-                    self.frozen_BC_node_IDs_y.append(IDs)   
-                case 2:
-                    self.frozen_BC_node_IDs_z.append(IDs)   
-            self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
+            if len(self.DirichletBoundaryNodes[i]) != 0:
+                IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
+                IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
+                match self.ListOfDirichletsBCsNormals[i]:
+                    case 0:
+                        self.frozen_BC_node_IDs_x.append(IDs)
+                    case 1:
+                        self.frozen_BC_node_IDs_y.append(IDs)   
+                    case 2:
+                        self.frozen_BC_node_IDs_z.append(IDs)   
+                self.values[IDs,self.ListOfDirichletsBCsNormals[i]] = ListOfDirichletsBCsValues[i]
                     
-        self.IDs_frozen_BC_node_y                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
-        self.IDs_frozen_BC_node_x                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
-        self.IDs_frozen_BC_node_z                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_z))
+
+        #TOCHECK <            
+        # self.IDs_frozen_BC_node_y                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_y))
+        # self.IDs_frozen_BC_node_x                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_x))
+        # self.IDs_frozen_BC_node_z                   = torch.unique(torch.cat(self.frozen_BC_node_IDs_z))
+        
+        self.IDs_frozen_BC_node_y = torch.unique(torch.cat(self.frozen_BC_node_IDs_y)) if self.frozen_BC_node_IDs_y else torch.tensor([], dtype=torch.long)
+        self.IDs_frozen_BC_node_x = torch.unique(torch.cat(self.frozen_BC_node_IDs_x)) if self.frozen_BC_node_IDs_x else torch.tensor([], dtype=torch.long)
+        self.IDs_frozen_BC_node_z = torch.unique(torch.cat(self.frozen_BC_node_IDs_z)) if self.frozen_BC_node_IDs_z else torch.tensor([], dtype=torch.long)
+  
+        #>
+
         self.dofs_free_x                            =( torch.ones_like(self.values[:,0])==1)
         self.dofs_free_x[self.IDs_frozen_BC_node_x] = False
         self.dofs_free_y                            =( torch.ones_like(self.values[:,0])==1)

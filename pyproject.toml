@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hidenn_playground"
+name = "neurom"
 version = "0.1.0"
 description = "Various POC for HideNN framework using pytorch."
 readme = "README.md"
@@ -61,4 +61,4 @@ addopts = ["--import-mode=importlib"]
 
 [tool.coverage.run]
 branch = true
-source = ["hidenn_playground"]
+source = ["neurom"]

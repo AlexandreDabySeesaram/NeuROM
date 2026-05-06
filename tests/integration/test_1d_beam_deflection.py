@@ -1,17 +1,17 @@
-from abc import ABC, abstractmethod
 import pytest
 import torch
 import torch.nn as nn
 
 # Import library modules
-from hidenn_playground.quadratures import MidPoint1D, TwoPoints1D
-from hidenn_playground.shape_functions import LinearSegment
-from hidenn_playground.geometry import IsoparametricMapping1D
-from hidenn_playground.mesh import Mesh
-from hidenn_playground.field import Field
-from hidenn_playground.integrator import Integrator
-from hidenn_playground.evaluator import ElementEvaluator1D
-from hidenn_playground.fem_model import FEMModel
+from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.shape_functions import LinearSegment
+from neurom.geometry import IsoparametricMapping1D
+from neurom.meshes import Mesh, Topology
+from neurom.fields import Field, TrainableField
+from neurom.constraints import NoConstraint, Dirichlet
+from neurom.interpolator import Interpolator
+from neurom.integrator import Integrator
+from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
 
@@ -62,6 +62,8 @@ class Test1dBeamDeflection:
     def test_beam_mid_point_quadrature(self):
         """
         Test that the displacement field corresponds to the analytical one.
+
+        Use quadratures.TwoPoints1D.
         """
         # --- Prepare parameters ---
         # Domain dimensions
@@ -77,11 +79,12 @@ class Test1dBeamDeflection:
         lr = 10.0
 
         # Generate vertices and connectivity
-        nodes = torch.linspace(x_min, x_max, N)[:, None]
+        x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
+        nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
-        # Generate mesh
-        mesh = Mesh(nodes, elements)
+        # Generate topology
+        topology = Topology(nodes, elements)
 
         # Shape function
         sf = LinearSegment()
@@ -89,10 +92,20 @@ class Test1dBeamDeflection:
         quad = MidPoint1D()
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf)
-        # Field
-        field = Field(mesh, dirichlet_nodes=[0, N - 1])
+        # Unknown
+        u_init = 0.5 * torch.ones(N, 1)
+        u = TrainableField(
+            name="displacement",
+            topology=topology,
+            init_values=u_init,
+            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+        )
+        # Positions
+        x = Field(name="positions", topology=topology, values=x_array)
+        # Generate mesh
+        mesh = Mesh(topology=topology, nodes_positions=x)
         # Evaluator
-        evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+        interpolator = Interpolator(mesh, u, sf, quad, mapping)
         # What physics we cnosider
         physics = PoissonPhysics(f)
         # How to integrate the physics on a domain
@@ -101,8 +114,8 @@ class Test1dBeamDeflection:
         # Define FEM model - main orchestrator
         model = FEMModel(
             mesh=mesh,
-            field=field,
-            evaluator=evaluator,
+            field=u,
+            interpolator=interpolator,
             physics=physics,
             integrator=integrator,
         )
@@ -116,7 +129,7 @@ class Test1dBeamDeflection:
             optimizer.step()
 
         # Evaluate at quadrature points
-        x_q, u_q, _ = model.evaluator.evaluate()
+        x_q, u_q, _ = model.interpolator.interpolate()
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
@@ -127,10 +140,105 @@ class Test1dBeamDeflection:
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
-        # Generate test points and evaluate
+        # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30)
-        u_test = model.evaluator.evaluate_at(x_test).squeeze()
+        u_test = model.interpolator.interpolate_at(x_test).squeeze()
+
+        # Compute analytical solution
+        u_sol_test = solution.eval(x_test)
+
+        # Check values
+        # Note: absolute tolerance because there are 0 at boundaries
+        assert u_test.detach().numpy() == pytest.approx(
+            u_sol_test, abs=self.relative_tolerance * max(abs(u_sol_test))
+        )
+
+    def test_beam_two_points_quadrature(self):
+        """
+        Test that the displacement field corresponds to the analytical one.
+
+        Use quadratures.TwoPoints1D.
+        """
+        # --- Prepare parameters ---
+        # Domain dimensions
+        x_min = 0.0
+        x_max = 10.0
+        # Number of points in the domain
+        N = 100
+        # Load applied to the beam
+        f = 1000.0
+        # Number of training steps
+        n_epochs = 5000
+        # Learning rate
+        lr = 10.0
+
+        # Generate vertices and connectivity
+        x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
+        nodes = torch.arange(0, N)
+        elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+
+        # Generate topology
+        topology = Topology(nodes, elements)
+
+        # Shape function
+        sf = LinearSegment()
+        # Quadrature strategy
+        quad = TwoPoints1D()
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf)
+        # Unknown
+        u_init = 0.5 * torch.ones(N, 1)
+        u = TrainableField(
+            name="displacement",
+            topology=topology,
+            init_values=u_init,
+            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+        )
+        # Positions
+        x = Field(name="positions", topology=topology, values=x_array)
+        # Generate mesh
+        mesh = Mesh(topology=topology, nodes_positions=x)
+        # Evaluator
+        interpolator = Interpolator(mesh, u, sf, quad, mapping)
+        # What physics we cnosider
+        physics = PoissonPhysics(f)
+        # How to integrate the physics on a domain
+        integrator = Integrator()
+
+        # Define FEM model - main orchestrator
+        model = FEMModel(
+            mesh=mesh,
+            field=u,
+            interpolator=interpolator,
+            physics=physics,
+            integrator=integrator,
+        )
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+        for i in range(n_epochs):
+            loss = model()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        # Evaluate at quadrature points
+        x_q, u_q, _ = model.interpolator.interpolate()
+
+        # Compute analytical solution
+        solution = AnalyticalSolution(f=f, x_min=x_min, x_max=x_max)
+        u_sol_train = solution.eval(x_q)
+
+        # Check values
+        assert u_q.detach().numpy() == pytest.approx(
+            u_sol_train.detach().numpy(), rel=self.relative_tolerance
+        )
+
+        # Generate test points and interpolate
+        # This also tests the boundary condition
+        x_test = torch.linspace(x_min, x_max, 30)
+        u_test = model.interpolator.interpolate_at(x_test).squeeze()
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

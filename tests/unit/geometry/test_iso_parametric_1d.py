@@ -1,11 +1,10 @@
-from abc import ABC, abstractmethod
 import pytest
 import torch
 import torch.nn as nn
 
 # Import library modules
-from hidenn_playground.shape_functions import LinearSegment
-from hidenn_playground.geometry import IsoparametricMapping1D
+from neurom.shape_functions import LinearSegment
+from neurom.geometry import IsoparametricMapping1D
 
 torch.set_default_dtype(torch.float32)
 
@@ -77,3 +76,18 @@ class TestIsoparametricMapping1D:
 
         # Check values
         assert xi == pytest.approx(xi_expected, rel=self.relative_tolerance)
+
+    def test_det_jacobian(self, setup):
+        """
+        Test computation of determinant of jacobian
+        """
+        x_nodes = setup[0]
+        mapping = setup[1]
+
+        # Compute mapping
+        det_J = mapping.det_jacobian(x_nodes)
+
+        det_J_expected = torch.tensor([2.5]).unsqueeze(-1)
+
+        # Check values
+        assert det_J == pytest.approx(det_J_expected, rel=self.relative_tolerance)

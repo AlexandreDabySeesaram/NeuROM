@@ -4,14 +4,15 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 # Import library modules
-from hidenn_playground.quadratures import MidPoint1D, TwoPoints1D
-from hidenn_playground.shape_functions import LinearSegment
-from hidenn_playground.geometry import IsoparametricMapping1D
-from hidenn_playground.mesh import Mesh
-from hidenn_playground.field import Field
-from hidenn_playground.integrator import Integrator
-from hidenn_playground.evaluator import ElementEvaluator1D
-from hidenn_playground.fem_model import FEMModel
+from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.shape_functions import LinearSegment
+from neurom.geometry import IsoparametricMapping1D
+from neurom.meshes import Topology, Mesh
+from neurom.constraints import NoConstraint, Dirichlet
+from neurom.fields import Field, TrainableField
+from neurom.integrator import Integrator
+from neurom.interpolator import Interpolator
+from neurom.fem_model import FEMModel
 
 torch.set_default_dtype(torch.float32)
 
@@ -43,24 +44,37 @@ def f(x):
 def main():
 
     N = 40
-    nodes = torch.linspace(0, 6.28, N)[:, None]
+    x_min = 0.0
+    x_max = 6.28
+    x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
+    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
-    mesh = Mesh(nodes, elements)
+    topology = Topology(nodes, elements)
 
     sf = LinearSegment()
     quad = MidPoint1D()
-    # quad = quadratures.TwoPoints1D()
     mapping = IsoparametricMapping1D(sf)
-    field = Field(mesh, dirichlet_nodes=[0, N - 1])
-    evaluator = ElementEvaluator1D(mesh, field, sf, quad, mapping)
+    # Unknown
+    u_init = 0.5 * torch.ones(N, 1)
+    u = TrainableField(
+        name="displacement",
+        topology=topology,
+        init_values=u_init,
+        constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
+    )
+    # Positions
+    x = Field(name="positions", topology=topology, values=x_array)
+    # Generate mesh
+    mesh = Mesh(topology=topology, nodes_positions=x)
+    interpolator = Interpolator(mesh, u, sf, quad, mapping)
     physics = PoissonPhysics(f)
     integrator = Integrator()
 
     model = FEMModel(
         mesh=mesh,
-        field=field,
-        evaluator=evaluator,
+        field=u,
+        interpolator=interpolator,
         physics=physics,
         integrator=integrator,
     )
@@ -72,7 +86,7 @@ def main():
     plot_test = True
 
     print("* Training")
-    n_epochs = 7000
+    n_epochs = 2000
     for i in range(n_epochs):
         loss = model()
 
@@ -85,11 +99,11 @@ def main():
 
     print("\n* Evaluation")
     # At quadrature points
-    x_q, u_q, _ = model.evaluator.evaluate()
+    x_q, u_q, _ = model.interpolator.interpolate()
 
     # At test points
     x_test = torch.linspace(0, 6, 30)
-    u_test = model.evaluator.evaluate_at(x_test).squeeze()
+    u_test = model.interpolator.interpolate_at(x_test).squeeze()
     if plot_loss:
         plt.figure()
         plt.plot(loss_history)

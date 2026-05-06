@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 
-from hidenn_playground.shape_functions import ShapeFunction
+from neurom.shape_functions.shape_function import ShapeFunction
 
 
 class IsoparametricMapping1D(nn.Module):
+    """Class encapsulating mapping from physical to reference coordinates"""
+
     def __init__(self, shape_function: ShapeFunction):
         super().__init__()
         self.sf = shape_function
@@ -46,20 +48,20 @@ class IsoparametricMapping1D(nn.Module):
 
         # Inverse mapping
         # (N_e, dim)
-        J_inv = 2.0 / self.element_size(x_nodes)
+        det_F_inv = 1.0 / self.det_jacobian(x_nodes)
 
         # Offset positions
         # (N_e, N_q, dim)
         offset = x - x_half.unsqueeze(1)
 
         # Compute reference position
-        xi = offset * J_inv.unsqueeze(1)
+        xi = offset * det_F_inv.unsqueeze(1)
 
         return xi
 
-    def element_size(self, x_nodes):
+    def det_jacobian(self, x_nodes):
         """
-        Computes the size of the physical elements.
+        Determinant of transformation :math: F(x) = \\xi
 
         Args:
             x_nodes: The nodal points in physical space (N_e, N_nodes, dim)
@@ -67,4 +69,4 @@ class IsoparametricMapping1D(nn.Module):
         Returns:
             The size of the element.
         """
-        return x_nodes[:, 1, :] - x_nodes[:, 0, :]
+        return 0.5 * (x_nodes[:, 1, :] - x_nodes[:, 0, :])

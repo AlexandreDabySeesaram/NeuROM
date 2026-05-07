@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from neurom.integrate import integrate
+from neurom.math.integrate import integrate
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 

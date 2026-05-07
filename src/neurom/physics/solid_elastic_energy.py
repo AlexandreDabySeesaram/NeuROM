@@ -1,14 +1,13 @@
 import torch
 
 from neurom.physics.term import Term
-from neurom.math.jacobian import jacobian
-from neurom.math.inner import inner_point
+from neurom.math.inner import inner, inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
 from neurom.apply import apply
 
 
-class ElasticEnergy(Term):
+class SolidElasticEnergy(Term):
     """Elastic energy term for a displacement field.
 
     Args:
@@ -24,18 +23,15 @@ class ElasticEnergy(Term):
     where :math:`dx` is the quadrature measure.
     """
 
-    def __init__(self, field: FieldBase) -> None:
+    def __init__(self, field: FieldBase, strain, stress_point) -> None:
         self.field_name = field.name
+        self.strain = strain
+        self.stress_point = stress_point
 
     def integrand(self, field_layout: FieldLayout) -> torch.Tensor:
         """Compute the elastic energy integrand.
 
-        The method performs:
-        1. Retrieve the interpolation result for the stored field.
-        2. Compute the gradient :math:`\\nabla u`.
-        3. Form the inner product :math:`\\nabla u : \\nabla u` and multiply by :math:`0.5` and the quadrature measure :math:`dx`.
-
-        Args:
+        Args
             field_layout (FieldLayout): Layout providing access to interpolated field data.
 
         Returns:
@@ -46,10 +42,9 @@ class ElasticEnergy(Term):
         u = quad_interp_res.u
         dx = quad_interp_res.measure
 
-        # Compute du_dx**2
-        du_dx = jacobian(x, u)
+        epsilon = self.strain(x, u)
 
-        def elastic_energy_point(du_dx, dx):
-            return 0.5 * inner_point(du_dx, du_dx) * dx
+        def elastic_energy_point(eps, dx):
+            return 0.5 * inner_point(self.stress_point(eps), eps) * dx
 
-        return apply(elastic_energy_point, du_dx, dx).values
+        return apply(elastic_energy_point, epsilon, dx).values

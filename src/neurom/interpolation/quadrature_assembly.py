@@ -9,6 +9,7 @@ from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.interpolation.quadrature_assembly_result import (
     QuadratureAssemblyResult,
 )
+from neurom.samplings import QuadratureSampling
 
 
 class QuadratureAssembly(nn.Module):
@@ -45,7 +46,9 @@ class QuadratureAssembly(nn.Module):
         quad_pos = self.context.interpolate
 
         # Interpolate field
-        u_q = self._field_interpolator.at_reference(quad_pos.xi_back)
+        u_q = QuadratureSampling(
+            self._field_interpolator.at_reference(quad_pos.xi_back.values)
+        )
 
         # Assemble the result
         result = QuadratureAssemblyResult(x=quad_pos.x_phys, u=u_q, measure=measure)

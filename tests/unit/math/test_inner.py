@@ -2,7 +2,7 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.inner import inner
+from neurom.math.inner import inner
 
 torch.set_default_dtype(torch.float32)
 

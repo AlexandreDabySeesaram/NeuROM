@@ -5,7 +5,7 @@ from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.meshes.mesh import Mesh
 
 
-class IsoparametricMapping1D(nn.Module):
+class IsoparametricMapping2D(nn.Module):
     """Class encapsulating mapping from physical to reference coordinates"""
 
     def __init__(self, shape_function: ShapeFunction, mesh: Mesh):
@@ -13,10 +13,37 @@ class IsoparametricMapping1D(nn.Module):
         self.sf = shape_function
         self._mesh = mesh
         self.x_nodes = self._mesh.nodes_positions.at_elements()
+        self._compute_J_inv()
+
+    def _compute_J_inv(self):
+        # Get nodes for convenience (N_e, dim)
+        a = self.x_nodes[:, 0, :]
+        b = self.x_nodes[:, 1, :]
+        c = self.x_nodes[:, 2, :]
+
+        # Get line vectors (N_e, dim)
+        ab = b - a
+        ac = c - a
+
+        # Compute determinant and holds it as (N_e, 1) i.e. with N_q=1
+        self._det_J = (ab[:, 0] * ac[:, 1] - ab[:, 1] * ac[:, 0]).unsqueeze(-1)
+
+        # Inverse matrix (N_e,dim,dim)
+        self._J_inv = torch.stack(
+            [ac[:, 1], -ab[:, 1], -ac[:, 0], ab[:, 0]], dim=1
+        ).view(-1, 2, 2) / self.det_jacobian.unsqueeze(-1)
+
+    @property
+    def J_inv(self):
+        return self._J_inv
+
+    @property
+    def det_jacobian(self):
+        return self._det_J
 
     def map(self, xi):
         """
-        Maps reference coordinate to physical position based on the mesh elements positions
+        Maps reference coordinate to physical position based on the elements positions
 
         Args:
             xi: The reference coordinate (N_e, N_q, dim)
@@ -43,20 +70,14 @@ class IsoparametricMapping1D(nn.Module):
         Note:
             This linear mapping only works for linear shape functions and bar element.
         """
-        # Center point per element
-        # (N_e, dim)
-        x_half = 0.5 * (self.x_nodes[:, 1, :] + self.x_nodes[:, 0, :])
 
-        # Inverse mapping
-        # (N_e, dim)
-        det_F_inv = 1.0 / self.det_jacobian
+        # Recover x shape
+        _, N_q, _ = x.shape
 
-        # Offset positions
-        # (N_e, N_q, dim)
-        offset = x - x_half.unsqueeze(1)
+        # Shape 'a' into (N_e, N_q, dim)
+        a = self.x_nodes[:, 0, :].unsqueeze(1).expand(-1, N_q, -1)
 
-        # Compute reference position
-        xi = offset * det_F_inv.unsqueeze(1)
+        xi = torch.einsum("eql,elk->eqk", x - a, self.J_inv)
 
         return xi
 
@@ -74,33 +95,21 @@ class IsoparametricMapping1D(nn.Module):
         Note:
             This linear mapping only works for linear shape functions and bar element.
         """
-        # Center point per element
-        # (N_e, dim)
-        x_nodes = self.x_nodes[element_ids]
-        x_half = 0.5 * (x_nodes[:, 1, :] + x_nodes[:, 0, :])
 
-        # Inverse mapping
-        # (N_e, dim)
-        det_F_inv = 1.0 / self.det_jacobian[element_ids]
+        # Recover x shape
+        _, N_q, _ = x.shape
 
-        # Offset positions
-        # (N_e, N_q, dim)
-        offset = x - x_half.unsqueeze(1)
+        # Shape 'a' into (N_e, N_q, dim)
+        a = self.x_nodes[:, 0, :].unsqueeze(1).expand(-1, N_q, -1)
 
-        # Compute reference position
-        xi = offset * det_F_inv.unsqueeze(1)
-
+        # Restrict interpolation on given elements
+        xi = torch.einsum(
+            "eql,eqlk->eqk",
+            x - a[element_ids],
+            self.J_inv[element_ids].unsqueeze(1).expand(-1, N_q, -1, -1),
+        )
         return xi
-
-    @property
-    def det_jacobian(self):
-        """
-        Determinant of transformation :math: F(x) = \\xi
-
-        Returns:
-            The size of the element.
-        """
-        return 0.5 * (self.x_nodes[:, 1, :] - self.x_nodes[:, 0, :])
 
     def update(self):
         self.x_nodes = self._mesh.nodes_positions.at_elements()
+        self._compute_J_inv()

@@ -4,9 +4,9 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Mesh, Topology
+from neurom.meshes import Mesh, Connectivity
 from neurom.fields import Field, TrainableField
 from neurom.constraints import Dirichlet
 from neurom.field_layout import FieldLayout
@@ -14,7 +14,6 @@ from neurom.interpolation import (
     PointWiseInterpolator,
     QuadratureContext,
     QuadratureAssembly,
-    FieldInterpolator,
     IntegrationDomain,
 )
 
@@ -40,9 +39,6 @@ class AnalyticalSolution:
     def eval(self, x):
         return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
 
-    def potential_energy(self):
-        return 0.5 * self.f * (x - self.x_min) * (x - self.x_max)
-
 
 class Test1dBeamDeflection:
     """
@@ -58,7 +54,7 @@ class Test1dBeamDeflection:
         """
         Test that the displacement field corresponds to the analytical one.
 
-        Use quadratures.TwoPoints1D.
+        Use quadratures.MidPoint1D.
         """
         # --- Prepare parameters ---
         # Domain dimensions
@@ -84,15 +80,12 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate topology
-        topology = Topology(nodes, elements)
-
+        # Generate connectivity
+        connectivity = Connectivity(nodes, elements)
         # Shape function
-        sf = LinearSegment()
+        sf = LinearBar()
         # Quadrature strategy
         quad = MidPoint1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
 
         # Prepare Field layout and fill it with actual fields
         field_layout = FieldLayout()
@@ -101,7 +94,7 @@ class Test1dBeamDeflection:
         u = field_layout.add(
             TrainableField(
                 name="displacement",
-                topology=topology,
+                connectivity=connectivity,
                 init_values=u_init,
                 constraint=Dirichlet(
                     nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
@@ -110,20 +103,18 @@ class Test1dBeamDeflection:
         )
 
         # Positions
-        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+        x = field_layout.add(
+            Field(name="positions", connectivity=connectivity, values=x_array)
+        )
 
         # Load
-        f = field_layout.add(Field(name="load", topology=topology, values=load))
+        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
         # Generate mesh
-        mesh = Mesh(topology=topology, nodes_positions=x)
+        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
-        # Define quadrature context
-        quad_interp = QuadratureContext(
-            mesh=mesh,
-            quad=quad,
-            mapping=mapping,
-        )
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf, mesh)
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -158,7 +149,7 @@ class Test1dBeamDeflection:
             loss.backward(retain_graph=True)
             return loss
 
-        for i in range(n_epochs):
+        for _ in range(n_epochs):
             model()
             optimizer.step(closure)
 
@@ -167,18 +158,18 @@ class Test1dBeamDeflection:
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(result.x)
+        u_sol_train = solution.eval(result.x.values)
 
         # Check values
-        assert result.u.detach().numpy() == pytest.approx(
+        assert result.u.values.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-        u_test = pwi.at_position(x_test).squeeze()
+        u_test = pwi.at_position(x_test)
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
@@ -202,10 +193,6 @@ class Test1dBeamDeflection:
         # Number of points in the domain
         N = 100
 
-        # Load applied to the beam
-        def f(x):
-            return 1000.0
-
         # Number of training steps
         n_epochs = 3
         # Learning rate
@@ -223,15 +210,12 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate topology
-        topology = Topology(nodes, elements)
-
+        # Generate connectivity
+        connectivity = Connectivity(nodes, elements)
         # Shape function
-        sf = LinearSegment()
+        sf = LinearBar()
         # Quadrature strategy
         quad = TwoPoints1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
 
         # Prepare Field layout and fill it with actual fields
         field_layout = FieldLayout()
@@ -240,7 +224,7 @@ class Test1dBeamDeflection:
         u = field_layout.add(
             TrainableField(
                 name="displacement",
-                topology=topology,
+                connectivity=connectivity,
                 init_values=u_init,
                 constraint=Dirichlet(
                     nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
@@ -249,13 +233,18 @@ class Test1dBeamDeflection:
         )
 
         # Positions
-        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+        x = field_layout.add(
+            Field(name="positions", connectivity=connectivity, values=x_array)
+        )
 
         # Load
-        f = field_layout.add(Field(name="load", topology=topology, values=load))
+        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
         # Generate mesh
-        mesh = Mesh(topology=topology, nodes_positions=x)
+        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
+
+        # Mapping from/to reference/physical coordinates
+        mapping = IsoparametricMapping1D(sf, mesh)
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -290,7 +279,7 @@ class Test1dBeamDeflection:
             loss.backward(retain_graph=True)
             return loss
 
-        for i in range(n_epochs):
+        for _ in range(n_epochs):
             model()
             optimizer.step(closure)
 
@@ -299,18 +288,18 @@ class Test1dBeamDeflection:
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(result.x)
+        u_sol_train = solution.eval(result.x.values)
 
         # Check values
-        assert result.u.detach().numpy() == pytest.approx(
+        assert result.u.values.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-        u_test = pwi.at_position(x_test).squeeze()
+        u_test = pwi.at_position(x_test)
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)

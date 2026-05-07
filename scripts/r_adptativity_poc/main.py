@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
@@ -36,11 +36,11 @@ def main():
     # Define constant load
     load = 1000.0 * torch.ones(N, 1)
 
-    # Initialize topology
-    topology = Topology(nodes, elements)
+    # Initialize connectivity
+    connectivity = Connectivity(nodes, elements)
 
     # Define shape function to use
-    sf = LinearSegment()
+    sf = LinearBar()
     # Define quadrature method
     quad = TwoPoints1D()
     # Define mapping (for positions only)
@@ -53,7 +53,7 @@ def main():
     u = field_layout.add(
         TrainableField(
             name="displacement",
-            topology=topology,
+            connectivity=connectivity,
             init_values=u_init,
             constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
         )
@@ -63,7 +63,7 @@ def main():
     x = field_layout.add(
         TrainableField(
             name="positions",
-            topology=topology,
+            connectivity=connectivity,
             init_values=x_array,
             constraint=Dirichlet(
                 nodes=[0, N - 1],
@@ -73,10 +73,10 @@ def main():
     )
 
     # Load
-    f = field_layout.add(Field(name="load", topology=topology, values=load))
+    f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
     # Generate mesh
-    mesh = Mesh(topology=topology, nodes_positions=x)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
     # Define interpolator
     interpolator = Interpolator(

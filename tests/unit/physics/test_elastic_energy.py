@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from neurom.samplings import QuadratureSampling
 from neurom.physics.elastic_energy import ElasticEnergy
 from neurom.field_layout import FieldLayout
 from neurom.interpolation.quadrature_assembly_result import (
@@ -54,7 +55,11 @@ class TestElasticEnergy:
         """
         layout = FieldLayout()
         layout.add(field)
-        result = QuadratureAssemblyResult(x=x, u=u, measure=dx)
+        result = QuadratureAssemblyResult(
+            x=QuadratureSampling(x),
+            u=QuadratureSampling(u),
+            measure=QuadratureSampling(dx),
+        )
         layout.update(field, result)
         return layout
 

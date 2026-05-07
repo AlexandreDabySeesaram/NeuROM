@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from neurom.samplings import QuadratureSampling
 from neurom.physics.load_potential import LoadPotential
 from neurom.field_layout import FieldLayout
 from neurom.interpolation.quadrature_assembly_result import (
@@ -52,7 +53,11 @@ class TestLoadPotential:
             dx: Quadrature measure, shape ``(N_e, N_q, 1)``.
         """
         layout.add(field)
-        result = QuadratureAssemblyResult(x=x, u=u, measure=dx)
+        result = QuadratureAssemblyResult(
+            x=QuadratureSampling(x),
+            u=QuadratureSampling(u),
+            measure=QuadratureSampling(dx),
+        )
         layout.update(field, result)
 
     def test_scalar_load(self):

@@ -14,7 +14,6 @@ from neurom.interpolation import (
     PointWiseInterpolator,
     QuadratureContext,
     QuadratureAssembly,
-    FieldInterpolator,
     IntegrationDomain,
 )
 
@@ -156,7 +155,7 @@ class Test1dBeamDeflection:
             loss.backward(retain_graph=True)
             return loss
 
-        for i in range(n_epochs):
+        for _ in range(n_epochs):
             model()
             optimizer.step(closure)
 
@@ -165,10 +164,10 @@ class Test1dBeamDeflection:
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(result.x)
+        u_sol_train = solution.eval(result.x.values)
 
         # Check values
-        assert result.u.detach().numpy() == pytest.approx(
+        assert result.u.values.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 
@@ -288,7 +287,7 @@ class Test1dBeamDeflection:
             loss.backward(retain_graph=True)
             return loss
 
-        for i in range(n_epochs):
+        for _ in range(n_epochs):
             model()
             optimizer.step(closure)
 
@@ -297,10 +296,10 @@ class Test1dBeamDeflection:
 
         # Compute analytical solution
         solution = AnalyticalSolution(f=load_value, x_min=x_min, x_max=x_max)
-        u_sol_train = solution.eval(result.x)
+        u_sol_train = solution.eval(result.x.values)
 
         # Check values
-        assert result.u.detach().numpy() == pytest.approx(
+        assert result.u.values.detach().numpy() == pytest.approx(
             u_sol_train.detach().numpy(), rel=self.relative_tolerance
         )
 

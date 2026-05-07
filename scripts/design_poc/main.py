@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
 from neurom.constraints import Dirichlet
@@ -46,7 +46,7 @@ def main():
     topology = Topology(nodes, elements)
 
     # Define shape function to use
-    sf = LinearSegment()
+    sf = LinearBar()
     # Define quadrature method
     quad = TwoPoints1D()
 

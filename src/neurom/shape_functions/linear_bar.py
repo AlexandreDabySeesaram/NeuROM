@@ -1,14 +1,14 @@
 import torch
 
-from neurom.reference_elements.segment import Segment
+from neurom.reference_elements.bar import Bar
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
-class LinearSegment(ShapeFunction):
-    """Linear shape function on a Segment"""
+class LinearBar(ShapeFunction):
+    """Linear shape function on a Bar"""
 
     def __init__(self):
-        super().__init__(Segment())
+        super().__init__(Bar())
 
     def N(self, xi):
         """Shape function

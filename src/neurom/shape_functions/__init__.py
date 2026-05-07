@@ -1,4 +1,4 @@
 from neurom.shape_functions.shape_function import ShapeFunction
-from neurom.shape_functions.linear_segment import LinearSegment
-from neurom.shape_functions.quadratic_segment import QuadraticSegment
+from neurom.shape_functions.linear_bar import LinearBar
+from neurom.shape_functions.quadratic_bar import QuadraticBar
 from neurom.shape_functions.linear_triangle import LinearTriangle

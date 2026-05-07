@@ -4,7 +4,7 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
@@ -84,7 +84,7 @@ class Test1dBeamDeflection:
         topology = Topology(nodes, elements)
 
         # Shape function
-        sf = LinearSegment()
+        sf = LinearBar()
         # Quadrature strategy
         quad = MidPoint1D()
 
@@ -223,7 +223,7 @@ class Test1dBeamDeflection:
         topology = Topology(nodes, elements)
 
         # Shape function
-        sf = LinearSegment()
+        sf = LinearBar()
         # Quadrature strategy
         quad = TwoPoints1D()
 

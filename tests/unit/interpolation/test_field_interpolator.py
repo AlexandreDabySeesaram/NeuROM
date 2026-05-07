@@ -5,7 +5,7 @@ import torch
 from neurom.meshes.topology import Topology
 from neurom.fields import Field, TrainableField
 from neurom.constraints.no_constraint import NoConstraint
-from neurom.shape_functions.linear_segment import LinearSegment
+from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.field_interpolator import FieldInterpolator
 
 torch.set_default_dtype(torch.float32)
@@ -64,7 +64,7 @@ class TestFieldInterpolator:
     def test_field_interpolator_with_field(self, field):
         """Test the FieldInterpolator class with a Field"""
         # Create FieldInterpolator
-        field_interp = FieldInterpolator(sf=LinearSegment(), field=field)
+        field_interp = FieldInterpolator(sf=LinearBar(), field=field)
 
         # Prepare reference positions, tensor of shape (N_e, N_q, dim) and expected values
         # Midpoints of values
@@ -105,7 +105,7 @@ class TestFieldInterpolator:
         Note: no constraint is set for the boundary conditions for simplicity.
         """
         # Create FieldInterpolator
-        field_interp = FieldInterpolator(sf=LinearSegment(), field=trainable_field)
+        field_interp = FieldInterpolator(sf=LinearBar(), field=trainable_field)
 
         # Prepare reference positions, tensor of shape (N_e, N_q, dim) and expected values
         # Midpoints of values

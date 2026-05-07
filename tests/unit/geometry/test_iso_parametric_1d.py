@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.meshes import Topology, Mesh
 from neurom.fields.field import Field
 from neurom.geometry import IsoparametricMapping1D
@@ -26,7 +26,7 @@ def mapping():
     mesh = Mesh(topology=topology, nodes_positions=x)
 
     # Mapping from/to reference/physical coordinates
-    mapping = IsoparametricMapping1D(LinearSegment(), mesh)
+    mapping = IsoparametricMapping1D(LinearBar(), mesh)
 
     return mapping
 

@@ -8,7 +8,7 @@ from neurom.geometry.iso_parametric_mapping_1d import IsoparametricMapping1D
 from neurom.meshes import Topology, Mesh
 from neurom.fields import Field, TrainableField
 from neurom.constraints.no_constraint import NoConstraint
-from neurom.shape_functions.linear_segment import LinearSegment
+from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_positions import QuadraturePositions
 
@@ -49,7 +49,7 @@ class TestQuadratureContext:
             mesh=mesh,
             quad=MidPoint1D(),
             mapping=IsoparametricMapping1D(
-                LinearSegment(),
+                LinearBar(),
                 mesh,
             ),
         )

@@ -68,7 +68,7 @@ class IsoparametricMapping2D(nn.Module):
             xi:       (N_e, N_q, dim)      reference coordinates
 
         Note:
-            This linear mapping only works for linear shape functions and segment element.
+            This linear mapping only works for linear shape functions and bar element.
         """
 
         # Recover x shape
@@ -93,7 +93,7 @@ class IsoparametricMapping2D(nn.Module):
             xi:       (N_e, N_q, dim)      reference coordinates
 
         Note:
-            This linear mapping only works for linear shape functions and segment element.
+            This linear mapping only works for linear shape functions and bar element.
         """
 
         # Recover x shape

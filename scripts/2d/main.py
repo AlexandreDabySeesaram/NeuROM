@@ -110,12 +110,13 @@ def main():
     mesh = Mesh(topology=topology, nodes_positions=x)
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping2D(sf, mesh)
 
     # Write init mesh with all fields
     fname = output_dir / "init.xdmf"
     write_mesh(fname, mesh, field_layout)
+
+    # Define mapping (for positions only)
+    mapping = IsoparametricMapping2D(sf, mesh)
 
     # Define interpolation at quadrature
     ctx = QuadratureContext(mesh, quad, mapping)

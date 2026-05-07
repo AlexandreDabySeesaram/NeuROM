@@ -63,13 +63,13 @@ class TestQuadratureContext:
 
         # Check computed interpolation
         interp = quad_context.interpolate
-        assert interp.xi_ref.detach() == pytest.approx(
-            interp_expected.xi_ref, rel=self.relative_tolerance
+        assert interp.xi_ref.values.detach() == pytest.approx(
+            interp_expected.xi_ref.detach(), rel=self.relative_tolerance
         )
-        assert interp.x_phys.detach() == pytest.approx(
+        assert interp.x_phys.values.detach() == pytest.approx(
             interp_expected.x_phys, rel=self.relative_tolerance
         )
-        assert interp.xi_back.detach() == pytest.approx(
+        assert interp.xi_back.values.detach() == pytest.approx(
             interp_expected.xi_back, rel=self.relative_tolerance
         )
 
@@ -77,7 +77,9 @@ class TestQuadratureContext:
         measure = quad_context.measure
         # Weight = 0.5 and reference measure = 2.
         measure_expected = torch.tensor([4.0, 1.0, 11.0]).reshape(3, 1, 1)
-        assert measure == pytest.approx(measure_expected, rel=self.relative_tolerance)
+        assert measure.values == pytest.approx(
+            measure_expected, rel=self.relative_tolerance
+        )
 
         # Change positions
         new_values = torch.tensor([2.0, 5.0, 15.0, -10.0]).unsqueeze(-1)
@@ -87,18 +89,20 @@ class TestQuadratureContext:
 
         # Check the interpolation and the measure did not change
         interp = quad_context.interpolate
-        assert interp.xi_ref.detach() == pytest.approx(
+        assert interp.xi_ref.values.detach() == pytest.approx(
             interp_expected.xi_ref, rel=self.relative_tolerance
         )
-        assert interp.x_phys.detach() == pytest.approx(
+        assert interp.x_phys.values.detach() == pytest.approx(
             interp_expected.x_phys, rel=self.relative_tolerance
         )
-        assert interp.xi_back.detach() == pytest.approx(
+        assert interp.xi_back.values.detach() == pytest.approx(
             interp_expected.xi_back, rel=self.relative_tolerance
         )
 
         measure = quad_context.measure
-        assert measure == pytest.approx(measure_expected, rel=self.relative_tolerance)
+        assert measure.values == pytest.approx(
+            measure_expected, rel=self.relative_tolerance
+        )
 
         # Call update() and check the interpolation and the measure are now properly computed
         quad_context.update()
@@ -110,17 +114,19 @@ class TestQuadratureContext:
             x_phys=torch.tensor([3.5, 10.0, 2.5])[:, None, None],
             xi_back=torch.tensor([0.0, 0.0, 0.0])[:, None, None],
         )
-        assert interp.xi_ref.detach() == pytest.approx(
+        assert interp.xi_ref.values.detach() == pytest.approx(
             interp_expected.xi_ref, rel=self.relative_tolerance
         )
-        assert interp.x_phys.detach() == pytest.approx(
+        assert interp.x_phys.values.detach() == pytest.approx(
             interp_expected.x_phys, rel=self.relative_tolerance
         )
-        assert interp.xi_back.detach() == pytest.approx(
+        assert interp.xi_back.values.detach() == pytest.approx(
             interp_expected.xi_back, rel=self.relative_tolerance
         )
 
         measure = quad_context.measure
         # Weight = 0.5 and reference measure = 2.
         measure_expected = torch.tensor([3.0, 10.0, 25.0]).reshape(3, 1, 1)
-        assert measure == pytest.approx(measure_expected, rel=self.relative_tolerance)
+        assert measure.values == pytest.approx(
+            measure_expected, rel=self.relative_tolerance
+        )

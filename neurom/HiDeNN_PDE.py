@@ -283,6 +283,7 @@ class InterpPara(nn.Module):
     """This class acts as the 1D interplation in the parametric space and therefore output a parameter mode in the Tensor Decomposition (TD) sens """
     def __init__(self, mu_min, mu_max,N_mu):
         super(InterpPara, self).__init__()
+        # pyrefly: ignore [missing-import]
         import numpy as np
         # super(InterpPara, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
@@ -2354,6 +2355,58 @@ class InterpolationBlock3D_Lin(nn.Module):
 
 
 
+class InterpolationBlock_Boundary_3D_Lin(nn.Module):
+    """This class performs the FEM interpolation based on 2D shape functions and 3D nodal values"""
+    def __init__(self, connectivity):
+       
+        super(InterpolationBlock_Boundary_3D_Lin, self).__init__()
+        self.connectivity = connectivity.astype(int)
+        self.updated_connectivity = True
+
+    def UpdateConnectivity(self,connectivity):
+        """This function updates the connectivity tables of the interpolatin class
+        args: 
+            connectivity (numpy array): The new connectivty table"""
+        self.connectivity = connectivity.astype(int)
+        self.updated_connectivity = True
+
+    def forward(self, x, cell_id, nodal_values, shape_functions,node_mask_x = 'nan', node_mask_y= 'nan', node_mask_z= 'nan', nodal_values_tensor= 'nan', flag_training = 'True'):
+        if flag_training:
+            if self.updated_connectivity:
+                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+                if cell_nodes_IDs.ndim == 1:
+                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+                self.updated_connectivity = False
+                self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
+            
+            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, self.Ids.repeat(1,1,3))
+            u = torch.einsum('igx,g...i->xg',self.nodes_values,shape_functions)
+            return u
+        else:
+            cell_nodes_IDs = self.connectivity[cell_id,:] - 1
+            if cell_nodes_IDs.ndim == 1:
+                cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
+
+            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
+            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']  
+            Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
+            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(3,1,1),1, Ids.repeat(1,1,3))
+            u = torch.einsum('igx,g...i->xg',nodes_values,shape_functions)
+            return u
+
 class MeshNN_3D(nn.Module):
     """ This class is a space HiDeNN building a Finite Element (FE) interpolation over the space domain. 
     The coordinates of the nodes of the underlying mesh are trainable. Those coordinates are passed as a List of Parameters to the subsequent sub-neural networks
@@ -2418,6 +2471,12 @@ class MeshNN_3D(nn.Module):
         if mesh.order =='1':
             self.ElementBlock   = ElementBlock3D_Lin(mesh.Connectivity)
             self.Interpolation  = InterpolationBlock3D_Lin(mesh.Connectivity)
+            if len(self.borders_nodes) > 0:
+                self.ElementBlockBoundary = ElementBlock2D_Lin(np.array(self.borders_nodes), is_boundary=True)
+                self.InterpolationBoundary = InterpolationBlock_Boundary_3D_Lin(np.array(self.borders_nodes))
+            else:
+                self.ElementBlockBoundary = None
+                self.InterpolationBoundary = None
         elif mesh.order == '2':
             assert 0, "quadratic 3D element not implemented. Aborting."
 
@@ -2427,7 +2486,7 @@ class MeshNN_3D(nn.Module):
         self.UnFreeze_FEM()
 
 
-    def forward(self, x = 'NaN', el_id = 'NaN'):
+    def forward(self, x = 'NaN', el_id = 'NaN', return_boundary = False):
         """
         The main forward pass of the mesh object.
 
@@ -2437,12 +2496,16 @@ class MeshNN_3D(nn.Module):
             self (object): The object itself.
             x (torch.Tensor, optional): Input tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
             el_id (torch.Tensor, optional): Element ID tensor (defaults to 'NaN' and not required in training mode as the interpolation is performed in all elements).
+            return_boundary (bool, optional): Whether to compute and return interpolations for 2D boundaries (defaults to False).
 
         Returns:
             tuple: A tuple containing:
                 - interpol (torch.Tensor): The interpolated values at the integration points.
                 - x_g (torch.Tensor): The coordinates of the integration points. (Only returned during training)
                 - detJ (torch.Tensor): The determinant of the Jacobian matrix. (Only returned during training)
+                - [If return_boundary is True] interpol_b (torch.Tensor): Interpolated values at boundary integration points.
+                - [If return_boundary is True] x_g_b (torch.Tensor): Coordinates of boundary integration points.
+                - [If return_boundary is True] detJ_b (torch.Tensor): Determinant of the boundary Jacobian matrix.
 
         Notes:
             * During training (`self.training` is True):
@@ -2455,6 +2518,13 @@ class MeshNN_3D(nn.Module):
             el_id                       = torch.arange(0,self.NElem,dtype=torch.int)
             shape_functions,x_g, detJ   = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
             interpol                    = self.Interpolation(x_g, el_id, self.nodal_values, shape_functions, self.dofs_free_x,self.dofs_free_y,self.dofs_free_z,self.values,self.training)
+            
+            if return_boundary and self.ElementBlockBoundary is not None:
+                el_id_b = torch.arange(0, len(self.borders_nodes), dtype=torch.int)
+                shape_functions_b, x_g_b, detJ_b = self.ElementBlockBoundary(x, el_id_b, self.coordinates, self.nodal_values, self.coord_free, self.coordinates_all, self.training)
+                interpol_b = self.InterpolationBoundary(x_g_b, el_id_b, self.nodal_values, shape_functions_b, self.dofs_free_x, self.dofs_free_y, self.dofs_free_z, self.values, self.training)
+                return interpol, x_g, detJ, interpol_b, x_g_b, detJ_b
+            
             return interpol, x_g, detJ
         else:
             shape_functions             = self.ElementBlock(x, el_id, self.coordinates, self.nodal_values, self.coord_free,self.coordinates_all, self.training)
@@ -2534,7 +2604,9 @@ class MeshNN_3D(nn.Module):
             Sets the Boundary conditions and defines which parameters should be frozen based on the BCs
         """
         for i in range(len(ListOfDirichletsBCsValues)):
+            #TOCHECK <    
             if len(self.DirichletBoundaryNodes[i]) != 0:
+                #>
                 IDs = torch.tensor(self.DirichletBoundaryNodes[i], dtype=torch.int)
                 IDs = torch.unique(IDs.reshape(IDs.shape[0],-1))-1
                 match self.ListOfDirichletsBCsNormals[i]:

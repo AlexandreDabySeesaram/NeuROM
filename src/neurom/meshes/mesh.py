@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from neurom.meshes.topology import Topology
+from neurom.meshes.connectivity import Connectivity
 
 
 def is_in_triangle(pts, vertices):
@@ -97,40 +97,40 @@ class Mesh(nn.Module):
     * Its nodes' positions
 
     Args:
-        topology (Topology): The mesh topology.
-        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
+        connectivity (Connectivity): The mesh connectivity.
+        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
 
     Attributes:
-        topology (Topology): The mesh topology.
-        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
+        connectivity (Connectivity): The mesh connectivity.
+        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
 
     Raises:
-        ValueError: If self.topology differs from nodes_positions.topology.
+        ValueError: If self.connectivity differs from nodes_positions.connectivity.
     """
 
-    def __init__(self, topology, nodes_positions):
+    def __init__(self, connectivity, nodes_positions):
         super().__init__()
 
-        self.topology = topology
+        self.connectivity = connectivity
         self.nodes_positions = nodes_positions
         self.dim = self.nodes_positions.dim
 
-        if self.topology is not self.nodes_positions.topology:
+        if self.connectivity is not self.nodes_positions.connectivity:
             raise ValueError(
-                f"Mesh self.topology does not correspond to self.nodes_positions.topology"
+                f"Mesh self.connectivity does not correspond to self.nodes_positions.connectivity"
             )
 
     @property
     def n_nodes(self):
-        return self.topology.n_nodes
+        return self.connectivity.n_nodes
 
     @property
     def n_elements(self):
-        return self.topology.n_elements
+        return self.connectivity.n_elements
 
     def elements_at(self, x):
         nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
-        connectivity = self.topology.connectivity  # (N_e, n_nodes_per_elem)
+        connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
 
         if self.dim == 1:
             return elements_at_1d(x.squeeze().unsqueeze(-1), nodes, connectivity)

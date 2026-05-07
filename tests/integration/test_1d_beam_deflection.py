@@ -6,7 +6,7 @@ import torch.nn as nn
 from neurom.quadratures import MidPoint1D, TwoPoints1D
 from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Mesh, Topology
+from neurom.meshes import Mesh, Connectivity
 from neurom.fields import Field, TrainableField
 from neurom.constraints import Dirichlet
 from neurom.field_layout import FieldLayout
@@ -54,7 +54,7 @@ class Test1dBeamDeflection:
         """
         Test that the displacement field corresponds to the analytical one.
 
-        Use quadratures.TwoPoints1D.
+        Use quadratures.MidPoint1D.
         """
         # --- Prepare parameters ---
         # Domain dimensions
@@ -80,9 +80,8 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate topology
-        topology = Topology(nodes, elements)
-
+        # Generate connectivity
+        connectivity = Connectivity(nodes, elements)
         # Shape function
         sf = LinearBar()
         # Quadrature strategy
@@ -95,7 +94,7 @@ class Test1dBeamDeflection:
         u = field_layout.add(
             TrainableField(
                 name="displacement",
-                topology=topology,
+                connectivity=connectivity,
                 init_values=u_init,
                 constraint=Dirichlet(
                     nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
@@ -104,23 +103,18 @@ class Test1dBeamDeflection:
         )
 
         # Positions
-        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+        x = field_layout.add(
+            Field(name="positions", connectivity=connectivity, values=x_array)
+        )
 
         # Load
-        f = field_layout.add(Field(name="load", topology=topology, values=load))
+        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
         # Generate mesh
-        mesh = Mesh(topology=topology, nodes_positions=x)
+        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf, mesh)
-
-        # Define quadrature context
-        quad_interp = QuadratureContext(
-            mesh=mesh,
-            quad=quad,
-            mapping=mapping,
-        )
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -179,6 +173,7 @@ class Test1dBeamDeflection:
 
         # Compute analytical solution
         u_sol_test = solution.eval(x_test)
+
         # Check values
         # Note: absolute tolerance because there are 0 at boundaries
         assert u_test.detach().numpy() == pytest.approx(
@@ -198,10 +193,6 @@ class Test1dBeamDeflection:
         # Number of points in the domain
         N = 100
 
-        # Load applied to the beam
-        def f(x):
-            return 1000.0
-
         # Number of training steps
         n_epochs = 3
         # Learning rate
@@ -219,9 +210,8 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate topology
-        topology = Topology(nodes, elements)
-
+        # Generate connectivity
+        connectivity = Connectivity(nodes, elements)
         # Shape function
         sf = LinearBar()
         # Quadrature strategy
@@ -234,7 +224,7 @@ class Test1dBeamDeflection:
         u = field_layout.add(
             TrainableField(
                 name="displacement",
-                topology=topology,
+                connectivity=connectivity,
                 init_values=u_init,
                 constraint=Dirichlet(
                     nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
@@ -243,13 +233,15 @@ class Test1dBeamDeflection:
         )
 
         # Positions
-        x = field_layout.add(Field(name="positions", topology=topology, values=x_array))
+        x = field_layout.add(
+            Field(name="positions", connectivity=connectivity, values=x_array)
+        )
 
         # Load
-        f = field_layout.add(Field(name="load", topology=topology, values=load))
+        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
         # Generate mesh
-        mesh = Mesh(topology=topology, nodes_positions=x)
+        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
         # Mapping from/to reference/physical coordinates
         mapping = IsoparametricMapping1D(sf, mesh)

@@ -19,8 +19,8 @@ class DummyField(FieldBase):
     """
 
     def __init__(self, name: str):
-        # ``topology`` is unused in these tests; ``None`` is acceptable.
-        super().__init__(name=name, topology=None)
+        # ``connectivity`` is unused in these tests; ``None`` is acceptable.
+        super().__init__(name=name, connectivity=None)
 
     def full_values(self):
         return torch.tensor([])

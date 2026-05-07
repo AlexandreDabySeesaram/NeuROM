@@ -27,7 +27,7 @@ def write_mesh(fname: Path, mesh: Mesh, field_layout: FieldLayout) -> None:
         points_np = np.column_stack([points_np, np.zeros(points_np.shape[0])])
 
     # Build the cell block(s).
-    connectivity_np: np.ndarray = mesh.topology.connectivity.detach().cpu().numpy()
+    connectivity_np: np.ndarray = mesh.connectivity.connectivity.detach().cpu().numpy()
     cells = [("triangle", connectivity_np)]
 
     # Containers for mesh data.

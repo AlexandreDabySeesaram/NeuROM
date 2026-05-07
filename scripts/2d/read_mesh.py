@@ -2,13 +2,13 @@ from dataclasses import dataclass
 import meshio
 import torch
 from typing import Tuple, Dict
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 
 
-def read_mesh(fname) -> Tuple[Topology, Dict[str, torch.tensor]]:
+def read_mesh(fname) -> Tuple[Connectivity, Dict[str, torch.tensor]]:
     """Read a mesh and convert it to pytorch arrays
 
-    Read the connectivity of a mesh and parse it as a Topology.
+    Read the connectivity of a mesh and parse it as a Connectivity.
     Reads all point data and parse it as a dictionnary of name to pytorch tensor.
     """
 
@@ -39,8 +39,8 @@ def read_mesh(fname) -> Tuple[Topology, Dict[str, torch.tensor]]:
     # Nodes ids
     nodes = torch.arange(0, n_nodes)
 
-    # Initialize topology
-    topology = Topology(nodes, triangles)
+    # Initialize connectivity
+    connectivity = Connectivity(nodes, triangles)
 
-    # Return topology
-    return (topology, data)
+    # Return connectivity
+    return (connectivity, data)

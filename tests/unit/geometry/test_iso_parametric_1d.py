@@ -4,7 +4,7 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.shape_functions import LinearBar
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.fields.field import Field
 from neurom.geometry import IsoparametricMapping1D
 
@@ -20,10 +20,10 @@ def mapping():
     # (N_e, N_nodes, dim) = (1,2,1)
     nodes = torch.tensor([0, 1])
     elements = torch.tensor([0, 1]).reshape(1, 2)
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([5.0, 10.0]).reshape(2, 1)
-    x = Field(name="x", topology=topology, values=values)
-    mesh = Mesh(topology=topology, nodes_positions=x)
+    x = Field(name="x", connectivity=connectivity, values=values)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
     # Mapping from/to reference/physical coordinates
     mapping = IsoparametricMapping1D(LinearBar(), mesh)

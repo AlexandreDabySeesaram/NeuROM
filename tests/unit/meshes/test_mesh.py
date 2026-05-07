@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from neurom.meshes.mesh import Mesh, Topology
+from neurom.meshes.mesh import Mesh, Connectivity
 from neurom.fields.field import Field
 from neurom.fields.trainable_field import TrainableField
 from neurom.constraints.no_constraint import NoConstraint
@@ -27,29 +27,31 @@ class TestMesh:
         N = 6
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        topology = Topology(nodes, elements)
+        connectivity = Connectivity(nodes, elements)
         nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-        x = Field(name="x", topology=topology, values=nodes_positions)
-        mesh = Mesh(topology, x)
+        x = Field(name="x", connectivity=connectivity, values=nodes_positions)
+        mesh = Mesh(connectivity, x)
 
-        # - 1 - Check topology
+        # - 1 - Check connectivity
         # Nodes
-        assert "nodes" in mesh.topology._buffers
-        assert isinstance(getattr(mesh.topology, "nodes"), torch.Tensor)
-        assert mesh.topology.nodes.shape == (N,)
-        assert (mesh.topology.nodes == nodes).all()
+        assert "nodes_indices" in mesh.connectivity._buffers
+        assert isinstance(getattr(mesh.connectivity, "nodes_indices"), torch.Tensor)
+        assert mesh.connectivity.nodes_indices.shape == (N,)
+        assert (mesh.connectivity.nodes_indices == nodes).all()
 
         # Connectivity
-        assert "connectivity" in mesh.topology._buffers
-        assert isinstance(getattr(mesh.topology, "connectivity"), torch.Tensor)
-        assert mesh.topology.connectivity.shape == (N - 1, 2)
-        assert (mesh.topology.connectivity == elements).all()
+        assert "element_connectivity" in mesh.connectivity._buffers
+        assert isinstance(
+            getattr(mesh.connectivity, "element_connectivity"), torch.Tensor
+        )
+        assert mesh.connectivity.element_connectivity.shape == (N - 1, 2)
+        assert (mesh.connectivity.element_connectivity == elements).all()
 
         # Number of nodes
-        assert mesh.topology.n_nodes == N
+        assert mesh.connectivity.n_nodes == N
 
         # Number of elements
-        assert mesh.topology.n_elements == N - 1
+        assert mesh.connectivity.n_elements == N - 1
 
         # - 2- Check nodes_positions
         assert mesh.nodes_positions.name == "x"
@@ -66,34 +68,36 @@ class TestMesh:
         N = 6
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        topology = Topology(nodes, elements)
+        connectivity = Connectivity(nodes, elements)
         nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
         x = TrainableField(
             name="x",
-            topology=topology,
+            connectivity=connectivity,
             init_values=nodes_positions,
             constraint=NoConstraint(),
         )
-        mesh = Mesh(topology, x)
+        mesh = Mesh(connectivity, x)
 
-        # - 1 - Check topology
+        # - 1 - Check connectivity
         # Nodes
-        assert "nodes" in mesh.topology._buffers
-        assert isinstance(getattr(mesh.topology, "nodes"), torch.Tensor)
-        assert mesh.topology.nodes.shape == (N,)
-        assert (mesh.topology.nodes == nodes).all()
+        assert "nodes_indices" in mesh.connectivity._buffers
+        assert isinstance(getattr(mesh.connectivity, "nodes_indices"), torch.Tensor)
+        assert mesh.connectivity.nodes_indices.shape == (N,)
+        assert (mesh.connectivity.nodes_indices == nodes).all()
 
         # Connectivity
-        assert "connectivity" in mesh.topology._buffers
-        assert isinstance(getattr(mesh.topology, "connectivity"), torch.Tensor)
-        assert mesh.topology.connectivity.shape == (N - 1, 2)
-        assert (mesh.topology.connectivity == elements).all()
+        assert "element_connectivity" in mesh.connectivity._buffers
+        assert isinstance(
+            getattr(mesh.connectivity, "element_connectivity"), torch.Tensor
+        )
+        assert mesh.connectivity.element_connectivity.shape == (N - 1, 2)
+        assert (mesh.connectivity.element_connectivity == elements).all()
 
         # Number of nodes
-        assert mesh.topology.n_nodes == N
+        assert mesh.connectivity.n_nodes == N
 
         # Number of elements
-        assert mesh.topology.n_elements == N - 1
+        assert mesh.connectivity.n_elements == N - 1
 
         # - 2- Check nodes_positions
         assert mesh.nodes_positions.name == "x"
@@ -102,19 +106,19 @@ class TestMesh:
             nodes_positions, rel=self.relative_tolerance
         )
 
-    def test_incompatible_topologies(self):
-        """Tries to create a mesh with nodes positions having a different topology than the one owned by mesh"""
+    def test_incompatible_connectivities(self):
+        """Tries to create a mesh with nodes positions having a different connectivity than the one owned by mesh"""
         # Number of vertices
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        topology = Topology(nodes, elements)
+        connectivity = Connectivity(nodes, elements)
 
         # Less nodes positions than nodes
         x = Field(
             name="x",
-            topology=topology,
+            connectivity=connectivity,
             values=torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1),
         )
-        other_topology = Topology(nodes, elements)
+        other_connectivity = Connectivity(nodes, elements)
         with pytest.raises(ValueError):
-            mesh = Mesh(other_topology, x)
+            mesh = Mesh(other_connectivity, x)

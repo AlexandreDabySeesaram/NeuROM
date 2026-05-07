@@ -1,13 +1,13 @@
 import torch
 
 from neurom.fields.field_base import FieldBase
-from neurom.meshes.topology import Topology
+from neurom.meshes.connectivity import Connectivity
 
 
 class Field(FieldBase):
     """Interface of a Field
 
-    A Field is defined at the nodal points (number of vertices) where the interpolation is performed, based on the topology. As such a Field tensor has shape (N_vertices, dim) where dim is the dimension of the field.
+    A Field is defined at the nodal points (number of vertices) where the interpolation is performed, based on the connectivity. As such a Field tensor has shape (N_vertices, dim) where dim is the dimension of the field.
     The values of the field are registered as a buffer.
 
     Note:
@@ -15,13 +15,12 @@ class Field(FieldBase):
 
     Args:
         name (str): The Field's name.
-        topology (Topology): The topology on which the Field is based.
+        connectivity (Connectivity): The connectivity on which the Field is based.
         init_values (torch.Tensor): The initial values of the Field
-        constraint (Constraint): The constraint which is imposed on the Field.
 
     Attributes:
         name (str): The Field's name.
-        topology (Topology): The topology on which the Field is based.
+        connectivity (Connectivity): The connectivity on which the Field is based.
         values (torch.nn.parameter.Buffer): The values at vertices.
 
     Raises:
@@ -32,12 +31,12 @@ class Field(FieldBase):
     def __init__(
         self,
         name: str,
-        topology: Topology,
+        connectivity: Connectivity,
         values,
     ):
-        super().__init__(name=name, topology=topology)
+        super().__init__(name=name, connectivity=connectivity)
 
-        n_nodes = self.topology.n_nodes
+        n_nodes = self.connectivity.n_nodes
         shape_values = values.shape
         if len(shape_values) <= 1:
             raise ValueError(
@@ -47,7 +46,7 @@ class Field(FieldBase):
         n_values = shape_values[0]
         if n_values != n_nodes:
             raise ValueError(
-                f"Given 'values' has a different number of values ({n_values}) than number of nodes in self.topology ({n_nodes})"
+                f"Given 'values' has a different number of values ({n_values}) than number of nodes in self.connectivity ({n_nodes})"
             )
 
         # Initialize reduced DOFs
@@ -67,6 +66,6 @@ class Field(FieldBase):
     def at_elements(self):
         """Get the full values at elements
 
-        Get the full values but per element following the topology connectivity.
+        Get the full values but per element following the connectivity connectivity.
         """
-        return self.full_values()[self.topology.connectivity]
+        return self.full_values()[self.connectivity.element_connectivity]

@@ -34,7 +34,9 @@ class QuadratureContext(nn.Module):
         self._mesh = mesh
         self._mapping = mapping
         self._quad = quad
-        self._xi_ref = reference_coordinates(self._mesh.topology.n_elements, self._quad)
+        self._xi_ref = reference_coordinates(
+            self._mesh.connectivity.n_elements, self._quad
+        )
         self._xi_ref.requires_grad_(True)
         self._setup()
 

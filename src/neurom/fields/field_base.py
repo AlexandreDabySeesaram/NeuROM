@@ -2,19 +2,19 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
-from neurom.meshes.topology import Topology
+from neurom.meshes.connectivity import Connectivity
 
 
 class FieldBase(nn.Module, ABC):
     def __init__(
         self,
         name: str,
-        topology: Topology,
+        connectivity: Connectivity,
     ):
         super().__init__()
 
         self.name = name
-        self.topology = topology
+        self.connectivity = connectivity
 
     @abstractmethod
     def full_values(self):
@@ -28,6 +28,6 @@ class FieldBase(nn.Module, ABC):
     def at_elements(self):
         """Get the full values at elements
 
-        Get the full values but per element following the topology connectivity.
+        Get the full values but per element following the connectivity connectivity.
         """
         pass

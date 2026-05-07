@@ -19,7 +19,7 @@ class PointWiseInterpolator(nn.Module):
     def at_position(self, x: torch.Tensor):
         element_ids = self.mesh.elements_at(x)
         # Get connectivity for those elements
-        element_nodes_ids = self.mesh.topology.connectivity[element_ids, :]
+        element_nodes_ids = self.mesh.connectivity.element_connectivity[element_ids, :]
 
         # (N_e, N_q, dim)
         xi = self._mapping.inverse_map_at(x, element_ids)

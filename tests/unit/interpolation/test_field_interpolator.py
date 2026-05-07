@@ -2,7 +2,7 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.meshes.topology import Topology
+from neurom.meshes.connectivity import Connectivity
 from neurom.fields import Field, TrainableField
 from neurom.constraints.no_constraint import NoConstraint
 from neurom.shape_functions.linear_bar import LinearBar
@@ -16,16 +16,16 @@ def field():
     """
     Prepare what is needed to define a Field:
     * name = "test"
-    * Simple topology: 3 elements with 4 nodes.
+    * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     """
     name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    field = Field(name="test", topology=topology, values=values)
+    field = Field(name="test", connectivity=connectivity, values=values)
 
     return field
 
@@ -35,7 +35,7 @@ def trainable_field():
     """
     Prepare what is needed to define a TrainableField:
     * name = "test"
-    * Simple topology: 3 elements with 4 nodes.
+    * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     * Constraint: NoConstraint()
     """
@@ -43,10 +43,13 @@ def trainable_field():
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     field = TrainableField(
-        name="test", topology=topology, init_values=values, constraint=NoConstraint()
+        name="test",
+        connectivity=connectivity,
+        init_values=values,
+        constraint=NoConstraint(),
     )
 
     return field

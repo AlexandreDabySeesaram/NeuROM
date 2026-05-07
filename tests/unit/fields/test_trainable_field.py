@@ -4,7 +4,7 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.fields import TrainableField
-from neurom.meshes import Topology
+from neurom.meshes import Connectivity
 from neurom.constraints import NoConstraint, Dirichlet
 
 torch.set_default_dtype(torch.float32)
@@ -15,7 +15,7 @@ def field_no_constraint():
     """
     Prepare a TrainableField with:
     * name = "test"
-    * Simple topology: 3 elements with 4 nodes.
+    * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     * Constraint: NoConstraint
     """
@@ -23,11 +23,11 @@ def field_no_constraint():
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     init_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     field = TrainableField(
         name="test",
-        topology=topology,
+        connectivity=connectivity,
         init_values=init_values,
         constraint=NoConstraint(),
     )
@@ -40,7 +40,7 @@ def field_dirichlet_constraint():
     """
     Prepare a TrainableField with:
     * name = "test"
-    * Simple topology: 3 elements with 4 nodes.
+    * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     * Constraint: Dirichlet with nodes=[0, 2], values_imposed=[100., 200.]
     """
@@ -48,12 +48,12 @@ def field_dirichlet_constraint():
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     init_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
     values_imposed = torch.tensor([100.0, 200.0]).unsqueeze(-1)
     field = TrainableField(
         name="test",
-        topology=topology,
+        connectivity=connectivity,
         init_values=init_values,
         constraint=Dirichlet(nodes=[0, 2], values_imposed=values_imposed),
     )

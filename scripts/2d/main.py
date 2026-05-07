@@ -12,7 +12,7 @@ import pandas as pd
 from neurom.quadratures import MidPoint2D, ThreePoints2D
 from neurom.shape_functions import LinearTriangle
 from neurom.geometry import IsoparametricMapping2D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField, ElementField
 from neurom.field_layout import FieldLayout
@@ -61,7 +61,7 @@ def main():
     lame_mu = 1.0
 
     # Read mesh
-    topology, data = read_mesh(fname)
+    connectivity, data = read_mesh(fname)
 
     # Get positions - restrict to 2D
     points = data["x"][:, 0:2].to(torch.float32)
@@ -74,8 +74,8 @@ def main():
     mask_top = torch.logical_and(dim_tags[:, 1] == 3, dim_tags[:, 0] == 1)
     mask_bottom = torch.logical_and(dim_tags[:, 1] == 1, dim_tags[:, 0] == 1)
 
-    nodes_top = topology.nodes[mask_top]
-    nodes_bottom = topology.nodes[mask_bottom]
+    nodes_top = connectivity.nodes[mask_top]
+    nodes_bottom = connectivity.nodes[mask_bottom]
     nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
 
     u_top = torch.tensor([0.0, -1.0]).expand(nodes_top.shape[0], 2)
@@ -97,17 +97,19 @@ def main():
     u = field_layout.add(
         TrainableField(
             name="displacement",
-            topology=topology,
+            connectivity=connectivity,
             init_values=u_init,
             constraint=Dirichlet(nodes=nodes_u_bc, values_imposed=u_bc),
         )
     )
 
     # Positions
-    x = field_layout.add(Field(name="positions", topology=topology, values=points))
+    x = field_layout.add(
+        Field(name="positions", connectivity=connectivity, values=points)
+    )
 
     # Generate mesh
-    mesh = Mesh(topology=topology, nodes_positions=x)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
 

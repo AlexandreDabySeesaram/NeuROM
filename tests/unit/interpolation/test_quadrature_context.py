@@ -5,7 +5,7 @@ import torch.nn as nn
 # Import library modules
 from neurom.quadratures.mid_point_1d import MidPoint1D
 from neurom.geometry.iso_parametric_mapping_1d import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.fields import Field, TrainableField
 from neurom.constraints.no_constraint import NoConstraint
 from neurom.shape_functions.linear_bar import LinearBar
@@ -19,17 +19,17 @@ torch.set_default_dtype(torch.float32)
 def mesh():
     """
     Prepare what is needed to define a Mesh with positions as a Field:
-    * Simple topology: 3 elements with 4 nodes.
+    * Simple connectivity: 3 elements with 4 nodes.
     * Positions: [3., 7., 6., -5.]
     """
     name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    topology = Topology(nodes, elements)
+    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    x = Field(name="x", topology=topology, values=values)
-    mesh = Mesh(topology=topology, nodes_positions=x)
+    x = Field(name="x", connectivity=connectivity, values=values)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
     return mesh
 
@@ -84,7 +84,7 @@ class TestQuadratureContext:
         # Change positions
         new_values = torch.tensor([2.0, 5.0, 15.0, -10.0]).unsqueeze(-1)
         mesh.nodes_positions = Field(
-            name="x", topology=mesh.topology, values=new_values
+            name="x", connectivity=mesh.connectivity, values=new_values
         )
 
         # Check the interpolation and the measure did not change

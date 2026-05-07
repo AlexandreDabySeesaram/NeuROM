@@ -2,9 +2,10 @@ import torch
 
 from neurom.physics.term import Term
 from neurom.math.jacobian import jacobian
-from neurom.math.inner import inner
+from neurom.math.inner import inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
+from neurom.apply import apply
 
 
 class ElasticEnergy(Term):
@@ -47,6 +48,8 @@ class ElasticEnergy(Term):
 
         # Compute du_dx**2
         du_dx = jacobian(x, u)
-        inner_product = inner(du_dx, du_dx)
-        result = (0.5 * inner_product) * dx
-        return result
+
+        def elastic_energy_point(du_dx, dx):
+            return 0.5 * inner_point(du_dx, du_dx) * dx
+
+        return apply(elastic_energy_point, du_dx, dx).values

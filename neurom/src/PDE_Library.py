@@ -631,6 +631,63 @@ def InternalEnergy_2_3D_einsum_Tripara(model,lmbda, mu,E):
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
 
+def InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,lmbda, mu,E):
+
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+ 
+
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        case 3:
+            # print(Space_modes[0].shape)
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list    = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+    eps_i       = torch.stack(eps_list,dim=2)  
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+        ]
+    lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]    
+    E_float = E[0][:,0]
+    theta_float = E[1][:,0]
+    phi_float = E[2][:,0]
+
+    angles = [theta_float,phi_float]
+
+    # print(f"eps_i shape is {eps_i.shape}")#DEBUG
+    W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_float)
+
+
+    Gravity_force = Gravity_vect(angles,rho = 1e-9, dim = model.Space_modes[0].mesh.dim, n_angle=2).to(model.float_config.dtype).to(model.float_config.device)
+    W_ext = torch.einsum('iem,its,mp...,mt...,ms...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],torch.abs(detJ_i))
+
+
+    k = 1 # Boundary stiffness 
+    W_Boundary = BoundaryStiffnessEnergy_para(model, k, E, u_ref=0)
+
+    return (0.5*W_int - W_ext + W_Boundary)/(E[0].shape[0])
+
 InternalEnergy_2D_einsum_Bipara = InternalEnergy_2_3D_einsum_Bipara
 
 def InternalEnergy_2D_einsum_Bipara_NeoHookean(model,lmbda, mu,E, kappa = 100):
@@ -1106,27 +1163,9 @@ def InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,lmbda, mu,E):
     Gravity_force = Gravity_vect(angles,rho = 1e-9, dim = model.Space_modes[0].mesh.dim, n_angle=2).to(model.float_config.dtype).to(model.float_config.device)
     W_ext = torch.einsum('iem,iqr,mp...,ms...,mq...,mr...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[2],lambda_i[3],lambda_i[4],torch.abs(detJ_i))
 
-    ###DEBUG OK
-    # Gravity_force = Gravity_vect(torch.tensor(0*torch.pi).to(torch.float64),rho = 1e-9, dim = model.Space_modes[0].mesh.dim).to(model.float_config.dtype).to(model.float_config.device)
-    # W_ext = torch.einsum('iem,i,mp...,mt...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[2],torch.abs(detJ_i))
 
-    # return (0.5*W_int - W_ext)/(E[0].shape[0])
-
-    # print(hyper_length[2]*hyper_length[3]*hyper_length[4])
-
-    # print(hyper_length[0])
-    # print(hyper_length[1])
-    # print(hyper_length[2])
-    # print(hyper_length[3])
-    # print(hyper_length[4])
-
-    # print((E[0].shape[0]*E[1].shape[0]*E[2].shape[0]*E[3].shape[0]*E[4].shape[0]))
-
-    # return (0.5*W_int - W_ext)/10000000
-    # return (0.5*W_int - W_ext)/(E[0].shape[0]) #DEBUG OK
     return (0.5*W_int - W_ext)/(E[0].shape[0]*E[2].shape[0])
 
-    # return (hyper_length[0]*hyper_length[1]*hyper_length[2]*hyper_length[3]*hyper_length[4])*(0.5*W_int - W_ext)/(E[0].shape[0]*E[1].shape[0]*E[2].shape[0]*E[3].shape[0]*E[4].shape[0])
 
 
 
@@ -1513,76 +1552,3 @@ def CopyStress(Model_u, Model_du, Domain_mesh_u, lmbda, mu):
     for j in node_IDs_s12:
         Model_du.nodal_values[2][j] = torch.nn.Parameter(torch.tensor([s_12[j]]))
 
-
-def BoundaryStiffnessEnergy_para(model, k, E, u_ref=0):
-    r"""
-    Computes a parametric physical loss that adds a boundary stiffness 
-    (like if the structure is held by surface springs).
-    Evaluates \int_{\partial \Omega} k || u - u_ref ||^2 dS.
-    """
-    Space_modes_b = []
-    detJ_modes_b = []
-    for i in range(model.n_modes_truncated):
-        res = model.Space_modes[i](return_boundary=True)
-        Space_modes_b.append(res[3])
-        detJ_modes_b.append(res[5])
-        
-    u_i_b = torch.stack(Space_modes_b, dim=2) 
-    detJ_b_i = torch.stack(detJ_modes_b, dim=1) 
-    
-    Para_mode_Lists = [
-        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
-        for mode in range(model.n_modes_truncated)
-    ]
-    lambda_i = [
-        torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
-        for l in range(model.n_para)
-    ]
-    
-    detJ_full = detJ_b_i[:, 0]
-    is_u_ref_nonzero = isinstance(u_ref, torch.Tensor) or u_ref != 0
-    
-    if model.n_para == 1:
-        L0 = lambda_i[0][:, :, 0]
-        W_uu = k * torch.einsum('xem,xel,e,mp,lp->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0)
-        
-        if is_u_ref_nonzero:
-            u_ref_t = u_ref * torch.ones(u_i_b.shape[0], device=u_i_b.device)
-            W_u_ref = k * torch.einsum('xem,e,mp,x->', u_i_b, torch.abs(detJ_full), L0, u_ref_t)
-            W_ref_ref = k * torch.sum(u_ref_t**2) * torch.sum(torch.abs(detJ_full)) * L0.shape[1]
-            W = W_uu - 2 * W_u_ref + W_ref_ref
-        else:
-            W = W_uu
-            
-        return W / E[0].shape[0]
-        
-    elif model.n_para == 2:
-        L0 = lambda_i[0][:, :, 0]
-        L1 = lambda_i[1][:, :, 0]
-        W_uu = k * torch.einsum('xem,xel,e,mp,lp,mt,lt->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0, L1, L1)
-        
-        if is_u_ref_nonzero:
-            u_ref_t = u_ref * torch.ones(u_i_b.shape[0], device=u_i_b.device)
-            W_u_ref = k * torch.einsum('xem,e,mp,mt,x->', u_i_b, torch.abs(detJ_full), L0, L1, u_ref_t)
-            W_ref_ref = k * torch.sum(u_ref_t**2) * torch.sum(torch.abs(detJ_full)) * L0.shape[1] * L1.shape[1]
-            W = W_uu - 2 * W_u_ref + W_ref_ref
-        else:
-            W = W_uu
-            
-        return W / (E[0].shape[0] * E[1].shape[0])
-        
-    elif model.n_para == 3:
-        L0 = lambda_i[0][:, :, 0]
-        L1 = lambda_i[1][:, :, 0]
-        L2 = lambda_i[2][:, :, 0]
-        W_uu = k * torch.einsum('xem,xel,e,mp,lp,mt,lt,ms,ls->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0, L1, L1, L2, L2)
-        
-        if is_u_ref_nonzero:
-            u_ref_t = u_ref * torch.ones(u_i_b.shape[0], device=u_i_b.device)
-            W_u_ref = k * torch.einsum('xem,e,mp,mt,ms,x->', u_i_b, torch.abs(detJ_full), L0, L1, L2, u_ref_t)
-            W_ref_ref = k * torch.sum(u_ref_t**2) * torch.sum(torch.abs(detJ_full)) * L0.shape[1] * L1.shape[1] * L2.shape[1]
-            W = W_uu - 2 * W_u_ref + W_ref_ref
-        else:
-            W = W_uu
-            
-        return W / (E[0].shape[0] * E[1].shape[0] * E[2].shape[0])

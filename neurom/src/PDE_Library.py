@@ -683,7 +683,7 @@ def InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,lmbda, mu,E):
     W_ext = torch.einsum('iem,its,mp...,mt...,ms...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],torch.abs(detJ_i))
 
 
-    k = 1 # Boundary stiffness 
+    k = 1e2 # Boundary stiffness 
     W_Boundary = BoundaryStiffnessEnergy_para(model, k, E, u_ref=0)
 
     return (0.5*W_int - W_ext + W_Boundary)/(E[0].shape[0])
@@ -1613,7 +1613,7 @@ def BoundaryStiffnessEnergy_para(model, k, E, u_ref=0):
         L0 = lambda_i[0][:, :, 0]
         L1 = lambda_i[1][:, :, 0]
         L2 = lambda_i[2][:, :, 0]
-        W_uu = k * torch.einsum('xem,xel,e,mp,lp,mt,lt,ms,ls->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0, L1, L1, L2, L2)
+        W_uu = k * torch.einsum('xem,xel,e,mp...,lp...,mt...,lt...,ms...,ls...->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0, L1, L1, L2, L2)
         
         if is_u_ref_nonzero:
             u_ref_t = u_ref * torch.ones(u_i_b.shape[0], device=u_i_b.device)

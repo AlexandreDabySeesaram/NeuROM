@@ -18,7 +18,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -529,6 +529,8 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                         match config["solver"]["Problem"]:
                             case "BoundayStiffness":
                                 loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "BoundayNormaltiffness":
+                                loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True)
                             case "AngleStiffness":
                                 loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                         match config["solver"]["Problem"]:
@@ -795,6 +797,8 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                             match config["solver"]["Problem"]:
                                 case "BoundayStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                case "BoundayNormalStiffness":
+                                    loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True)
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "BiangleStiffnessKSV":

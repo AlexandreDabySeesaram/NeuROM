@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import torch.nn as nn
 
 def RHS(x):
     """Defines the right hand side (RHS) of the equation (the body force)"""
@@ -437,11 +438,22 @@ def Stress_tensor(eps, lmbda, mu):
 
 def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = None):
 
+    # NOTE!   
+    # Outside:  u_predicted = u_predicted + u_affine.T
+    # This is why we need to remove the 'eps_macro_4' before transforming Grad U by F_mapping
+
     if 'parameters' in config:
         if 'x_0_x' in config['parameters']:
-            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-            eps_macro_2 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"],config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-            eps_macro_4 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+         
+            e_xx = config["parameters"]["eps_xx"]
+            e_yy = config["parameters"]["eps_yy"]
+            e_xy = config["parameters"]["eps_xy"]
+
+            # Create the macro strain vector to match your stack's format
+            # Format: [eps_xx, eps_yy, (1/sqrt(2))*(eps_xy + eps_yx)]
+            # Since eps_xy = eps_yx, this is (2/sqrt(2))*eps_xy
+            val = (2.0 / torch.sqrt(torch.tensor(2.0))) * e_xy
+            eps_macro_vec = torch.tensor([e_xx, e_yy, val], device=x.device)
 
     match dim:
         case 2:
@@ -450,11 +462,6 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = 
 
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
             if not (mapping is None):
-
-                if 'parameters' in config:
-                    if 'x_0_x' in config['parameters']:
-                        eps_full = eps_full - eps_macro_2
-
 
                 list_F = mapping[1]
                 F = torch.stack(list_F)  # shape: [N, 2, 2]
@@ -468,11 +475,6 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = 
                 ], dim=1)
                 eps_R = (grad_u @ F_inv  + (grad_u @ F_inv).transpose(1, 2))/2
 
-                if 'parameters' in config:
-                    if 'x_0_x' in config['parameters']:
-                        eps_R = eps_R + eps_macro_4
-
-
                 eps_R_voigt = torch.stack([
                     eps_R[:, 0, 0],                           # ε_xx
                     eps_R[:, 1, 1],                           # ε_yy
@@ -481,6 +483,11 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = 
 
                 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
                 eps = eps_R_voigt
+
+            if 'parameters' in config:
+                if 'x_0_x' in config['parameters']:
+                    eps = eps + eps_macro_vec.unsqueeze(0)
+            
             
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
@@ -494,10 +501,390 @@ def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = 
 
 InternalEnergy_2D_einsum = InternalEnergy_2_3D_einsum
 
-def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu):
+
+
+def get_lin_h_values(x, h_range=[0.1, 0.35]):
+    y = x[:, 1]
+    
+    y_min = y.min()
+    y_max = y.max()
+    
+    if torch.abs(y_max - y_min) < 1e-7:
+        return torch.full_like(y, h_range[0])
+    
+    h_min, h_max = h_range
+    h = h_min + (h_max - h_min) * (y - y_min) / (y_max - y_min)
+    
+    return h
+
+def get_reverse_lin_h_values(x, h_range=[0.1, 0.35]):
+
+    y = x[:, 1]
+
+    y_min = y.min()
+    y_max = y.max()
+
+    if torch.abs(y_max - y_min) < 1e-7:
+        return torch.full_like(y, h_range[0])
+
+    h_min, h_max = h_range
+
+    h = h_max - (h_max - h_min) * (
+        (y - y_min) / (y_max - y_min)
+    )
+
+    return h
+
+
+def get_layered_h_values(x, h_range=[0.1, 0.35]):
+
+    y = x[:, 1]
+
+    y_mid = 0.5 * (y.min() + y.max())
+
+    h_min, h_max = h_range
+
+    h = torch.where(
+        y < y_mid,
+        torch.full_like(y, h_min),
+        torch.full_like(y, h_max),
+    )
+
+    return h
+
+
+
+def prep_parameters(h_value, eps_val_xx, eps_val_xy, eps_val_yy):
+    h = torch.tensor([[h_value]], dtype=torch.float64)   # shape (1,1)
+    h_param = nn.Parameter(h)
+
+    eps_val_xx = torch.tensor([[eps_val_xx]], dtype=torch.float64)   # shape (1,1)
+    eps_val_xx_param = nn.Parameter(eps_val_xx)
+
+    eps_val_xy = torch.tensor([[eps_val_xy]], dtype=torch.float64)   # shape (1,1)
+    eps_val_xy_param = nn.Parameter(eps_val_xy)
+
+    eps_val_yy = torch.tensor([[eps_val_yy]], dtype=torch.float64)   # shape (1,1)
+    eps_val_yy_param = nn.Parameter(eps_val_yy)
+
+    return nn.ParameterList((h_param, eps_val_xx_param, eps_val_xy_param, eps_val_yy_param))
+                                    # [..., 3]
+
+
+def InternalEnergy_2D_multiscale(model, u, x, lmbda, mu, config, dim = 2, mapping = None):
+    
+    micro_ROM = mapping[0]
+    micro_ROM.train()
+
+    h_values = get_const_h_values(x)
+    macro_eps_full = Strain_full(u,x) # xx, xy, yx, yy
+
+    micro_results = get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu)
+
+    sigma = micro_results["sigma_avg"]      # [N_xg, 2, 2]
+
+    # ============================================================
+    # Build macro strain tensor
+    # ============================================================
+
+    N = macro_eps_full.shape[0]
+
+    eps_macro = torch.zeros(
+        (N, 2, 2),
+        dtype=macro_eps_full.dtype,
+        device=macro_eps_full.device,
+    )
+
+    eps_macro[:, 0, 0] = macro_eps_full[:, 0]
+    eps_macro[:, 0, 1] = macro_eps_full[:, 1]
+    eps_macro[:, 1, 0] = macro_eps_full[:, 2]
+    eps_macro[:, 1, 1] = macro_eps_full[:, 3]
+
+    # if torch.max(eps_macro)>0.3
+    print("max = ", torch.max(eps_macro))
+    # if torch.min(eps_macro)><-0.3
+    print("min = ", torch.min(eps_macro))
+    print()
+    # ============================================================
+    # Energy density
+    # ============================================================
+
+    energy_density = torch.einsum(
+        "nij,nij->n",
+        sigma,
+        eps_macro
+    )
+
+    return energy_density
+
+
+def get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu):
+
+    Nm = micro_ROM.n_modes_truncated
+
+    # ============================================================
+    # 1. Spatial modes
+    # ============================================================
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+
+    for m in range(Nm):
+
+        u_m, xg_m, detJ_m = micro_ROM.Space_modes[m]()
+
+        Space_modes.append(u_m)
+        xg_modes.append(xg_m)
+        detJ_modes.append(detJ_m)
+
+    x = xg_modes[0]
+    Nx = x.shape[0]
+    Nh = h_values.shape[0]
+    device = h_values.device
+    dtype = h_values.dtype
+
+    # ============================================================
+    # 2. Gradients of spatial modes
+    # ============================================================
+    eps_full_modes = []
+
+    for m in range(Nm):
+
+        eps_m = Strain_full(
+            Space_modes[m],
+            xg_modes[m]
+        )  # [Nx, 4]
+
+        eps_full_modes.append(eps_m)
+
+    eps_full_modes = torch.stack(
+        eps_full_modes,
+        dim=2
+    )  # [Nx, 4, Nm]
+
+    # ------------------------------------------------------------
+    # Build gradient tensor
+    # ------------------------------------------------------------
+    grad_modes = torch.stack([
+        torch.stack([
+            eps_full_modes[:, 0, :],   # dux/dx
+            eps_full_modes[:, 1, :]    # dux/dy
+        ], dim=1),
+
+        torch.stack([
+            eps_full_modes[:, 2, :],   # duy/dx
+            eps_full_modes[:, 3, :]    # duy/dy
+        ], dim=1)
+
+    ], dim=1)
+
+    # [Nx, 2, 2, Nm]
+    grad_modes = grad_modes.permute(0, 3, 1, 2)
+
+    # ============================================================
+    # 3. Parametric coefficients
+    # ============================================================
+
+    # FORCE COLUMN VECTORS
+    h_vals      = h_values.view(-1, 1)
+
+    eps_xx_vals = macro_eps_full[:, 0].view(-1, 1)
+    eps_xy_vals = macro_eps_full[:, 1].view(-1, 1)
+    eps_yy_vals = macro_eps_full[:, 3].view(-1, 1)
+
+    lambda_h  = []
+    lambda_xx = []
+    lambda_xy = []
+    lambda_yy = []
+
+    for m in range(Nm):
+
+        lh = micro_ROM.Para_modes[m][0](h_vals)
+        lxx = micro_ROM.Para_modes[m][1](eps_xx_vals)
+        lxy = micro_ROM.Para_modes[m][2](eps_xy_vals)
+        lyy = micro_ROM.Para_modes[m][3](eps_yy_vals)
+
+        # SAFETY
+        lambda_h.append(lh.squeeze(-1))
+        lambda_xx.append(lxx.squeeze(-1))
+        lambda_xy.append(lxy.squeeze(-1))
+        lambda_yy.append(lyy.squeeze(-1))
+
+    # [Nm, Nh]
+    lambda_h  = torch.stack(lambda_h, dim=0)
+    lambda_xx = torch.stack(lambda_xx, dim=0)
+    lambda_xy = torch.stack(lambda_xy, dim=0)
+    lambda_yy = torch.stack(lambda_yy, dim=0)
+
+    # ============================================================
+    # 4. Full modal coefficients
+    # ============================================================
+
+    lambda_full = (
+        lambda_h
+        * lambda_xx
+        * lambda_xy
+        * lambda_yy
+    )
+
+
+
+
+    # ============================================================
+    # 5. Reconstruct displacement gradient
+    # ============================================================
+
+    grad_u = torch.einsum(
+        "xmij,mh->xhij",
+        grad_modes,
+        lambda_full
+    )
+
+    # ============================================================
+    # 6. Compute microscopic strain
+    # ============================================================
+
+    eps_micro = 0.5 * (
+        grad_u + grad_u.transpose(-1, -2)
+    )
+
+    # ============================================================
+    # 7. Macroscopic strain tensor
+    # ============================================================
+
+    eps_macro = torch.zeros(
+        (Nh, 2, 2),
+        dtype=dtype,
+        device=device
+    )
+
+    eps_macro[:, 0, 0] = macro_eps_full[:, 0]
+    eps_macro[:, 0, 1] = macro_eps_full[:, 1]
+    eps_macro[:, 1, 0] = macro_eps_full[:, 2]
+    eps_macro[:, 1, 1] = macro_eps_full[:, 3]
+
+    # ============================================================
+    # 8. Total strain
+    # ============================================================
+
+    eps_total = (
+        eps_micro
+        + eps_macro[None, :, :, :]
+    )
+
+    # ============================================================
+    # 9. Linear elastic stress
+    # ============================================================
+
+    tr_eps = (
+        eps_total[..., 0, 0]
+        + eps_total[..., 1, 1]
+    )
+
+    I = torch.eye(
+        2,
+        dtype=dtype,
+        device=device
+    ).view(1, 1, 2, 2)
+
+    sigma = (
+        lmbda * tr_eps[..., None, None] * I
+        + 2.0 * mu * eps_total
+    )
+
+    # ============================================================
+    # 10. Reconstruct displacement field
+    # ============================================================
+
+    space_modes_tensor = torch.stack(
+        Space_modes,
+        dim=2
+    )  # [Nx, 2, Nm]
+
+    u = torch.einsum(
+        "xim,mh->xhi",
+        space_modes_tensor,
+        lambda_full
+    )
+
+    # 11. Spatial averaging
+    # ============================================================
+
+    # detJ at quadrature points
+    J = torch.abs(detJ_modes[0]).view(Nx)   # [Nx]
+    # total domain measure
+    vol = J.sum()
+
+    # ------------------------------------------------------------
+    # Average displacement
+    # u : [Nx, Nh, 2]
+    # ------------------------------------------------------------
+    u_avg = (
+        (u * J[None, None, :]).sum(dim=2)
+        / vol
+    )
+
+    # ------------------------------------------------------------
+    # Average strain
+    # eps_total : [Nx, Nh, 2, 2]
+    # ------------------------------------------------------------
+    eps_avg = (
+        (eps_total * J[:, None, None, None]).sum(dim=0)
+        / vol
+    )   # [Nh, 2, 2]
+
+    # ------------------------------------------------------------
+    # Average stress
+    # sigma : [Nx, Nh, 2, 2]
+    # ------------------------------------------------------------
+    sigma_avg = (
+        (sigma * J[:, None, None, None]).sum(dim=0)
+        / vol
+    )   # [Nh, 2, 2]
+
+    # ------------------------------------------------------------
+    # Average microscopic strain
+    # ------------------------------------------------------------
+    eps_micro_avg = (
+        (eps_micro * J[:, None, None, None]).sum(dim=0)
+        / vol
+    )
+
+    # ------------------------------------------------------------
+    # Average displacement gradient
+    # ------------------------------------------------------------
+    grad_u_avg = (
+        (grad_u * J[:, None, None, None]).sum(dim=0)
+        / vol
+    )
+
+    return {
+    "u_avg": u_avg,
+    "eps_avg": eps_avg,
+    "sigma_avg": sigma_avg,
+    }
+
+
+
+def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu, mapping=None):
+
     grad_u =  grad_u_2D(u,x)
     Green_lagrange_tensor = Green_lagrange(grad_u)
     Id = torch.eye(2,dtype=Green_lagrange_tensor.dtype, device=Green_lagrange_tensor.device)
+
+    if 'parameters' in config:
+        if 'x_0_x' in config['parameters']:
+            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            eps_macro_4 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            F_macro = Id + eps_macro_4
+    
+    if mapping is not None:
+
+        F_map = torch.stack(mapping[1])   # same idea as your linear case
+        F_inv = torch.linalg.inv(F_map)
+        grad_u = grad_u @ F_inv   # push-forward of gradient
+
+
     F = grad_u + Id
     C = torch.einsum('eki,ekj->eij',F,F)
     J = torch.linalg.det(F)

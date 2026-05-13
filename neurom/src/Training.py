@@ -20,7 +20,8 @@ from .PDE_Library import RHS, PotentialEnergy, \
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
                                 InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum,\
                                 InternalEnergy_2D_einsum_hexa_para_fix, Hexa_mapping_non_vect, \
-                                    InternalEnergy_2D_einsum_hexa_2param, InternalEnergy_2D_einsum_hexa_4param, InternalEnergy_2D_einsum_hexa_strain_sampled
+                                    InternalEnergy_2D_einsum_hexa_2param, InternalEnergy_2D_einsum_hexa_4param, InternalEnergy_2D_einsum_hexa_strain_sampled,\
+                                    InternalEnergy_2D_multiscale
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -1396,7 +1397,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
     print("lambda, mu = ", Mat.lmbda, Mat.mu)
 
 
-    if not (mapping is None):
+    if not (mapping is None) and config["solver"]["multi_scale"] == False:
         map_u = mapping[0]
         F = mapping[1]
 
@@ -1411,19 +1412,15 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
             u_predicted,xg,detJ = model()
 
 
-            if 'parameters' in config:
-                if 'x_0_x' in config['parameters']:
+            # if 'parameters' in config:
+            #     if 'x_0_x' in config['parameters']:
 
-                    x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-                    eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-                    x_aff = torch.unsqueeze(xg - x0,-1)
-                    u_affine = torch.matmul(eps_macro, x_aff )
-
-                    u_affine = torch.squeeze(u_affine,-1)
-                    # print("u_affine = ", u_affine.shape)
-                    # print("u_predicted = ", u_predicted.shape)
-                    u_predicted = u_predicted + u_affine.T
-                    # print("u_affine = ", u_affine.shape)
+            #         x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
+            #         eps_macro = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
+            #         x_aff = torch.unsqueeze(xg - x0,-1)
+            #         u_affine = torch.matmul(eps_macro, x_aff )
+            #         u_affine = torch.squeeze(u_affine,-1)
+            #         u_predicted = u_predicted + u_affine.T
 
             xg_new.append(xg)
             detJ_new.append(detJ)
@@ -1440,25 +1437,35 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                 case "Linear":
                     if config["solver"]["volume_forces"] == True:
                         if (mapping is None):
-                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted, xg, Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted, xg, Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ))
                         else:
                             mapping_J = mapping[2]
-                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
+                            loss = torch.sum((0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping) - VolumeForcesEnergy_2D(u_predicted,theta, rho, mapping))*torch.abs(detJ)*torch.abs(mapping_J))
                     else:
                         if (mapping is None):
                             loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted,xg,Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)) 
                         else:
-                            mapping_J = mapping[2]
-                            loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted, xg, Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)*torch.abs(mapping_J))                    
+
+                            if config["solver"]["multi_scale"] == True:
+                                loss = torch.sum(0.5*InternalEnergy_2D_multiscale(model, u_predicted, xg, Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)) 
+
+                            else:
+                                mapping_J = mapping[2]
+                                loss = torch.sum(0.5*InternalEnergy_2D_einsum(model, u_predicted, xg, Mat.lmbda, Mat.mu, config, model.mesh.dim, mapping)*torch.abs(detJ)*torch.abs(mapping_J))                    
+                        
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+
+
                     loss_Neumann_BC = 0
 
                     for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
-                        
+
                         t = model.relation_BC_values[i]
                         normal_vectors = model.relation_BC_normal_vectors[i]
 
-                        if not (mapping is None):
+
+                        if not (mapping is None) and config["solver"]["multi_scale"] == False:
                             element_IDs = model.Element_ID_of_Neumann_edges[i]
                             F = mapping[1]
                             J = mapping[2]
@@ -1539,7 +1546,11 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
                     else:
-                        loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                        if (mapping is None):
+                            loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                        else:
+                            loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu, mapping)*torch.abs(detJ)**torch.abs(mapping_J))
+
                 case "SaintVenntKirchhoff":
                     if config["solver"]["volume_forces"] == True:
                         loss = torch.sum((0.5*InternalEnergy_2D_einsum_SaintVenantKirchhoff(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))

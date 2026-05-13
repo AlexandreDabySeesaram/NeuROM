@@ -905,6 +905,7 @@ def ExportFinalResult_VTK(Model_FEM,Mat,Name_export):
 
                     u_x = Model_FEM.U_interm[-1][:,0]
                     u_y = Model_FEM.U_interm[-1][:,1]
+
                     u = torch.stack([u_x,u_y,torch.zeros(u_x.shape[0], dtype=u_x.dtype).to(u_x.device)],dim=1).cpu()
 
                     Coord = torch.hstack([Model_FEM.X_interm[-1], torch.zeros(Model_FEM.X_interm[-1][:,1].shape, dtype=u_x.dtype).to(u_x.device)[:,None]]).cpu()

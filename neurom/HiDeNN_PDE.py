@@ -148,9 +148,6 @@ class ElementBlock_Bar_Lin(nn.Module):
                 x_left = [coordinates[row-1] for row in self.connectivity[i,0]]
                 x_right = [coordinates[row-1] for row in self.connectivity[i,-1]]
 
-            print("i = ", i)
-            print("x = ", x)
-            print("x_left = ", x_left)
             left = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.zero, self.one)
             right = self.LinearBlock(x, torch.cat(x_left), torch.cat(x_right), self.one, self.zero)
             out = torch.stack((left, right),dim=2).view(right.shape[0],-1) # Katka's left right implementation {[N2 N1] [N3 N2] [N4 N3]}

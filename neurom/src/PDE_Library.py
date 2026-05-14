@@ -631,6 +631,116 @@ def InternalEnergy_2_3D_einsum_Tripara(model,lmbda, mu,E):
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
 
+def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
+    model, lmbda, mu, E,
+    E_idx=0,
+    theta_idx=None, phi_idx=None,
+    p0_idx=None, h_idx=None, k_idx=None,
+    k_spring=1e2, BoundaryNormals=True
+):
+    Space_modes = []
+    xg_modes = []
+    detJ_modes = []
+    for i in range(model.n_modes_truncated):
+        u_k,xg_k,detJ_k = model.Space_modes[i]()
+        Space_modes.append(u_k)
+        xg_modes.append(xg_k)
+        detJ_modes.append(detJ_k)
+
+    detJ_i = torch.stack(detJ_modes,dim=1)  
+
+    match model.Space_modes[0].mesh.dim:
+        case 2:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        case 3:
+            u_i = torch.stack(Space_modes,dim=2)
+            xg_i = torch.stack(xg_modes,dim=2) 
+            eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+            K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+    eps_i = torch.stack(eps_list,dim=2)  
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+    ]
+    lambda_i = [
+        torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+        for l in range(model.n_para)
+    ]    
+
+    #  Internal Strain Energy W_int
+    I_ml = torch.einsum('ij,ejm,eil,e->ml', K, eps_i, eps_i, torch.abs(detJ_i[:, 0]))
+    M_ml = torch.ones(model.n_modes_truncated, model.n_modes_truncated, device=u_i.device)
+    for q in range(model.n_para):
+        L_q = lambda_i[q][:, :, 0] # [m, p_q]
+        if q == E_idx:
+            E_float = E[q][:, 0]
+            M_q = torch.einsum('p,mp,lp->ml', E_float, L_q, L_q)
+        else:
+            M_q = torch.einsum('mp,lp->ml', L_q, L_q)
+        M_ml = M_ml * M_q
+    W_int = torch.sum(I_ml * M_ml)
+
+    #  External Work (Gravity)
+    if theta_idx is not None or phi_idx is not None:
+        theta_float = E[theta_idx][:, 0] if theta_idx is not None else torch.tensor([0.0])
+        if phi_idx is not None:
+            phi_float = E[phi_idx][:, 0]
+            angles = [theta_float, phi_float]
+            Gravity_force = Gravity_vect(angles, rho=1e-9, dim=model.Space_modes[0].mesh.dim, n_angle=2).to(u_i.device)
+            I_im = torch.einsum('iem,e->im', u_i, torch.abs(detJ_i[:, 0]))
+            L_theta = lambda_i[theta_idx][:, :, 0]
+            L_phi = lambda_i[phi_idx][:, :, 0]
+            S_g_m = torch.einsum('im,its,mt,ms->m', I_im, Gravity_force, L_theta, L_phi)
+            for q in range(model.n_para):
+                if q not in [theta_idx, phi_idx]:
+                    S_g_m = S_g_m * torch.sum(lambda_i[q][:, :, 0], dim=1)
+            W_ext_gravity = torch.sum(S_g_m)
+        else:
+            angles = theta_float
+            Gravity_force = Gravity_vect(angles, rho=1e-9, dim=model.Space_modes[0].mesh.dim, n_angle=1).to(u_i.device)
+            I_im = torch.einsum('iem,e->im', u_i, torch.abs(detJ_i[:, 0]))
+            L_theta = lambda_i[theta_idx][:, :, 0]
+            S_g_m = torch.einsum('im,it,mt->m', I_im, Gravity_force, L_theta)
+            for q in range(model.n_para):
+                if q != theta_idx:
+                    S_g_m = S_g_m * torch.sum(lambda_i[q][:, :, 0], dim=1)
+            W_ext_gravity = torch.sum(S_g_m)
+    else:
+        Gravity_force = Gravity_vect(torch.tensor([0.0]), rho=1e-9, dim=model.Space_modes[0].mesh.dim, n_angle=1).to(u_i.device)
+        I_im = torch.einsum('iem,e->im', u_i, torch.abs(detJ_i[:, 0]))
+        S_g_m = torch.einsum('im,it->m', I_im, Gravity_force)
+        for q in range(model.n_para):
+            S_g_m = S_g_m * torch.sum(lambda_i[q][:, :, 0], dim=1)
+        W_ext_gravity = torch.sum(S_g_m)
+
+    #  External Work (Pressure)
+    W_ext_pressure = BoundaryPressureEnergy_para_learned(
+        model, E, 
+        p0_idx=p0_idx, h_idx=h_idx, k_idx=k_idx,
+        compute_normals_once=True
+    )
+
+    #  Boundary Robin condition Spring Energy
+    if BoundaryNormals:
+        W_Boundary = BoundaryStiffnessEnergy_para_normal(model, k_spring, E, u_ref=0)
+    else: 
+        W_Boundary = BoundaryStiffnessEnergy_para(model, k_spring, E, u_ref=0)
+
+    # Calculate hypercube volume
+    denom = 1
+    for i in range(model.n_para):
+        denom = denom * E[i].shape[0]
+
+    W_int_mean = W_int / denom
+    W_ext_gravity_mean = W_ext_gravity / denom
+    
+    return 0.5 * W_int_mean - W_ext_gravity_mean - W_ext_pressure + W_Boundary
+
 def InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,lmbda, mu,E, BoundaryNormals = False):
 
     Space_modes = []
@@ -1742,6 +1852,101 @@ def BoundaryStiffnessEnergy_para_normal(model, k, E, u_ref=0, compute_normals_on
             W = W_uu
             
         return W / (E[0].shape[0] * E[1].shape[0] * E[2].shape[0])
+
+def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val=0.0, h_idx=None, k_val=0.0, k_idx=None, z0=0.0, y0=0.0, compute_normals_once=True):
+    r"""
+    Computes a parametric physical loss for external pressure where the pressure 
+    parameters P_0, H, and K can either be constants or learned parametric dimensions 
+    from the PGD hypercube.
+    
+    P(y, z) = P_0 + H*(z - z_0) + K*(y - y_0)
+    """
+    Space_modes_b = []
+    detJ_modes_b = []
+    x_g_modes_b = []
+    for i in range(model.n_modes_truncated):
+        res = model.Space_modes[i](return_boundary=True)
+        Space_modes_b.append(res[3])
+        x_g_modes_b.append(res[4])
+        detJ_modes_b.append(res[5])
+        
+    u_i_b = torch.stack(Space_modes_b, dim=2) 
+    detJ_b_i = torch.stack(detJ_modes_b, dim=1) 
+    x_g_b_i = torch.stack(x_g_modes_b, dim=1)
+    
+    Para_mode_Lists = [
+        [model.Para_modes[mode][l](E[l][:,0].view(-1,1))[:,None] for l in range(model.n_para)]
+        for mode in range(model.n_modes_truncated)
+    ]
+    lambda_i = [
+        torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+        for l in range(model.n_para)
+    ]
+    
+    detJ_full = detJ_b_i[:, 0]
+    
+    try:
+        if compute_normals_once and hasattr(model.Space_modes[0].mesh, 'boundary_normals'):
+            n = model.Space_modes[0].mesh.boundary_normals.to(u_i_b.device)
+        else:
+            n = model.Space_modes[0].mesh.normals.to(u_i_b.device)
+            if n.shape[0] != u_i_b.shape[1]:
+                print(f"Warning: mesh.normals shape {n.shape} does not match number of boundary elements {u_i_b.shape[1]}. Computing geometrically...")
+                raise ValueError()
+            if compute_normals_once:
+                model.Space_modes[0].mesh.boundary_normals = n.detach()
+    except:
+        coords = model.Space_modes[0].coordinates_all.to(u_i_b.device)
+        border_nodes = torch.tensor(model.Space_modes[0].borders_nodes, dtype=torch.long, device=u_i_b.device) - 1
+        v0 = coords[border_nodes[:, 0]]
+        v1 = coords[border_nodes[:, 1]]
+        v2 = coords[border_nodes[:, 2]]
+        n = torch.cross(v1 - v0, v2 - v0, dim=1)
+        n = n / torch.norm(n, dim=1, keepdim=True)
+        if compute_normals_once:
+            model.Space_modes[0].mesh.boundary_normals = n.detach()
+            
+    n = n.t()
+    
+    x_g = x_g_b_i[:, 0, 0, :]
+    y = x_g[:, 1]
+    z = x_g[:, 2]
+    
+    if p0_idx is not None: P0 = E[p0_idx][:, 0]
+    else: P0 = p0_val
+        
+    if h_idx is not None: H = E[h_idx][:, 0]
+    else: H = h_val
+        
+    if k_idx is not None: K = E[k_idx][:, 0]
+    else: K = k_val
+    
+    un_i_b = torch.einsum('xem,xe->em', u_i_b, n)
+    
+    def compute_work_component(spatial_field, V, V_idx):
+        I_m = torch.einsum('em,e,e->m', un_i_b, spatial_field, torch.abs(detJ_full))
+        for i in range(model.n_para):
+            L_i = lambda_i[i][:, :, 0]
+            if i == V_idx:
+                S_m = torch.einsum('p,mp->m', V, L_i)
+            else:
+                S_m = torch.sum(L_i, dim=1)
+            I_m = I_m * S_m
+        if V_idx is None:
+            I_m = I_m * V
+        return torch.sum(I_m)
+        
+    W_P0 = compute_work_component(torch.ones_like(z), P0, p0_idx)
+    W_H = compute_work_component(z - z0, H, h_idx)
+    W_K = compute_work_component(y - y0, K, k_idx)
+    
+    W_ext = W_P0 + W_H + W_K
+    
+    denom = 1
+    for i in range(model.n_para):
+        denom = denom * E[i].shape[0]
+        
+    return W_ext / denom
 
 def BoundaryPressureEnergy_para(model, P0, H, z0, K, y0, E, compute_normals_once=True):
     r"""

@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import torch
 import matplotlib.pyplot as plt
 
@@ -630,6 +631,108 @@ def InternalEnergy_2_3D_einsum_Tripara(model,lmbda, mu,E):
     W_ext = torch.einsum('iem,its,mp...,mt...,ms...,em->',u_i,Gravity_force,lambda_i[0],lambda_i[1],lambda_i[2],torch.abs(detJ_i))
 
     return (0.5*W_int - W_ext)/(E[0].shape[0])
+
+def InternalEnergy_StochasticShape(
+    model, lmbda, mu, E,
+    shape_indices=[1, 2, 3, 4],
+    E_idx=0,
+    N_mc_samples=32,
+    BoundaryNormals=False
+):
+    orig_free = [model.Space_modes[i].coordinates['free'].clone() for i in range(model.n_modes_truncated)]
+    orig_imposed = [model.Space_modes[i].coordinates['imposed'].clone() for i in range(model.n_modes_truncated)]
+    
+    total_loss = 0.0
+    
+    for mc in range(N_mc_samples):
+        # Sample shapes from E
+        s_vals = [random.choice(E[idx][:, 0].tolist()) for idx in shape_indices]
+        
+        # Warp the coordinates
+        for i in range(model.n_modes_truncated):
+            coord_free_mask = model.Space_modes[i].coord_free
+            
+            orig_all = torch.ones_like(model.Space_modes[i].coordinates_all)
+            orig_all[coord_free_mask] = orig_free[i]
+            orig_all[~coord_free_mask] = orig_imposed[i]
+            
+            warped_all = orig_all.clone()
+            for k, s in enumerate(s_vals):
+                warped_all = warped_all + s * model.shape_modes[k]
+                
+            model.Space_modes[i].coordinates['free'] = warped_all[coord_free_mask]
+            model.Space_modes[i].coordinates['imposed'] = warped_all[~coord_free_mask]
+            
+        # Re-evaluate Spatial integral
+        Space_modes = []
+        xg_modes = []
+        detJ_modes = []
+        for i in range(model.n_modes_truncated):
+            u_k,xg_k,detJ_k = model.Space_modes[i]()
+            Space_modes.append(u_k)
+            xg_modes.append(xg_k)
+            detJ_modes.append(detJ_k)
+
+        detJ_i = torch.stack(detJ_modes,dim=1)  
+
+        match model.Space_modes[0].mesh.dim:
+            case 2:
+                u_i = torch.stack(Space_modes,dim=2)
+                xg_i = torch.stack(xg_modes,dim=2) 
+                eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i]) for i in range(model.n_modes_truncated)]
+                K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+            case 3:
+                u_i = torch.stack(Space_modes,dim=2)
+                xg_i = torch.stack(xg_modes,dim=2) 
+                eps_list = [Strain_sqrt(Space_modes[i],xg_modes[i], model.Space_modes[0].mesh.dim) for i in range(model.n_modes_truncated)]
+                K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=model.float_config.dtype, device=model.float_config.device)
+
+        eps_i = torch.stack(eps_list,dim=2)  
+        
+        I_ml = torch.einsum('ij,ejm,eil,e->ml', K, eps_i, eps_i, torch.abs(detJ_i[:, 0]))
+        
+        Para_mode_Lists = []
+        for mode in range(model.n_modes_truncated):
+            mode_list = []
+            for l in range(model.n_para):
+                if l in shape_indices:
+                    s_tensor = torch.tensor([s_vals[shape_indices.index(l)]], dtype=model.float_config.dtype, device=model.float_config.device)
+                    val = model.Para_modes[mode][l](s_tensor.view(-1, 1))[:, None]
+                    mode_list.append(val)
+                else:
+                    val = model.Para_modes[mode][l](E[l][:, 0].view(-1, 1))[:, None]
+                    mode_list.append(val)
+            Para_mode_Lists.append(mode_list)
+            
+        lambda_i = [
+            torch.cat([torch.unsqueeze(Para_mode_Lists[m][l],dim=0) for m in range(model.n_modes_truncated)], dim=0)
+            for l in range(model.n_para)
+        ]
+        
+        M_ml = torch.ones(model.n_modes_truncated, model.n_modes_truncated, device=u_i.device)
+        for q in range(model.n_para):
+            L_q = lambda_i[q][:, :, 0]
+            if q == E_idx:
+                E_float = E[q][:, 0]
+                M_q = torch.einsum('p,mp,lp->ml', E_float, L_q, L_q)
+            else:
+                M_q = torch.einsum('mp,lp->ml', L_q, L_q)
+            M_ml = M_ml * M_q
+            
+        W_int_sample = torch.sum(I_ml * M_ml)
+        total_loss += W_int_sample
+
+    for i in range(model.n_modes_truncated):
+        model.Space_modes[i].coordinates['free'] = orig_free[i]
+        model.Space_modes[i].coordinates['imposed'] = orig_imposed[i]
+
+    denom = 1
+    for i in range(model.n_para):
+        if i not in shape_indices:
+            denom = denom * E[i].shape[0]
+
+    return 0.5 * (total_loss / N_mc_samples) / denom
 
 def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
     model, lmbda, mu, E,

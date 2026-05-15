@@ -18,7 +18,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness, InternalEnergy_StochasticShape
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -554,6 +554,10 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                     E_idx=0, theta_idx=1, phi_idx=None, p0_idx=2, h_idx=3, k_idx=4, BoundaryNormals=True)
+                            case "StochasticShapeOptimization":
+                                loss = InternalEnergy_StochasticShape(
+                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                    shape_indices=[1, 2, 3, 4], E_idx=0, N_mc_samples=32)
             case 6:
                 match config["interpolation"]["dimension"]:
                     case 3:  
@@ -841,6 +845,10 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                         model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                         E_idx=0, theta_idx=1, phi_idx=None, p0_idx=2, h_idx=3, k_idx=4, BoundaryNormals=True)
+                                case "StochasticShapeOptimization":
+                                    loss = InternalEnergy_StochasticShape(
+                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                        shape_indices=[1, 2, 3, 4], E_idx=0, N_mc_samples=32)
                 case 6:
                     match config["interpolation"]["dimension"]:
                         case 3:  

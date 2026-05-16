@@ -739,6 +739,7 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
     E_idx=0,
     theta_idx=None, phi_idx=None,
     p0_idx=None, h_idx=None, k_idx=None,
+    p0_val=0.0, h_val=0.0, k_val=0.0,
     k_spring=1e2, BoundaryNormals=True
 ):
     Space_modes = []
@@ -776,15 +777,15 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
     ]    
 
     #  Internal Strain Energy W_int
-    I_ml = torch.einsum('ij,ejm,eil,e->ml', K, eps_i, eps_i, torch.abs(detJ_i[:, 0]))
+    I_ml = torch.einsum('ij,ejm...,eil...,e->ml', K, eps_i, eps_i, torch.abs(detJ_i[:, 0]))
     M_ml = torch.ones(model.n_modes_truncated, model.n_modes_truncated, device=u_i.device)
     for q in range(model.n_para):
         L_q = lambda_i[q][:, :, 0] # [m, p_q]
         if q == E_idx:
             E_float = E[q][:, 0]
-            M_q = torch.einsum('p,mp,lp->ml', E_float, L_q, L_q)
+            M_q = torch.einsum('p,mp...,lp...->ml', E_float, L_q, L_q)
         else:
-            M_q = torch.einsum('mp,lp->ml', L_q, L_q)
+            M_q = torch.einsum('mp...,lp...->ml', L_q, L_q)
         M_ml = M_ml * M_q
     W_int = torch.sum(I_ml * M_ml)
 
@@ -794,11 +795,11 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
         if phi_idx is not None:
             phi_float = E[phi_idx][:, 0]
             angles = [theta_float, phi_float]
-            Gravity_force = Gravity_vect(angles, rho=1e-9, dim=model.Space_modes[0].mesh.dim, n_angle=2).to(u_i.device)
+            Gravity_force = Gravity_vect(angles, rho=1e-9, dim=model.Space_modes[0].mesh.dim, n_angle=2).to(u_i.device).to(u_i.dtype)
             I_im = torch.einsum('iem,e->im', u_i, torch.abs(detJ_i[:, 0]))
             L_theta = lambda_i[theta_idx][:, :, 0]
             L_phi = lambda_i[phi_idx][:, :, 0]
-            S_g_m = torch.einsum('im,its,mt,ms->m', I_im, Gravity_force, L_theta, L_phi)
+            S_g_m = torch.einsum('im,its,mt...,ms...->m', I_im, Gravity_force, L_theta, L_phi)
             for q in range(model.n_para):
                 if q not in [theta_idx, phi_idx]:
                     S_g_m = S_g_m * torch.sum(lambda_i[q][:, :, 0], dim=1)
@@ -825,6 +826,7 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
     W_ext_pressure = BoundaryPressureEnergy_para_learned(
         model, E, 
         p0_idx=p0_idx, h_idx=h_idx, k_idx=k_idx,
+        p0_val=p0_val, h_val=h_val, k_val=k_val,
         compute_normals_once=True
     )
 
@@ -2011,7 +2013,7 @@ def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val
             
     n = n.t()
     
-    x_g = x_g_b_i[:, 0, 0, :]
+    x_g = x_g_b_i[:, 0, :]
     y = x_g[:, 1]
     z = x_g[:, 2]
     

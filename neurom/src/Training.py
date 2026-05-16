@@ -533,9 +533,13 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True)
                             case "AngleStiffness":
                                 loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                        match config["solver"]["Problem"]:
                             case "BiangleStiffnessKSV":
                                 loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                            case "PressureGravityBoundaryStiffness":
+                                loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
+                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                    E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
+                                    p0_val=-1000.0, BoundaryNormals=True)
             case 4:
                 match config["interpolation"]["dimension"]:
                     case 3:  
@@ -827,6 +831,11 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "BiangleStiffnessKSV":
                                     loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
+                                case "PressureGravityBoundaryStiffness":
+                                    loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
+                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                        E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
+                                        p0_val=-1000.0, BoundaryNormals=True)
                 case 4:
                     match config["interpolation"]["dimension"]:
                         case 3:  

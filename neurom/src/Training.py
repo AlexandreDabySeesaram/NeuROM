@@ -528,9 +528,9 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                     case 3:  
                         match config["solver"]["Problem"]:
                             case "BoundayStiffness":
-                                loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                            case "BoundayNormaltiffness":
-                                loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True)
+                                loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, k_spring=1e-4)
+                            case "BoundayNormalStiffness":
+                                loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True, k_spring=1e-4)
                             case "AngleStiffness":
                                 loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "BiangleStiffnessKSV":
@@ -539,7 +539,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                     E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                    p0_val=-1000.0, BoundaryNormals=True)
+                                    p0_val=1e-2, k_spring=1e2, BoundaryNormals=True)
             case 4:
                 match config["interpolation"]["dimension"]:
                     case 3:  
@@ -825,7 +825,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                             match config["solver"]["Problem"]:
                                 case "BoundayStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
-                                case "BoundayNormaltiffness":
+                                case "BoundayNormalStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list, BoundaryNormals = True)
                                 case "AngleStiffness":
                                     loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
@@ -835,7 +835,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                         model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                         E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                        p0_val=-1000.0, BoundaryNormals=True)
+                                    p0_val=-1, k_spring=1e-2, BoundaryNormals=True)
                 case 4:
                     match config["interpolation"]["dimension"]:
                         case 3:  
@@ -2022,8 +2022,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 init_n_epochs = config["training"]["n_epochs"]                    #DEBUG
                 config["training"]["n_epochs"]  = 50                    #DEBUG
-                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS) #DEBUG
-                config["training"]["n_epochs"]   = init_n_epochs                 #DEBUG
+                # Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS) #DEBUG
+                # config["training"]["n_epochs"]   = init_n_epochs                 #DEBUG
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size

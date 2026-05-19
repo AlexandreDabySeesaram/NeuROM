@@ -795,7 +795,7 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
 
 
 
-    # W_int = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_float)
+    # W_int_debug = torch.einsum('ij,ejm...,eil...,em,mp...,lp...,mt...,lt...,ms...,ls...,p->',K,eps_i,eps_i,torch.abs(detJ_i),lambda_i[0],lambda_i[0],lambda_i[1],lambda_i[1],lambda_i[2],lambda_i[2],E_float)
 
     # theta_float = E[1][:,0]
     # phi_float = E[2][:,0]
@@ -877,8 +877,9 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
 
     # return 0.5 * W_int_mean - W_ext_gravity_mean  #DEBUG
     # return 0.5 * W_int_mean - W_ext_pressure  #DEBUG
-    return 0.5 * W_int_mean - W_ext_gravity_mean + W_Boundary #DEBUG
-    # return 0.5 * W_int_mean - W_ext_gravity_mean - W_ext_pressure + W_Boundary
+    # return 0.5 * W_int_mean - W_ext_gravity_mean + W_Boundary #DEBUG WORKS
+    # return 0.5 * W_int_mean - W_ext_pressure  #DEBUG
+    return 0.5 * W_int_mean - W_ext_gravity_mean - W_ext_pressure + W_Boundary
 
 def InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,lmbda, mu,E, k_spring=1e2, BoundaryNormals = False):
 
@@ -1875,6 +1876,21 @@ def BoundaryStiffnessEnergy_para(model, k, E, u_ref=0):
             W = W_uu - 2 * W_u_ref + W_ref_ref
         else:
             W = W_uu
+
+    elif model.n_para == 4:
+        L0 = lambda_i[0][:, :, 0]
+        L1 = lambda_i[1][:, :, 0]
+        L2 = lambda_i[2][:, :, 0]
+        L3 = lambda_i[3][:, :, 0]
+        W_uu = k * torch.einsum('xem,xel,e,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...->', u_i_b, u_i_b, torch.abs(detJ_full), L0, L0, L1, L1, L2, L2, L3, L3)
+        
+        if is_u_ref_nonzero:
+            u_ref_t = u_ref * torch.ones(u_i_b.shape[0], device=u_i_b.device)
+            W_u_ref = k * torch.einsum('xem,e,mp,mt,ms,mq,x->', u_i_b, torch.abs(detJ_full), L0, L1, L2,L3, u_ref_t)
+            W_ref_ref = k * torch.sum(u_ref_t**2) * torch.sum(torch.abs(detJ_full)) * L0.shape[1] * L1.shape[1] * L2.shape[1]
+            W = W_uu - 2 * W_u_ref + W_ref_ref
+        else:
+            W = W_uu
             
         return W / (E[0].shape[0] * E[1].shape[0] * E[2].shape[0])
 
@@ -1910,6 +1926,7 @@ def BoundaryStiffnessEnergy_para_normal(model, k, E, u_ref=0, compute_normals_on
         if compute_normals_once and hasattr(model.Space_modes[0].mesh, 'boundary_normals'):
             n = model.Space_modes[0].mesh.boundary_normals.to(u_i_b.device)
         else:
+            # raise ValueError() #DEBUG Force computing normals
             n = model.Space_modes[0].mesh.normals.to(u_i_b.device)
             if n.shape[0] != u_i_b.shape[1]:
                 print(f"Warning: mesh.normals shape {n.shape} does not match number of boundary elements {u_i_b.shape[1]}. Computing geometrically...")
@@ -1989,8 +2006,26 @@ def BoundaryStiffnessEnergy_para_normal(model, k, E, u_ref=0, compute_normals_on
             W = W_uu - 2 * W_u_ref + W_ref_ref
         else:
             W = W_uu
+
+    elif model.n_para == 4:
+        L0 = lambda_i[0][:, :, 0]
+        L1 = lambda_i[1][:, :, 0]
+        L2 = lambda_i[2][:, :, 0]
+        L3 = lambda_i[3][:, :, 0]
+        un_i_b = torch.einsum('xem,xe->em', u_i_b, n)
+        
+        W_uu = k * torch.einsum('em,el,e,mp...,lp...,mt...,lt...,ms...,ls...,mq...,lq...->', un_i_b, un_i_b, torch.abs(detJ_full), L0, L0, L1, L1, L2, L2, L3, L3)
+        
+        if is_u_ref_nonzero:
+            W_u_ref = k * torch.einsum('em,e,mp,mt,ms,mq,e->', un_i_b, torch.abs(detJ_full), L0, L1, L2,L3, u_ref_n)
+            W_ref_ref = k * torch.sum(u_ref_n**2 * torch.abs(detJ_full)) * L0.shape[1] * L1.shape[1] * L2.shape[1]
+            W = W_uu - 2 * W_u_ref + W_ref_ref
+        else:
+            W = W_uu
             
-        return W / (E[0].shape[0] * E[1].shape[0] * E[2].shape[0])
+        # return W / (E[0].shape[0] * E[1].shape[0] * E[2].shape[0]) #DEBUG
+        # return W / (E[0].shape[0]* E[1].shape[0])
+        return W / (E[0].shape[0])
 
 def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val=0.0, h_idx=None, k_val=0.0, k_idx=None, z0=0.0, y0=0.0, compute_normals_once=True):
     r"""
@@ -2031,7 +2066,7 @@ def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val
         if compute_normals_once and hasattr(model.Space_modes[0].mesh, 'boundary_normals'):
             n = model.Space_modes[0].mesh.boundary_normals.to(u_i_b.device)
         else:
-            raise ValueError() #DEBUG Force computing normals
+            # raise ValueError() #DEBUG Force computing normals
             n = model.Space_modes[0].mesh.normals.to(u_i_b.device)
             if n.shape[0] != u_i_b.shape[1]:
                 print(f"Warning: mesh.normals shape {n.shape} does not match number of boundary elements {u_i_b.shape[1]}. Computing geometrically...")
@@ -2072,9 +2107,9 @@ def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val
         for i in range(model.n_para):
             L_i = lambda_i[i][:, :, 0]
             if i == V_idx:
-                S_m = torch.einsum('p,mp->m', V, L_i)
+                S_m = torch.einsum('p,mp...->m', V, L_i)
             else:
-                S_m = torch.sum(L_i, dim=1)
+                S_m = torch.sum(L_i, dim=1).view(-1)
             I_m = I_m * S_m
         if V_idx is None:
             I_m = I_m * V
@@ -2084,9 +2119,14 @@ def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val
     W_H = compute_work_component(z - z0, H, h_idx)
     W_K = compute_work_component(y - y0, K, k_idx)
     
+
+
+    # W_P0_debug = P0*torch.einsum('em,mt...,ms...,mp...,e->', un_i_b, lambda_i[0], lambda_i[1], lambda_i[2],torch.abs(detJ_full))
+
     W_ext = W_P0 + W_H + W_K
     
     denom = 1
+    # denom = E[0].shape[0]
     for i in range(model.n_para):
         denom = denom * E[i].shape[0]
         
@@ -2126,6 +2166,7 @@ def BoundaryPressureEnergy_para(model, P0, H, z0, K, y0, E, compute_normals_once
         if compute_normals_once and hasattr(model.Space_modes[0].mesh, 'boundary_normals'):
             n = model.Space_modes[0].mesh.boundary_normals.to(u_i_b.device)
         else:
+            # raise ValueError() #DEBUG Force computing normals
             n = model.Space_modes[0].mesh.normals.to(u_i_b.device)
             if n.shape[0] != u_i_b.shape[1]:
                 print(f"Warning: mesh.normals shape {n.shape} does not match number of boundary elements {u_i_b.shape[1]}. Computing geometrically...")

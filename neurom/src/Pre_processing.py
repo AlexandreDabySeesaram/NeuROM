@@ -130,7 +130,25 @@ class Mesh:
         pv_mesh = pv.wrap(self.vtk_mesh)
         outer_surface = pv_mesh.extract_geometry()
         outer_surface.compute_normals(cell_normals=True, point_normals=False, inplace=True, auto_orient_normals=True)
-        self.normals = torch.from_numpy(outer_surface.cell_data['Normals']).float()
+        # self.normals = torch.from_numpy(outer_surface.cell_data['Normals']).float()
+        pv_normals = torch.from_numpy(outer_surface.cell_data['Normals']).float()
+
+
+        ###### Re order the normals so that they fit the numbering of the gmsh border connectivity table
+        coords = torch.tensor(self.Nodes) #DEBUG To use in place of borders_nodes ....
+        borders_nodes_tensor = torch.tensor(self.borders_nodes).long() #DEBUG To use in place of borders_nodes ....
+        gmsh_v0 = coords[borders_nodes_tensor[:, 0]-1,1:]
+        gmsh_v1 = coords[borders_nodes_tensor[:, 1]-1,1:]
+        gmsh_v2 = coords[borders_nodes_tensor[:, 2]-1,1:]
+        gmsh_centroids = (gmsh_v0 + gmsh_v1 + gmsh_v2) / 3.0
+        pv_centroids = torch.from_numpy(outer_surface.cell_centers().points).float()
+
+        dists = torch.cdist(gmsh_centroids.to(pv_centroids.dtype), pv_centroids)
+        mapping_idx = torch.argmin(dists, dim=1)
+        self.normals = pv_normals[mapping_idx]
+
+        #####
+
 
 
 

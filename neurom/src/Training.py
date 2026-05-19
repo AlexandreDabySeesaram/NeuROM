@@ -539,15 +539,21 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                                 loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                     E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                    p0_val=1e-2, k_spring=1e2, BoundaryNormals=True)
+                                    p0_val=10, k_spring=1e2, BoundaryNormals=True)
             case 4:
                 match config["interpolation"]["dimension"]:
                     case 3:  
                         match config["solver"]["Problem"]:
                             case "PressureGravityBoundaryStiffness":
+                                # loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
+                                #     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                #     E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
                                 loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
+                                    E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=None, k_idx=None,
+                                    k_spring=1e-2, BoundaryNormals=True)
+
+
             case 5:
                 match config["interpolation"]["dimension"]:
                     case 3:  
@@ -835,15 +841,19 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                     loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                         model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
                                         E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                    p0_val=-1, k_spring=1e-2, BoundaryNormals=True)
+                                    p0_val=0, k_spring=1e-2, BoundaryNormals=True)
                 case 4:
                     match config["interpolation"]["dimension"]:
                         case 3:  
                             match config["solver"]["Problem"]:
                                 case "PressureGravityBoundaryStiffness":
+                                    # loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
+                                    #     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
+                                    #     E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
                                     loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
                                         model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                        E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
+                                        E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=None, k_idx=None,
+                                    p0_val=0, k_spring=1e-2, BoundaryNormals=True)
                 case 5:
                     match config["interpolation"]["dimension"]:
                         case 3:  

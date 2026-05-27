@@ -2120,7 +2120,6 @@ def BoundaryPressureEnergy_para_learned(model, E, p0_val=0.0, p0_idx=None, h_val
     W_K = compute_work_component(y - y0, K, k_idx)
     
 
-
     # W_P0_debug = P0*torch.einsum('em,mt...,ms...,mp...,e->', un_i_b, lambda_i[0], lambda_i[1], lambda_i[2],torch.abs(detJ_full))
 
     W_ext = W_P0 + W_H + W_K

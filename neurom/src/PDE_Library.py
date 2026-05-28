@@ -434,15 +434,15 @@ def Stress_tensor(eps, lmbda, mu):
     sigma = torch.einsum('ij,ej->ei',K,eps)
     return sigma
 
-def InternalEnergy_2_3D_einsum(u,x,lmbda, mu, dim = 2):
+def InternalEnergy_2_3D_einsum(u,x,lmbda, mu, dim = 2, grad_u = None):
     match dim:
         case 2:
-            eps =  Strain_sqrt(u,x)
+            eps =  Strain_sqrt(u,x, dim=2, grad_u=grad_u)
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
             return W_e
         case 3:
-            eps =  Strain_sqrt(u,x, dim = dim)
+            eps =  Strain_sqrt(u,x, dim = dim, grad_u=grad_u)
             K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
             W_e = torch.einsum('ij,ej...,ei...->e',K,eps,eps)
             return W_e
@@ -1504,38 +1504,70 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
     return integral
 
-def Strain_sqrt(u,x, dim = 2):
+def Strain_sqrt(u,x, dim = 2, grad_u = None):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
-    # print(f"shape u is {u.shape}")#DEBUG
-    # print(f"shape x is {x.shape}")#DEBUG
+    if grad_u is not None:
+        match dim:
+            case 2:
+                eps_xx = grad_u[:, 0, 0]
+                eps_yy = grad_u[:, 1, 1]
+                eps_xy = grad_u[:, 0, 1] + grad_u[:, 1, 0]
+                return torch.stack([eps_xx, eps_yy, (1/torch.sqrt(torch.tensor(2)))*eps_xy], dim=1)
+            case 3:
+                eps_xx = grad_u[:, 0, 0]
+                eps_yy = grad_u[:, 1, 1]
+                eps_zz = grad_u[:, 2, 2]
+                eps_yz = grad_u[:, 1, 2] + grad_u[:, 2, 1]
+                eps_xz = grad_u[:, 0, 2] + grad_u[:, 2, 0]
+                eps_xy = grad_u[:, 0, 1] + grad_u[:, 1, 0]
+                return torch.stack([eps_xx, eps_yy, eps_zz,
+                                    (1/torch.sqrt(torch.tensor(2)))*eps_yz,
+                                    (1/torch.sqrt(torch.tensor(2)))*eps_xz,
+                                    (1/torch.sqrt(torch.tensor(2)))*eps_xy], dim=1)
 
+    # Compute gradients in one go
+    if callable(u):
+        grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
+    else:
+        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
+    
     match dim:
         case 2:
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,0], dv[:,1], (1/torch.sqrt(torch.tensor(2)))*(du[:,1] + dv[:,0])],dim=1)
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
+            return torch.stack([du[...,0], dv[...,1], (1/torch.sqrt(torch.tensor(2)))*(du[...,1] + dv[...,0])],dim=1)
 
         case 3:
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2],(1/torch.sqrt(torch.tensor(2)))*(dv[:,:,2] + dw[:,:,1]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,2] + dw[:,:,0]), (1/torch.sqrt(torch.tensor(2)))*(du[:,:,1] + dv[:,:,0])],dim=1)
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
+            dw = grad_u_batch[2]
+            return torch.stack([du[...,0], dv[...,1], dw[...,2],
+                                (1/torch.sqrt(torch.tensor(2)))*(dv[...,2] + dw[...,1]), 
+                                (1/torch.sqrt(torch.tensor(2)))*(du[...,2] + dw[...,0]), 
+                                (1/torch.sqrt(torch.tensor(2)))*(du[...,1] + dv[...,0])],dim=1)
 
-def grad_u_2_3D(u,x, dim = 2):
+def grad_u_2_3D(u,x, dim = 2, grad_u = None):
     """ Return the gradient of u"""
-    # print(f"shape u is {u.shape}")#DEBUG
-    # print(f"shape x is {x.shape}")#DEBUG
+    if grad_u is not None:
+        return grad_u
+
+    if callable(u):
+        grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
+    else:
+        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
 
     match dim:
         case 2:
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,:], dv[:,:]],dim=1)
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
+            return torch.stack([du, dv],dim=1)
         case 3:
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            return torch.stack([du[:,0,:], dv[:,0,:], dw[:,0,:]],dim=1)
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
+            dw = grad_u_batch[2]
+            return torch.stack([du, dv, dw],dim=1)
 
 
 
@@ -1546,25 +1578,47 @@ def Green_lagrange(grad_u):
     quad_term = torch.einsum('ekx,eky->exy',grad_u,grad_u)
     return 0.5*(grad_u_transpose+grad_u+quad_term)
 
-def Strain(u,x):
+def Strain(u,x, grad_u=None):
     # Used only for visualisation purposes.
     # Ordering corresponds to Paraview.
-    dim = u.shape[0]
+    if grad_u is not None:
+        dim = grad_u.shape[1]
+        match dim:
+            case 2:
+                eps_xx = grad_u[:, 0, 0]
+                eps_yy = grad_u[:, 1, 1]
+                eps_xy = grad_u[:, 0, 1] + grad_u[:, 1, 0]
+                return torch.stack([eps_xx, eps_yy, 0.5*eps_xy], dim=1)
+            case 3:
+                eps_xx = grad_u[:, 0, 0]
+                eps_yy = grad_u[:, 1, 1]
+                eps_zz = grad_u[:, 2, 2]
+                eps_yz = grad_u[:, 1, 2] + grad_u[:, 2, 1]
+                eps_xz = grad_u[:, 0, 2] + grad_u[:, 2, 0]
+                eps_xy = grad_u[:, 0, 1] + grad_u[:, 1, 0]
+                return torch.stack([eps_xx, eps_yy, eps_zz, 0.5*eps_xy, 0.5*eps_yz, 0.5*eps_xz], dim=1)
+
+    if callable(u):
+        grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
+        dim = grad_u_batch.shape[0]
+    else:
+        dim = u.shape[0]
+        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
+
     match dim:
         case 2:
             """ Return the vector strain [eps_xx eps_yy eps_xy]"""
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
             return torch.stack([du[...,0], dv[...,1], 0.5*(du[...,1] + dv[...,0])],dim=1)
         case 3:
             """ Return the vector strain [3D: XX, YY, ZZ, XY, YZ, XZ]"""
-            du = torch.autograd.grad(u[0,:], x, grad_outputs=torch.ones_like(u[0,:]), create_graph=True)[0]
-            dv = torch.autograd.grad(u[1,:], x, grad_outputs=torch.ones_like(u[1,:]), create_graph=True)[0]
-            dw = torch.autograd.grad(u[2,:], x, grad_outputs=torch.ones_like(u[2,:]), create_graph=True)[0]
-
-            return torch.stack([du[:,:,0], dv[:,:,1], dw[:,:,2], \
-                0.5*(du[:,:,1] + dv[:,:,0]), 0.5*(dv[:,:,2] + dw[:,:,1]), 0.5*(du[:,:,2] + dw[:,:,0])],dim=1)
+            du = grad_u_batch[0]
+            dv = grad_u_batch[1]
+            dw = grad_u_batch[2]
+            return torch.stack([du[...,0], dv[...,1], dw[...,2],
+                0.5*(du[...,1] + dv[...,0]), 0.5*(dv[...,2] + dw[...,1]), 0.5*(du[...,2] + dw[...,0])],dim=1)
 
 def Mixed_2D_loss(u_pred, v_pred, s11_pred, s22_pred, s12_pred, x, lmbda, mu):
 

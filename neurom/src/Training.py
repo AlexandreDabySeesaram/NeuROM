@@ -1473,7 +1473,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 loss_old                = loss.data                                                             # Update old loss value
                 D_detJ                  = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)   # Relative delat jacobian
                 if torch.max(D_detJ)>model.Jacobian_threshold:
-                    indices             = torch.nonzero(D_detJ > model.Jacobian_threshold)
+                    indices             = torch.nonzero(D_detJ > model.Jacobian_threshold)[:, 0].unique()
                     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
                     # model.detJ_0[indices] = detJ[indices]
                     Removed_elem_list = []

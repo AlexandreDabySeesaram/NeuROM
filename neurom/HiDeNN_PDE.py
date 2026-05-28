@@ -2369,6 +2369,8 @@ class InterpolationBlock3D_Lin(nn.Module):
                 u = torch.einsum('eix,ei->xe', nodes_values, shape_functions)
             else:
                 u = torch.einsum('eix,egi->xeg', nodes_values, shape_functions)
+                if u.shape[-1] == 1:
+                    u = u.squeeze(-1)
             return u
 
 

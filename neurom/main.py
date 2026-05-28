@@ -181,7 +181,7 @@ def main():
                 Model_FEM = MeshNN_2D(Mesh_object, n_components = 2)
             
             case 3:
-                Model_FEM = MeshNN_3D(Mesh_object, n_components = 3)
+                Model_FEM = MeshNN_3D(Mesh_object, n_components = 3, n_integr_points = config["interpolation"].get("n_integr_points", 1))
 
         # Set the coordinates as trainable
         Model_FEM.UnFreeze_Mesh()

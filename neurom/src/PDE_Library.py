@@ -439,12 +439,18 @@ def InternalEnergy_2_3D_einsum(u,x,lmbda, mu, dim = 2, grad_u = None):
         case 2:
             eps =  Strain_sqrt(u,x, dim=2, grad_u=grad_u)
             K = torch.tensor([[2*mu+lmbda, lmbda, 0],[lmbda, 2*mu+lmbda, 0],[0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
-            W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
+            if eps.ndim == 3:
+                W_e = torch.einsum('ij,ejg,eig->eg',K,eps,eps)
+            else:
+                W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
             return W_e
         case 3:
             eps =  Strain_sqrt(u,x, dim = dim, grad_u=grad_u)
             K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=eps.dtype, device=eps.device)
-            W_e = torch.einsum('ij,ej...,ei...->e',K,eps,eps)
+            if eps.ndim == 3:
+                W_e = torch.einsum('ij,ejg,eig->eg',K,eps,eps)
+            else:
+                W_e = torch.einsum('ij,ej,ei->e',K,eps,eps)
             return W_e
 
 InternalEnergy_2D_einsum = InternalEnergy_2_3D_einsum
@@ -1506,10 +1512,16 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
 _grad_outputs_cache = {}
 
-def _get_grad_outputs(dim, N, dtype, device):
-    key = (dim, N, dtype, device)
+def _get_grad_outputs(dim, x_shape, dtype, device):
+    if isinstance(x_shape, int):
+        x_shape = (x_shape,)
+    key = (dim, x_shape, dtype, device)
     if key not in _grad_outputs_cache:
-        _grad_outputs_cache[key] = torch.eye(dim, dtype=dtype, device=device).unsqueeze(-1).expand(dim, dim, N)
+        v = torch.eye(dim, dtype=dtype, device=device)
+        for _ in range(len(x_shape) - 1):
+            v = v.unsqueeze(-1)
+        v = v.expand((dim, dim) + x_shape[:-1])
+        _grad_outputs_cache[key] = v
     return _grad_outputs_cache[key]
 
 def Strain_sqrt(u,x, dim = 2, grad_u = None):
@@ -1537,7 +1549,7 @@ def Strain_sqrt(u,x, dim = 2, grad_u = None):
     if callable(u):
         grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
     else:
-        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
+        v = _get_grad_outputs(dim, x.shape, u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
     
     match dim:
@@ -1563,7 +1575,7 @@ def grad_u_2_3D(u,x, dim = 2, grad_u = None):
     if callable(u):
         grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
     else:
-        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
+        v = _get_grad_outputs(dim, x.shape, u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
 
     match dim:

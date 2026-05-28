@@ -1930,7 +1930,7 @@ def Training_2_3D_FEM(model, config, Mat):
                 case 2:
                     model_2 = MeshNN_2D(Mesh_object_fine, 2)                                    # Create the associated model (with 2 components)
                 case 3:
-                    model_2 = MeshNN_3D(Mesh_object_fine, 3)                                    # Create the associated model (with 2 components)
+                    model_2 = MeshNN_3D(Mesh_object_fine, 3, n_integr_points = config["interpolation"].get("n_integr_points", 1))                                    # Create the associated model (with 2 components)
             vers = 'New_V2'
             match vers:
                 case 'old':

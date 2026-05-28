@@ -403,7 +403,7 @@ class NeuROM(nn.Module):
             case '2':
                 self.Space_modes = nn.ModuleList([MeshNN_2D(mesh, n_components= 2) for i in range(self.n_modes)])
             case '3':
-                self.Space_modes = nn.ModuleList([MeshNN_3D(mesh, n_components= 3) for i in range(self.n_modes)])
+                self.Space_modes = nn.ModuleList([MeshNN_3D(mesh, n_components= 3, n_integr_points = config["interpolation"].get("n_integr_points", 1)) for i in range(self.n_modes)])
         self.Para_modes = nn.ModuleList([nn.ModuleList([InterpPara(Para[0], Para[1], Para[2]) for Para in ParametersList]) for i in range(self.n_modes)])
         # Set BCs 
 
@@ -2210,26 +2210,50 @@ class ElementBlock3D_Lin(nn.Module):
     """
     Returns:
          N_i(x)'s for each nodes within each element"""
-    def __init__(self, connectivity):
+    def __init__(self, connectivity, n_integr_points=1):
         """ Initialise the Linear Bar element 
         Args:
             connectivity (Interger table): Connectivity matrix of the 3D mesh
         """
         super(ElementBlock3D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
-        self.register_buffer('GaussPoint',self.GP())
+        self.n_integr_points = n_integr_points
+        gp, w_g = self.GP(self.n_integr_points)
+        self.register_buffer('GaussPoint', gp)
+        self.register_buffer('w_g', w_g)
+
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)
 
-    def GP(self):
-        # gp =  torch.tensor([  [0.5854101966249685, 0.1381966011250105, 0.1381966011250105], 
-        #         [0.1381966011250105, 0.5854101966249685, 0.1381966011250105], 
-        #         [0.1381966011250105, 0.1381966011250105, 0.5854101966249685], 
-        #         [0.1381966011250105, 0.1381966011250105, 0.1381966011250105]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
-        gp =  torch.tensor([[0.25, 0.25, 0.25]],dtype=torch.float64, requires_grad=True) # a1, a2, a3  the 3 volume coordinates
+    def GP(self, n_integr_points):
+        if n_integr_points == 1:
+            gp = torch.tensor([[0.25, 0.25, 0.25]], dtype=torch.float64, requires_grad=True)
+            w_g = torch.tensor([1.0], dtype=torch.float64)
+        elif n_integr_points == 4:
+            a = 0.5854101966249685
+            b = 0.1381966011250105
+            gp = torch.tensor([
+                [a, b, b],
+                [b, a, b],
+                [b, b, a],
+                [b, b, b]
+            ], dtype=torch.float64, requires_grad=True)
+            w_g = torch.tensor([0.25, 0.25, 0.25, 0.25], dtype=torch.float64)
+        elif n_integr_points == 5:
+            gp = torch.tensor([
+                [0.25, 0.25, 0.25],
+                [0.5, 0.16666666666666666, 0.16666666666666666],
+                [0.16666666666666666, 0.5, 0.16666666666666666],
+                [0.16666666666666666, 0.16666666666666666, 0.5],
+                [0.16666666666666666, 0.16666666666666666, 0.16666666666666666]
+            ], dtype=torch.float64, requires_grad=True)
+            w_g = torch.tensor([-16/30, 9/30, 9/30, 9/30, 9/30], dtype=torch.float64) * 1.5
+        else:
+            raise ValueError(f"Unsupported number of integration points: {n_integr_points} for 3D")
+        
         # Add 4th volume coordinate from first 3
-        gp = torch.hstack([gp, 1-torch.sum(gp, dim=1)[:,None]]) # shape [gxn]
-        return gp
+        gp = torch.hstack([gp, 1 - torch.sum(gp, dim=1)[:, None]]) # shape [gxn]
+        return gp, w_g
 
     def forward(self, x, cell_id, coordinates, nodal_values,coord_mask,coordinates_all,flag_training):
         """ This is the forward function of the Linear element block that outputs 3D linear shape functions based on
@@ -2248,53 +2272,40 @@ class ElementBlock3D_Lin(nn.Module):
         coordinates_all = torch.ones_like(coordinates_all)
         coordinates_all[coord_mask] = coordinates['free']
         coordinates_all[~coord_mask] = coordinates['imposed']
-        Ids = torch.as_tensor(cell_nodes_IDs-1).to(coordinates_all.device).t()[:,:,None]
-        nodes_coord =  torch.gather(coordinates_all[None,:,:].repeat(4,1,1),1, Ids.repeat(1,1,3)) # for each element, 4 nodes with 3 coordonates 
+
+        cell_nodes_tensor = torch.as_tensor(cell_nodes_IDs - 1, device=coordinates_all.device)
+        nodes_coord = coordinates_all[cell_nodes_tensor] # shape [E, 4, 3]
 
         if flag_training:
-
-            refCoordg = self.GaussPoint.repeat(cell_id.shape[0],1) # Computes N_i(xg local) for each gp for each element, shape [exgxn]
-
-            # w_g = 1/24                                              # Gauss weight
-            w_g = 1                                                  # Gauss weight
-
+            refCoordg = self.GaussPoint.unsqueeze(0).expand(cell_id.shape[0], -1, -1) # shape [E, G, 4]
             Ng = refCoordg
 
+            x_g = torch.einsum('enx,egn->egx', nodes_coord, Ng)
 
-            x_g = torch.einsum('nex,egn->egx',nodes_coord,Ng[:,None,:])
-
-            refCoord = GetRefCoord_3D(x_g,nodes_coord)
-
+            refCoord = GetRefCoord_3D(x_g, nodes_coord)
             N = refCoord
 
             DN = torch.tensor([
                             [1.0,0,0,-1],
                             [0,1,0,-1], 
                             [0,0,1,-1]], dtype=nodes_coord.dtype, device = nodes_coord.device)
-            # DN.to(nodes_coord.dtype)
-            # DN.to(nodes_coord.device)
 
-            Jacobian = torch.einsum('xn,neX->exX',DN,nodes_coord)
+            Jacobian = torch.einsum('xn,enX->exX', DN, nodes_coord)
             detJ = torch.linalg.det(Jacobian)
-            return N,x_g, detJ*w_g
+
+            detJ_w = detJ[:, None] * self.w_g[None, :]
+            return N, x_g, detJ_w
 
         else:
-            refCoord = GetRefCoord_3D(x,nodes_coord)
-            # out = torch.stack((refCoord[:,0], refCoord[:,1], refCoord[:,2]),dim=1) #.view(sh_R.shape[0],-1) # Left | Right | Middle
-            # return out
+            refCoord = GetRefCoord_3D(x, nodes_coord)
             return refCoord
-
-    
 
 
 def GetRefCoord_3D(x, nodes_coord):
-    nodes = torch.einsum('nex->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
+    nodes = torch.einsum('enx->exn',nodes_coord)         # reshape the nodes matrix for batched inverse
     [e, c, n] = nodes.shape
     mapping = torch.empty(e, n, n, dtype=nodes_coord.dtype, device = nodes_coord.device)                       # Preallocate the final tensor with shape (e, n, n)
-    # print(nodes_coord.device)
-    # print(mapping.device)
     mapping.to(nodes_coord.device)
-    # print(mapping.device)
 
     mapping[:, :c, :] = nodes
     mapping[:, c, :] = 1                                 # Add the ones raw to get the extended coordinates tensor
@@ -2317,10 +2328,10 @@ def GetRefCoord_3D(x, nodes_coord):
 class InterpolationBlock3D_Lin(nn.Module):
     """This class performs the FEM (linear) interpolation based on 2D shape functions and nodal values"""
     def __init__(self, connectivity):
-       
         super(InterpolationBlock3D_Lin, self).__init__()
         self.connectivity = connectivity.astype(int)
         self.updated_connectivity = True
+
     def UpdateConnectivity(self,connectivity):
         """This function updates the connectivity tables of the interpolatin class
         args: 
@@ -2335,44 +2346,29 @@ class InterpolationBlock3D_Lin(nn.Module):
             - cell id (integer array): Corresponding element(s)
             - shape_functions corresponding N_i(x)
         '''
-        vers = 'new_V2'                                                             # Enables 'old' slow implementation or 'New_V2' more efficient implementation
+        cell_nodes_IDs = self.connectivity[cell_id, :] - 1
+        if cell_nodes_IDs.ndim == 1:
+            cell_nodes_IDs = np.expand_dims(cell_nodes_IDs, 0)
+
+        nodal_values_tensor = torch.ones_like(nodal_values_tensor)
+        nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
+        nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
+        nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
+        nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
+        nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
+        nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
+
+        cell_nodes_tensor = torch.as_tensor(cell_nodes_IDs, device=nodal_values_tensor.device)
+        nodes_values = nodal_values_tensor[cell_nodes_tensor] # shape [E, 4, 3]
+
         if flag_training:
-
-
-            if self.updated_connectivity:
-                cell_nodes_IDs = self.connectivity[cell_id,:] - 1
-                if cell_nodes_IDs.ndim == 1:
-                    cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-                self.updated_connectivity = False
-                self.Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
-
-
-            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
-            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
-            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
-            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
-            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
-            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']                    
-            self.nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, self.Ids.repeat(1,1,3))
-            u = torch.einsum('igx,g...i->xg',self.nodes_values,shape_functions)
+            u = torch.einsum('eix,egi->xeg', nodes_values, shape_functions)
             return u
-
         else:
-            cell_nodes_IDs = self.connectivity[cell_id,:] - 1
-            if cell_nodes_IDs.ndim == 1:
-                cell_nodes_IDs = np.expand_dims(cell_nodes_IDs,0)
-
-            nodal_values_tensor = torch.ones_like(nodal_values_tensor)
-            nodal_values_tensor[node_mask_x,0] = nodal_values['x_free']
-            nodal_values_tensor[node_mask_y,1] = nodal_values['y_free']
-            nodal_values_tensor[node_mask_z,2] = nodal_values['z_free']
-            nodal_values_tensor[~node_mask_x,0] = nodal_values['x_imposed']                    
-            nodal_values_tensor[~node_mask_y,1] = nodal_values['y_imposed']                    
-            nodal_values_tensor[~node_mask_z,2] = nodal_values['z_imposed']  
-            Ids = torch.as_tensor(cell_nodes_IDs).to(nodal_values['x_free'].device).t()[:,:,None]
-            nodes_values =  torch.gather(nodal_values_tensor[None,:,:].repeat(4,1,1),1, Ids.repeat(1,1,3))
-            u = torch.einsum('igx,g...i->xg',nodes_values,shape_functions)
+            if shape_functions.ndim == 2:
+                u = torch.einsum('eix,ei->xe', nodes_values, shape_functions)
+            else:
+                u = torch.einsum('eix,egi->xeg', nodes_values, shape_functions)
             return u
 
 
@@ -2439,7 +2435,7 @@ class MeshNN_3D(nn.Module):
     is equivqlent to solving the PDE. """
 
 
-    def __init__(self, mesh, n_components):
+    def __init__(self, mesh, n_components, n_integr_points=1):
         super(MeshNN_3D, self).__init__()
         self.register_buffer('float_config',torch.tensor([0.0])  )                                                     # Keep track of device and dtype used throughout the model
 
@@ -2493,7 +2489,7 @@ class MeshNN_3D(nn.Module):
 
         self.order = mesh.order
         if mesh.order =='1':
-            self.ElementBlock   = ElementBlock3D_Lin(mesh.Connectivity)
+            self.ElementBlock   = ElementBlock3D_Lin(mesh.Connectivity, n_integr_points)
             self.Interpolation  = InterpolationBlock3D_Lin(mesh.Connectivity)
             if len(self.borders_nodes) > 0:
                 self.ElementBlockBoundary = ElementBlock2D_Lin(np.array(self.borders_nodes), is_boundary=True)

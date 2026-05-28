@@ -1,0 +1,2 @@
+[console_scripts]
+neurom = neurom:main

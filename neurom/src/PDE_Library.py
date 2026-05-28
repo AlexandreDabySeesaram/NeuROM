@@ -1623,7 +1623,7 @@ def Strain(u,x, grad_u=None):
         dim = grad_u_batch.shape[0]
     else:
         dim = u.shape[0]
-        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
+        v = _get_grad_outputs(dim, x.shape, u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
 
     match dim:

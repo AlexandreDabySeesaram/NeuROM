@@ -57,6 +57,10 @@ def main():
     with open(args.cf, mode="rb") as f:
         config = tomllib.load(f)
 
+    if "training" in config and "r_adapt" in config["training"]:
+        if not config["training"]["r_adapt"]:
+            config["solver"]["FrozenMesh"] = True
+
     #%% Initialise hardware
 
     match config["hardware"]["FloatPrecision"]:

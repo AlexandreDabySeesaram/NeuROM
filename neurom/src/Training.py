@@ -1472,7 +1472,7 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config):
                 d_loss                  = 2*(torch.abs(loss.data-loss_old))/(torch.abs(loss.data+loss_old))     # Relative loss decay
                 loss_old                = loss.data                                                             # Update old loss value
                 D_detJ                  = (torch.abs(model.detJ_0) - torch.abs(detJ))/torch.abs(model.detJ_0)   # Relative delat jacobian
-                if torch.max(D_detJ)>model.Jacobian_threshold:
+                if hasattr(model, 'SplitElemNonLoc') and torch.max(D_detJ)>model.Jacobian_threshold:
                     indices             = torch.nonzero(D_detJ > model.Jacobian_threshold)[:, 0].unique()
                     # Re-initialise future splitted elements' jacobian as base for the newly splitted elements
                     # model.detJ_0[indices] = detJ[indices]
@@ -1840,6 +1840,9 @@ def Training_2D_Residual_LBFGS(model, model_test, n_epochs,List_elems,Mat):
     return Loss_vect, (time_stop-time_start)
 
 def Training_2_3D_FEM(model, config, Mat):
+    if "training" in config and "r_adapt" in config["training"]:
+        if not config["training"]["r_adapt"]:
+            config["solver"]["FrozenMesh"] = True
     n_epochs = config["training"]["n_epochs"]
     n_refinement        = 0                                 # Initialise the refinement level
     stagnation          = False                             # Stagnation flag

@@ -2369,8 +2369,6 @@ class InterpolationBlock3D_Lin(nn.Module):
                 u = torch.einsum('eix,ei->xe', nodes_values, shape_functions)
             else:
                 u = torch.einsum('eix,egi->xeg', nodes_values, shape_functions)
-                if u.shape[-1] == 1:
-                    u = u.squeeze(-1)
             return u
 
 
@@ -2589,7 +2587,10 @@ class MeshNN_3D(nn.Module):
         newcoordinates[self.coord_free]     = self.coordinates['free']
         newcoordinates[~self.coord_free]    = self.coordinates['imposed']
         IDs_newcoord                        = torch.tensor(CoarseModel.mesh.GetCellIds(newcoordinates),dtype=torch.int)
-        NewNodalValues                      = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype).t()
+        u_coarse                            = CoarseModel(newcoordinates.to(CoarseModel.float_config.dtype),IDs_newcoord).to(self.float_config.dtype)
+        if u_coarse.ndim == 3:
+            u_coarse = u_coarse.squeeze(-1)
+        NewNodalValues                      = u_coarse.t()
         # check if a cell ID was not found for some new nodes 
         if -1 in IDs_newcoord:
             index_neg = (IDs_newcoord == -1).nonzero(as_tuple=False)

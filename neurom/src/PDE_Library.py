@@ -1504,6 +1504,14 @@ def PotentialEnergyVectorisedBiParametric_Gauss(model,A, E):
 
     return integral
 
+_grad_outputs_cache = {}
+
+def _get_grad_outputs(dim, N, dtype, device):
+    key = (dim, N, dtype, device)
+    if key not in _grad_outputs_cache:
+        _grad_outputs_cache[key] = torch.eye(dim, dtype=dtype, device=device).unsqueeze(-1).expand(dim, dim, N)
+    return _grad_outputs_cache[key]
+
 def Strain_sqrt(u,x, dim = 2, grad_u = None):
     """ Return the Scientific voigt notation  of the strain [eps_xx eps_yy sqrt(2)eps_xy]"""
     if grad_u is not None:
@@ -1529,7 +1537,7 @@ def Strain_sqrt(u,x, dim = 2, grad_u = None):
     if callable(u):
         grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
     else:
-        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
     
     match dim:
@@ -1555,7 +1563,7 @@ def grad_u_2_3D(u,x, dim = 2, grad_u = None):
     if callable(u):
         grad_u_batch = torch.vmap(torch.func.jacrev(u))(x).permute(1, 0, 2)
     else:
-        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
 
     match dim:
@@ -1603,7 +1611,7 @@ def Strain(u,x, grad_u=None):
         dim = grad_u_batch.shape[0]
     else:
         dim = u.shape[0]
-        v = torch.eye(dim, dtype=u.dtype, device=u.device).unsqueeze(-1).expand(dim, dim, x.shape[0])
+        v = _get_grad_outputs(dim, x.shape[0], u.dtype, u.device)
         grad_u_batch = torch.autograd.grad(u, x, grad_outputs=v, create_graph=True, is_grads_batched=True)[0]
 
     match dim:

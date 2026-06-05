@@ -80,7 +80,7 @@ class TestField:
             Field(
                 name="less field values than nodes",
                 connectivity=connectivity,
-                values=more,
+                values=less,
             )
 
     def test_full_values(self, field):

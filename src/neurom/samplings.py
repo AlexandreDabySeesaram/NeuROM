@@ -38,11 +38,9 @@ class Sampling(ABC):
         return self.__class__(-self.values)
 
     def __mul__(self, s: float):
-        breakpoint()
         return self.__class__(s * self.values)
 
     def __rmul__(self, s: float):
-        breakpoint()
         return self.__class__(s * self.values)
 
     @property

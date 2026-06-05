@@ -16,7 +16,6 @@ def field():
     * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
@@ -59,7 +58,7 @@ class TestField:
         connectivity = field.connectivity
         values = torch.tensor([3.0, 7.0, 6.0, -5.0])
         with pytest.raises(ValueError):
-            wrong_field = Field(
+            Field(
                 name="missing field dimension", connectivity=connectivity, values=values
             )
 
@@ -70,7 +69,7 @@ class TestField:
         connectivity = field.connectivity
         more = torch.tensor([3.0, 7.0, 6.0, -5.0, 4.0]).unsqueeze(-1)
         with pytest.raises(ValueError):
-            wrong_field = Field(
+            Field(
                 name="more field values than nodes",
                 connectivity=connectivity,
                 values=more,
@@ -78,7 +77,7 @@ class TestField:
 
         less = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
         with pytest.raises(ValueError):
-            wrong_field = Field(
+            Field(
                 name="less field values than nodes",
                 connectivity=connectivity,
                 values=more,

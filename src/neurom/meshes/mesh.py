@@ -114,7 +114,7 @@ class Mesh(nn.Module):
 
         if self.connectivity is not self.nodes_positions.connectivity:
             raise ValueError(
-                f"Mesh self.connectivity does not correspond to self.nodes_positions.connectivity"
+                "Mesh self.connectivity does not correspond to self.nodes_positions.connectivity"
             )
 
     @property

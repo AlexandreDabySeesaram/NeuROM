@@ -64,8 +64,6 @@ class Test1dBeamDeflection:
 
         # Number of training steps
         n_epochs = 3
-        # Learning rate
-        lr = 10.0
 
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
@@ -194,8 +192,6 @@ class Test1dBeamDeflection:
 
         # Number of training steps
         n_epochs = 3
-        # Learning rate
-        lr = 10.0
 
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)

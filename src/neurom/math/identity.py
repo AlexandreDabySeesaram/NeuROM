@@ -25,8 +25,7 @@ def identity_point(u: torch.Tensor) -> torch.Tensor:
     # Matrix case
     if len(f_shape) == 2 and f_shape[0] == f_shape[1]:
         d = f_shape[0]
-        I = torch.eye(d, dtype=u.dtype, device=u.device)
-        return I
+        return torch.eye(d, dtype=u.dtype, device=u.device)
 
     raise ValueError(
         f"Identity only defined for scalar (1,) or square matrix (d,d), got tensor with shape: '{f_shape}'"

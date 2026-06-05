@@ -116,12 +116,12 @@ class TestInner:
         x = torch.arange(1.0, 5.0).view(2, 2)  # [[1,2],[3,4]]
 
         # Identity matrix of size 3
-        I = torch.eye(3).unsqueeze(0).unsqueeze(0)  # (1,1,3,3)
+        eye = torch.eye(3).unsqueeze(0).unsqueeze(0)  # (1,1,3,3)
 
         # Define tensor fields u and v as scaled identity matrices
         # u = x * I, v = 2 * x * I
-        u = x.unsqueeze(-1).unsqueeze(-1) * I  # broadcasts to (2,2,3,3)
-        v = 2 * x.unsqueeze(-1).unsqueeze(-1) * I  # (2,2,3,3)
+        u = x.unsqueeze(-1).unsqueeze(-1) * eye  # broadcasts to (2,2,3,3)
+        v = 2 * x.unsqueeze(-1).unsqueeze(-1) * eye  # (2,2,3,3)
 
         assert u.shape == (2, 2, 3, 3)
         assert v.shape == (2, 2, 3, 3)

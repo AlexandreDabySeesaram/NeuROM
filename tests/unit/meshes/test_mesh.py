@@ -122,4 +122,4 @@ class TestMesh:
         )
         other_connectivity = Connectivity(nodes, elements)
         with pytest.raises(ValueError):
-            mesh = Mesh(other_connectivity, x)
+            Mesh(other_connectivity, x)

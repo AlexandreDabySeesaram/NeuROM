@@ -70,7 +70,7 @@ def _(x: Sampling, u: Sampling) -> Sampling:
     Returns:
         torch.Tensor with computed jacobian of shape (*batch_shape, *f_shape, x_dim) or Sampling with same shape.
     """
-    assert type(x) == type(u), (
+    assert type(x) is type(u), (
         f"x and u must be of the same Sampling type but got x of type '{type(x)}' and u of type '{type(u)}'"
     )
 

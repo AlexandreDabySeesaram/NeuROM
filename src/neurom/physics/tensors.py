@@ -55,7 +55,7 @@ def linear_elastic_stress(
 
 def green_lagrange_strain(x: Sampling, u: Sampling) -> Sampling:
     """Compute green lagrange strain based on displacement field"""
-    assert type(x) == type(u), (
+    assert type(x) is type(u), (
         f"x and u must be of the same Sampling type but got x of type '{type(x)}' and u of type '{type(u)}'"
     )
 

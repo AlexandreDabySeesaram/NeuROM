@@ -1,4 +1,3 @@
-import math
 import torch
 
 from neurom.reference_elements.reference_element import ReferenceElement

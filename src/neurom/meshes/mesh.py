@@ -1,7 +1,4 @@
-import torch
 import torch.nn as nn
-
-from neurom.meshes.connectivity import Connectivity
 
 
 def is_in_triangle(pts, vertices):

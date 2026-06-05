@@ -1,6 +1,4 @@
-from abc import ABC
 import torch
-import torch.nn as nn
 
 from neurom.reference_elements.triangle import Triangle
 from neurom.quadratures.quadrature_rule import QuadratureRule

@@ -1,10 +1,10 @@
 import torch
 
 from neurom.math.jacobian import jacobian
-from neurom.math.inner import inner, inner_point
-from neurom.math.transpose import transpose, transpose_point
-from neurom.math.identity import identity, identity_point
-from neurom.math.trace import trace, trace_point
+from neurom.math.inner import inner_point
+from neurom.math.transpose import transpose_point
+from neurom.math.identity import identity_point
+from neurom.math.trace import trace_point
 
 from neurom.samplings import Sampling
 from neurom.apply import apply

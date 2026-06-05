@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from neurom.meshes.mesh import Mesh, Connectivity
+from neurom.meshes.mesh import Mesh
+from neurom.meshes.connectivity import Connectivity
 from neurom.fields.field import Field
 from neurom.fields.trainable_field import TrainableField
 from neurom.constraints.no_constraint import NoConstraint

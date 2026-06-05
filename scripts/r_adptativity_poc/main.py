@@ -1,10 +1,9 @@
-from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
 # Import library modules
-from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Connectivity, Mesh

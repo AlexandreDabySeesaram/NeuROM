@@ -1,7 +1,6 @@
 import meshio
 from pathlib import Path
 import numpy as np
-from typing import Tuple
 
 from neurom.field_layout import FieldLayout
 from neurom.fields import Field, TrainableField, ElementField

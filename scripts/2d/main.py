@@ -4,20 +4,17 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 import torch.profiler
-import torch.nn as nn
-import pandas as pd
 
 
 # Import library modules
-from neurom.quadratures import MidPoint2D, ThreePoints2D
+from neurom.quadratures import MidPoint2D
 from neurom.shape_functions import LinearTriangle
 from neurom.geometry import IsoparametricMapping2D
-from neurom.meshes import Connectivity, Mesh
+from neurom.meshes import Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField, ElementField
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
-    PointWiseInterpolator,
     QuadratureContext,
     QuadratureAssembly,
     IntegrationDomain,

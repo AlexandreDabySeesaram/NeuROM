@@ -1,5 +1,3 @@
-import torch
-
 from neurom.fields.field_base import FieldBase
 from neurom.meshes.connectivity import Connectivity
 

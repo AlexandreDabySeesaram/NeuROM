@@ -1,7 +1,5 @@
-import torch
 import torch.nn as nn
 
-from neurom.constraints.constraint import Constraint
 from neurom.fields.field_base import FieldBase
 from neurom.meshes.connectivity import Connectivity
 

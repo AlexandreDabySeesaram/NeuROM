@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn as nn
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D

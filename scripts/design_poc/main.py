@@ -1,10 +1,8 @@
-from abc import ABC, abstractmethod
 import torch
-import torch.nn as nn
 import matplotlib.pyplot as plt
 
 # Import library modules
-from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Connectivity, Mesh
@@ -12,7 +10,6 @@ from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
-    FieldInterpolator,
     PointWiseInterpolator,
     QuadratureContext,
     QuadratureAssembly,

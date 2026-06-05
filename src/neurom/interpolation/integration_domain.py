@@ -1,7 +1,6 @@
 import torch.nn as nn
 
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
-from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 from neurom.interpolation.quadrature_context import QuadratureContext
 
 
@@ -26,7 +25,6 @@ class IntegrationDomain(nn.Module):
             ctx.update()
 
     def interpolate_all(self, field_layout: "FieldLayout"):
-        from neurom.field_layout import FieldLayout
 
         # Interpolate all required fields and update() their values in FieldLayout
         for assembly in self.assemblies:

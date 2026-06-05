@@ -19,7 +19,6 @@ def field_no_constraint():
     * Values: [3., 7., 6., -5.]
     * Constraint: NoConstraint
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
@@ -44,7 +43,6 @@ def field_dirichlet_constraint():
     * Values: [3., 7., 6., -5.]
     * Constraint: Dirichlet with nodes=[0, 2], values_imposed=[100., 200.]
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T

@@ -1,7 +1,7 @@
 import torch
 
 from neurom.physics.term import Term
-from neurom.math.inner import inner, inner_point
+from neurom.math.inner import inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
 from neurom.apply import apply

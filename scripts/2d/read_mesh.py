@@ -1,8 +1,7 @@
-from dataclasses import dataclass
 import meshio
 import torch
 from typing import Tuple, Dict
-from neurom.meshes import Connectivity, Mesh
+from neurom.meshes import Connectivity
 
 
 def read_mesh(fname) -> Tuple[Connectivity, Dict[str, torch.tensor]]:

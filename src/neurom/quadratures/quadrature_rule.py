@@ -1,5 +1,4 @@
 from abc import ABC
-import torch
 import torch.nn as nn
 
 from neurom.reference_elements.reference_element import ReferenceElement

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import torch
 
 from neurom.samplings import QuadratureSampling
 

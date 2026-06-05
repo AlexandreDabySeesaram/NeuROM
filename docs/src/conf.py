@@ -1,7 +1,5 @@
 # conf.py — Sphinx configuration for python-template
 
-import os
-import sys
 
 # -----------------------------------------------------------------------------
 # Project information

@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 from neurom.interpolation.field_interpolator import FieldInterpolator

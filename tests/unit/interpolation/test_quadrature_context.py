@@ -1,13 +1,11 @@
 import pytest
 import torch
-import torch.nn as nn
 
 # Import library modules
 from neurom.quadratures.mid_point_1d import MidPoint1D
 from neurom.geometry.iso_parametric_mapping_1d import IsoparametricMapping1D
 from neurom.meshes import Connectivity, Mesh
-from neurom.fields import Field, TrainableField
-from neurom.constraints.no_constraint import NoConstraint
+from neurom.fields import Field
 from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_positions import QuadraturePositions
@@ -22,7 +20,6 @@ def mesh():
     * Simple connectivity: 3 elements with 4 nodes.
     * Positions: [3., 7., 6., -5.]
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T

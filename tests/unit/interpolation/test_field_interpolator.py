@@ -19,7 +19,6 @@ def field():
     * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
@@ -39,7 +38,6 @@ def trainable_field():
     * Values: [3., 7., 6., -5.]
     * Constraint: NoConstraint()
     """
-    name = "test"
     N = 4
     nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T

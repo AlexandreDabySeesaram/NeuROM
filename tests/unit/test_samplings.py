@@ -9,7 +9,11 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.samplings import *
+from neurom.samplings import (
+    NodalSampling,
+    ElementSampling,
+    QuadratureSampling,
+)
 
 torch.set_default_dtype(torch.float32)
 
@@ -64,3 +68,60 @@ class TestNodalSampling:
         assert qs.ndim == 3
         assert qs.batch_shape == (2, 1)
         assert qs.f_shape == (1,)
+
+
+class TestSamplingOperators:
+    """
+    Test the arithmetic operators of Sampling.
+
+    Operators must preserve the concrete Sampling type and operate on values.
+    """
+
+    relative_tolerance = 1e-9
+
+    def _make(self):
+        return NodalSampling(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+
+    def test_add(self):
+        a = self._make()
+        b = self._make()
+        c = a + b
+        assert type(c) is NodalSampling
+        assert c.values == pytest.approx(2.0 * a.values, rel=self.relative_tolerance)
+
+    def test_sub(self):
+        a = self._make()
+        b = self._make()
+        c = a - b
+        assert type(c) is NodalSampling
+        assert c.values == pytest.approx(
+            torch.zeros_like(a.values), abs=self.relative_tolerance
+        )
+
+    def test_neg(self):
+        a = self._make()
+        c = -a
+        assert type(c) is NodalSampling
+        assert c.values == pytest.approx(-a.values, rel=self.relative_tolerance)
+
+    def test_mul_scalar(self):
+        a = self._make()
+        c = a * 2.0
+        assert type(c) is NodalSampling
+        assert c.values == pytest.approx(2.0 * a.values, rel=self.relative_tolerance)
+
+    def test_rmul_scalar(self):
+        a = self._make()
+        c = 2.0 * a
+        assert type(c) is NodalSampling
+        assert c.values == pytest.approx(2.0 * a.values, rel=self.relative_tolerance)
+
+    def test_add_non_sampling_raises(self):
+        a = self._make()
+        with pytest.raises(TypeError):
+            _ = a + 1.0
+
+    def test_sub_non_sampling_raises(self):
+        a = self._make()
+        with pytest.raises(TypeError):
+            _ = a - 1.0

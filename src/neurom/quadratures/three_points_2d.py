@@ -22,7 +22,7 @@ class ThreePoints2D(QuadratureRule):
             ]
         )  # (3,3)
 
-        weights = torch.tensor([1 / 6, 1 / 6, 1 / 6])
+        weights = ref.measure / 3.0 * torch.ones(3)  # (3,)
 
         self.register_buffer("points_barycentric", points)
         self.register_buffer("weights_ref", weights)

@@ -140,8 +140,8 @@ def main():
     if plot_test:
         plt.figure()
         plt.plot(
-            result.x.flatten().detach(),
-            result.u.flatten().detach(),
+            result.x.values.flatten().detach(),
+            result.u.values.flatten().detach(),
             "+",
             label="Gauss points",
         )

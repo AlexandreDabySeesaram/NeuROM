@@ -20,13 +20,20 @@ from neurom.interpolation import (
     IntegrationDomain,
 )
 from neurom.physics import SolidElasticEnergy
-from neurom.physics.tensors import *
+from neurom.physics.tensors import (
+    jacobian,
+    green_lagrange_strain,
+    linear_elastic_stress,
+    linear_elastic_stress_point,
+    stress_deviator,
+    stress_von_mises,
+)
+from neurom.samplings import Sampling
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 
-from read_mesh import read_mesh
-from is_valid_mesh import is_valid_mesh
-from write_mesh import write_mesh
+from neurom.meshes.io import read_mesh, write_mesh
+from neurom.meshes.validity import is_valid_mesh
 
 torch.set_default_dtype(torch.float32)
 
@@ -71,13 +78,19 @@ def main():
     mask_top = torch.logical_and(dim_tags[:, 1] == 3, dim_tags[:, 0] == 1)
     mask_bottom = torch.logical_and(dim_tags[:, 1] == 1, dim_tags[:, 0] == 1)
 
-    nodes_top = connectivity.nodes[mask_top]
-    nodes_bottom = connectivity.nodes[mask_bottom]
-    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
+    nodes_top = connectivity.nodes_indices[mask_top]
+    nodes_bottom = connectivity.nodes_indices[mask_bottom]
 
     u_top = torch.tensor([0.0, -1.0]).expand(nodes_top.shape[0], 2)
     u_bottom = torch.tensor([0.0, 0.0]).expand(nodes_bottom.shape[0], 2)
+
+    # Dirichlet.expand fills constrained DOFs in ascending node-index order,
+    # so the imposed values must be sorted accordingly.
+    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
     u_bc = torch.cat([u_top, u_bottom])
+    order = torch.argsort(nodes_u_bc)
+    nodes_u_bc = nodes_u_bc[order]
+    u_bc = u_bc[order]
 
     # Initialize displacement value
     u_init = 0.1 * torch.ones(N, 2)

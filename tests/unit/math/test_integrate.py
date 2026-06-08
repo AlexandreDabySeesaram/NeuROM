@@ -2,8 +2,7 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.integrate import integrate
-from neurom.quadratures.two_points_1d import TwoPoints1D
+from neurom.math.integrate import integrate
 
 torch.set_default_dtype(torch.float32)
 

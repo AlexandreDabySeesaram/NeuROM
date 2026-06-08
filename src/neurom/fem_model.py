@@ -1,7 +1,4 @@
-import torch
 import torch.nn as nn
-
-from neurom.integrate import integrate
 
 
 class FEMModel(nn.Module):

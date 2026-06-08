@@ -4,7 +4,7 @@ from neurom.reference_elements.bar import Bar
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
-class QuadraticSegment(ShapeFunction):
+class QuadraticBar(ShapeFunction):
     def __init__(self):
         super().__init__(Bar())
 

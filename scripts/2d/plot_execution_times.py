@@ -5,7 +5,6 @@ import json
 import pandas as pd
 
 
-
 def main():
     parser = argparse.ArgumentParser(description="2d case simulation.")
     parser.add_argument(

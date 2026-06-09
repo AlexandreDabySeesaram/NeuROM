@@ -1,3 +1,5 @@
+"""Linear elastic strain-energy physics term."""
+
 import torch
 
 from neurom.physics.term import Term
@@ -11,35 +13,48 @@ from neurom.apply import apply
 class ElasticEnergy(Term):
     """Elastic energy term for a displacement field.
 
+    The elastic energy density for a displacement :math:`u` is given by
+    :math:`\\frac{1}{2}\\lvert \\nabla u\\rvert^{2}`. This term retrieves the
+    interpolated field from a :class:`~neurom.field_layout.FieldLayout` and
+    computes :math:`\\frac{1}{2}\\,\\big(\\nabla u : \\nabla u\\big)\\,dx`
+    where :math:`dx` is the quadrature measure.
+
     Args:
-        field (FieldBase): The field providing the displacement values. Its ``name`` attribute is stored for later lookup.
+        field (FieldBase): The field providing the displacement values. Its
+            ``name`` attribute is stored for later lookup.
 
     Attributes:
-        field_name (str): Name of the associated field used to retrieve the interpolation result from a :class:`~neurom.field_layout.FieldLayout`.
-
-    The elastic energy density for a displacement :math:`u` is given by :math:`\\frac{1}{2}\\lvert \\nabla u\\rvert^{2}`. This term retrieves the interpolated field from a :class:`~neurom.field_layout.FieldLayout` and computes
-
-    :math:`\\frac{1}{2}\\,\\big(\\nabla u : \\nabla u\\big)\\,dx`
-
-    where :math:`dx` is the quadrature measure.
+        field_name (str): Name of the associated field used to retrieve the
+            interpolation result from a
+            :class:`~neurom.field_layout.FieldLayout`.
     """
 
     def __init__(self, field: FieldBase) -> None:
+        """Store the field name for later lookup.
+
+        Args:
+            field (FieldBase): The field providing the displacement values.
+                Its ``name`` attribute is stored as ``field_name``.
+        """
         self.field_name = field.name
 
     def integrand(self, field_layout: FieldLayout) -> torch.Tensor:
         """Compute the elastic energy integrand.
 
         The method performs:
+
         1. Retrieve the interpolation result for the stored field.
         2. Compute the gradient :math:`\\nabla u`.
-        3. Form the inner product :math:`\\nabla u : \\nabla u` and multiply by :math:`0.5` and the quadrature measure :math:`dx`.
+        3. Form the inner product :math:`\\nabla u : \\nabla u` and multiply
+           by ``0.5`` and the quadrature measure :math:`dx`.
 
         Args:
-            field_layout (FieldLayout): Layout providing access to interpolated field data.
+            field_layout (FieldLayout): Layout providing access to interpolated
+                field data.
 
         Returns:
-            torch.Tensor: Tensor representing the elastic energy density multiplied by the measure at each quadrature point.
+            torch.Tensor: Tensor representing the elastic energy density
+            multiplied by the measure at each quadrature point.
         """
         quad_interp_res = field_layout[self.field_name]
         x = quad_interp_res.x

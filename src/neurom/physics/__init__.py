@@ -1,3 +1,5 @@
+"""Physics terms and tensor utilities for variational FEM formulations."""
+
 from neurom.physics.term import Term
 from neurom.physics.elastic_energy import ElasticEnergy
 from neurom.physics.solid_elastic_energy import SolidElasticEnergy

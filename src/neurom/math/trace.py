@@ -1,3 +1,5 @@
+"""Trace of sampled field tensors."""
+
 import torch
 
 from neurom.samplings import Sampling
@@ -5,14 +7,18 @@ from neurom.apply import apply
 
 
 def trace_point(u: torch.Tensor) -> torch.Tensor:
-    """Compute trace of a field
+    """Compute the trace of a single-point field tensor.
 
-    The trace is computed over the field dimensions for a single point.
+    For a 1-D tensor (vector), the tensor is returned unchanged (clone).
+    For a 2-D or higher tensor, the sum of the main diagonal is returned as a
+    scalar wrapped in a 1-element tensor.
 
     Args:
-        u (torch.Tensor): Tensor of which we will compute the trace (*u_shape)
+        u (torch.Tensor): Single-point field tensor of shape ``(*u_shape)``.
+
     Returns:
-        A torch.Tensor of shape (1,) representing the trace of the field.
+        torch.Tensor: Trace value of shape ``(1,)``, or a clone of ``u`` when
+        ``u`` is 1-D.
     """
     if u.ndim == 1:
         return u.clone()
@@ -21,15 +27,18 @@ def trace_point(u: torch.Tensor) -> torch.Tensor:
 
 
 def trace(u: Sampling) -> Sampling:
-    """Compute trace of a field
+    """Compute the trace of a field over all elements and quadrature points.
 
-    The trace is computed over the field dimensions for all elements and quadrature points N_e an N_q.
+    Applies :func:`trace_point` to every point in the sampling's batch
+    dimensions.  For a scalar/vector field the values are returned unchanged;
+    for a matrix or higher-order field the diagonal sum is taken.
 
     Args:
-        u (torch.Tensor): Tensor of which we will compute the trace (N_e, N_q, *u_shape)
+        u (Sampling): Sampling whose field tensors have shape
+            ``(*batch_shape, *u_shape)``.
+
     Returns:
-        A torch.Tensor of shape (N_e, N_q, 1) representing the trace of the field.:w
-    Raises:
-        ValueError if u.shape is not a tensor
+        Sampling: A Sampling of the same type as ``u`` with field shape
+        ``(*batch_shape, 1)`` containing the per-point trace values.
     """
     return apply(trace_point, u)

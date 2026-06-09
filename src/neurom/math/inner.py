@@ -1,18 +1,25 @@
+"""Inner (contraction) product of sampled field tensors."""
+
 import torch
 
 
 def inner_point(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    """Compute inner product for tensors with single point
+    """Compute the inner product of two single-point field tensors.
 
-    The inner product is computed over the field dimensions for a single point.
+    The inner product is the element-wise product of ``u`` and ``v`` summed
+    over all field dimensions, returning a scalar wrapped in a 1-element
+    tensor.
 
     Args:
-        u (torch.Tensor): First (*u_shape)
-        v (torch.Tensor): (*v_shape)
+        u (torch.Tensor): First field tensor of shape ``(*u_shape)``.
+        v (torch.Tensor): Second field tensor of shape ``(*v_shape)``.
+            Must satisfy ``v.shape == u.shape``.
+
     Returns:
-        A torch.Tensor of shape (1,) representing the inner product over the fields dimensions.
+        torch.Tensor: Scalar inner product of shape ``(1,)``.
+
     Raises:
-        ValueError if u.shape and v.shape don't match.
+        AssertionError: If ``u.shape != v.shape``.
     """
 
     assert u.shape == v.shape
@@ -20,17 +27,21 @@ def inner_point(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
 
 
 def inner(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    """Compute inner product
+    """Compute the inner product over all elements and quadrature points.
 
-    The inner product is computed over the field dimensions for all elements and quadrature points N_e an N_q.
+    The inner product is computed over the field dimensions for every
+    combination of element and quadrature point.
 
     Args:
-        u (torch.Tensor): First (N_e, N_q, *u_shape)
-        v (torch.Tensor): (N_e, N_q, *v_shape)
+        u (torch.Tensor): First field tensor of shape ``(N_e, N_q, *u_shape)``.
+        v (torch.Tensor): Second field tensor of shape ``(N_e, N_q, *v_shape)``.
+            Must satisfy ``v.shape == u.shape``.
+
     Returns:
-        A torch.Tensor of shape (N_e, N_q, 1) representing the inner product over the fields dimensions.
+        torch.Tensor: Inner product tensor of shape ``(N_e, N_q, 1)``.
+
     Raises:
-        ValueError if u.shape and v.shape don't match.
+        ValueError: If ``u.shape != v.shape``.
     """
 
     u_shape = u.shape

@@ -1,3 +1,5 @@
+"""Identity tensor construction over sampled fields."""
+
 import torch
 
 from neurom.samplings import Sampling
@@ -5,16 +7,21 @@ from neurom.apply import apply
 
 
 def identity_point(u: torch.Tensor) -> torch.Tensor:
-    """Compute identity tensor
+    """Compute the identity tensor for a single point.
 
-    The identity computed from a tensor over a single point.
+    Returns an identity tensor whose shape matches the field shape of ``u``.
+    For a scalar input of shape ``(1,)`` this is ``torch.ones(1)``.
+    For a square-matrix input of shape ``(d, d)`` this is ``torch.eye(d)``.
 
     Args:
-        u (torch.Tensor): Single point tensor from which we want to build identity.
+        u (torch.Tensor): Single-point field tensor of shape ``(1,)`` (scalar)
+            or ``(d, d)`` (square matrix).
+
     Returns:
-        torch.Tensor: Identity tensor of same shape than given tensor.
+        torch.Tensor: Identity tensor with the same shape as ``u``.
+
     Raises:
-        ValueError if ``f_shape`` is not scalar or square matrix
+        ValueError: If ``u`` is not a scalar ``(1,)`` or a square matrix ``(d, d)``.
     """
     f_shape = u.shape
 
@@ -33,15 +40,21 @@ def identity_point(u: torch.Tensor) -> torch.Tensor:
 
 
 def identity(s: Sampling) -> Sampling:
-    """Compute identity tensor
+    """Compute the identity tensor for a full sampling.
 
-    The identity is computed based on a ``sampling`` which provides a field shape ``f_shape`` and a ``batch_shape`` over which it is expanded.
+    Applies :func:`identity_point` to every point in the sampling's batch
+    dimensions.  The field shape ``f_shape`` must be ``(1,)`` (scalar) or
+    ``(d, d)`` (square matrix).
 
     Args:
-        s (Sampling): Sampling providing field and batch shape to generate the identity.
+        s (Sampling): Sampling whose ``f_shape`` and ``batch_shape`` determine
+            the output identity tensor.
+
     Returns:
-        torch.Tensor: Identity tensor of shape ``batch_shape + f_shape``
+        Sampling: A Sampling of the same type as ``s`` with the identity tensor
+        broadcast over ``batch_shape``.
+
     Raises:
-        ValueError if ``f_shape`` is not scalar or square matrix
+        ValueError: If ``f_shape`` is not ``(1,)`` or ``(d, d)``.
     """
     return apply(identity_point, s)

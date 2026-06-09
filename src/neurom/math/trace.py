@@ -17,7 +17,7 @@ def trace_point(u: torch.Tensor) -> torch.Tensor:
     if u.ndim == 1:
         return u.clone()
 
-    return u.diagonal().sum()
+    return u.diagonal().sum().reshape(1)
 
 
 def trace(u: Sampling) -> Sampling:

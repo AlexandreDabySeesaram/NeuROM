@@ -207,7 +207,6 @@ def main():
 
     # Training
     Nepoch = 7000
-    lossList = []
     lossTraining = []
     model.train()
     for i in range(Nepoch):

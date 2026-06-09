@@ -6,3 +6,12 @@ from neurom.math.jacobian import jacobian
 from neurom.math.trace import trace
 from neurom.math.identity import identity
 from neurom.math.transpose import transpose
+
+__all__ = [
+    "inner",
+    "integrate",
+    "jacobian",
+    "trace",
+    "identity",
+    "transpose",
+]

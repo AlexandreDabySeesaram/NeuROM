@@ -26,14 +26,13 @@ def main():
     # Get arguments
     args = parser.parse_args()
     fname = args.profile_data
-    output_dir = args.output_dir
 
     # Load profile data
     with open(fname, "r") as f:
         profile_data = json.load(f)
 
     df = pd.DataFrame(profile_data)
-    breakpoint()
+    print(df)
 
 
 if __name__ == "__main__":

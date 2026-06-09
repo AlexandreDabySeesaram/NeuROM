@@ -1,9 +1,14 @@
 """Integration domain coordinating quadrature contexts and field interpolation."""
 
+from typing import TYPE_CHECKING
+
 import torch.nn as nn
 
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.quadrature_context import QuadratureContext
+
+if TYPE_CHECKING:
+    from neurom.field_layout import FieldLayout
 
 
 class IntegrationDomain(nn.Module):

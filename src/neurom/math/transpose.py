@@ -1,5 +1,8 @@
 import torch
 
+from neurom.samplings import Sampling
+from neurom.apply import apply
+
 
 def transpose_point(u: torch.Tensor) -> torch.Tensor:
     """Transpose a field tensor by swapping the last two dimensions.
@@ -25,37 +28,21 @@ def transpose_point(u: torch.Tensor) -> torch.Tensor:
     )
 
 
-def transpose(u: torch.Tensor) -> torch.Tensor:
-    """Transpose a field tensor by swapping the last two dimensions.
+def transpose(u: Sampling) -> Sampling:
+    """Transpose a field by swapping the last two field dimensions.
 
-    Rules:
-    - Scalars (N_e, N_q, 1): unchanged
-    - Vectors (N_e, N_q, d): unchanged
-    - Matrices (N_e, N_q, d, d): last two dims swapped
+    The transpose is computed over the field dimensions for all elements and
+    quadrature points N_e and N_q.
+
+    Rules (per point):
+    - Scalars (1,): unchanged
+    - Vectors (d,): unchanged
+    - Matrices (d, d): last two dims swapped
     - Higher-order tensors: swap last two axes
 
     Args:
-        u (torch.Tensor): Tensor to transpose, expected shape (N_e, N_q, *u_dim)
+        u (Sampling): Sampling whose field tensors will be transposed, of shape (*batch_shape, *f_shape).
     Returns:
-        A torch.Tensor with the same shape as u, but with the last two dimensions swapped if u is a matrix or higher-order tensor.
+        A Sampling with the same type and batch_shape as ``u``, with the last two field dimensions swapped where defined.
     """
-
-    if u.ndim < 3:
-        raise ValueError(f"Expected (N_e, N_q, *u_dim), got '{u.shape}'")
-
-    dim = u.shape[2:]
-
-    # scalar case
-    if dim == (1,):
-        return u.clone()
-
-    # vector case → no meaningful transpose
-    if len(dim) == 1:
-        return u.clone()
-
-    # matrix case → standard transpose
-    if len(dim) == 2:
-        return u.transpose(-1, -2)
-
-    # higher-order tensor → swap last two indices
-    return u.transpose(-1, -2)
+    return apply(transpose_point, u)

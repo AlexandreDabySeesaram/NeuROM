@@ -1,4 +1,5 @@
-import torch
+"""Assembly of interpolated field quantities at quadrature points."""
+
 import torch.nn as nn
 
 from neurom.interpolation.field_interpolator import FieldInterpolator
@@ -9,20 +10,36 @@ from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.interpolation.quadrature_assembly_result import (
     QuadratureAssemblyResult,
 )
+from neurom.samplings import QuadratureSampling
 
 
 class QuadratureAssembly(nn.Module):
-    """Assemble the interpolation at quadrature points
+    """Assembles the field interpolation at quadrature points.
+
+    Combines a ``QuadratureContext`` (which holds geometric information such as
+    physical and reference positions and the integration measure) with a
+    ``ShapeFunction`` and a ``FieldBase`` to produce a
+    ``QuadratureAssemblyResult`` ready for numerical integration.
 
     Args:
-        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
-        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
-        field (FieldBase): The FieldBase to interpolate.
+        context (QuadratureContext): Provides the quadrature positions in
+            physical and reference coordinates as well as the integration
+            measure.
+        sf (ShapeFunction): The shape function used to perform the
+            interpolation.
+        field (FieldBase): The field whose nodal values are interpolated at
+            the quadrature points.
+
     Attributes:
-        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
-        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
-        field (FieldBase): The FieldBase to interpolate.
-        _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
+        context (QuadratureContext): Provides the quadrature positions in
+            physical and reference coordinates as well as the integration
+            measure.
+        sf (ShapeFunction): The shape function used to perform the
+            interpolation.
+        field (FieldBase): The field whose nodal values are interpolated at
+            the quadrature points.
+        _field_interpolator (FieldInterpolator): Internal interpolator that
+            evaluates ``field`` using ``sf`` at reference coordinates.
     """
 
     def __init__(self, context: QuadratureContext, sf: ShapeFunction, field: FieldBase):
@@ -33,19 +50,26 @@ class QuadratureAssembly(nn.Module):
         self._field_interpolator = FieldInterpolator(self.sf, self.field)
 
     def interpolate(self) -> QuadratureAssemblyResult:
-        """The main interpolation method
+        """Interpolate the field at all quadrature points.
 
-        Interpolate the field and associates it with the quadrature positions at which it is interpolated and the measure of the element and quadrature points.
+        Retrieves the integration measure and quadrature positions from
+        ``self.context``, evaluates ``self.field`` at the back-mapped reference
+        coordinates, and bundles everything into a ``QuadratureAssemblyResult``.
 
         Returns:
-            (QuadratureAssemblyResult) which encapsulates the positions and the interpolated field at the given positions as well as the measure.
+            QuadratureAssemblyResult: Contains the physical positions ``x``,
+            the interpolated field values ``u``, and the integration measure,
+            all as ``QuadratureSampling`` objects of shape
+            ``(N_e, N_q, *)``.
         """
         # Get measure and quadrature positions from context
         measure = self.context.measure
         quad_pos = self.context.interpolate
 
         # Interpolate field
-        u_q = self._field_interpolator.at_reference(quad_pos.xi_back)
+        u_q = QuadratureSampling(
+            self._field_interpolator.at_reference(quad_pos.xi_back.values)
+        )
 
         # Assemble the result
         result = QuadratureAssemblyResult(x=quad_pos.x_phys, u=u_q, measure=measure)

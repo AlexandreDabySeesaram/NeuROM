@@ -1,3 +1,5 @@
+"""Base classes for composable physics (energy) terms."""
+
 from abc import ABC, abstractmethod
 
 from neurom.field_layout import FieldLayout
@@ -8,7 +10,7 @@ class Term(ABC):
 
     Sub‑classes must implement :meth:`integrand` which receives a
     :class:`~neurom.field_layout.FieldLayout` and returns the value of the
-    integrand (typically a ``torch.Tensor``), i.e.  :math: `f(x) dx`.
+    integrand (typically a ``torch.Tensor``), i.e. :math:`f(x)\\,dx`.
 
     The class provides operator overloads so that terms can be combined using
     ``+``, ``-`` and unary ``-``.  These overloads return :class:`SumTerm` or
@@ -79,12 +81,9 @@ class SumTerm(Term):
         """Create a ``SumTerm`` from an iterable of terms.
 
         Args:
-            terms (list[Term]): A sequence of :class:`Term` objects.  If any element is
-                itself a ``SumTerm``, its internal ``terms`` are unpacked
-                (flattened) into the new instance.
-
-        Raises:
-            TypeError: If an element of ``terms`` is not a ``Term`` instance.
+            terms (list[Term]): A sequence of :class:`Term` objects.  If any
+                element is itself a ``SumTerm``, its internal ``terms`` are
+                unpacked (flattened) into the new instance.
         """
         self.terms: list[Term] = []
         for t in terms:
@@ -121,9 +120,6 @@ class NegTerm(Term):
 
         Args:
             term (Term): The term to be negated.
-
-        Raises:
-            TypeError: If ``term`` is not an instance of :class:`Term`.
         """
         self.term: Term = term
 

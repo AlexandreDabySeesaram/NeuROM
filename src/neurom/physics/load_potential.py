@@ -1,33 +1,37 @@
+"""External load potential-energy physics term."""
+
 import torch
 
-from neurom.inner import inner
+from neurom.math.inner import inner_point
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
+from neurom.apply import apply
 
 
 class LoadPotential(Term):
     """Potential energy term associated with an external load.
 
-    Args:
-        field (FieldBase): The field representing the displacement (or other
-            primary variable) to which the load is applied. Its ``name`` attribute
-            is stored for later lookup.
-        f (FieldBase): The field representing the load density at quadrature points ``x``
-            load density at the quadrature points ``x``. Its ``name`` attribute
-            is stored for later lookup.
-
-    Attributes:
-        field_name (str): Name of the associated field used to retrieve the
-            interpolation result from a :class:`~neurom.field_layout.FieldLayout`.
-        f_name (str): Name of the associated load density field used to retrieve the
-            interpolation result from a :class:`~neurom.field_layout.FieldLayout`.
-
     The potential energy contributed by an external load ``f`` acting on a
-    field ``u`` is
-    :math:`-\\int f(x)\\,u(x)\\,dx`.
+    field ``u`` is :math:`-\\int f(x)\\,u(x)\\,dx`.
     This class implements the integrand
     :math:`-\\,f(x)\\,u(x)\\,dx` evaluated at each quadrature point.
+
+    Args:
+        field (FieldBase): The field representing the displacement (or other
+            primary variable) to which the load is applied. Its ``name``
+            attribute is stored for later lookup.
+        f (FieldBase): The field representing the load density at the
+            quadrature points. Its ``name`` attribute is stored for later
+            lookup.
+
+    Attributes:
+        field_name (str): Name of the displacement field used to retrieve the
+            interpolation result from a
+            :class:`~neurom.field_layout.FieldLayout`.
+        f_name (str): Name of the load density field used to retrieve the
+            interpolation result from a
+            :class:`~neurom.field_layout.FieldLayout`.
     """
 
     def __init__(self, field: FieldBase, f: FieldBase) -> None:
@@ -44,6 +48,7 @@ class LoadPotential(Term):
         """Compute the load potential integrand.
 
         The method performs:
+
         1. Retrieve the interpolation results for the stored fields.
         2. Evaluate the load function ``f`` at the quadrature points ``x``.
         3. Multiply by the field values ``u`` and the quadrature measure ``dx``
@@ -51,13 +56,16 @@ class LoadPotential(Term):
            definition.
 
         Args:
-            field_layout (FieldLayout): Layout providing access to interpolated field data.
+            field_layout (FieldLayout): Layout providing access to interpolated
+                field data.
 
         Returns:
-            torch.Tensor: Tensor representing :math:`-\\,f(x)\\,u(x)\\,dx` at each quadrature point.
+            torch.Tensor: Tensor representing :math:`-\\,f(x)\\,u(x)\\,dx` at
+            each quadrature point.
 
         Note:
-            No checks are performed to know if the same quadrature rule and the same elements were used to interpolate both ``field`` and ``f``.
+            No checks are performed to verify that the same quadrature rule and
+            the same elements were used to interpolate both ``field`` and ``f``.
         """
         u_interp = field_layout[self.field_name]
         u = u_interp.u
@@ -65,6 +73,8 @@ class LoadPotential(Term):
 
         f_interp = field_layout[self.f_name]
         load = f_interp.u
-        inner_product = inner(load, u)
-        result = -inner_product * dx
-        return result
+
+        def load_energy(load, u, dx):
+            return -inner_point(load, u) * dx
+
+        return apply(load_energy, load, u, dx).values

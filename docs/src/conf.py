@@ -1,7 +1,5 @@
 # conf.py — Sphinx configuration for python-template
 
-import os
-import sys
 
 # -----------------------------------------------------------------------------
 # Project information
@@ -42,7 +40,7 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 napoleon_include_init_with_doc = False
 napoleon_use_param = False
-napoleon_use_ivar = False
+napoleon_use_ivar = True
 napoleon_use_rtype = True
 napoleon_preprocess_types = True
 

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from neurom.decompositions import Axis
+from neurom.decompositions import Axis, CPPGD
 from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
@@ -36,3 +36,30 @@ def test_axis_exposes_topology_from_positions():
     # topology property must be the SAME object as the positions' topology
     assert axis.topology is axis.nodes_positions.topology
     assert axis.topology.n_nodes == 5
+
+
+def make_two_axes():
+    space = make_axis(name="space", n=5, lo=0.0, hi=10.0)
+    para = make_axis(name="E", n=4, lo=100.0, hi=1000.0)
+    return [space, para]
+
+
+def test_cppgd_construction_structure_and_freeze():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
+
+    # 3 modes, each with 2 monoms (one per axis)
+    assert len(model.monoms) == 3
+    assert all(len(mode) == 2 for mode in model.monoms)
+
+    # Only mode 0 active
+    assert int(model.n_modes_truncated) == 1
+
+    # Mode 0 monoms trainable, modes 1 and 2 frozen
+    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
+    assert all(not f.values_reduced.requires_grad for f in model.monoms[1])
+    assert all(not f.values_reduced.requires_grad for f in model.monoms[2])
+
+    # Active parameters == the 2 monoms of mode 0
+    active = [p for p in model.parameters() if p.requires_grad]
+    assert len(active) == 2

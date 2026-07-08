@@ -1,12 +1,16 @@
 from dataclasses import dataclass
 
 import torch
+import torch.nn as nn
 
 from neurom.fields.field import Field
+from neurom.fields.trainable_field import TrainableField
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.quadratures.quadrature_rule import QuadratureRule
 from neurom.constraints.constraint import Constraint
 from neurom.meshes.topology import Topology
+from neurom.meshes.mesh import Mesh
+from neurom.interpolation.quadrature_context import QuadratureContext
 
 
 @dataclass
@@ -40,3 +44,75 @@ class Axis:
     @property
     def topology(self) -> Topology:
         return self.nodes_positions.topology
+
+
+class CPPGD(nn.Module):
+    """Canonical-polyadic PGD separated-representation model.
+
+    Represents ``u({x_k}) = sum_m prod_k w_m^k(x_k)`` over ``l`` axes. Holds the
+    monoms ``w_m^k`` as ``TrainableField`` on each axis, manages greedy mode
+    enrichment, and exposes an assembled full-tensor view and a per-monom
+    separated view. It computes no energy and owns no training loop.
+
+    Args:
+        axes (list[Axis]): The ordered axes of the decomposition.
+        n_modes_max (int): Maximum number of modes.
+        n_modes_ini (int): Number of initially active (trainable) modes.
+    """
+
+    def __init__(self, axes, n_modes_max, n_modes_ini=1):
+        super().__init__()
+        self.axes = list(axes)
+        self.n_modes_max = n_modes_max
+        self.register_buffer(
+            "n_modes_truncated", torch.tensor(min(n_modes_ini, n_modes_max))
+        )
+
+        # One Mesh + QuadratureContext per axis, shared across modes.
+        self._meshes = nn.ModuleList(
+            [Mesh(a.topology, a.nodes_positions) for a in self.axes]
+        )
+        self._contexts = nn.ModuleList(
+            [
+                QuadratureContext(mesh, a.quad, a.mapping)
+                for mesh, a in zip(self._meshes, self.axes)
+            ]
+        )
+
+        # Grid of monoms: modes x axes of TrainableField.
+        self.monoms = nn.ModuleList(
+            [
+                nn.ModuleList(
+                    [
+                        TrainableField(
+                            name=f"{a.name}_mode{m}",
+                            topology=a.topology,
+                            init_values=a.init_values,
+                            constraint=a.constraint,
+                        )
+                        for a in self.axes
+                    ]
+                )
+                for m in range(self.n_modes_max)
+            ]
+        )
+
+        # Freeze everything, then unfreeze the initially active modes.
+        self.freeze_all()
+        for m in range(int(self.n_modes_truncated)):
+            self.unfreeze_mode(m)
+
+    def freeze_all(self):
+        """Freeze the monoms of every mode."""
+        for m in range(self.n_modes_max):
+            self.freeze_mode(m)
+
+    def freeze_mode(self, m):
+        """Freeze the monoms of mode ``m``."""
+        for field in self.monoms[m]:
+            field.values_reduced.requires_grad_(False)
+
+    def unfreeze_mode(self, m):
+        """Unfreeze the monoms of mode ``m``."""
+        for field in self.monoms[m]:
+            field.values_reduced.requires_grad_(True)

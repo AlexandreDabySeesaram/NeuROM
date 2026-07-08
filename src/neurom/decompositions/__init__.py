@@ -1,1 +1,1 @@
-from neurom.decompositions.pgd import Axis
+from neurom.decompositions.pgd import Axis, CPPGD

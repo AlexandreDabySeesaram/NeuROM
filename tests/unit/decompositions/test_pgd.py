@@ -128,6 +128,54 @@ def test_assemble_matches_manual_outer_product():
     assert torch.allclose(u, expected, atol=1e-5)
 
 
+def test_assemble_sums_two_modes_matching_manual_outer_products():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
+
+    # NoConstraint on both axes -> nodal values are the full field. Set them
+    # to distinct known vectors for each of the two modes.
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(
+            torch.linspace(0.0, 4.0, 5).unsqueeze(-1)  # S0 at 5 space nodes
+        )
+        model.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)  # g0 at 4 E nodes
+        )
+        model.monoms[1][0].values_reduced.copy_(
+            torch.tensor([1.0, -1.0, 2.0, 0.5, -0.5]).unsqueeze(-1)  # S1
+        )
+        model.monoms[1][1].values_reduced.copy_(
+            torch.tensor([-2.0, 1.0, 0.0, 3.0]).unsqueeze(-1)  # g1
+        )
+
+    x = torch.tensor([2.5, 5.0])          # inside space domain [0, 10]
+    E = torch.tensor([400.0, 700.0])      # inside E domain [100, 1000]
+    u = model.assemble([x, E])
+
+    assert u.shape == (2, 2)
+
+    from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+
+    pwi_s0 = PointWiseInterpolator(
+        model._meshes[0], axes[0].sf, model.monoms[0][0], axes[0].mapping
+    )
+    pwi_e0 = PointWiseInterpolator(
+        model._meshes[1], axes[1].sf, model.monoms[0][1], axes[1].mapping
+    )
+    pwi_s1 = PointWiseInterpolator(
+        model._meshes[0], axes[0].sf, model.monoms[1][0], axes[0].mapping
+    )
+    pwi_e1 = PointWiseInterpolator(
+        model._meshes[1], axes[1].sf, model.monoms[1][1], axes[1].mapping
+    )
+    s0 = pwi_s0.at_position(x).reshape(-1)
+    g0 = pwi_e0.at_position(E).reshape(-1)
+    s1 = pwi_s1.at_position(x).reshape(-1)
+    g1 = pwi_e1.at_position(E).reshape(-1)
+    expected = torch.outer(s0, g0) + torch.outer(s1, g1)
+    assert torch.allclose(u, expected, atol=1e-5)
+
+
 def test_add_mode_freezes_previous_and_activates_new():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)

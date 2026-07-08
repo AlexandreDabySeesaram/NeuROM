@@ -119,3 +119,80 @@ class Test1dBeamDeflectionPGD:
         assert u.detach().numpy() == pytest.approx(
             u_analytical.numpy(), abs=self.relative_tolerance * scale
         )
+
+    def test_greedy_enrichment_second_mode_stays_bounded(self):
+        """Rank-1 analytical field must still hold after a greedy mode-2 enrichment.
+
+        Adding a second mode should not perturb the already-converged rank-1
+        solution: the enrichment should drive the extra mode towards ~0, so the
+        rank-2 assembled field must still match the analytical rank-1 solution
+        within tolerance.
+        """
+        x_min, x_max = 0.0, 10.0
+        E_min, E_max = 100.0, 1000.0
+        N_x, N_E = 40, 20
+        f_value = 1000.0
+
+        x_coords = torch.linspace(x_min, x_max, N_x).unsqueeze(-1)
+        E_coords = torch.linspace(E_min, E_max, N_E).unsqueeze(-1)
+
+        space_axis = build_axis(
+            "space",
+            x_coords,
+            Dirichlet(nodes=[0, N_x - 1], values_imposed=torch.zeros(2, 1)),
+            init_values=torch.zeros(N_x, 1),
+        )
+        para_axis = build_axis(
+            "E",
+            E_coords,
+            NoConstraint(),
+            init_values=torch.ones(N_E, 1),
+        )
+
+        model = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1)
+
+        optimizer = torch.optim.LBFGS(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=1.0, max_iter=100, line_search_fn="strong_wolfe",
+        )
+
+        def closure():
+            optimizer.zero_grad()
+            loss = potential_energy(model, f_value)
+            loss.backward(retain_graph=True)
+            return loss
+
+        for _ in range(30):
+            optimizer.step(closure)
+
+        # Greedy-enrich with a second mode: freeze mode 0, activate+zero mode 1.
+        model.add_mode()
+
+        optimizer2 = torch.optim.LBFGS(
+            [p for p in model.parameters() if p.requires_grad],
+            lr=1.0, max_iter=200, line_search_fn="strong_wolfe",
+        )
+
+        def closure2():
+            optimizer2.zero_grad()
+            loss = potential_energy(model, f_value)
+            loss.backward(retain_graph=True)
+            return loss
+
+        for _ in range(150):
+            optimizer2.step(closure2)
+
+        # Compare assembled u(x, E) (now rank-2) to the analytical rank-1
+        # deflection: the enrichment must not have diverged.
+        x_test = torch.linspace(x_min, x_max, 15)
+        E_test = torch.linspace(E_min, E_max, 5)
+        u = model.assemble([x_test, E_test])          # (15, 5)
+
+        xx = x_test.unsqueeze(-1)                      # (15, 1)
+        EE = E_test.unsqueeze(0)                       # (1, 5)
+        u_analytical = 0.5 * f_value * (xx - x_min) * (xx - x_max) / EE
+
+        scale = float(u_analytical.abs().max())
+        assert u.detach().numpy() == pytest.approx(
+            u_analytical.numpy(), abs=self.relative_tolerance * scale
+        )

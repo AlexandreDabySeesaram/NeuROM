@@ -126,3 +126,43 @@ def test_assemble_matches_manual_outer_product():
     g = pwi_e.at_position(E).reshape(-1)
     expected = torch.outer(s, g)
     assert torch.allclose(u, expected, atol=1e-5)
+
+
+def test_add_mode_freezes_previous_and_activates_new():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
+
+    # Dirty the (frozen) mode-1 monoms so we can check zero-out.
+    with torch.no_grad():
+        for f in model.monoms[1]:
+            f.values_reduced.add_(7.0)
+
+    model.add_mode()
+
+    assert int(model.n_modes_truncated) == 2
+    # Previous mode frozen, new mode active
+    assert all(not f.values_reduced.requires_grad for f in model.monoms[0])
+    assert all(f.values_reduced.requires_grad for f in model.monoms[1])
+    # New mode zeroed out
+    assert all(torch.count_nonzero(f.values_reduced) == 0 for f in model.monoms[1])
+
+
+def test_add_mode_raises_at_max():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    with pytest.raises(RuntimeError):
+        model.add_mode()
+
+
+def test_add_mode_to_optimizer_grows_param_groups():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
+    optim = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.1
+    )
+    n_before = sum(len(g["params"]) for g in optim.param_groups)
+    model.add_mode()
+    model.add_mode_to_optimizer(optim)
+    n_after = sum(len(g["params"]) for g in optim.param_groups)
+    # 2 new monom parameters (one per axis) added
+    assert n_after == n_before + 2

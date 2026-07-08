@@ -92,3 +92,37 @@ def test_interpolate_separated_keys_shapes_and_values():
     ctx = model._contexts[0]
     expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
     assert torch.allclose(res.u, expected.u)
+
+
+def test_assemble_matches_manual_outer_product():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+
+    # NoConstraint on both axes -> nodal values are the full field. Set them.
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(
+            torch.linspace(0.0, 4.0, 5).unsqueeze(-1)  # S at 5 space nodes
+        )
+        model.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)  # g at 4 E nodes
+        )
+
+    x = torch.tensor([2.5, 5.0])          # inside space domain [0, 10]
+    E = torch.tensor([400.0, 700.0])      # inside E domain [100, 1000]
+    u = model.assemble([x, E])
+
+    assert u.shape == (2, 2)
+
+    # Manual: interpolate each monom pointwise, then outer product (single mode).
+    from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+
+    pwi_s = PointWiseInterpolator(
+        model._meshes[0], axes[0].sf, model.monoms[0][0], axes[0].mapping
+    )
+    pwi_e = PointWiseInterpolator(
+        model._meshes[1], axes[1].sf, model.monoms[0][1], axes[1].mapping
+    )
+    s = pwi_s.at_position(x).reshape(-1)
+    g = pwi_e.at_position(E).reshape(-1)
+    expected = torch.outer(s, g)
+    assert torch.allclose(u, expected, atol=1e-5)

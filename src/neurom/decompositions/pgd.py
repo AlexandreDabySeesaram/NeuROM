@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import string
 
 import torch
 import torch.nn as nn
@@ -12,6 +13,7 @@ from neurom.meshes.topology import Topology
 from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
+from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 
 
 @dataclass
@@ -135,3 +137,31 @@ class CPPGD(nn.Module):
                 per_mode.append(assembly.interpolate())
             result[axis.name] = per_mode
         return result
+
+    def assemble(self, coords):
+        """Assemble the full separated tensor at the given per-axis coordinates.
+
+        Args:
+            coords (list[torch.Tensor]): One 1-D tensor per axis (length N_k),
+                the query coordinates on that axis.
+
+        Returns:
+            torch.Tensor: Full tensor of shape (N_1, ..., N_l) equal to
+            ``sum_m prod_k w_m^k(coords[k])``. Detached (for post-processing).
+        """
+        n_modes = int(self.n_modes_truncated)
+        per_axis = []  # per_axis[k]: (n_modes, N_k)
+        for k, axis in enumerate(self.axes):
+            mesh = self._meshes[k]
+            cols = []
+            for m in range(n_modes):
+                pwi = PointWiseInterpolator(mesh, axis.sf, self.monoms[m][k], axis.mapping)
+                cols.append(pwi.at_position(coords[k].reshape(-1)).reshape(-1))
+            per_axis.append(torch.stack(cols, dim=0))
+
+        n_axes = len(self.axes)
+        axis_letters = string.ascii_lowercase[:n_axes]
+        mode_letter = "Z"
+        in_subs = ",".join(mode_letter + axis_letters[k] for k in range(n_axes))
+        out_subs = axis_letters
+        return torch.einsum(f"{in_subs}->{out_subs}", *per_axis)

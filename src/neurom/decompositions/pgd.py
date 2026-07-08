@@ -11,6 +11,7 @@ from neurom.constraints.constraint import Constraint
 from neurom.meshes.topology import Topology
 from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
+from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 
 
 @dataclass
@@ -116,3 +117,21 @@ class CPPGD(nn.Module):
         """Unfreeze the monoms of mode ``m``."""
         for field in self.monoms[m]:
             field.values_reduced.requires_grad_(True)
+
+    def interpolate_separated(self):
+        """Interpolate each active monom at its axis's quadrature points.
+
+        Returns:
+            dict[str, list[QuadratureAssemblyResult]]: axis name -> list indexed
+            by mode; entry ``m`` is the interpolation of the single monom
+            ``w_m^axis``. Enables writing separable energies monom by monom.
+        """
+        result = {}
+        for k, axis in enumerate(self.axes):
+            ctx = self._contexts[k]
+            per_mode = []
+            for m in range(int(self.n_modes_truncated)):
+                assembly = QuadratureAssembly(ctx, axis.sf, self.monoms[m][k])
+                per_mode.append(assembly.interpolate())
+            result[axis.name] = per_mode
+        return result

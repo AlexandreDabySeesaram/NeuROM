@@ -8,6 +8,7 @@ from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Topology
 from neurom.fields import Field
 from neurom.constraints import NoConstraint
+from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 
 torch.set_default_dtype(torch.float32)
 
@@ -63,3 +64,31 @@ def test_cppgd_construction_structure_and_freeze():
     # Active parameters == the 2 monoms of mode 0
     active = [p for p in model.parameters() if p.requires_grad]
     assert len(active) == 2
+
+
+def test_interpolate_separated_keys_shapes_and_values():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
+
+    # Give mode-0 space monom known nodal values so we can predict the result.
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(
+            torch.ones_like(model.monoms[0][0].values_reduced)
+        )
+
+    sep = model.interpolate_separated()
+
+    # dict keyed by axis names, each a list over active modes
+    assert set(sep.keys()) == {"space", "E"}
+    assert len(sep["space"]) == 2 and len(sep["E"]) == 2
+
+    res = sep["space"][0]
+    # (N_e, N_q, u_dim): space mesh has 4 elements, TwoPoints1D -> 2 points, dim 1
+    assert res.u.shape == (4, 2, 1)
+    assert res.x.shape == (4, 2, 1)
+    assert res.measure.shape == (4, 2, 1)
+
+    # Ground truth: reference assembly of the same monom on the same context.
+    ctx = model._contexts[0]
+    expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
+    assert torch.allclose(res.u, expected.u)

@@ -116,6 +116,14 @@ Evaluation:
   `QuadratureAssembly` per (mode, axis) and stacking the per-mode `u`.
   This is what the external energy consumes.
 
+  Shape convention: the library keeps quadrature points grouped **per element**
+  (`N_e` elements x `N_q` points/element) because `measure = w * |det J|` is
+  per-element and integration sums over both `N_e` and `N_q`. Stacking modes in
+  the last dimension (in place of `u_dim`) lets `jacobian_field` differentiate
+  all modes at once, returning `(N_e, N_q, n_modes, d)`. This assumes **scalar**
+  monoms per axis (`u_dim = 1`), true for the beam; a vector-valued monom would
+  use `(N_e, N_q, n_modes, u_dim)` and is deferred.
+
 ## Data flow for the external energy (beam example, lives in the test)
 
 Objective:
@@ -139,9 +147,13 @@ The test also owns the greedy loop: minimize (LBFGS) at fixed mode count, then
 
 - `assemble` vs `interpolate_separated` consistency on a known separated field.
 - Single-mode CP-PGD reduces to the plain FEM beam solution at fixed `E`.
-- `test_1d_beam_deflection_PGD.py`: the assembled `u(x,E)` matches the analytical
-  beam deflection `0.5 f (x - x_min)(x - x_max) / E` across the `E` range within
-  the existing relative tolerance.
+- Reference beam PGD test written by us in
+  `tests/integration/test_1d_beam_deflection_PGD_test.py` (the file
+  `test_1d_beam_deflection_PGD.py` is left for the user's own implementation as
+  an exercise): the assembled `u(x,E)` matches the analytical beam deflection
+  `0.5 f (x - x_min)(x - x_max) / E` across the `E` range within the existing
+  relative tolerance. This test also demonstrates the external parametric energy
+  and the greedy enrichment loop driving `CPPGD`.
 
 ## Open questions / future work
 

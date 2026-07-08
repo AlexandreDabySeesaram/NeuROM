@@ -1,0 +1,137 @@
+# CP-PGD implementation — session handoff notes
+
+> Read this file to catch up on the CP-PGD work done on branch `develop_solal`.
+> It is a self-contained summary; the design spec and implementation plan it
+> links carry the full detail.
+
+**Date:** 2026-07-08
+**Branch:** `develop_solal`
+**Commit range:** `077ca9d` → `1afba3e` (7 commits, all reviewed)
+**Test status:** full suite `uv run pytest` → **69 passed**
+
+## What this adds
+
+A CP-PGD (canonical-polyadic Proper Generalized Decomposition) module: a pure
+separated-representation model for
+
+```
+u({x_k}_{k=1..l}) = Σ_{m=1..M}  Π_{k=1..l}  w_m^k(x_k)
+```
+
+generalized to an arbitrary number of axes `l` (`w_m^k` = a **monom**, the
+product over `k` = a **mode**), with greedy mode enrichment. Built on the
+existing modular `neurom` FE building blocks (`TrainableField`, `Mesh`,
+`QuadratureContext`, `QuadratureAssembly`, `PointWiseInterpolator`).
+
+**Key architectural decision:** the energy/loss and the training loop live
+**outside** the module (they are problem-specific and may later become
+non-separable). The module only holds the modes, evaluates them, and manages
+enrichment.
+
+## Files
+
+### Added — production code
+
+- `src/neurom/decompositions/__init__.py` — exports `Axis`, `CPPGD`.
+- `src/neurom/decompositions/pgd.py` — both classes:
+
+  **`Axis`** (dataclass) — descriptor of one factor/coordinate direction.
+  Fields: `name`, `nodes_positions` (a `neurom.fields.Field` giving the axis
+  mesh coordinates), `sf` (`ShapeFunction`), `mapping`, `quad`
+  (`QuadratureRule`), `constraint` (`Constraint`, carries the BCs),
+  `init_values` (initial nodal values for each monom on this axis). Read-only
+  property `topology` returns `nodes_positions.topology` (guarantees the same
+  `Topology` object is shared by the `Mesh` and the monoms' `TrainableField`).
+
+  **`CPPGD(nn.Module)`** — `CPPGD(axes: list[Axis], n_modes_max, n_modes_ini=1)`.
+  - `self.monoms` — `ModuleList` over modes of `ModuleList` over axes of
+    `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`.
+  - `self._meshes`, `self._contexts` — one `Mesh` / `QuadratureContext` per
+    axis, shared across modes.
+  - `self.n_modes_max` (int), `self.n_modes_truncated` (int-valued buffer =
+    currently active modes).
+  - `interpolate_separated() -> dict[str, list[QuadratureAssemblyResult]]` —
+    per axis name, a list indexed by mode; entry `m` is the interpolation of
+    the single monom `w_m^k` at that axis's quadrature points (`u` shape
+    `(N_e, N_q, u_dim)`, shared `x`, `measure`). **Exposes each monom
+    individually** so a separable energy can be written monom-by-monom. Each
+    monom keeps its own autograd link, so `jacobian_field` applies per monom.
+  - `assemble(coords: list[torch.Tensor]) -> torch.Tensor` — full tensor of
+    shape `(N_1, ..., N_l)` = `Σ_m Π_k w_m^k(coords[k])`, via
+    `PointWiseInterpolator` per monom + a dynamically-built einsum over any
+    number of axes (mode index = uppercase `Z`, axes = lowercase `a..`).
+    Returns a detached tensor (for post-processing / viz / tests).
+  - Greedy enrichment (faithful to the old `NeuROM` class):
+    `add_mode()` (freeze active modes, increment `n_modes_truncated`,
+    zero-out + unfreeze the new mode; raises `RuntimeError` at `n_modes_max`),
+    `add_mode_to_optimizer(optim)` (adds the new mode's params via
+    `add_param_group`), `freeze_all` / `freeze_mode` / `unfreeze_mode`.
+
+### Added — tests
+
+- `tests/unit/decompositions/test_pgd.py` — `Axis` topology, `CPPGD`
+  construction + freeze state, `interpolate_separated` keys/shapes/values,
+  `assemble` (single-mode and rank-2 sum of outer products), greedy mode
+  management (freeze/activate/zero, RuntimeError at max, optimizer growth).
+- `tests/integration/test_1d_beam_deflection_PGD_test.py` — reference solve:
+  1D beam parametrized by Young modulus `E`, a **2-axis** decomposition
+  `u(x,E) = Σ_m S_m(x) g_m(E)`. The parametric energy is defined **in the
+  test** (`potential_energy(model, f_value)`), assembled monom-by-monom from
+  `interpolate_separated()`. Two tests: a rank-1 LBFGS solve, and a greedy
+  enrichment solve (mode 0 → `add_mode` → mode 1) that stays bounded. Both
+  match the analytical solution `u(x,E) = 0.5·f·(x−x_min)(x−x_max)/E` within
+  ~2.6% (tolerance 5%).
+
+### Added — docs
+
+- `docs/superpowers/specs/2026-07-08-cp-pgd-module-design.md` — design spec.
+- `docs/superpowers/plans/2026-07-08-cp-pgd-module.md` — task-by-task plan.
+
+### NOT touched (intentionally)
+
+- `tests/integration/test_1d_beam_deflection_PGD.py` — **reserved for the user
+  to implement as an exercise.** Do not edit it.
+- Pre-existing uncommitted working-tree changes present at session start
+  (`.gitignore`, `pyproject.toml`, `tests/integration/test_1d_beam_deflection.py`,
+  `uv.lock`) — left as-is; they are the user's.
+
+## Physics / sign convention (beam reference test)
+
+Matches the existing library's `ElasticEnergy - LoadPotential` combination,
+which expands to `+½(u')² + f·u`. The parametric energy is
+
+```
+J = 0.5 · ∫_E E ∫_x (∂_x u)² dx dE  +  ∫_E ∫_x f u dx dE
+```
+
+separated as `elastic = 0.5·Σ_{m,n}[∫∂_xS_m ∂_xS_n dx][∫E g_m g_n dE]` and
+`load = Σ_m[∫ f S_m dx][∫ g_m dE]`. Minimizer:
+`u(x,E) = 0.5·f·(x−x_min)(x−x_max)/E`.
+
+## How to run
+
+```bash
+uv run pytest                                                   # full suite (69)
+uv run pytest tests/unit/decompositions -v                      # module unit tests
+uv run pytest tests/integration/test_1d_beam_deflection_PGD_test.py -v
+```
+
+(Use `uv run` — bare `python`/`pytest` are not on PATH.)
+
+## Deferred / known Minor items (optional, benign)
+
+- Constructor silently does `min(n_modes_ini, n_modes_max)` instead of raising
+  `ValueError` when `n_modes_ini > n_modes_max`.
+- `assemble` with more than 26 axes raises a bare `IndexError`
+  (`string.ascii_lowercase[:n_axes]`) rather than a clear message.
+- `assemble` rebuilds a `PointWiseInterpolator` per mode (efficiency only;
+  it is post-processing and returns a detached tensor).
+- `Axis.mapping` is typed `object` (no mapping ABC exists in the codebase yet).
+
+## Reference for the original implementation
+
+The old CP-PGD lives in the sibling checkout
+`../neurom_develop_daby/neurom/HiDeNN_PDE.py` (class `NeuROM`), with the
+parametric energy in `neurom/src/PDE_Library.py`
+(`PotentialEnergyVectorisedParametric`). This module is a modern re-implementation
+of that capability on the current `neurom` library.

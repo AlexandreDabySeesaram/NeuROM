@@ -109,20 +109,25 @@ Evaluation:
   `u[i_1,...,i_l] = sum_m prod_k W_{m,k}(coords[k])[i_k]`.
   For post-processing, visualization, tests.
 
-- `interpolate_separated() -> dict[str, QuadratureAssemblyResult]` — for each
-  axis, a single `QuadratureAssemblyResult` whose `u` **stacks the active
-  modes** along the field-component dimension, i.e. shape `(N_e, N_q, n_modes)`;
-  `x` and `measure` are the (shared) axis geometry. Built by running one
-  `QuadratureAssembly` per (mode, axis) and stacking the per-mode `u`.
-  This is what the external energy consumes.
+- `interpolate_separated() -> dict[str, list[QuadratureAssemblyResult]]` — for
+  each axis, a **list indexed by mode**; entry `m` is the interpolation of the
+  single monom `w_m^k` at that axis's quadrature points, a
+  `QuadratureAssemblyResult` with `u` of shape `(N_e, N_q, u_dim)`, plus the
+  (shared) axis geometry `x` and `measure`. Direct per-monom access:
+  `sep["space"][m]` is the mode-`m` monom on the space axis. Built by running
+  one `QuadratureAssembly` per (mode, axis).
+
+  Rationale for exposing **each monom individually** (rather than a stacked
+  `(N_e, N_q, n_modes)` tensor): when the energy is separable the user writes it
+  directly as a function of the individual monoms `w_m^k`, so per-monom access
+  is the natural interface. Each monom keeps its own autograd link, so
+  `jacobian_field` applies per monom (e.g. `d_x w_m^space`).
 
   Shape convention: the library keeps quadrature points grouped **per element**
   (`N_e` elements x `N_q` points/element) because `measure = w * |det J|` is
-  per-element and integration sums over both `N_e` and `N_q`. Stacking modes in
-  the last dimension (in place of `u_dim`) lets `jacobian_field` differentiate
-  all modes at once, returning `(N_e, N_q, n_modes, d)`. This assumes **scalar**
-  monoms per axis (`u_dim = 1`), true for the beam; a vector-valued monom would
-  use `(N_e, N_q, n_modes, u_dim)` and is deferred.
+  per-element and integration sums over both `N_e` and `N_q`. A monom is scalar
+  here (`u_dim = 1`); vector-valued monoms are supported by the same
+  `(N_e, N_q, u_dim)` layout.
 
 ## Data flow for the external energy (beam example, lives in the test)
 
@@ -131,14 +136,15 @@ Objective:
 with `u(x,E) = sum_m S_m(x) g_m(E)`.
 
 1. `sep = model.interpolate_separated()`.
-2. Space axis `sep["space"]`: `x_s (N_es,N_qs,1)`, `u_s (N_es,N_qs,m)`,
-   `measure_s`. Derivatives per mode via `jacobian_field(x_s, u_s)` →
-   `(N_es,N_qs,m,1)`.
-3. `E` axis `sep["E"]`: `x_E` (the E values), `u_E (N_eE,N_qE,m)` = `g_m(E)`,
-   `measure_E`.
-4. Separated assembly of the quadratic elastic term by expanding the square:
+2. Space axis `sep["space"]` is a list over modes; entry `m` gives `S_m`:
+   `x_s (N_es,N_qs,1)`, `u_s (N_es,N_qs,1)`, `measure_s`. Derivative
+   `d_x S_m = jacobian_field(x_s, u_s)`.
+3. `E` axis `sep["E"]` is a list over modes; entry `m` gives `g_m`:
+   `x_E` (the E values), `u_E (N_eE,N_qE,1)`, `measure_E`.
+4. Separated assembly of the quadratic elastic term by expanding the square,
+   written directly in terms of the individual monoms:
    `sum_{m,n} [ int d_x S_m d_x S_n dx ] [ int E g_m g_n dE ]`, plus the load
-   term, via `einsum`. Cost scales with the sum of axis sizes, not the product.
+   term. Cost scales with the sum of axis sizes, not the product.
 
 The test also owns the greedy loop: minimize (LBFGS) at fixed mode count, then
 `model.add_mode()` + `model.add_mode_to_optimizer(optim)` between stages.

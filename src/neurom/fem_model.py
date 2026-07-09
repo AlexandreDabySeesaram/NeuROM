@@ -31,6 +31,12 @@ class FEMModel(nn.Module):
 
     def forward(self):
         """
+        If ``self.mesh.has_trainable_positions`` is True, quadrature geometry
+        (positions and measures in ``self.integration_domain``'s contexts) is
+        recomputed from the current node positions before interpolation, so
+        that node-position updates between calls (e.g. optimizer steps) are
+        reflected rather than integrating on stale, construction-time geometry.
+
         Returns:
             scalar loss / energy
         """

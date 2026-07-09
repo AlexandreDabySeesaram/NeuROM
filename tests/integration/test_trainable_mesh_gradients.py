@@ -59,3 +59,55 @@ def test_forward_refresh_lets_gradients_reach_node_positions():
     assert coords.grad is not None
     assert torch.isfinite(coords.grad).all()
     assert coords.grad.abs().sum() > 0
+
+
+def test_forward_refresh_reflects_moved_nodes_in_geometry():
+    n = 5
+    x = torch.linspace(0.0, 1.0, n).reshape(-1, 1)
+    nodes = torch.arange(0, n)
+    elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
+    top = Topology(nodes, elements)
+
+    sf = LinearSegment()
+    quad = TwoPoints1D()
+    mapping = IsoparametricMapping1D(sf)
+
+    layout = FieldLayout()
+    u = layout.add(
+        TrainableField(
+            name="u",
+            topology=top,
+            init_values=0.5 * torch.ones(n, 1),
+            constraint=Dirichlet(nodes=[0, n - 1], values_imposed=torch.zeros(2, 1)),
+        )
+    )
+    f = layout.add(Field(name="load", topology=top, values=torch.ones(n, 1)))
+
+    mesh = Mesh.with_trainable_positions_1d(top, x)
+
+    physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
+    loss = PhysicsLoss(physics=physics, field_layout=layout)
+
+    ctx = QuadratureContext(mesh, quad, mapping)
+    domain = IntegrationDomain(
+        [QuadratureAssembly(ctx, sf, u), QuadratureAssembly(ctx, sf, f)]
+    )
+    model = FEMModel(
+        mesh=mesh, field_layout=layout, integration_domain=domain, loss=loss
+    )
+
+    assert model.mesh.has_trainable_positions
+
+    model()
+    measure_before = ctx.measure.detach().clone()
+
+    torch.manual_seed(0)
+    with torch.no_grad():
+        mesh.nodes_positions.coordinates.add_(
+            0.3 * torch.randn_like(mesh.nodes_positions.coordinates)
+        )
+
+    model()
+    measure_after = ctx.measure.detach().clone()
+
+    assert not torch.allclose(measure_before, measure_after)

@@ -33,6 +33,40 @@ class Mesh(nn.Module):
                 f"Mesh self.topology does not correspond to self.nodes_positions.topology"
             )
 
+    @classmethod
+    def with_trainable_positions_1d(cls, topology, initial_positions, name="positions"):
+        """Build a 1D mesh whose interior node positions are trainable.
+
+        The endpoints stay fixed and nodes stay ordered by construction (see
+        ``TrainablePositions1D``). The plain ``Mesh(topology, nodes_positions)``
+        constructor is unchanged and used for fixed meshes.
+
+        Args:
+            topology (Topology): The mesh topology.
+            initial_positions (torch.Tensor): Strictly increasing node
+                coordinates, shape ``(n, 1)`` or ``(n,)``.
+            name (str): Name of the positions field.
+
+        Returns:
+            Mesh: A mesh with a ``TrainablePositions1D`` positions provider.
+        """
+        from neurom.fields.trainable_positions_1d import TrainablePositions1D
+
+        positions = TrainablePositions1D(
+            name=name, topology=topology, initial_positions=initial_positions
+        )
+        return cls(topology=topology, nodes_positions=positions)
+
+    @property
+    def has_trainable_positions(self) -> bool:
+        """Whether the node positions carry trainable parameters.
+
+        Provider-agnostic: ``True`` for any positions field exposing a parameter
+        with ``requires_grad`` (e.g. ``TrainablePositions1D``), ``False`` for a
+        plain ``Field``.
+        """
+        return any(p.requires_grad for p in self.nodes_positions.parameters())
+
     def elements_at(self, x):
         """
         Extract mesh elements ids at which x belongs

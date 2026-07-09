@@ -34,6 +34,9 @@ class FEMModel(nn.Module):
         Returns:
             scalar loss / energy
         """
+        if self.mesh.has_trainable_positions:
+            self.integration_domain.update_contexts()
+
         self.integration_domain.interpolate_all(self.field_layout)
 
         return self.loss()

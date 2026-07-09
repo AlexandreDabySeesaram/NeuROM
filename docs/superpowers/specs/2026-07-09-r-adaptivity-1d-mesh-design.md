@@ -35,45 +35,73 @@ parameters.
 
 ## Core idea: 1D reparametrization (softplus → cumsum → normalize)
 
+### Why not train raw coordinates
+
 Directly training raw node coordinates (e.g. a `TrainableField` with a
 `Dirichlet` constraint pinning the endpoints) is **rejected**: a Dirichlet
 constraint fixes the endpoints but does nothing to stop interior nodes from
-crossing (element interpenetration, `det J → 0` or sign flip). Instead we
-reparametrize so that ordering and endpoints are guaranteed **by construction**.
+crossing. Once two nodes cross, the element between them inverts — `det J → 0`
+then changes sign — and the interpolation, the measure, and the energy all break
+down (division by ~0, negative "areas", NaNs). Gradient descent has no built-in
+reason to avoid this; a naive parametrization would need an extra ordering
+penalty that only *discourages* tangling. Instead we reparametrize so that
+ordering and endpoints are guaranteed **structurally** — they are properties of
+the map, not of the optimizer's trajectory.
 
-Let `c ∈ ℝ^{n-1}` be free real parameters (one per interval of an `n`-node 1D
-mesh). Physical coordinates are:
+### The map
+
+We optimize the *spacing between* nodes rather than the node positions
+themselves. Let `c ∈ ℝ^{n-1}` be free real parameters, one per interval of an
+`n`-node 1D mesh. The physical coordinates are recovered in three steps:
 
 ```
-δ  = softplus(c)                 # (n-1,)  strictly positive increments
+δ  = softplus(c)                 # (n-1,)  strictly positive interval widths
 x̃  = cat([0], cumsum(δ))         # (n,)    x̃_k = Σ_{i<k} δ_i , strictly increasing
 x   = a + (b - a) · x̃ / x̃[-1]    # (n,)    x[0]=a, x[-1]=b exactly
 ```
 
-- `softplus` keeps every increment positive → `x` strictly increasing → no
-  tangling, ever.
-- The final affine normalization pins `x[0]=a` and `x[-1]=b` for **any** `a,b`.
+Step by step:
 
-This is a **1D-only** technique (a total order on a line). It does not generalize
-to 2D/3D, where r-adaptivity needs the general free-position + connectivity
-approach (and possibly connectivity recomputation / retriangulation). The
-general path in NeuROM (`Topology` + a free-value positions provider) stays
-untouched and available; the reparametrization is an *additional*,
-dimension-specific provider — never a replacement.
+1. **`softplus(c) = ln(1 + eᶜ)`** maps each free real parameter to a strictly
+   positive number, interpreted as an interval width `δ_i > 0`. `softplus` is a
+   smooth (everywhere-differentiable) surrogate for a hard positivity clamp, so
+   gradients flow cleanly for any value of `c` — there is no boundary to hit and
+   no non-differentiable kink. Positivity of every `δ_i` is what forbids
+   tangling.
+2. **`cumsum` with a leading `0`** turns the widths into positions:
+   `x̃_1 = 0` and `x̃_k = δ_1 + … + δ_{k-1}`. A cumulative sum of strictly
+   positive increments is strictly increasing, so the nodes are always correctly
+   ordered. The leading `0` implements `x̃_1 = 0` (the empty sum) so that the
+   first node sits at the origin of the un-normalized axis.
+3. **Affine normalization** `x = a + (b−a)·x̃ / x̃[-1]` rescales the whole vector
+   so the first node lands exactly on `a` and the last on `b`, for **any**
+   `[a,b]`. Because it divides by the total length `x̃[-1]`, only the *relative*
+   widths matter — the parametrization has one redundant scale DOF, which the
+   normalization absorbs. So `n-1` raw parameters yield `n-2` effective degrees
+   of freedom, exactly matching "2 endpoints fixed, interior nodes free".
 
-### Note on the notebook source
+The composition is differentiable end to end, so autograd propagates the loss
+gradient back through normalize → cumsum → softplus to `c`. The endpoints and
+the ordering are invariant along the *entire* optimization path — the optimizer
+literally cannot express a tangled or endpoint-violating mesh.
 
-The logic comes from a prior monolithic notebook class `interpolation1D`, which
-fused mesh coordinates, the solution field `u` and its BCs, shape functions, and
-the forward interpolation into one object. NeuROM already separates all of these
-(`Mesh.nodes_positions`, `TrainableField`+`Dirichlet`, `ShapeFunction` /
-`QuadratureContext` / `QuadratureAssembly`), so only the coordinate
-reparametrization is new.
+### Inverse map (initialization)
 
-One **deliberate correction** to the notebook: prepend `0` (not `a`) before the
-cumsum. This matches the stated math (`x̃_k = Σ_{i<k} δ_i`, so `x̃_1 = 0`) and
-makes endpoints land exactly on `[a,b]` for any `a`, removing the notebook's
-`assert a == 0`.
+To start from a given mesh `initial_positions` (uniform or not, strictly
+increasing), we invert the forward map to recover `c`: take the consecutive
+differences, normalize them by `(b−a)` (any positive scale works — the forward
+normalization is scale-invariant), and apply the inverse of softplus,
+`inv_softplus(y) = ln(-expm1(-y)) + y` (numerically stable, equal to
+`ln(eʸ − 1)`). Then `full_values()` reproduces `initial_positions`.
+
+### Scope
+
+This is a **1D-only** technique — it relies on a total order on a line. It does
+not generalize to 2D/3D, where r-adaptivity needs the general free-position +
+connectivity approach (and possibly connectivity recomputation /
+retriangulation). The general path in NeuROM (`Topology` + a free-value
+positions provider) stays untouched and available; the reparametrization is an
+*additional*, dimension-specific provider — never a replacement.
 
 ## Design
 
@@ -86,16 +114,19 @@ makes endpoints land exactly on `[a,b]` for any `a`, removing the notebook's
 - Constructor: `TrainablePositions1D(name, topology, initial_positions)` where
   `initial_positions` is `(n, 1)`, strictly increasing. `a`, `b` are taken from
   the first/last entry.
-- Init: recover the raw params from the (possibly non-uniform) input mesh via
-  the inverse map — normalize the input increments by `(b-a)` and apply
-  `inv_softplus`, so `full_values()` reproduces `initial_positions`.
-  Use the numerically-stable inverse `inv_softplus(y) = log(-expm1(-y)) + y`
-  (equal to `log(expm1(y))`).
+- Init: recover the raw params `c` from `initial_positions` via the inverse map
+  described in "Inverse map (initialization)" above, so `full_values()`
+  reproduces the input mesh.
 - Interface:
   - `full_values()` → the reparametrized coordinates `(n, 1)` (the forward map
-    above). Differentiable in `self.coordinates`.
-  - `at_elements()` → `full_values()[topology.connectivity]` (same as other
-    fields).
+    above), the *global* view: one coordinate per node in global numbering.
+    Differentiable in `self.coordinates`.
+  - `at_elements()` → the *element-local* view: `full_values()[topology.connectivity]`,
+    shape `(n_elements, n_nodes_per_element, dim)`. For each element it gathers
+    the coordinates of that element's own nodes — this is exactly the `x_nodes`
+    array the isoparametric mapping consumes to map reference→physical and
+    compute `det J` per element. Identical contract to `Field`/`TrainableField`,
+    which is what lets this class drop into the existing pipeline unchanged.
   - `dim` → `1`.
 - No runtime round-trip assertion in `__init__` (kept lean); correctness of the
   `inv_softplus`/`softplus` round-trip is covered by a dedicated unit test
@@ -113,6 +144,14 @@ makes endpoints land exactly on `[a,b]` for any `a`, removing the notebook's
 - `mesh.has_trainable_positions` property → `any(p.requires_grad for p in
   self.nodes_positions.parameters())`. Provider-agnostic (works for any future
   trainable positions provider).
+
+These two are complementary, not alternatives — one *creates*, the other
+*inspects*. `with_trainable_positions_1d` is a **factory** you call to build a
+mesh whose positions are trainable (it instantiates the `TrainablePositions1D`
+provider). `has_trainable_positions` is a **query** you read on an existing mesh
+to find out whether its positions are trainable; `FEMModel.forward()` uses it to
+decide whether to refresh geometry, and it answers correctly regardless of how
+the mesh was constructed.
 
 ### 3. `FEMModel.forward()` — geometry refresh wiring
 

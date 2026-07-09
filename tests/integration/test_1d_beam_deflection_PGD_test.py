@@ -166,6 +166,7 @@ class Test1dBeamDeflectionPGD:
             optimizer.step(closure)
 
         # Greedy-enrich with a second mode: freeze mode 0, activate+zero mode 1.
+        model.freeze_mode(0)
         model.add_mode()
 
         optimizer2 = torch.optim.LBFGS(

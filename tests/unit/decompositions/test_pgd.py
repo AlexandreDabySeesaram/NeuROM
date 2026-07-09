@@ -176,7 +176,7 @@ def test_assemble_sums_two_modes_matching_manual_outer_products():
     assert torch.allclose(u, expected, atol=1e-5)
 
 
-def test_add_mode_freezes_previous_and_activates_new():
+def test_add_mode_activates_new_without_freezing_previous():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
 
@@ -185,11 +185,12 @@ def test_add_mode_freezes_previous_and_activates_new():
         for f in model.monoms[1]:
             f.values_reduced.add_(7.0)
 
-    model.add_mode()
+    new = model.add_mode()
 
+    assert new == 1
     assert int(model.n_modes_truncated) == 2
-    # Previous mode frozen, new mode active
-    assert all(not f.values_reduced.requires_grad for f in model.monoms[0])
+    # Previous mode left untouched (still active), new mode active
+    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
     assert all(f.values_reduced.requires_grad for f in model.monoms[1])
     # New mode zeroed out
     assert all(torch.count_nonzero(f.values_reduced) == 0 for f in model.monoms[1])
@@ -214,3 +215,35 @@ def test_add_mode_to_optimizer_grows_param_groups():
     n_after = sum(len(g["params"]) for g in optim.param_groups)
     # 2 new monom parameters (one per axis) added
     assert n_after == n_before + 2
+
+
+def test_add_mode_to_optimizer_explicit_index():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
+    optim = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.1
+    )
+    model.add_mode()
+    model.add_mode()
+    n_before = sum(len(g["params"]) for g in optim.param_groups)
+
+    # Explicit index adds that mode's monoms.
+    model.add_mode_to_optimizer(optim, m=1)
+    assert sum(len(g["params"]) for g in optim.param_groups) == n_before + 2
+
+    # Negative index resolves against the active modes.
+    model.add_mode_to_optimizer(optim, m=-1)
+    assert sum(len(g["params"]) for g in optim.param_groups) == n_before + 4
+
+
+def test_add_mode_to_optimizer_out_of_range_raises():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
+    optim = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.1
+    )
+    # Only mode 0 is active.
+    with pytest.raises(IndexError):
+        model.add_mode_to_optimizer(optim, m=1)
+    with pytest.raises(IndexError):
+        model.add_mode_to_optimizer(optim, m=-2)

@@ -123,19 +123,19 @@ class CPPGD(nn.Module):
     def add_mode(self):
         """Enrich the decomposition with one new mode (greedy PGD).
 
-        Freezes the currently-active modes, activates the next mode (zeroed out
-        and trainable). Raises RuntimeError if already at n_modes_max.
+        Activates the next mode (zeroed out and trainable) without touching the
+        freeze state of the currently-active modes. Returns the index of the
+        newly-activated mode. Raises RuntimeError if already at n_modes_max.
         """
         if int(self.n_modes_truncated) >= self.n_modes_max:
             raise RuntimeError(
                 f"Cannot add mode: already at n_modes_max={self.n_modes_max}."
             )
-        for m in range(int(self.n_modes_truncated)):
-            self.freeze_mode(m)
         new = int(self.n_modes_truncated)
         self.n_modes_truncated += 1
         self._zero_out(new)
         self.unfreeze_mode(new)
+        return new
 
     def _zero_out(self, m):
         """Zero the nodal values of every monom of mode ``m``."""
@@ -143,10 +143,28 @@ class CPPGD(nn.Module):
             for field in self.monoms[m]:
                 field.values_reduced.zero_()
 
-    def add_mode_to_optimizer(self, optim):
-        """Add the last-activated mode's monom parameters to ``optim``."""
-        new = int(self.n_modes_truncated) - 1
-        params = [f.values_reduced for f in self.monoms[new]]
+    def add_mode_to_optimizer(self, optim, m=None):
+        """Add mode ``m``'s monom parameters to ``optim`` as a new param group.
+
+        Args:
+            optim (torch.optim.Optimizer): Optimizer to enrich.
+            m (int, optional): Index of the mode to add. Supports negative
+                indexing (Python-style). Defaults to the last-activated mode
+                (``n_modes_truncated - 1``).
+
+        Raises:
+            IndexError: If ``m`` is out of range for the active modes.
+        """
+        n_active = int(self.n_modes_truncated)
+        if m is None:
+            m = n_active - 1
+        if m < 0:
+            m += n_active
+        if not 0 <= m < n_active:
+            raise IndexError(
+                f"Mode index {m} out of range for {n_active} active mode(s)."
+            )
+        params = [f.values_reduced for f in self.monoms[m]]
         optim.add_param_group({"params": params})
 
     def interpolate_separated(self):

@@ -4,6 +4,18 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-09 — CP-PGD mode management tweaks
+
+Branch `develop_solal`.
+
+- `CPPGD.add_mode()` no longer freezes the currently-active modes on enrichment;
+  it only activates (zeros + unfreezes) the new mode and returns its index.
+  Freezing is left to the caller so update strategies (e.g. updated/preview
+  modes) can be chosen freely.
+- `CPPGD.add_mode_to_optimizer(optim, m=None)` now takes an explicit mode index
+  (with negative-index support), defaulting to the last-activated mode, and
+  raises `IndexError` when out of range.
+
 ## 2026-07-08 — CP-PGD module
 
 Branch `develop_solal`, commits `077ca9d`→`5e3cdb4`. Full suite: 69 passed.

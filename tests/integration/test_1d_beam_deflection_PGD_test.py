@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from neurom.decompositions import Axis, CPPGD
+from neurom.decompositions import Axis, CPPGD, PGDFEMModel
 from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
@@ -10,6 +10,7 @@ from neurom.fields import Field
 from neurom.constraints import Dirichlet, NoConstraint
 from neurom.differential import jacobian_field
 from neurom.integrate import integrate
+from neurom.field_layout import FieldLayout
 
 torch.set_default_dtype(torch.float32)
 
@@ -32,9 +33,9 @@ def build_axis(name, coords, constraint, init_values):
     )
 
 
-def potential_energy(model, f_value):
-    """External separable parametric energy, written monom by monom."""
-    sep = model.interpolate_separated()
+def potential_energy(cppgd, field_layout, f_value):
+    """External separable parametric energy, read from the filled FieldLayout."""
+    sep = cppgd.separated_view(field_layout)
     space = sep["space"]
     para = sep["E"]
     n_modes = len(space)
@@ -87,10 +88,14 @@ class Test1dBeamDeflectionPGD:
             "E",
             E_coords,
             NoConstraint(),
-            init_values=torch.ones(N_E, 1),    # E monom starts at 1 (nonzero -> gradient flows)
+            init_values=torch.ones(N_E, 1),    # E monom starts at 1 (gradient flows)
         )
 
-        model = CPPGD(axes=[space_axis, para_axis], n_modes_max=1, n_modes_ini=1)
+        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=1, n_modes_ini=1)
+        field_layout = FieldLayout()
+        model = PGDFEMModel(
+            cppgd, field_layout, lambda: potential_energy(cppgd, field_layout, f_value)
+        )
 
         optimizer = torch.optim.LBFGS(
             [p for p in model.parameters() if p.requires_grad],
@@ -99,7 +104,7 @@ class Test1dBeamDeflectionPGD:
 
         def closure():
             optimizer.zero_grad()
-            loss = potential_energy(model, f_value)
+            loss = model()
             loss.backward(retain_graph=True)
             return loss
 
@@ -109,7 +114,7 @@ class Test1dBeamDeflectionPGD:
         # Compare assembled u(x, E) to the analytical parametric deflection.
         x_test = torch.linspace(x_min, x_max, 15)
         E_test = torch.linspace(E_min, E_max, 5)
-        u = model.assemble([x_test, E_test])          # (15, 5)
+        u = cppgd.assemble([x_test, E_test])          # (15, 5)
 
         xx = x_test.unsqueeze(-1)                      # (15, 1)
         EE = E_test.unsqueeze(0)                       # (1, 5)
@@ -149,7 +154,11 @@ class Test1dBeamDeflectionPGD:
             init_values=torch.ones(N_E, 1),
         )
 
-        model = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1)
+        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1)
+        field_layout = FieldLayout()
+        model = PGDFEMModel(
+            cppgd, field_layout, lambda: potential_energy(cppgd, field_layout, f_value)
+        )
 
         optimizer = torch.optim.LBFGS(
             [p for p in model.parameters() if p.requires_grad],
@@ -158,7 +167,7 @@ class Test1dBeamDeflectionPGD:
 
         def closure():
             optimizer.zero_grad()
-            loss = potential_energy(model, f_value)
+            loss = model()
             loss.backward(retain_graph=True)
             return loss
 
@@ -166,8 +175,8 @@ class Test1dBeamDeflectionPGD:
             optimizer.step(closure)
 
         # Greedy-enrich with a second mode: freeze mode 0, activate+zero mode 1.
-        model.freeze_mode(0)
-        model.add_mode()
+        cppgd.freeze_mode(0)
+        cppgd.add_mode()
 
         optimizer2 = torch.optim.LBFGS(
             [p for p in model.parameters() if p.requires_grad],
@@ -176,18 +185,17 @@ class Test1dBeamDeflectionPGD:
 
         def closure2():
             optimizer2.zero_grad()
-            loss = potential_energy(model, f_value)
+            loss = model()
             loss.backward(retain_graph=True)
             return loss
 
         for _ in range(150):
             optimizer2.step(closure2)
 
-        # Compare assembled u(x, E) (now rank-2) to the analytical rank-1
-        # deflection: the enrichment must not have diverged.
+        # Compare assembled u(x, E) (now rank-2) to the analytical rank-1 field.
         x_test = torch.linspace(x_min, x_max, 15)
         E_test = torch.linspace(E_min, E_max, 5)
-        u = model.assemble([x_test, E_test])          # (15, 5)
+        u = cppgd.assemble([x_test, E_test])          # (15, 5)
 
         xx = x_test.unsqueeze(-1)                      # (15, 1)
         EE = E_test.unsqueeze(0)                       # (1, 5)

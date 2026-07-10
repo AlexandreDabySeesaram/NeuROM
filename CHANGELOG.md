@@ -4,6 +4,28 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-10 — TensorDecomposition ABC + CPPGD.register_into/fill
+
+Branch `pgd_addition_solal`, commit `1208881`. Full suite: 75 passed.
+
+- Added `src/neurom/decompositions/base.py`: `TensorDecomposition` ABC
+  (`nn.Module` + `ABC`) with abstract `register_into(field_layout)` and
+  `fill(field_layout)` — the seam a future `PGDFEMModel` will depend on.
+- `CPPGD` now subclasses `TensorDecomposition` and implements both methods:
+  - `register_into` registers every monom (all `n_modes_max` modes x all
+    axes, including not-yet-active ones) in a `FieldLayout` up front.
+  - `fill` re-interpolates only the currently-active monoms per axis and
+    `update()`s them in the layout (CP analogue of
+    `IntegrationDomain.interpolate_all`). Inactive monoms stay registered but
+    uninterpolated (reading them raises `RuntimeError`, per `FieldLayout`
+    contract).
+- Exported `TensorDecomposition` from `neurom.decompositions`.
+- `src/neurom/field_layout.py` untouched — `CPPGD` only uses its existing
+  `add`/`update`/`__getitem__` contract.
+- Extended `tests/unit/decompositions/test_pgd.py` with 4 tests covering the
+  ABC relationship, registration completeness, fill correctness (matches
+  direct `QuadratureAssembly`), and inactive-monom non-interpolation.
+
 ## 2026-07-09 — CP-PGD mode management tweaks
 
 Branch `develop_solal`.

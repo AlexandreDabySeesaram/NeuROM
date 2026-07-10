@@ -193,22 +193,23 @@ class CPPGD(TensorDecomposition):
                 )
                 field_layout.update(self.monoms[m][k], assembly.interpolate())
 
-    def interpolate_separated(self):
-        """Interpolate each active monom at its axis's quadrature points.
+    def separated_view(self, field_layout):
+        """Read the active monoms' interpolations back out of the layout.
+
+        The layout must have been ``fill``ed first (guaranteed inside
+        ``PGDFEMModel.forward``, which fills before calling the loss).
 
         Returns:
             dict[str, list[QuadratureAssemblyResult]]: axis name -> list indexed
-            by mode; entry ``m`` is the interpolation of the single monom
+            by active mode; entry ``m`` is the interpolation of the single monom
             ``w_m^axis``. Enables writing separable energies monom by monom.
         """
         result = {}
         for k, axis in enumerate(self.axes):
-            ctx = self._contexts[k]
-            per_mode = []
-            for m in range(int(self.n_modes_truncated)):
-                assembly = QuadratureAssembly(ctx, axis.sf, self.monoms[m][k])
-                per_mode.append(assembly.interpolate())
-            result[axis.name] = per_mode
+            result[axis.name] = [
+                field_layout[self.monoms[m][k].name]
+                for m in range(int(self.n_modes_truncated))
+            ]
         return result
 
     def assemble(self, coords):

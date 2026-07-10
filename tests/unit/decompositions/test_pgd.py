@@ -68,7 +68,7 @@ def test_cppgd_construction_structure_and_freeze():
     assert len(active) == 2
 
 
-def test_interpolate_separated_keys_shapes_and_values():
+def test_separated_view_keys_shapes_and_values():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
 
@@ -78,7 +78,10 @@ def test_interpolate_separated_keys_shapes_and_values():
             torch.ones_like(model.monoms[0][0].values_reduced)
         )
 
-    sep = model.interpolate_separated()
+    layout = FieldLayout()
+    model.register_into(layout)
+    model.fill(layout)
+    sep = model.separated_view(layout)
 
     # dict keyed by axis names, each a list over active modes
     assert set(sep.keys()) == {"space", "E"}
@@ -94,6 +97,23 @@ def test_interpolate_separated_keys_shapes_and_values():
     ctx = model._contexts[0]
     expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
     assert torch.allclose(res.u, expected.u)
+
+
+def test_separated_view_reflects_added_mode():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=1)
+    layout = FieldLayout()
+    model.register_into(layout)
+    model.fill(layout)
+    assert len(model.separated_view(layout)["space"]) == 1
+
+    model.add_mode()
+    model.fill(layout)
+    assert len(model.separated_view(layout)["space"]) == 2
+
+
+def test_interpolate_separated_is_removed():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    assert not hasattr(model, "interpolate_separated")
 
 
 def test_assemble_matches_manual_outer_product():

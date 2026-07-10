@@ -11,6 +11,9 @@ from neurom.constraints import NoConstraint
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
+from neurom.decompositions import PGDFEMModel
+from neurom.integrate import integrate
+from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 
 torch.set_default_dtype(torch.float32)
 
@@ -311,3 +314,65 @@ def test_fill_leaves_inactive_monoms_uninterpolated():
     # mode 1 inactive: registered but never interpolated -> RuntimeError on read
     with pytest.raises(RuntimeError):
         _ = layout[model.monoms[1][0].name]
+
+
+def test_pgdfemmodel_forward_returns_scalar_and_optimizes():
+    axes = make_two_axes()
+    cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    layout = FieldLayout()
+
+    # Linear-in-S loss: gradient is the (nonzero) shape-function * measure, so
+    # even a zero-initialised monom gets a nonzero update.
+    def loss():
+        s = cppgd.separated_view(layout)["space"][0]
+        return integrate(s.u * s.measure)
+
+    model = PGDFEMModel(cppgd, layout, loss)
+
+    out = model()
+    assert out.ndim == 0  # scalar
+
+    before = cppgd.monoms[0][0].values_reduced.detach().clone()
+    optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1.0)
+    optim.zero_grad()
+    model().backward()
+    optim.step()
+    after = cppgd.monoms[0][0].values_reduced.detach()
+    assert not torch.allclose(before, after)
+
+
+class _ConstantDecomposition(TensorDecomposition):
+    """Minimal fake decomposition with NO CP structure: registers one fixed
+    Field and fills it with a constant result. Proves PGDFEMModel is generic."""
+
+    def __init__(self):
+        super().__init__()
+        n = 3
+        nodes = torch.arange(0, n)
+        elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
+        topo = Topology(nodes, elements)
+        self.field = Field(name="dummy", topology=topo, values=torch.zeros(n, 1))
+        self.filled = False
+
+    def register_into(self, field_layout):
+        field_layout.add(self.field)
+
+    def fill(self, field_layout):
+        self.filled = True
+        res = QuadratureAssemblyResult(
+            x=torch.zeros(1, 1, 1), u=torch.ones(1, 1, 1), measure=torch.ones(1, 1, 1)
+        )
+        field_layout.update(self.field, res)
+
+
+def test_pgdfemmodel_is_format_agnostic():
+    layout = FieldLayout()
+    deco = _ConstantDecomposition()
+
+    def loss():
+        return layout["dummy"].u.sum()
+
+    model = PGDFEMModel(deco, layout, loss)
+    out = model()
+    assert deco.filled
+    assert float(out) == 1.0

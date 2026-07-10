@@ -14,7 +14,11 @@ class PGDFEMModel(nn.Module):
 
     Args:
         decomposition (TensorDecomposition): The separated representation.
-        field_layout (FieldLayout): Flat layout the decomposition fills.
+        field_layout (FieldLayout): Flat layout the decomposition fills. Pass a
+            **fresh** layout: ``__init__`` registers the decomposition's factor
+            fields into it (via ``register_into``), so a layout already holding
+            those field names raises ``ValueError`` on the duplicate
+            registration.
         loss (Callable[[], torch.Tensor]): No-arg callable returning the scalar
             energy, closed over the decomposition, layout and problem data.
     """

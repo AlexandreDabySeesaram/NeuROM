@@ -1,13 +1,14 @@
 # CP-PGD implementation — session handoff notes
 
-> Read this file to catch up on the CP-PGD work done on branch `develop_solal`.
-> It is a self-contained summary; the design spec and implementation plan it
-> links carry the full detail.
+> Read this file to catch up on the CP-PGD work. It is a self-contained summary;
+> the design spec and implementation plan it links carry the full detail. The
+> body reflects the latest `FieldLayout`/`PGDFEMModel` integration; the original
+> CP-PGD module landed earlier on branch `develop_solal`.
 
-**Date:** 2026-07-08
-**Branch:** `develop_solal`
-**Commit range:** `077ca9d` → `1afba3e` (7 commits, all reviewed)
-**Test status:** full suite `uv run pytest` → **69 passed**
+**Date:** 2026-07-10
+**Branch:** `pgd_addition_solal`
+**Commit range:** `1208881` → `e2fbd4f` (FieldLayout/PGDFEMModel integration)
+**Test status:** full suite `uv run pytest` → **79 passed**
 
 ## What this adds
 
@@ -79,11 +80,15 @@ enrichment.
     number of axes (mode index = uppercase `Z`, axes = lowercase `a..`).
     Returns a detached tensor (for post-processing / viz / tests). Unchanged
     by the `FieldLayout` migration.
-  - Greedy enrichment (faithful to the old `NeuROM` class):
-    `add_mode()` (freeze active modes, increment `n_modes_truncated`,
-    zero-out + unfreeze the new mode; raises `RuntimeError` at `n_modes_max`),
-    `add_mode_to_optimizer(optim)` (adds the new mode's params via
-    `add_param_group`), `freeze_all` / `freeze_mode` / `unfreeze_mode`.
+  - Greedy enrichment:
+    `add_mode()` activates the next mode (increment `n_modes_truncated`,
+    zero-out + unfreeze the new mode) and returns its index, **without**
+    touching the freeze state of the currently-active modes — freezing is left
+    to the caller (e.g. the beam test calls `freeze_mode(0)` before
+    `add_mode()`); raises `RuntimeError` at `n_modes_max`.
+    `add_mode_to_optimizer(optim, m=None)` adds a mode's params via
+    `add_param_group` (defaults to the last-activated mode, supports negative
+    indexing), plus `freeze_all` / `freeze_mode` / `unfreeze_mode`.
 - `src/neurom/decompositions/pgd_fem_model.py` — **`PGDFEMModel(nn.Module)`**:
   `PGDFEMModel(decomposition: TensorDecomposition, field_layout, loss)`, the
   PGD analogue of `neurom.fem_model.FEMModel`. Registers the decomposition's

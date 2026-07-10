@@ -32,7 +32,15 @@ enrichment.
 
 ### Added — production code
 
-- `src/neurom/decompositions/__init__.py` — exports `Axis`, `CPPGD`.
+- `src/neurom/decompositions/__init__.py` — exports `TensorDecomposition`,
+  `Axis`, `CPPGD`, `PGDFEMModel`.
+- `src/neurom/decompositions/base.py` — **`TensorDecomposition(nn.Module, ABC)`**:
+  the format-agnostic contract a PGD FEM model depends on. Abstract
+  `register_into(field_layout)` (register this decomposition's factor fields
+  in the layout, once, at setup) and `fill(field_layout)` (re-interpolate the
+  active factor fields and `update()` them in the layout; the PGD analogue of
+  `IntegrationDomain.interpolate_all`, called once per forward). CP today,
+  Tucker/TT later, all drive the same `PGDFEMModel` through this seam.
 - `src/neurom/decompositions/pgd.py` — both classes:
 
   **`Axis`** (dataclass) — descriptor of one factor/coordinate direction.
@@ -43,29 +51,47 @@ enrichment.
   property `topology` returns `nodes_positions.topology` (guarantees the same
   `Topology` object is shared by the `Mesh` and the monoms' `TrainableField`).
 
-  **`CPPGD(nn.Module)`** — `CPPGD(axes: list[Axis], n_modes_max, n_modes_ini=1)`.
+  **`CPPGD(TensorDecomposition)`** — `CPPGD(axes: list[Axis], n_modes_max, n_modes_ini=1)`.
   - `self.monoms` — `ModuleList` over modes of `ModuleList` over axes of
     `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`.
   - `self._meshes`, `self._contexts` — one `Mesh` / `QuadratureContext` per
     axis, shared across modes.
   - `self.n_modes_max` (int), `self.n_modes_truncated` (int-valued buffer =
     currently active modes).
-  - `interpolate_separated() -> dict[str, list[QuadratureAssemblyResult]]` —
-    per axis name, a list indexed by mode; entry `m` is the interpolation of
-    the single monom `w_m^k` at that axis's quadrature points (`u` shape
-    `(N_e, N_q, u_dim)`, shared `x`, `measure`). **Exposes each monom
-    individually** so a separable energy can be written monom-by-monom. Each
-    monom keeps its own autograd link, so `jacobian_field` applies per monom.
+  - `register_into(field_layout)` — registers every monom field (all
+    `n_modes_max` modes x all axes, including not-yet-active ones) in the
+    layout up front, so `add_mode` needs no layout reference.
+  - `fill(field_layout)` — for each active mode and axis, interpolates the
+    monom at that axis's quadrature points and `update()`s it in the layout.
+    Inactive monoms stay registered but uninterpolated (reading them raises
+    `RuntimeError`, per the `FieldLayout` contract).
+  - `separated_view(field_layout) -> dict[str, list[QuadratureAssemblyResult]]`
+    — reads the active monoms' interpolations back out of the (already-filled)
+    layout: per axis name, a list indexed by mode; entry `m` is the
+    interpolation of the single monom `w_m^k` (`u` shape `(N_e, N_q, u_dim)`,
+    shared `x`, `measure`). **Exposes each monom individually** so a separable
+    energy can be written monom-by-monom. **Replaces** the old
+    `interpolate_separated()` (removed — no `FieldLayout` bypass). Each monom
+    keeps its own autograd link, so `jacobian_field` applies per monom.
   - `assemble(coords: list[torch.Tensor]) -> torch.Tensor` — full tensor of
     shape `(N_1, ..., N_l)` = `Σ_m Π_k w_m^k(coords[k])`, via
     `PointWiseInterpolator` per monom + a dynamically-built einsum over any
     number of axes (mode index = uppercase `Z`, axes = lowercase `a..`).
-    Returns a detached tensor (for post-processing / viz / tests).
+    Returns a detached tensor (for post-processing / viz / tests). Unchanged
+    by the `FieldLayout` migration.
   - Greedy enrichment (faithful to the old `NeuROM` class):
     `add_mode()` (freeze active modes, increment `n_modes_truncated`,
     zero-out + unfreeze the new mode; raises `RuntimeError` at `n_modes_max`),
     `add_mode_to_optimizer(optim)` (adds the new mode's params via
     `add_param_group`), `freeze_all` / `freeze_mode` / `unfreeze_mode`.
+- `src/neurom/decompositions/pgd_fem_model.py` — **`PGDFEMModel(nn.Module)`**:
+  `PGDFEMModel(decomposition: TensorDecomposition, field_layout, loss)`, the
+  PGD analogue of `neurom.fem_model.FEMModel`. Registers the decomposition's
+  factor fields into the layout at construction
+  (`decomposition.register_into(field_layout)`); `forward()` fills the layout
+  (`decomposition.fill(field_layout)`) then evaluates the external `loss`
+  no-arg callable. Depends only on the `TensorDecomposition` contract, so it
+  is format-agnostic (pinned by a fake-decomposition unit test).
 
 ### Added — tests
 
@@ -111,8 +137,8 @@ separated as `elastic = 0.5·Σ_{m,n}[∫∂_xS_m ∂_xS_n dx][∫E g_m g_n dE]`
 ## How to run
 
 ```bash
-uv run pytest                                                   # full suite (69)
-uv run pytest tests/unit/decompositions -v                      # module unit tests
+uv run pytest                                                   # full suite (79)
+uv run pytest tests/unit/decompositions/test_pgd.py -v          # module unit tests
 uv run pytest tests/integration/test_1d_beam_deflection_PGD_test.py -v
 ```
 

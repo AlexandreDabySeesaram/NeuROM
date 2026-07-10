@@ -4,27 +4,28 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
-## 2026-07-10 — TensorDecomposition ABC + CPPGD.register_into/fill
+## 2026-07-10 — CP-PGD on the FieldLayout / FEMModel abstraction
 
-Branch `pgd_addition_solal`, commit `1208881`. Full suite: 75 passed.
+Branch `pgd_addition_solal`. Full suite: 79 passed.
 
-- Added `src/neurom/decompositions/base.py`: `TensorDecomposition` ABC
-  (`nn.Module` + `ABC`) with abstract `register_into(field_layout)` and
-  `fill(field_layout)` — the seam a future `PGDFEMModel` will depend on.
-- `CPPGD` now subclasses `TensorDecomposition` and implements both methods:
-  - `register_into` registers every monom (all `n_modes_max` modes x all
-    axes, including not-yet-active ones) in a `FieldLayout` up front.
-  - `fill` re-interpolates only the currently-active monoms per axis and
-    `update()`s them in the layout (CP analogue of
-    `IntegrationDomain.interpolate_all`). Inactive monoms stay registered but
-    uninterpolated (reading them raises `RuntimeError`, per `FieldLayout`
-    contract).
-- Exported `TensorDecomposition` from `neurom.decompositions`.
-- `src/neurom/field_layout.py` untouched — `CPPGD` only uses its existing
-  `add`/`update`/`__getitem__` contract.
-- Extended `tests/unit/decompositions/test_pgd.py` with 4 tests covering the
-  ABC relationship, registration completeness, fill correctness (matches
-  direct `QuadratureAssembly`), and inactive-monom non-interpolation.
+- Added `TensorDecomposition` ABC (`src/neurom/decompositions/base.py`): the
+  `register_into(field_layout)` / `fill(field_layout)` contract that a PGD FEM
+  model depends on, so CP / future Tucker / TT all drive the same model.
+- `CPPGD` now subclasses `TensorDecomposition`:
+  - `register_into(layout)` registers all monom fields; `fill(layout)`
+    interpolates the active monoms and `update`s them (analogue of
+    `IntegrationDomain.interpolate_all`).
+  - `separated_view(layout)` reads the active monoms back out of the layout;
+    it **replaces** `interpolate_separated()` (removed). `assemble()` unchanged.
+- Added `PGDFEMModel(decomposition, field_layout, loss)`
+  (`src/neurom/decompositions/pgd_fem_model.py`, exported from
+  `neurom.decompositions`): registers factor fields at construction, `forward()`
+  fills the layout then evaluates the external loss. Depends only on the ABC —
+  a fake decomposition test pins the format-agnosticism.
+- No `FieldLayout` changes: CP-PGD uses its existing `add`/`update`/`__getitem__`.
+- Migrated the beam integration test and the unit tests onto the layout flow.
+
+Full detail: [design spec](docs/superpowers/specs/2026-07-10-cppgd-fieldlayout-integration-design.md).
 
 ## 2026-07-09 — CP-PGD mode management tweaks
 

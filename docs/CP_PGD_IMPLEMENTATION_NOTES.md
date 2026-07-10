@@ -96,17 +96,24 @@ enrichment.
 ### Added — tests
 
 - `tests/unit/decompositions/test_pgd.py` — `Axis` topology, `CPPGD`
-  construction + freeze state, `interpolate_separated` keys/shapes/values,
-  `assemble` (single-mode and rank-2 sum of outer products), greedy mode
-  management (freeze/activate/zero, RuntimeError at max, optimizer growth).
+  construction + freeze state, `separated_view` keys/shapes/values (read back
+  from a `FieldLayout` after `register_into` + `fill`), a
+  `test_interpolate_separated_is_removed` regression test pinning the
+  removal, `assemble` (single-mode and rank-2 sum of outer products), greedy
+  mode management (freeze/activate/zero, RuntimeError at max, optimizer
+  growth), and `PGDFEMModel` wiring — including a format-agnostic test built
+  on a fake `TensorDecomposition` (`_ConstantDecomposition`) with no CP
+  structure, to pin that `PGDFEMModel` depends only on the base-class
+  contract.
 - `tests/integration/test_1d_beam_deflection_PGD_test.py` — reference solve:
   1D beam parametrized by Young modulus `E`, a **2-axis** decomposition
-  `u(x,E) = Σ_m S_m(x) g_m(E)`. The parametric energy is defined **in the
-  test** (`potential_energy(model, f_value)`), assembled monom-by-monom from
-  `interpolate_separated()`. Two tests: a rank-1 LBFGS solve, and a greedy
-  enrichment solve (mode 0 → `add_mode` → mode 1) that stays bounded. Both
-  match the analytical solution `u(x,E) = 0.5·f·(x−x_min)(x−x_max)/E` within
-  ~2.6% (tolerance 5%).
+  `u(x,E) = Σ_m S_m(x) g_m(E)`, solved through `PGDFEMModel` + `FieldLayout`.
+  The parametric energy is defined **in the test**
+  (`potential_energy(cppgd, field_layout, f_value)`), assembled monom-by-monom
+  by reading `cppgd.separated_view(field_layout)` off the filled layout. Two
+  tests: a rank-1 LBFGS solve, and a greedy enrichment solve (mode 0 →
+  `add_mode` → mode 1) that stays bounded. Both match the analytical solution
+  `u(x,E) = 0.5·f·(x−x_min)(x−x_max)/E` within ~2.6% (tolerance 5%).
 
 ### Added — docs
 

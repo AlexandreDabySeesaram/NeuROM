@@ -9,6 +9,8 @@ from neurom.meshes import Topology
 from neurom.fields import Field
 from neurom.constraints import NoConstraint
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
+from neurom.decompositions import TensorDecomposition
+from neurom.field_layout import FieldLayout
 
 torch.set_default_dtype(torch.float32)
 
@@ -247,3 +249,45 @@ def test_add_mode_to_optimizer_out_of_range_raises():
         model.add_mode_to_optimizer(optim, m=1)
     with pytest.raises(IndexError):
         model.add_mode_to_optimizer(optim, m=-2)
+
+
+def test_cppgd_is_a_tensor_decomposition():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    assert isinstance(model, TensorDecomposition)
+
+
+def test_register_into_populates_layout_with_all_monoms():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=3, n_modes_ini=1)
+    layout = FieldLayout()
+    model.register_into(layout)
+    # every monom name registered (3 modes x 2 axes), incl. inactive modes
+    for mode in model.monoms:
+        for f in mode:
+            assert f.name in layout._fields
+
+
+def test_fill_updates_active_monoms_matching_direct_assembly():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(
+            torch.ones_like(model.monoms[0][0].values_reduced)
+        )
+    layout = FieldLayout()
+    model.register_into(layout)
+    model.fill(layout)
+
+    res = layout[model.monoms[0][0].name]
+    ctx = model._contexts[0]
+    expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
+    assert torch.allclose(res.u, expected.u)
+
+
+def test_fill_leaves_inactive_monoms_uninterpolated():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=1)
+    layout = FieldLayout()
+    model.register_into(layout)
+    model.fill(layout)
+    # mode 1 inactive: registered but never interpolated -> RuntimeError on read
+    with pytest.raises(RuntimeError):
+        _ = layout[model.monoms[1][0].name]

@@ -14,6 +14,7 @@ from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+from neurom.decompositions.base import TensorDecomposition
 
 
 @dataclass
@@ -49,7 +50,7 @@ class Axis:
         return self.nodes_positions.topology
 
 
-class CPPGD(nn.Module):
+class CPPGD(TensorDecomposition):
     """Canonical-polyadic PGD separated-representation model.
 
     Represents ``u({x_k}) = sum_m prod_k w_m^k(x_k)`` over ``l`` axes. Holds the
@@ -166,6 +167,31 @@ class CPPGD(nn.Module):
             )
         params = [f.values_reduced for f in self.monoms[m]]
         optim.add_param_group({"params": params})
+
+    def register_into(self, field_layout):
+        """Register every monom field (all modes, all axes) in the layout.
+
+        Called once at setup. All ``n_modes_max`` modes are registered up front
+        (including not-yet-active ones) so ``add_mode`` needs no layout
+        reference. Inactive monoms are registered but never interpolated.
+        """
+        for mode in self.monoms:
+            for field in mode:
+                field_layout.add(field)
+
+    def fill(self, field_layout):
+        """Interpolate every active monom and ``update`` it in the layout.
+
+        CP analogue of ``IntegrationDomain.interpolate_all``: for each active
+        mode and each axis, interpolate the monom at that axis's quadrature
+        points and store the result under the monom's name in the layout.
+        """
+        for m in range(int(self.n_modes_truncated)):
+            for k, axis in enumerate(self.axes):
+                assembly = QuadratureAssembly(
+                    self._contexts[k], axis.sf, self.monoms[m][k]
+                )
+                field_layout.update(self.monoms[m][k], assembly.interpolate())
 
     def interpolate_separated(self):
         """Interpolate each active monom at its axis's quadrature points.

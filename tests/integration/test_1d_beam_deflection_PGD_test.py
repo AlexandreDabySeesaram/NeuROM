@@ -1,7 +1,8 @@
 import pytest
 import torch
 
-from neurom.decompositions import Axis, CPPGD, PGDFEMModel
+from neurom.decompositions import Axis, CPPGD
+from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
@@ -34,10 +35,10 @@ def build_axis(name, coords, constraint, init_values):
 
 
 def potential_energy(cppgd, field_layout, f_value):
-    """External separable parametric energy, read from the filled FieldLayout."""
-    sep = cppgd.separated_view(field_layout)
-    space = sep["space"]
-    para = sep["E"]
+    """External separable parametric energy, read from the filled FieldLayout via directory()."""
+    d = cppgd.directory()
+    space = [field_layout[name] for name in d["space"]]
+    para = [field_layout[name] for name in d["E"]]
     n_modes = len(space)
 
     dS = [jacobian_field(space[m].x, space[m].u).reshape(space[m].u.shape)
@@ -91,10 +92,11 @@ class Test1dBeamDeflectionPGD:
             init_values=torch.ones(N_E, 1),    # E monom starts at 1 (gradient flows)
         )
 
-        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=1, n_modes_ini=1)
+        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=1, n_modes_ini=1, name="beam")
         field_layout = FieldLayout()
-        model = PGDFEMModel(
-            cppgd, field_layout, lambda: potential_energy(cppgd, field_layout, f_value)
+        model = NeuROMModel(
+            field_layout, cppgd,
+            energy=lambda out: potential_energy(cppgd, out, f_value),
         )
 
         optimizer = torch.optim.LBFGS(
@@ -104,7 +106,8 @@ class Test1dBeamDeflectionPGD:
 
         def closure():
             optimizer.zero_grad()
-            loss = model()
+            out = model()
+            loss = model.energy(out)
             loss.backward(retain_graph=True)
             return loss
 
@@ -114,7 +117,7 @@ class Test1dBeamDeflectionPGD:
         # Compare assembled u(x, E) to the analytical parametric deflection.
         x_test = torch.linspace(x_min, x_max, 15)
         E_test = torch.linspace(E_min, E_max, 5)
-        u = cppgd.assemble([x_test, E_test])          # (15, 5)
+        u = model.assemble([x_test, E_test])          # (15, 5)
 
         xx = x_test.unsqueeze(-1)                      # (15, 1)
         EE = E_test.unsqueeze(0)                       # (1, 5)
@@ -123,6 +126,16 @@ class Test1dBeamDeflectionPGD:
         scale = float(u_analytical.abs().max())
         assert u.detach().numpy() == pytest.approx(
             u_analytical.numpy(), abs=self.relative_tolerance * scale
+        )
+
+        model.eval()
+        x_pts = torch.linspace(x_min, x_max, 7)
+        E_pts = torch.linspace(E_min, E_max, 7)
+        u_pw = model([x_pts, E_pts])                       # matched pointwise, (7, 1)
+        u_pw_analytical = 0.5 * f_value * (x_pts - x_min) * (x_pts - x_max) / E_pts
+        scale_pw = float(u_pw_analytical.abs().max())
+        assert u_pw.reshape(-1).numpy() == pytest.approx(
+            u_pw_analytical.numpy(), abs=self.relative_tolerance * scale_pw
         )
 
     def test_greedy_enrichment_second_mode_stays_bounded(self):
@@ -154,10 +167,11 @@ class Test1dBeamDeflectionPGD:
             init_values=torch.ones(N_E, 1),
         )
 
-        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1)
+        cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1, name="beam")
         field_layout = FieldLayout()
-        model = PGDFEMModel(
-            cppgd, field_layout, lambda: potential_energy(cppgd, field_layout, f_value)
+        model = NeuROMModel(
+            field_layout, cppgd,
+            energy=lambda out: potential_energy(cppgd, out, f_value),
         )
 
         optimizer = torch.optim.LBFGS(
@@ -167,7 +181,8 @@ class Test1dBeamDeflectionPGD:
 
         def closure():
             optimizer.zero_grad()
-            loss = model()
+            out = model()
+            loss = model.energy(out)
             loss.backward(retain_graph=True)
             return loss
 
@@ -185,7 +200,8 @@ class Test1dBeamDeflectionPGD:
 
         def closure2():
             optimizer2.zero_grad()
-            loss = model()
+            out = model()
+            loss = model.energy(out)
             loss.backward(retain_graph=True)
             return loss
 
@@ -195,7 +211,7 @@ class Test1dBeamDeflectionPGD:
         # Compare assembled u(x, E) (now rank-2) to the analytical rank-1 field.
         x_test = torch.linspace(x_min, x_max, 15)
         E_test = torch.linspace(E_min, E_max, 5)
-        u = cppgd.assemble([x_test, E_test])          # (15, 5)
+        u = model.assemble([x_test, E_test])          # (15, 5)
 
         xx = x_test.unsqueeze(-1)                      # (15, 1)
         EE = E_test.unsqueeze(0)                       # (1, 5)

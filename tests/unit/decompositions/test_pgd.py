@@ -11,7 +11,6 @@ from neurom.constraints import NoConstraint
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
-from neurom.decompositions import PGDFEMModel
 from neurom.integrate import integrate
 from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 from neurom.neurom_model import NeuROMModel
@@ -72,52 +71,19 @@ def test_cppgd_construction_structure_and_freeze():
     assert len(active) == 2
 
 
-def test_separated_view_keys_shapes_and_values():
-    axes = make_two_axes()
-    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
-
-    # Give mode-0 space monom known nodal values so we can predict the result.
-    with torch.no_grad():
-        model.monoms[0][0].values_reduced.copy_(
-            torch.ones_like(model.monoms[0][0].values_reduced)
-        )
-
-    layout = FieldLayout()
-    model.register_into(layout)
-    model.fill(layout)
-    sep = model.separated_view(layout)
-
-    # dict keyed by axis names, each a list over active modes
-    assert set(sep.keys()) == {"space", "E"}
-    assert len(sep["space"]) == 2 and len(sep["E"]) == 2
-
-    res = sep["space"][0]
-    # (N_e, N_q, u_dim): space mesh has 4 elements, TwoPoints1D -> 2 points, dim 1
-    assert res.u.shape == (4, 2, 1)
-    assert res.x.shape == (4, 2, 1)
-    assert res.measure.shape == (4, 2, 1)
-
-    # Ground truth: reference assembly of the same monom on the same context.
-    ctx = model._contexts[0]
-    expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
-    assert torch.allclose(res.u, expected.u)
-
-
-def test_separated_view_reflects_added_mode():
-    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=1)
-    layout = FieldLayout()
-    model.register_into(layout)
-    model.fill(layout)
-    assert len(model.separated_view(layout)["space"]) == 1
-
-    model.add_mode()
-    model.fill(layout)
-    assert len(model.separated_view(layout)["space"]) == 2
-
-
 def test_interpolate_separated_is_removed():
     model = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
     assert not hasattr(model, "interpolate_separated")
+
+
+def test_separated_view_is_removed():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    assert not hasattr(model, "separated_view")
+
+
+def test_pgdfemmodel_export_is_removed():
+    import neurom.decompositions as d
+    assert not hasattr(d, "PGDFEMModel")
 
 
 def test_assemble_matches_manual_outer_product():
@@ -317,34 +283,9 @@ def test_fill_leaves_inactive_monoms_uninterpolated():
         _ = layout[model.monoms[1][0].name]
 
 
-def test_pgdfemmodel_forward_returns_scalar_and_optimizes():
-    axes = make_two_axes()
-    cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
-    layout = FieldLayout()
-
-    # Linear-in-S loss: gradient is the (nonzero) shape-function * measure, so
-    # even a zero-initialised monom gets a nonzero update.
-    def loss():
-        s = cppgd.separated_view(layout)["space"][0]
-        return integrate(s.u * s.measure)
-
-    model = PGDFEMModel(cppgd, layout, loss)
-
-    out = model()
-    assert out.ndim == 0  # scalar
-
-    before = cppgd.monoms[0][0].values_reduced.detach().clone()
-    optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1.0)
-    optim.zero_grad()
-    model().backward()
-    optim.step()
-    after = cppgd.monoms[0][0].values_reduced.detach()
-    assert not torch.allclose(before, after)
-
-
 class _ConstantDecomposition(TensorDecomposition):
     """Minimal fake decomposition with NO CP structure: registers one fixed
-    Field and fills it with a constant result. Proves PGDFEMModel is generic."""
+    Field and fills it with a constant result. Proves NeuROMModel is generic."""
 
     def __init__(self):
         super().__init__()
@@ -370,19 +311,6 @@ class _ConstantDecomposition(TensorDecomposition):
 
     def assemble(self, coords):
         return torch.ones(*[c.reshape(-1).shape[0] for c in coords])
-
-
-def test_pgdfemmodel_is_format_agnostic():
-    layout = FieldLayout()
-    deco = _ConstantDecomposition()
-
-    def loss():
-        return layout["dummy"].u.sum()
-
-    model = PGDFEMModel(deco, layout, loss)
-    out = model()
-    assert deco.filled
-    assert float(out) == 1.0
 
 
 def test_cppgd_has_name_and_monom_naming():

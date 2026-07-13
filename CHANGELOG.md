@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-13 — NeuROMModel + SeparatedDomain (PGD on a classic nn.Module)
+
+Replaced `PGDFEMModel` / `CPPGD.separated_view` with a decomposition-driven
+`NeuROMModel` (train/eval `forward`): training fills the `FieldLayout` and
+returns it as the intermediate output an external `energy` consumes
+(`out = model(); loss = model.energy(out)`); eval does matched-pointwise
+inference. `CPPGD` now fills through a truncation-aware
+`SeparatedDomain(IntegrationDomain)` (built once, grows on `add_mode`) and
+exposes `directory()` so a separable energy reads modes from the layout by
+name. `evaluate`/`assemble` are vector-ready (one vector factor per mode, e.g.
+2-D displacement), guarded against >1 vector factor. `TensorDecomposition` ABC
+gains `evaluate`/`assemble`; `n_modes_truncated` is now a property delegating to
+the domain. Full suite green.
+Design: docs/superpowers/specs/2026-07-13-neurom-model-separated-domain-design.md
+
 ## 2026-07-10 — CP-PGD on the FieldLayout / FEMModel abstraction
 
 Branch `pgd_addition_solal`. Full suite: 79 passed.

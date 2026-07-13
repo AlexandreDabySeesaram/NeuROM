@@ -7,10 +7,12 @@ class TensorDecomposition(nn.Module, ABC):
     """A tensor/separated decomposition that can populate a FieldLayout.
 
     Concrete formats (CP, and later Tucker / TT) own their own factor fields and
-    know how many they are. The only contract :class:`PGDFEMModel` relies on is:
-    register those fields once (:meth:`register_into`), then re-interpolate the
-    active ones per forward (:meth:`fill`). Format-specific structure readback,
-    assembly and rank/mode enrichment stay on the concrete subclass.
+    know how many they are. The contract :class:`neurom.neurom_model.NeuROMModel`
+    relies on is: register those fields once (:meth:`register_into`) and
+    re-interpolate the active ones per training forward (:meth:`fill`), then at
+    inference evaluate the field pointwise (:meth:`evaluate`) or assemble the
+    full grid (:meth:`assemble`). Format-specific structure readback and
+    rank/mode enrichment stay on the concrete subclass.
     """
 
     @abstractmethod

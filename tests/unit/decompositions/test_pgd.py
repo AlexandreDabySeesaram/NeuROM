@@ -376,3 +376,20 @@ def test_pgdfemmodel_is_format_agnostic():
     out = model()
     assert deco.filled
     assert float(out) == 1.0
+
+
+def test_cppgd_has_name_and_monom_naming():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=1, name="beam")
+    assert model.name == "beam"
+    assert model.monoms[0][0].name == "beam_dimspace_mode0"
+    assert model.monoms[1][1].name == "beam_dimE_mode1"
+
+
+def test_cppgd_owns_separated_domain_synced_with_truncation():
+    from neurom.interpolation import SeparatedDomain
+
+    model = CPPGD(axes=make_two_axes(), n_modes_max=3, n_modes_ini=1)
+    assert isinstance(model.domain, SeparatedDomain)
+    assert int(model.domain.n_active_modes) == model.n_modes_truncated == 1
+    model.add_mode()
+    assert int(model.domain.n_active_modes) == model.n_modes_truncated == 2

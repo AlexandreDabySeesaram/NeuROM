@@ -13,6 +13,7 @@ from neurom.meshes.topology import Topology
 from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
+from neurom.interpolation.separated_domain import SeparatedDomain
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.decompositions.base import TensorDecomposition
 
@@ -64,13 +65,11 @@ class CPPGD(TensorDecomposition):
         n_modes_ini (int): Number of initially active (trainable) modes.
     """
 
-    def __init__(self, axes, n_modes_max, n_modes_ini=1):
+    def __init__(self, axes, n_modes_max, name="pgd", n_modes_ini=1):
         super().__init__()
+        self.name = name
         self.axes = list(axes)
         self.n_modes_max = n_modes_max
-        self.register_buffer(
-            "n_modes_truncated", torch.tensor(min(n_modes_ini, n_modes_max))
-        )
 
         # One Mesh + QuadratureContext per axis, shared across modes.
         self._meshes = nn.ModuleList(
@@ -89,7 +88,7 @@ class CPPGD(TensorDecomposition):
                 nn.ModuleList(
                     [
                         TrainableField(
-                            name=f"{a.name}_mode{m}",
+                            name=f"{self.name}_dim{a.name}_mode{m}",
                             topology=a.topology,
                             init_values=a.init_values,
                             constraint=a.constraint,
@@ -101,10 +100,27 @@ class CPPGD(TensorDecomposition):
             ]
         )
 
+        # Truncation-aware domain: one assembly per monom, grouped by mode.
+        mode_blocks = [
+            [
+                QuadratureAssembly(self._contexts[k], a.sf, self.monoms[m][k])
+                for k, a in enumerate(self.axes)
+            ]
+            for m in range(self.n_modes_max)
+        ]
+        self.domain = SeparatedDomain(
+            mode_blocks, n_active_modes=min(n_modes_ini, n_modes_max)
+        )
+
         # Freeze everything, then unfreeze the initially active modes.
         self.freeze_all()
-        for m in range(int(self.n_modes_truncated)):
+        for m in range(self.n_modes_truncated):
             self.unfreeze_mode(m)
+
+    @property
+    def n_modes_truncated(self) -> int:
+        """Number of currently-active modes (single source of truth: the domain)."""
+        return int(self.domain.n_active_modes)
 
     def freeze_all(self):
         """Freeze the monoms of every mode."""
@@ -124,16 +140,11 @@ class CPPGD(TensorDecomposition):
     def add_mode(self):
         """Enrich the decomposition with one new mode (greedy PGD).
 
-        Activates the next mode (zeroed out and trainable) without touching the
-        freeze state of the currently-active modes. Returns the index of the
-        newly-activated mode. Raises RuntimeError if already at n_modes_max.
+        Activates the next mode-block in the domain (zeroed out and trainable)
+        without touching the freeze state of the currently-active modes. Returns
+        the index of the newly-activated mode. Raises RuntimeError at capacity.
         """
-        if int(self.n_modes_truncated) >= self.n_modes_max:
-            raise RuntimeError(
-                f"Cannot add mode: already at n_modes_max={self.n_modes_max}."
-            )
-        new = int(self.n_modes_truncated)
-        self.n_modes_truncated += 1
+        new = self.domain.grow()
         self._zero_out(new)
         self.unfreeze_mode(new)
         return new
@@ -182,16 +193,11 @@ class CPPGD(TensorDecomposition):
     def fill(self, field_layout):
         """Interpolate every active monom and ``update`` it in the layout.
 
-        CP analogue of ``IntegrationDomain.interpolate_all``: for each active
-        mode and each axis, interpolate the monom at that axis's quadrature
-        points and store the result under the monom's name in the layout.
+        Delegates to the truncation-aware :class:`SeparatedDomain`: only active
+        modes are interpolated. CP analogue of
+        ``IntegrationDomain.interpolate_all``.
         """
-        for m in range(int(self.n_modes_truncated)):
-            for k, axis in enumerate(self.axes):
-                assembly = QuadratureAssembly(
-                    self._contexts[k], axis.sf, self.monoms[m][k]
-                )
-                field_layout.update(self.monoms[m][k], assembly.interpolate())
+        self.domain.interpolate_all(field_layout)
 
     def separated_view(self, field_layout):
         """Read the active monoms' interpolations back out of the layout.

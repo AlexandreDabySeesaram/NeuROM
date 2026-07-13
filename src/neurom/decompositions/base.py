@@ -24,3 +24,11 @@ class TensorDecomposition(nn.Module, ABC):
         Called once per forward: the PGD analogue of
         :meth:`neurom.interpolation.integration_domain.IntegrationDomain.interpolate_all`.
         """
+
+    @abstractmethod
+    def evaluate(self, coords):
+        """Evaluate the field at matched query points (inference). Returns ``(P, d)``."""
+
+    @abstractmethod
+    def assemble(self, coords):
+        """Assemble the full grid tensor over the given per-axis coordinates."""

@@ -14,6 +14,7 @@ from neurom.field_layout import FieldLayout
 from neurom.decompositions import PGDFEMModel
 from neurom.integrate import integrate
 from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
+from neurom.neurom_model import NeuROMModel
 
 torch.set_default_dtype(torch.float32)
 
@@ -364,6 +365,12 @@ class _ConstantDecomposition(TensorDecomposition):
         )
         field_layout.update(self.field, res)
 
+    def evaluate(self, coords):
+        return torch.ones(coords[0].reshape(-1).shape[0], 1)
+
+    def assemble(self, coords):
+        return torch.ones(*[c.reshape(-1).shape[0] for c in coords])
+
 
 def test_pgdfemmodel_is_format_agnostic():
     layout = FieldLayout()
@@ -464,3 +471,70 @@ def test_two_vector_axes_raises():
     a2 = make_vector_axis(name="b", n=4, dim=3)
     with pytest.raises(ValueError):
         CPPGD(axes=[a1, a2], n_modes_max=1, n_modes_ini=1)
+
+
+def test_neurommodel_train_forward_returns_layout_and_optimizes():
+    axes = make_two_axes()
+    cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    layout = FieldLayout()
+
+    def energy(out):
+        name = cppgd.directory()["space"][0]
+        s = out[name]
+        return integrate(s.u * s.measure)   # linear in S -> nonzero grad at 0 init
+
+    model = NeuROMModel(layout, cppgd, energy)
+    out = model()                            # training forward
+    assert out is layout                     # returns the filled layout
+
+    before = cppgd.monoms[0][0].values_reduced.detach().clone()
+    optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1.0)
+    optim.zero_grad()
+    loss = model.energy(model())
+    loss.backward()
+    optim.step()
+    after = cppgd.monoms[0][0].values_reduced.detach()
+    assert not torch.allclose(before, after)
+
+
+def test_neurommodel_eval_forward_matched_pointwise():
+    axes = make_two_axes()
+    cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    with torch.no_grad():
+        cppgd.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
+        cppgd.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    model.eval()
+    x = torch.tensor([2.5, 5.0])
+    E = torch.tensor([400.0, 700.0])
+    u = model([x, E])
+    assert u.shape == (2, 1)
+    assert torch.allclose(u, cppgd.evaluate([x, E]), atol=1e-6)
+
+
+def test_neurommodel_eval_forward_requires_coords():
+    cppgd = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    model.eval()
+    with pytest.raises(ValueError):
+        model()
+
+
+def test_neurommodel_assemble_delegates():
+    axes = make_two_axes()
+    cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    x = torch.tensor([2.5, 5.0])
+    E = torch.tensor([400.0, 700.0])
+    assert torch.allclose(model.assemble([x, E]), cppgd.assemble([x, E]))
+
+
+def test_neurommodel_is_format_agnostic():
+    layout = FieldLayout()
+    deco = _ConstantDecomposition()
+    model = NeuROMModel(layout, deco, energy=lambda out: out["dummy"].u.sum())
+    out = model()                            # train: fills
+    assert deco.filled
+    assert float(model.energy(out)) == 1.0
+    model.eval()
+    assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub

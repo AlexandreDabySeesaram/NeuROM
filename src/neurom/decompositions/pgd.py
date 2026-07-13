@@ -56,12 +56,17 @@ class CPPGD(TensorDecomposition):
 
     Represents ``u({x_k}) = sum_m prod_k w_m^k(x_k)`` over ``l`` axes. Holds the
     monoms ``w_m^k`` as ``TrainableField`` on each axis, manages greedy mode
-    enrichment, and exposes an assembled full-tensor view and a per-monom
-    separated view. It computes no energy and owns no training loop.
+    enrichment, fills a ``FieldLayout`` through an owned ``SeparatedDomain``, and
+    exposes the active monom field names (:meth:`directory`), matched-pointwise
+    inference (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`). It
+    computes no energy and owns no training loop.
 
     Args:
         axes (list[Axis]): The ordered axes of the decomposition.
         n_modes_max (int): Maximum number of modes.
+        name (str): Prefix for the monom field names
+            (``f"{name}_dim{axis.name}_mode{m}"``); makes them unique so several
+            decompositions can share one ``FieldLayout``.
         n_modes_ini (int): Number of initially active (trainable) modes.
     """
 

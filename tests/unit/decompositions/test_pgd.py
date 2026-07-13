@@ -393,3 +393,74 @@ def test_cppgd_owns_separated_domain_synced_with_truncation():
     assert int(model.domain.n_active_modes) == model.n_modes_truncated == 1
     model.add_mode()
     assert int(model.domain.n_active_modes) == model.n_modes_truncated == 2
+
+
+def make_vector_axis(name="space", n=5, lo=0.0, hi=10.0, dim=2):
+    coords = torch.linspace(lo, hi, n).unsqueeze(-1)
+    nodes = torch.arange(0, n)
+    elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
+    topology = Topology(nodes, elements)
+    positions = Field(name=f"{name}_positions", topology=topology, values=coords)
+    sf = LinearSegment()
+    return Axis(
+        name=name, nodes_positions=positions, sf=sf,
+        mapping=IsoparametricMapping1D(sf), quad=TwoPoints1D(),
+        constraint=NoConstraint(), init_values=torch.zeros(n, dim),
+    )
+
+
+def test_directory_axis_major_active_names():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=3, n_modes_ini=2, name="beam")
+    d = model.directory()
+    assert set(d.keys()) == {"space", "E"}
+    assert d["space"] == ["beam_dimspace_mode0", "beam_dimspace_mode1"]
+    assert d["E"] == ["beam_dimE_mode0", "beam_dimE_mode1"]
+    model.add_mode()
+    assert model.directory()["space"] == [
+        "beam_dimspace_mode0", "beam_dimspace_mode1", "beam_dimspace_mode2",
+    ]
+
+
+def test_evaluate_matched_pointwise_matches_assemble_diagonal():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
+        model.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+    x = torch.tensor([2.5, 5.0])
+    E = torch.tensor([400.0, 700.0])
+    u = model.evaluate([x, E])            # matched, (2, 1)
+    grid = model.assemble([x, E])          # (2, 2)
+    assert u.shape == (2, 1)
+    assert torch.allclose(u.reshape(-1), torch.diagonal(grid), atol=1e-5)
+
+
+def test_evaluate_and_assemble_vector_factor():
+    space = make_vector_axis(name="space", n=5, dim=2)     # 2-D displacement factor
+    para = make_axis(name="E", n=4, lo=100.0, hi=1000.0)   # scalar weight
+    model = CPPGD(axes=[space, para], n_modes_max=1, n_modes_ini=1)
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(torch.arange(10, dtype=torch.float32).reshape(5, 2))
+        model.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+    x = torch.tensor([2.5, 5.0])
+    E = torch.tensor([400.0, 700.0])
+
+    u = model.evaluate([x, E])
+    assert u.shape == (2, 2)               # (P, d)
+    grid = model.assemble([x, E])
+    assert grid.shape == (2, 2, 2)         # (N_x, N_E, d)
+
+    from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+    pwi_s = PointWiseInterpolator(model._meshes[0], space.sf, model.monoms[0][0], space.mapping)
+    pwi_g = PointWiseInterpolator(model._meshes[1], para.sf, model.monoms[0][1], para.mapping)
+    S = pwi_s.at_position(x).reshape(2, 2)
+    g = pwi_g.at_position(E).reshape(2, 1)
+    assert torch.allclose(u, S * g, atol=1e-5)
+    assert torch.allclose(torch.stack([grid[0, 0], grid[1, 1]]), u, atol=1e-5)
+
+
+def test_two_vector_axes_raises():
+    a1 = make_vector_axis(name="a", n=5, dim=2)
+    a2 = make_vector_axis(name="b", n=4, dim=3)
+    with pytest.raises(ValueError):
+        CPPGD(axes=[a1, a2], n_modes_max=1, n_modes_ini=1)

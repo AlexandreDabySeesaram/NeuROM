@@ -69,6 +69,10 @@ class CPPGD(TensorDecomposition):
         super().__init__()
         self.name = name
         self.axes = list(axes)
+        if sum(int(a.init_values.shape[1] > 1) for a in self.axes) > 1:
+            raise ValueError(
+                "CP-PGD admits at most one vector-valued factor per mode."
+            )
         self.n_modes_max = n_modes_max
 
         # One Mesh + QuadratureContext per axis, shared across modes.
@@ -190,6 +194,46 @@ class CPPGD(TensorDecomposition):
             for field in mode:
                 field_layout.add(field)
 
+    def directory(self):
+        """Ordered lookup table of active monom field names, keyed by axis.
+
+        Returns:
+            dict[str, list[str]]: axis name -> monom field names, one per active
+            mode (index ``m``). Feed to a physics/energy term to read each monom
+            out of the FieldLayout by name (``field_layout[name]``). Truncates to
+            active modes; grows after :meth:`add_mode`.
+        """
+        n = self.n_modes_truncated
+        return {
+            axis.name: [self.monoms[m][k].name for m in range(n)]
+            for k, axis in enumerate(self.axes)
+        }
+
+    def evaluate(self, coords):
+        """Evaluate ``u`` at matched query points (diagonal), summed over modes.
+
+        Args:
+            coords (list[torch.Tensor]): one 1-D tensor per axis, all length ``P``.
+
+        Returns:
+            torch.Tensor: ``(P, d)`` = ``sum_m prod_k w_m^k(coords[k][p])``; ``d``
+            is the single vector factor's dim, or 1 if all factors are scalar.
+            Detached (via ``PointWiseInterpolator``).
+        """
+        n = self.n_modes_truncated
+        total = None
+        for m in range(n):
+            prod = None
+            for k, axis in enumerate(self.axes):
+                pwi = PointWiseInterpolator(
+                    self._meshes[k], axis.sf, self.monoms[m][k], axis.mapping
+                )
+                w = pwi.at_position(coords[k].reshape(-1))   # (P, 1, dim_k)
+                w = w.reshape(w.shape[0], -1)                # (P, dim_k)
+                prod = w if prod is None else prod * w       # scalar * vector broadcasts
+            total = prod if total is None else total + prod
+        return total
+
     def fill(self, field_layout):
         """Interpolate every active monom and ``update`` it in the layout.
 
@@ -226,22 +270,33 @@ class CPPGD(TensorDecomposition):
                 the query coordinates on that axis.
 
         Returns:
-            torch.Tensor: Full tensor of shape (N_1, ..., N_l) equal to
-            ``sum_m prod_k w_m^k(coords[k])``. Detached (for post-processing).
+            torch.Tensor: full grid tensor of shape ``(N_1, ..., N_l[, d])``; the
+            trailing ``d`` is present iff a vector factor exists (else dropped).
+            Equals ``sum_m prod_k w_m^k`` over the coordinate grid. Detached.
         """
-        n_modes = int(self.n_modes_truncated)
-        per_axis = []  # per_axis[k]: (n_modes, N_k)
+        n_modes = self.n_modes_truncated
+        mode_letter = "Z"
+        per_axis = []  # per_axis[k]: (n_modes, N_k) or (n_modes, N_k, d_k)
         for k, axis in enumerate(self.axes):
-            mesh = self._meshes[k]
+            P_k = coords[k].reshape(-1).shape[0]
             cols = []
             for m in range(n_modes):
-                pwi = PointWiseInterpolator(mesh, axis.sf, self.monoms[m][k], axis.mapping)
-                cols.append(pwi.at_position(coords[k].reshape(-1)).reshape(-1))
+                pwi = PointWiseInterpolator(
+                    self._meshes[k], axis.sf, self.monoms[m][k], axis.mapping
+                )
+                w = pwi.at_position(coords[k].reshape(-1)).reshape(P_k, -1)  # (N_k, d_k)
+                cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_axis.append(torch.stack(cols, dim=0))
 
-        n_axes = len(self.axes)
-        axis_letters = string.ascii_lowercase[:n_axes]
-        mode_letter = "Z"
-        in_subs = ",".join(mode_letter + axis_letters[k] for k in range(n_axes))
-        out_subs = axis_letters
-        return torch.einsum(f"{in_subs}->{out_subs}", *per_axis)
+        grid_letters = string.ascii_lowercase[: len(self.axes)]
+        comp_pool = iter(c for c in string.ascii_uppercase if c != mode_letter)
+        in_subs, out_grid, out_comp = [], "", ""
+        for k, arr in enumerate(per_axis):
+            sub = mode_letter + grid_letters[k]
+            out_grid += grid_letters[k]
+            if arr.dim() == 3:  # vector axis: (n_modes, N_k, d_k)
+                c = next(comp_pool)
+                sub += c
+                out_comp += c
+            in_subs.append(sub)
+        return torch.einsum(f"{','.join(in_subs)}->{out_grid}{out_comp}", *per_axis)

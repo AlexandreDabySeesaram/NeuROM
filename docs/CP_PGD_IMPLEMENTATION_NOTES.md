@@ -5,6 +5,42 @@
 > body reflects the latest `FieldLayout`/`PGDFEMModel` integration; the original
 > CP-PGD module landed earlier on branch `develop_solal`.
 
+> **⚠️ Historical log.** The dated sections below are a point-in-time record and
+> some names are now superseded: `PGDFEMModel` → `NeuROMModel`
+> (`src/neurom/neurom_model.py`), and `separated_view` / `interpolate_separated`
+> were removed (read monoms back by name from the `FieldLayout` via
+> `directory()`, or with `PointWiseInterpolator` at arbitrary points). The
+> "Evaluation" section immediately below is kept current.
+
+## Evaluation: diagonal (`evaluate`) vs grid (`assemble`)
+
+Two ways to sample the trained field, with **different input formats and
+different semantics**. Pick by whether you want *paired* points or *every
+crossing*:
+
+| | `evaluate` (= `NeuROMModel.forward`, eval mode) | `assemble` (= `NeuROMModel.assemble`) |
+|---|---|---|
+| **input** | one `(P, n_axes)` tensor, **a point per row** (`pts[p] == (x_p, E_p, …)`) | a **list** of one 1-D tensor per axis |
+| **axis lengths** | all equal to `P` | **independent** `(N_1, …, N_l)` |
+| **computes** | the `P` **paired** tuples (diagonal) | **every** combination (tensor product) |
+| **output** | `(P, d)` | `(N_1, …, N_l[, d])` |
+
+- **Diagonal / `evaluate`** — a cloud of arbitrary query points, or a 1-D slice
+  (fix `E`, sweep `x` by pairing each `x` with the same `E`). Because it pairs
+  columns element-wise, every axis column must share the length `P`.
+- **Grid / `assemble`** — a full parametric surface / heatmap over `x` × `E`;
+  the lengths per axis are free and it returns the whole `(N_x, N_E)` tensor.
+
+Internals: both interpolate each monom on its axis with `PointWiseInterpolator`,
+then combine. `evaluate` multiplies the per-axis columns and sums the modes;
+`assemble` builds a dynamic `einsum` (mode index summed, one grid letter per
+axis, plus a component letter for a vector axis). The trailing `d` is the single
+vector factor's dim, dropped when all factors are scalar. Both detach.
+
+> **API note (2026-07-15):** `evaluate` takes the `(P, n_axes)` **row tensor**
+> (one point per row) — the human-friendly form. It no longer accepts the old
+> list-of-one-1-D-tensor-per-axis format; `assemble` still uses that list form.
+
 **Date:** 2026-07-10
 **Branch:** `pgd_addition_solal`
 **Commit range:** `1208881` → `e2fbd4f` (FieldLayout/PGDFEMModel integration)

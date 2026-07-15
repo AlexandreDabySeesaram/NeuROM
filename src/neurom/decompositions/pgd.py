@@ -61,6 +61,24 @@ class CPPGD(TensorDecomposition):
     inference (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`). It
     computes no energy and owns no training loop.
 
+    Evaluation: diagonal (:meth:`evaluate`) vs grid (:meth:`assemble`)
+        Two ways to sample the trained field, with **different input formats and
+        different semantics** -- pick by whether you want paired points or every
+        crossing:
+
+        * :meth:`evaluate` -- *diagonal*. Input: a single ``(P, n_axes)`` tensor,
+          one **point per row** (``pts[p] == (x_p, E_p, ...)``). Evaluates the
+          ``P`` given tuples and returns ``(P, d)``. Use it for a cloud of
+          arbitrary query points, or a 1-D slice (e.g. fix E, sweep x by pairing
+          each x with the same E). All axis columns therefore share the length P.
+        * :meth:`assemble` -- *grid*. Input: a **list** of one 1-D tensor per
+          axis, lengths **independent** ``(N_1, ..., N_l)``. Evaluates **every**
+          combination (tensor product) and returns ``(N_1, ..., N_l[, d])``. Use
+          it for a full parametric surface / heatmap over ``x`` x ``E``.
+
+        The trailing ``d`` is the single vector factor's dim (dropped if all
+        factors are scalar). Both sum over modes and detach.
+
     Args:
         axes (list[Axis]): The ordered axes of the decomposition.
         n_modes_max (int): Maximum number of modes.

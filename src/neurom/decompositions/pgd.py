@@ -214,17 +214,46 @@ class CPPGD(TensorDecomposition):
             for k, axis in enumerate(self.axes)
         }
 
+    def _as_axis_columns(self, points):
+        """Split the ``(P, n_axes)`` query-point tensor into per-axis columns.
+
+        The public form is a single ``(P, n_axes)`` tensor, one **point per
+        row** (``points[p] == (x_p, E_p, ...)``) -- the natural, human-friendly
+        form. Internally the evaluation consumes one column per axis, so this
+        just unbinds the columns (the transpose). Returns a list of ``n_axes``
+        1-D tensors of length ``P``.
+        """
+        if not torch.is_tensor(points) or points.dim() != 2:
+            raise ValueError(
+                "evaluate expects a (P, n_axes) tensor of query points, one point "
+                f"per row; got {type(points).__name__}"
+                + (f" of shape {tuple(points.shape)}" if torch.is_tensor(points) else "")
+                + "."
+            )
+        if points.shape[1] != len(self.axes):
+            raise ValueError(
+                f"Query points have {points.shape[1]} columns but the "
+                f"decomposition has {len(self.axes)} axes; each row must be a "
+                "full coordinate tuple (one value per axis)."
+            )
+        return list(points.T)
+
     def evaluate(self, coords):
         """Evaluate ``u`` at matched query points (diagonal), summed over modes.
 
         Args:
-            coords (list[torch.Tensor]): one 1-D tensor per axis, all length ``P``.
+            coords (torch.Tensor): ``(P, n_axes)`` tensor of the ``P`` query
+                points, one **point per row** (``coords[p] == (x_p, E_p, ...)``).
+                This is "matched/diagonal": each row is one full coordinate tuple,
+                evaluated as a single point; there is no grid (see
+                :meth:`assemble` for the tensor-product grid).
 
         Returns:
-            torch.Tensor: ``(P, d)`` = ``sum_m prod_k w_m^k(coords[k][p])``; ``d``
+            torch.Tensor: ``(P, d)`` = ``sum_m prod_k w_m^k(coords[p, k])``; ``d``
             is the single vector factor's dim, or 1 if all factors are scalar.
             Detached (via ``PointWiseInterpolator``).
         """
+        coords = self._as_axis_columns(coords)
         n = self.n_modes_truncated
         total = None
         for m in range(n):

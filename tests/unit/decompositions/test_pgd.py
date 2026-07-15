@@ -364,7 +364,7 @@ def test_evaluate_matched_pointwise_matches_assemble_diagonal():
         model.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
-    u = model.evaluate([x, E])            # matched, (2, 1)
+    u = model.evaluate(torch.stack([x, E], dim=1))   # matched, (2, 1)
     grid = model.assemble([x, E])          # (2, 2)
     assert u.shape == (2, 1)
     assert torch.allclose(u.reshape(-1), torch.diagonal(grid), atol=1e-5)
@@ -380,7 +380,7 @@ def test_evaluate_and_assemble_vector_factor():
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
 
-    u = model.evaluate([x, E])
+    u = model.evaluate(torch.stack([x, E], dim=1))
     assert u.shape == (2, 2)               # (P, d)
     grid = model.assemble([x, E])
     assert grid.shape == (2, 2, 2)         # (N_x, N_E, d)
@@ -435,9 +435,10 @@ def test_neurommodel_eval_forward_matched_pointwise():
     model.eval()
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
-    u = model([x, E])
+    pts = torch.stack([x, E], dim=1)
+    u = model(pts)
     assert u.shape == (2, 1)
-    assert torch.allclose(u, cppgd.evaluate([x, E]), atol=1e-6)
+    assert torch.allclose(u, cppgd.evaluate(pts), atol=1e-6)
 
 
 def test_neurommodel_eval_forward_requires_coords():

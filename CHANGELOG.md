@@ -4,20 +4,58 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-15 — evaluate() takes a (P, n_axes) point tensor (BREAKING)
+
+`TensorDecomposition.evaluate` / `NeuROMModel.forward` (eval mode) now take the
+query points as a single `(P, n_axes)` tensor, **one point per row**
+(`pts[p] == (x_p, E_p, ...)`), instead of a list of one 1-D tensor per axis. This
+is the more natural human-facing form; `CPPGD._as_axis_columns` unbinds it into
+the internal per-axis columns and validates the shape (2-D, column count ==
+n_axes) with a clear error. `assemble()` is unchanged — it still takes the
+per-axis list (independent lengths, tensor-product grid). Updated all call sites
+in the unit/integration tests (`torch.stack([x, E], dim=1)`).
+
 ## 2026-07-13 — NeuROMModel + SeparatedDomain (PGD on a classic nn.Module)
 
+Branch `pgd_addition_solal`. Full suite: 93 passed. Feature commits
+`6e41670..1097222`.
+
 Replaced `PGDFEMModel` / `CPPGD.separated_view` with a decomposition-driven
-`NeuROMModel` (train/eval `forward`): training fills the `FieldLayout` and
-returns it as the intermediate output an external `energy` consumes
-(`out = model(); loss = model.energy(out)`); eval does matched-pointwise
-inference. `CPPGD` now fills through a truncation-aware
-`SeparatedDomain(IntegrationDomain)` (built once, grows on `add_mode`) and
-exposes `directory()` so a separable energy reads modes from the layout by
-name. `evaluate`/`assemble` are vector-ready (one vector factor per mode, e.g.
-2-D displacement), guarded against >1 vector factor. `TensorDecomposition` ABC
-gains `evaluate`/`assemble`; `n_modes_truncated` is now a property delegating to
-the domain. Full suite green.
+`NeuROMModel` (top-level `src/neurom/neurom_model.py`), the counterpart of
+`FEMModel` for separated representations, whose `forward` branches on
+`self.training`:
+
+- **Training:** fills the `FieldLayout` via the decomposition and returns it as
+  the intermediate output an external `energy` consumes
+  (`out = model(); loss = model.energy(out)`) — energy is an injected callable,
+  like `FEMModel.loss`.
+- **Inference:** `forward(coords)` returns the matched-pointwise field; `assemble`
+  delegates to the decomposition for the full grid.
+
+Supporting changes:
+
+- Added `SeparatedDomain(IntegrationDomain)`
+  (`src/neurom/interpolation/separated_domain.py`): assemblies grouped into
+  per-mode blocks, built once, interpolates only the active modes, `grow()` on
+  greedy enrichment. `CPPGD.fill` now delegates to it (no more per-forward
+  `QuadratureAssembly` rebuild).
+- `CPPGD` gains a `name` (monoms named `f"{name}_dim{axis.name}_mode{m}"`) and
+  `directory()` (axis-major, active-mode monom field names) so a separable
+  energy reads modes from the layout **by name** — no `separated_view` side
+  channel. `n_modes_truncated` is now a property delegating to the domain
+  (single source of truth for the active-mode count).
+- `evaluate`/`assemble` are **vector-ready**: one vector factor per mode (e.g. a
+  2-D displacement `S_m(x)` times scalar weights), guarded by a constructor
+  `ValueError` against more than one vector factor. Scalar output shape is
+  unchanged.
+- `TensorDecomposition` ABC gains abstract `evaluate`/`assemble`; `NeuROMModel`
+  depends only on this contract (pinned by a fake-decomposition test), so
+  future Tucker / TT formats drive the same model.
+- Migrated the parametric-beam integration test onto `NeuROMModel` + `directory`
+  (energy physically unchanged) and removed `PGDFEMModel` + `separated_view`.
+
 Design: docs/superpowers/specs/2026-07-13-neurom-model-separated-domain-design.md
+Plan: docs/superpowers/plans/2026-07-13-neurom-model-separated-domain.md
 
 ## 2026-07-10 — CP-PGD on the FieldLayout / FEMModel abstraction
 

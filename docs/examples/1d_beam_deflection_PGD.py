@@ -1,16 +1,26 @@
-import pytest
+"""Parametric 1D bar deflection via CP-PGD -- runnable example.
+
+Solves u(x, E) for a bi-clamped bar under a constant axial load, with the
+Young's modulus E treated as an extra (parametric) coordinate. The solution is
+sought in separated form u(x, E) = sum_m w_m^x(x) * w_m^E(E) and built greedily,
+one mode at a time. See the accompanying ``1d_beam_deflection_PGD.md`` for the
+maths. Run directly to train and produce the two figures:
+
+    python 1d_beam_deflection_PGD.py
+"""
+
 import torch
 
 from neurom.decompositions import Axis, CPPGD
 from neurom.neurom_model import NeuROMModel
-from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.quadratures import MidPoint1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Topology
 from neurom.fields import Field
-from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+from neurom.interpolation.integration_domain import IntegrationDomain
 from neurom.constraints import Dirichlet, NoConstraint
 from neurom.differential import jacobian_field
 from neurom.inner import inner
@@ -19,146 +29,149 @@ from neurom.field_layout import FieldLayout
 
 torch.set_default_dtype(torch.float32)
 
-class Test1dBeamDeflection:
 
-    def test_beam(self, n_iter_training):
-        ## Axis 
-        # Shape function
-        sf = LinearSegment()
-        # Quadrature strategy
-        quad = TwoPoints1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
+def main(n_iter_training=150):
+    ## Axis
+    # Shape function
+    sf = LinearSegment()
+    # Quadrature strategy: one Gauss point per element (mid-point rule).
+    quad = MidPoint1D()
+    # Mapping from/to reference/physical coordinates
+    mapping = IsoparametricMapping1D(sf)
 
-        # Prepare Field layout and fill it with actual fields
-        field_layout = FieldLayout()
+    # Prepare Field layout and fill it with actual fields
+    field_layout = FieldLayout()
 
-        ## Space
-        # Dimensions
-        x_min = 0.0
-        x_max = 10.0
-        N_space = 30
+    ## Space
+    # Dimensions
+    x_min = 0.0
+    x_max = 10.0
+    N_space = 30
 
-        # Generate vertices and connectivity
-        x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
-        nodes_space = torch.arange(0, N_space)
-        elements_space = torch.vstack([torch.arange(0, N_space - 1), torch.arange(1, N_space)]).T
-        
-        topology_space = Topology(nodes_space, elements_space)
-        nodes_positions_space = Field(name=f"space_positions", topology=topology_space, values=x_array)
+    # Generate vertices and connectivity
+    x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
+    nodes_space = torch.arange(0, N_space)
+    elements_space = torch.vstack([torch.arange(0, N_space - 1), torch.arange(1, N_space)]).T
 
-        # Initialize displacement values
-        u_init = 0.5 * torch.ones(N_space, 1)
+    topology_space = Topology(nodes_space, elements_space)
+    nodes_positions_space = Field(name=f"space_positions", topology=topology_space, values=x_array)
 
-        axis_space = Axis(name = "space", 
-                        nodes_positions=nodes_positions_space, 
-                        sf= sf,
-                        mapping=mapping,
-                        quad=quad, 
-                        constraint=Dirichlet( nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)), 
-                        init_values=u_init)
+    # Initialize displacement values
+    u_init = 0.5 * torch.ones(N_space, 1)
 
-        ## E
-        # Dimensions
-        E_min = 10.0
-        E_max = 100.0
-        N_E = 20
+    axis_space = Axis(name = "space",
+                    nodes_positions=nodes_positions_space,
+                    sf= sf,
+                    mapping=mapping,
+                    quad=quad,
+                    constraint=Dirichlet( nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)),
+                    init_values=u_init)
 
-        # Generate vertices and connectivity
-        E_array = torch.linspace(E_min, E_max, N_E).unsqueeze(-1)
-        nodes_E = torch.arange(0, N_E)
-        elements_E = torch.vstack([torch.arange(0, N_E - 1), torch.arange(1, N_E)]).T
+    ## E
+    # Dimensions
+    E_min = 10.0
+    E_max = 100.0
+    N_E = 20
 
-        topology_E = Topology(nodes_E, elements_E)
-        nodes_positions_E = Field(name=f"E_positions", topology=topology_E, values=E_array)
+    # Generate vertices and connectivity
+    E_array = torch.linspace(E_min, E_max, N_E).unsqueeze(-1)
+    nodes_E = torch.arange(0, N_E)
+    elements_E = torch.vstack([torch.arange(0, N_E - 1), torch.arange(1, N_E)]).T
 
-        # Initialize E mode values
-        E_init = 0.5 * torch.ones(N_E, 1)
+    topology_E = Topology(nodes_E, elements_E)
+    nodes_positions_E = Field(name=f"E_positions", topology=topology_E, values=E_array)
 
-        axis_E = Axis(name = "E", 
-                        nodes_positions=nodes_positions_E, 
-                        sf= sf,
-                        mapping=mapping,
-                        quad=quad, 
-                        constraint=NoConstraint(), 
-                        init_values=E_init)
+    # Initialize E mode values
+    E_init = 0.5 * torch.ones(N_E, 1)
 
-        ## CP PGD object
-        pgd_approx = CPPGD(axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1)
-        # print(pgd_approx.directory())
+    axis_E = Axis(name = "E",
+                    nodes_positions=nodes_positions_E,
+                    sf= sf,
+                    mapping=mapping,
+                    quad=quad,
+                    constraint=NoConstraint(),
+                    init_values=E_init)
 
-        ###### Define constant load.
-        # The load is a *field* f(x), not a raw nodal vector: it has to be
-        # sampled at the SAME quadrature points as u so that inner(f, u) aligns
-        # (this is exactly what neurom.physics.LoadPotential does). We give it its
-        # own nodal values on the space mesh, then interpolate it once on the
-        # space axis's quadrature (same sf / quad / mapping / topology as u).
-        # For a load that is constant in E, this is the single rank-1 spatial
-        # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
-        # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly.
-        load_value = 1000.0 # x^2
+    ## CP PGD object
+    pgd_approx = CPPGD(axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1)
+    # print(pgd_approx.directory())
 
-        load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1))
-                                        )
+    ###### Define constant load.
+    # The load is a *field* f(x), not a raw nodal vector: it has to be
+    # sampled at the SAME quadrature points as u so that inner(f, u) aligns
+    # (this is exactly what neurom.physics.LoadPotential does). We give it its
+    # own nodal values on the space mesh, then interpolate it once on the
+    # space axis's quadrature (same sf / quad / mapping / topology as u).
+    # For a load that is constant in E, this is the single rank-1 spatial
+    # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
+    # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
-        # Creer le modele
-        model = NeuROMModel(field_layout=field_layout,
-                            decomposition=pgd_approx,
-                            energy = lambda out: energy(out, pgd_approx, load_name="load"))
-        
-        ## add training
-        optimizer = torch.optim.Adam(
-            [p for p in model.parameters() if p.requires_grad],
-            lr=0.1,
-        )
+    load_value = 1000.0 # x^2 ou une autre expression mathématique
+    load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1)))
+    context_f = axis_space.context # le même context que la partie spatiale
+    assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
-    
-        def closure():
-            optimizer.zero_grad()
-            out = model()
-            # print(out)
-            loss = model.energy(out)
-            loss.backward(retain_graph=True)
-            return loss
+    # Construction of the shared domain for the whole problem
+    domain = IntegrationDomain([*pgd_approx.assemblies(), assembly_f]) # do not forget * to unpack
 
-        ### Training (the most basic for now)
-        loss_history = []
-        # Mode 0
-        for _ in range(n_iter_training):
-            loss = optimizer.step(closure)
-            loss_history.append(loss.detach().item())
-        
-        # Mode 1
-        pgd_approx.freeze_mode(0)
-        pgd_approx.add_mode()                     # active le mode 1
-        pgd_approx.add_mode_to_optimizer(optimizer)
+    # Creer le modele
+    model = NeuROMModel(field_layout=field_layout,
+                        decomposition=pgd_approx,
+                        integration_domain= domain,
+                        energy = lambda out: energy(out, pgd_approx, load_name="load"))
 
-        for _ in range(n_iter_training):
-            loss = optimizer.step(closure)
-            loss_history.append(loss.detach().item())
-        
-        # Mode 2
-        pgd_approx.freeze_mode(1)
-        pgd_approx.add_mode()                     # active le mode 1
-        pgd_approx.add_mode_to_optimizer(optimizer)
+    ## add training
+    optimizer = torch.optim.Adam(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=0.1,
+    )
 
-        for _ in range(n_iter_training):
-            loss = optimizer.step(closure)
-            loss_history.append(loss.detach().item())
-        print("Successfully trained!")
 
-        ## Plotting
-        plot_convergence(loss_history) # OK
-        plot_solution(                              # investigate how to get the information monom per monom
-            model, pgd_approx,
-            x_min=x_min, x_max=x_max,
-            E_min=E_min, E_max=E_max,
-            load_value=load_value,
-        )
+    def closure():
+        optimizer.zero_grad()
+        out = model()
+        # print(out)
+        loss = model.energy(out)
+        loss.backward(retain_graph=True)
+        return loss
 
-        return
-        
- ## Plotting helpers
+    ### Training (the most basic for now)
+    loss_history = []
+    # Mode 0
+    for _ in range(n_iter_training):
+        loss = optimizer.step(closure)
+        loss_history.append(loss.detach().item())
+
+    # Mode 1
+    pgd_approx.freeze_mode(0)
+    pgd_approx.add_mode()                     # active le mode 1
+    pgd_approx.add_mode_to_optimizer(optimizer)
+
+    for _ in range(n_iter_training):
+        loss = optimizer.step(closure)
+        loss_history.append(loss.detach().item())
+
+    # Mode 2
+    pgd_approx.freeze_mode(1)
+    pgd_approx.add_mode()                     # active le mode 1
+    pgd_approx.add_mode_to_optimizer(optimizer)
+
+    for _ in range(n_iter_training):
+        loss = optimizer.step(closure)
+        loss_history.append(loss.detach().item())
+    print("Successfully trained!")
+
+    ## Plotting
+    plot_convergence(loss_history) # OK
+    plot_solution(                              # investigate how to get the information monom per monom
+        model, pgd_approx,
+        x_min=x_min, x_max=x_max,
+        E_min=E_min, E_max=E_max,
+        load_value=load_value,
+    )
+
+
+## Plotting helpers
 def plot_convergence(loss_history, save_path="pgd_convergence.png"):
     """Plot the (minimised) energy against the training iteration.
 
@@ -183,9 +196,10 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
                   save_path="pgd_vs_analytical.png"):
     """Compare the PGD solution to the analytical beam deflection.
 
-    Three panels: (1) the full solution u(x, E) at a fixed E, PGD vs analytical;
-    (2) the space factor of every mode; (3) the E factor of every mode. See the
-    per-panel comments for the scaling caveat on the mode-by-mode factors.
+    Four panels: (1) the full solution u(x, E) at a fixed E, PGD vs analytical;
+    (2) same at a fixed x, swept over E; (3) the space factor of every mode;
+    (4) the E factor of every mode. See the per-panel comments for the scaling
+    caveat on the mode-by-mode factors.
 
     Args:
         model (NeuROMModel): trained model (put in eval mode here).
@@ -205,7 +219,7 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     # uses internally in evaluate()/assemble()).
     def factor(m, k, pts):
         pwi = PointWiseInterpolator(
-            pgd_approx._meshes[k],
+            pgd_approx.axes[k].mesh,
             pgd_approx.axes[k].sf,
             pgd_approx.monoms[m][k],
             pgd_approx.axes[k].mapping,
@@ -266,9 +280,9 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     ax[1].set_title(f"Full solution u(x={x_fixed:.0f}, E)")
     ax[1].set_xlabel("E"); ax[1].set_ylabel("u"); ax[1].legend()
 
-    # approx space
+    # approx space (per mode)
     for m in range(n_modes):
-        ax[2].plot(x_fac.numpy(), norm(factor(m, 0, x_fac)).numpy(),
+        ax[2].plot(x_fac.numpy(), norm(factor(m, 0, x_fac)).detach().numpy(),
                    label=f"PGD mode {m}")
 
     # analytical space
@@ -277,9 +291,9 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     ax[2].set_title("Space factor w_m^x(x)  (normalised shape)")
     ax[2].set_xlabel("x"); ax[2].legend()
 
-    # approx E
+    # approx E (per mode)
     for m in range(n_modes):
-        ax[3].plot(E_fac.numpy(), norm(factor(m, 1, E_fac)).numpy(),
+        ax[3].plot(E_fac.numpy(), norm(factor(m, 1, E_fac)).detach().numpy(),
                    label=f"PGD mode {m}")
 
     # analytical E
@@ -300,7 +314,7 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
     directory = decomposition.directory()
     n_modes = len(directory['space'])
 
-    # on les récupère dans le field_layout 
+    # on les récupère dans le field_layout
     space_modes_names =  directory['space']
     E_modes_names = directory['E']
     space_modes = [field_layout[name] for name in space_modes_names]
@@ -308,7 +322,7 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
 
     # et le load
     load_field = field_layout[load_name]
-    
+
 
     ## Elastic
     elastic = 0.0
@@ -369,4 +383,4 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
     return elastic + load
 
 if __name__ == "__main__":
-    test = Test1dBeamDeflection().test_beam(150)
+    main(150)

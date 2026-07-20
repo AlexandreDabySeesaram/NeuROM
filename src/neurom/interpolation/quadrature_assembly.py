@@ -25,12 +25,26 @@ class QuadratureAssembly(nn.Module):
         _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
     """
 
-    def __init__(self, context: QuadratureContext, sf: ShapeFunction, field: FieldBase):
+    def __init__(
+        self,
+        context: QuadratureContext,
+        sf: ShapeFunction,
+        field: FieldBase,
+        active: bool = True,
+    ):
         super().__init__()
         self.context = context
         self.field = field
         self.sf = sf
         self._field_interpolator = FieldInterpolator(self.sf, self.field)
+        # Whether interpolate_all should evaluate this assembly. A registered
+        # buffer so it round-trips through state_dict. Monotone for PGD modes
+        # (activated, never deactivated); see the single-IntegrationDomain spec.
+        self.register_buffer("active", torch.tensor(bool(active)))
+
+    def activate(self) -> None:
+        """Mark this assembly for interpolation (in place; keeps buffer identity)."""
+        self.active.fill_(True)
 
     def interpolate(self) -> QuadratureAssemblyResult:
         """The main interpolation method

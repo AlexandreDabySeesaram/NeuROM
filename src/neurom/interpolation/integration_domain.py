@@ -25,10 +25,11 @@ class IntegrationDomain(nn.Module):
         for ctx in self._contexts:
             ctx.update()
 
-    def interpolate_all(self, field_layout: "FieldLayout"):
-        from neurom.field_layout import FieldLayout
-
-        # Interpolate all required fields and update() their values in FieldLayout
+    def interpolate_all(self, field_layout):
+        # Interpolate every *active* field and update() its values in the layout.
+        # Inactive assemblies (e.g. not-yet-enriched PGD modes) are skipped so no
+        # autograd graph is built for them.
         for assembly in self.assemblies:
-            result = assembly.interpolate()
-            field_layout.update(assembly.field, result)
+            if not bool(assembly.active):
+                continue
+            field_layout.update(assembly.field, assembly.interpolate())

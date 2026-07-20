@@ -12,6 +12,7 @@ from neurom.constraints import Dirichlet, NoConstraint
 from neurom.differential import jacobian_field
 from neurom.integrate import integrate
 from neurom.field_layout import FieldLayout
+from neurom.interpolation import IntegrationDomain
 
 torch.set_default_dtype(torch.float32)
 
@@ -95,8 +96,9 @@ class Test1dBeamDeflectionPGD:
 
         cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=1, n_modes_ini=1, name="beam")
         field_layout = FieldLayout()
+        domain = IntegrationDomain(cppgd.assemblies())
         model = NeuROMModel(
-            field_layout, cppgd,
+            field_layout, cppgd, domain,
             energy=lambda out: potential_energy(cppgd, out, f_value),
         )
 
@@ -170,8 +172,9 @@ class Test1dBeamDeflectionPGD:
 
         cppgd = CPPGD(axes=[space_axis, para_axis], n_modes_max=2, n_modes_ini=1, name="beam")
         field_layout = FieldLayout()
+        domain = IntegrationDomain(cppgd.assemblies())
         model = NeuROMModel(
-            field_layout, cppgd,
+            field_layout, cppgd, domain,
             energy=lambda out: potential_energy(cppgd, out, f_value),
         )
 

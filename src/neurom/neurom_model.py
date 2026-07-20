@@ -16,8 +16,8 @@ class NeuROMModel(nn.Module):
 
     ``forward`` branches on ``self.training``:
       * training: interpolate every active field through the domain and **return
-        the filled ``field_layout``** — the intermediate an external ``energy``
-        consumes (``output = model(); loss = model.energy(output)``).
+        the filled ``field_layout``** — the intermediate an external ``loss``
+        consumes (``output = model(); loss = model.loss(output)``).
       * inference: ``forward(coords)`` returns the matched-pointwise field
         (``decomposition.evaluate(coords)``).
 
@@ -29,17 +29,18 @@ class NeuROMModel(nn.Module):
         integration_domain (IntegrationDomain): Interpolates all active fields of
             the problem; typically ``IntegrationDomain([*decomposition.assemblies(),
             *other_assemblies])``.
-        energy (Callable): Injected callable ``energy(output) -> torch.Tensor``
-            (the counterpart of ``FEMModel.loss``), reading fields from the layout.
+        loss (Callable): Injected callable ``loss(output) -> torch.Tensor`` (the
+            counterpart of ``FEMModel.loss``; the potential energy in a mechanics
+            problem), reading fields from the layout.
     """
 
     def __init__(self, field_layout, decomposition: TensorDecomposition,
-                 integration_domain, energy):
+                 integration_domain, loss):
         super().__init__()
         self.field_layout = field_layout
         self.decomposition = decomposition
         self.integration_domain = integration_domain
-        self.energy = energy
+        self.loss = loss
         decomposition.register_into(field_layout)
 
     def forward(self, coords=None):
@@ -54,3 +55,19 @@ class NeuROMModel(nn.Module):
 
     def assemble(self, coords):
         return self.decomposition.assemble(coords)
+
+    def add_mode_to_optimizer(self, optim, m=None):
+        """Add mode ``m``'s parameters to ``optim`` as a new param group.
+
+        Keeps the optimizer wiring in the model: the decomposition only reports
+        which tensors make up a mode (:meth:`mode_parameters`), and this method
+        does the optimizer-specific ``add_param_group``. The decomposition stays
+        agnostic to the optimizer.
+
+        Args:
+            optim (torch.optim.Optimizer): Optimizer to enrich.
+            m (int, optional): Index of the mode to add. Supports negative
+                indexing. Defaults to the last-activated mode.
+        """
+        params = self.decomposition.mode_parameters(m)
+        optim.add_param_group({"params": params})

@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-20 — NeuROMModel: `energy` → `loss`; optimizer wiring moved off the PGD (BREAKING)
+
+- `NeuROMModel.__init__` renames the injected callable `energy` → `loss` (and
+  the `model.energy(...)` accessor → `model.loss(...)`), matching `FEMModel.loss`.
+- `CPPGD.add_mode_to_optimizer` moved to `NeuROMModel.add_mode_to_optimizer`, so
+  the decomposition stays agnostic to the optimizer. `CPPGD` now only reports a
+  mode's trainable tensors via the new `CPPGD.mode_parameters(m=None)`; the model
+  does the `optim.add_param_group` wiring. Callers switch from
+  `pgd.add_mode_to_optimizer(optim)` to `model.add_mode_to_optimizer(optim)`.
+
 ## 2026-07-16 — one IntegrationDomain per problem; SeparatedDomain removed (BREAKING)
 
 One `IntegrationDomain` now interpolates every field of a problem — the PGD

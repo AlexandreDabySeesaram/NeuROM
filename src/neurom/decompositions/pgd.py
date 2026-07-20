@@ -215,14 +215,20 @@ class CPPGD(TensorDecomposition):
         self.unfreeze_mode(m)
         return m
 
-    def add_mode_to_optimizer(self, optim, m=None):
-        """Add mode ``m``'s monom parameters to ``optim`` as a new param group.
+    def mode_parameters(self, m=None):
+        """Return mode ``m``'s trainable monom parameters (optimizer-agnostic).
+
+        The decomposition owns which tensors make up a mode; wiring them into an
+        optimizer is :meth:`neurom.neurom_model.NeuROMModel.add_mode_to_optimizer`'s
+        job, so the PGD stays agnostic to the optimizer.
 
         Args:
-            optim (torch.optim.Optimizer): Optimizer to enrich.
-            m (int, optional): Index of the mode to add. Supports negative
-                indexing (Python-style). Defaults to the last-activated mode
+            m (int, optional): Index of the mode. Supports negative indexing
+                (Python-style). Defaults to the last-activated mode
                 (``n_modes_truncated - 1``).
+
+        Returns:
+            list[torch.Tensor]: The monom parameters of mode ``m``, one per axis.
 
         Raises:
             IndexError: If ``m`` is out of range for the active modes.
@@ -236,8 +242,7 @@ class CPPGD(TensorDecomposition):
             raise IndexError(
                 f"Mode index {m} out of range for {n_active} active mode(s)."
             )
-        params = [f.values_reduced for f in self.monoms[m]]
-        optim.add_param_group({"params": params})
+        return [f.values_reduced for f in self.monoms[m]]
 
     def register_into(self, field_layout):
         """Register every monom field (all modes, all axes) in the layout.

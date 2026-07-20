@@ -197,50 +197,36 @@ def test_add_mode_raises_at_max():
         model.add_mode()
 
 
-def test_add_mode_to_optimizer_grows_param_groups():
+def test_mode_parameters_returns_one_param_per_axis():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
-    optim = torch.optim.SGD(
-        [p for p in model.parameters() if p.requires_grad], lr=0.1
-    )
-    n_before = sum(len(g["params"]) for g in optim.param_groups)
     model.add_mode()
-    model.add_mode_to_optimizer(optim)
-    n_after = sum(len(g["params"]) for g in optim.param_groups)
-    # 2 new monom parameters (one per axis) added
-    assert n_after == n_before + 2
+    params = model.mode_parameters()   # defaults to last-activated mode
+    # one monom parameter per axis, and they are mode 1's tensors
+    assert params == [model.monoms[1][0].values_reduced,
+                      model.monoms[1][1].values_reduced]
 
 
-def test_add_mode_to_optimizer_explicit_index():
+def test_mode_parameters_explicit_and_negative_index():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
-    optim = torch.optim.SGD(
-        [p for p in model.parameters() if p.requires_grad], lr=0.1
-    )
     model.add_mode()
     model.add_mode()
-    n_before = sum(len(g["params"]) for g in optim.param_groups)
 
-    # Explicit index adds that mode's monoms.
-    model.add_mode_to_optimizer(optim, m=1)
-    assert sum(len(g["params"]) for g in optim.param_groups) == n_before + 2
-
+    assert model.mode_parameters(m=1) == [model.monoms[1][0].values_reduced,
+                                          model.monoms[1][1].values_reduced]
     # Negative index resolves against the active modes.
-    model.add_mode_to_optimizer(optim, m=-1)
-    assert sum(len(g["params"]) for g in optim.param_groups) == n_before + 4
+    assert model.mode_parameters(m=-1) == model.mode_parameters(m=2)
 
 
-def test_add_mode_to_optimizer_out_of_range_raises():
+def test_mode_parameters_out_of_range_raises():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
-    optim = torch.optim.SGD(
-        [p for p in model.parameters() if p.requires_grad], lr=0.1
-    )
     # Only mode 0 is active.
     with pytest.raises(IndexError):
-        model.add_mode_to_optimizer(optim, m=1)
+        model.mode_parameters(m=1)
     with pytest.raises(IndexError):
-        model.add_mode_to_optimizer(optim, m=-2)
+        model.mode_parameters(m=-2)
 
 
 def test_cppgd_is_a_tensor_decomposition():
@@ -428,11 +414,27 @@ def test_neurommodel_train_forward_returns_layout_and_optimizes():
     before = cppgd.monoms[0][0].values_reduced.detach().clone()
     optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1.0)
     optim.zero_grad()
-    loss = model.energy(model())
+    loss = model.loss(model())
     loss.backward()
     optim.step()
     after = cppgd.monoms[0][0].values_reduced.detach()
     assert not torch.allclose(before, after)
+
+
+def test_neurommodel_add_mode_to_optimizer_grows_param_groups():
+    axes = make_two_axes()
+    cppgd = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
+    domain = IntegrationDomain(cppgd.assemblies())
+    model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
+    optim = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=0.1
+    )
+    n_before = sum(len(g["params"]) for g in optim.param_groups)
+    cppgd.add_mode()
+    model.add_mode_to_optimizer(optim)
+    n_after = sum(len(g["params"]) for g in optim.param_groups)
+    # 2 new monom parameters (one per axis) added
+    assert n_after == n_before + 2
 
 
 def test_neurommodel_eval_forward_matched_pointwise():
@@ -442,7 +444,7 @@ def test_neurommodel_eval_forward_matched_pointwise():
         cppgd.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
         cppgd.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
     domain = IntegrationDomain(cppgd.assemblies())
-    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
+    model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     model.eval()
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
@@ -455,7 +457,7 @@ def test_neurommodel_eval_forward_matched_pointwise():
 def test_neurommodel_eval_forward_requires_coords():
     cppgd = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
-    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
+    model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     model.eval()
     with pytest.raises(ValueError):
         model()
@@ -465,7 +467,7 @@ def test_neurommodel_assemble_delegates():
     axes = make_two_axes()
     cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
-    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
+    model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
     assert torch.allclose(model.assemble([x, E]), cppgd.assemble([x, E]))
@@ -475,12 +477,12 @@ def test_neurommodel_is_format_agnostic():
     layout = FieldLayout()
     deco = _ConstantDecomposition()
     domain = IntegrationDomain(deco.assemblies())
-    model = NeuROMModel(layout, deco, domain, energy=lambda out: out["dummy"].u.sum())
+    model = NeuROMModel(layout, deco, domain, loss=lambda out: out["dummy"].u.sum())
     out = model()                            # train: fills via the domain
     # Independent expected value: the fake's field is ones on 3 elements x 2
     # quad points, interpolated to ones -> sum 6.0. Proves the domain actually
     # interpolated the field (an unfilled field would raise on `.u`).
-    assert float(model.energy(out).detach()) == 6.0
+    assert float(model.loss(out).detach()) == 6.0
     model.eval()
     assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub
 

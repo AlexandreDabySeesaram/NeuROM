@@ -174,7 +174,7 @@ class Test1dBeamDeflection:
         model = NeuROMModel(field_layout=field_layout,
                             decomposition=pgd_approx,
                             integration_domain= domain,
-                            energy = lambda out: energy(out, pgd_approx, load_name="load"))
+                            loss = lambda out: energy(out, pgd_approx, load_name="load"))
 
         ## add training
         optimizer = torch.optim.Adam(
@@ -187,7 +187,7 @@ class Test1dBeamDeflection:
             optimizer.zero_grad()
             out = model()
             # print(out)
-            loss = model.energy(out)
+            loss = model.loss(out)
             loss.backward(retain_graph=True)
             return loss
 
@@ -206,7 +206,7 @@ class Test1dBeamDeflection:
             if mode_idx > 0:
                 pgd_approx.freeze_mode(mode_idx - 1)
                 pgd_approx.add_mode()                     # active le mode suivant
-                pgd_approx.add_mode_to_optimizer(optimizer)
+                model.add_mode_to_optimizer(optimizer)
 
             mode_hist = []   # this mode's energy trajectory (for the plateau test)
             loss_val = math.nan
@@ -256,7 +256,7 @@ class Test1dBeamDeflection:
         def polish_closure():
             polish_optimizer.zero_grad()
             out = model()
-            loss = model.energy(out)
+            loss = model.loss(out)
             loss.backward(retain_graph=True)
             return loss
 

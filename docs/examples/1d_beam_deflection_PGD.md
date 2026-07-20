@@ -127,7 +127,8 @@ The modes are built **one at a time** (greedy enrichment):
 3. repeat up to `n_modes_max` (here 3).
 
 In the code this is `pgd_approx.freeze_mode(...)`, `pgd_approx.add_mode()` and
-`pgd_approx.add_mode_to_optimizer(...)`. Even though the exact solution here is
+`model.add_mode_to_optimizer(...)` (the optimizer wiring lives on the model, so
+the PGD stays optimizer-agnostic). Even though the exact solution here is
 rank-1 (a single mode is enough), we deliberately add several modes to exercise
 the enrichment machinery; the extra modes come out small.
 

@@ -118,7 +118,7 @@ def main(n_iter_training=150):
     model = NeuROMModel(field_layout=field_layout,
                         decomposition=pgd_approx,
                         integration_domain= domain,
-                        energy = lambda out: energy(out, pgd_approx, load_name="load"))
+                        loss = lambda out: energy(out, pgd_approx, load_name="load"))
 
     ## add training
     optimizer = torch.optim.Adam(
@@ -131,7 +131,7 @@ def main(n_iter_training=150):
         optimizer.zero_grad()
         out = model()
         # print(out)
-        loss = model.energy(out)
+        loss = model.loss(out)
         loss.backward(retain_graph=True)
         return loss
 
@@ -145,7 +145,7 @@ def main(n_iter_training=150):
     # Mode 1
     pgd_approx.freeze_mode(0)
     pgd_approx.add_mode()                     # active le mode 1
-    pgd_approx.add_mode_to_optimizer(optimizer)
+    model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
         loss = optimizer.step(closure)
@@ -154,7 +154,7 @@ def main(n_iter_training=150):
     # Mode 2
     pgd_approx.freeze_mode(1)
     pgd_approx.add_mode()                     # active le mode 1
-    pgd_approx.add_mode_to_optimizer(optimizer)
+    model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
         loss = optimizer.step(closure)

@@ -10,6 +10,7 @@ from neurom.meshes import Topology, Mesh
 from neurom.fields import Field
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
+from neurom.interpolation.integration_domain import IntegrationDomain
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.constraints import Dirichlet, NoConstraint
 from neurom.differential import jacobian_field
@@ -101,10 +102,19 @@ class Test1dBeamDeflection:
         load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1))
                                         )
 
+        # One QuadratureAssembly for the load, sharing the SPACE axis context so
+        # it is sampled at the same quadrature points as the space monoms.
+        assembly_load = QuadratureAssembly(axis_space.context, sf, load_field)
+
+        # ONE IntegrationDomain for the whole problem: the PGD monoms AND the
+        # load. This is what fixes "Field 'load' registered but not interpolated".
+        domain = IntegrationDomain([*pgd_approx.assemblies(), assembly_load])
+
         # Creer le modele
         model = NeuROMModel(field_layout=field_layout,
                             decomposition=pgd_approx,
-                            energy = lambda out: energy(out, pgd_approx, load_name="load"))
+                            integration_domain=domain,
+                            energy=lambda out: energy(out, pgd_approx, load_name="load"))
         
         ## add training
         optimizer = torch.optim.Adam(
@@ -205,7 +215,7 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     # uses internally in evaluate()/assemble()).
     def factor(m, k, pts):
         pwi = PointWiseInterpolator(
-            pgd_approx._meshes[k],
+            pgd_approx.axes[k].mesh,
             pgd_approx.axes[k].sf,
             pgd_approx.monoms[m][k],
             pgd_approx.axes[k].mapping,

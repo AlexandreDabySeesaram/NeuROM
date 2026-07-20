@@ -86,8 +86,6 @@ class Test1dBeamDeflection:
         ## CP PGD object
         pgd_approx = CPPGD(axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1)
         # print(pgd_approx.directory())
-        
-        field_layout = FieldLayout()
 
         ###### Define constant load.
         # The load is a *field* f(x), not a raw nodal vector: it has to be
@@ -98,21 +96,15 @@ class Test1dBeamDeflection:
         # For a load that is constant in E, this is the single rank-1 spatial
         # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly.
-        load_value = 1000.0
-        load_field = Field(
-            name="load",
-            topology=topology_space,
-            values=load_value * torch.ones(N_space, 1),
-        )
-        load_context = QuadratureContext(
-            Mesh(topology_space, nodes_positions_space), quad, mapping
-        )
-        load_interp = QuadratureAssembly(load_context, sf, load_field).interpolate()
+        load_value = 1000.0 # x^2
+
+        load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1))
+                                        )
 
         # Creer le modele
         model = NeuROMModel(field_layout=field_layout,
                             decomposition=pgd_approx,
-                            energy = lambda out: energy(out, pgd_approx, load_interp))
+                            energy = lambda out: energy(out, pgd_approx, load_name="load"))
         
         ## add training
         optimizer = torch.optim.Adam(
@@ -131,15 +123,33 @@ class Test1dBeamDeflection:
 
         ### Training (the most basic for now)
         loss_history = []
+        # Mode 0
         for _ in range(n_iter_training):
             loss = optimizer.step(closure)
             loss_history.append(loss.detach().item())
+        
+        # Mode 1
+        pgd_approx.freeze_mode(0)
+        pgd_approx.add_mode()                     # active le mode 1
+        pgd_approx.add_mode_to_optimizer(optimizer)
 
+        for _ in range(n_iter_training):
+            loss = optimizer.step(closure)
+            loss_history.append(loss.detach().item())
+        
+        # Mode 2
+        pgd_approx.freeze_mode(1)
+        pgd_approx.add_mode()                     # active le mode 1
+        pgd_approx.add_mode_to_optimizer(optimizer)
+
+        for _ in range(n_iter_training):
+            loss = optimizer.step(closure)
+            loss_history.append(loss.detach().item())
         print("Successfully trained!")
 
         ## Plotting
-        plot_convergence(loss_history)
-        plot_solution(
+        plot_convergence(loss_history) # OK
+        plot_solution(                              # investigate how to get the information monom per monom
             model, pgd_approx,
             x_min=x_min, x_max=x_max,
             E_min=E_min, E_max=E_max,
@@ -168,7 +178,6 @@ def plot_convergence(loss_history, save_path="pgd_convergence.png"):
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
     plt.show()
-
 
 def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
                   save_path="pgd_vs_analytical.png"):
@@ -219,6 +228,15 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     u_pgd_full = model(torch.stack([x_plot, E_plot], dim=1)).reshape(-1)  # sum_m w_m^x w_m^E
     u_ana_full = 0.5 * load_value * (x_plot - x_min) * (x_plot - x_max) / E_plot
 
+    # Counterpart of panel 1: fix x at mid-span, sweep E. Same diagonal
+    # evaluate (each E paired with the same x_fixed), so we see the parametric
+    # dependence u(x_fixed, .) -- a 1/E curve -- rather than the spatial parabola.
+    x_fixed = (x_min + x_max) / 2
+    E_sweep = torch.linspace(E_min, E_max, 200)
+    x_sweep = x_fixed * torch.ones_like(E_sweep)
+    u_pgd_E = model(torch.stack([x_sweep, E_sweep], dim=1)).reshape(-1)
+    u_ana_E = 0.5 * load_value * (x_fixed - x_min) * (x_fixed - x_max) / E_sweep
+
     # --- 2) MODE per MODE, AXIS per AXIS -----------------------------------
     # Caveat: individual factors carry an arbitrary scale (w_m^x -> c w_m^x,
     # w_m^E -> w_m^E / c leaves the product unchanged), so only their SHAPE is
@@ -232,29 +250,43 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     ana_x_shape = (x_fac - x_min) * (x_fac - x_max)
     ana_E_shape = 1.0 / E_fac
 
-    fig, ax = plt.subplots(1, 3, figsize=(15, 4))
+    fig, ax = plt.subplots(1, 4, figsize=(20, 4))
 
+    # Full pgd vs analytical at fixed E (sweep x)
     ax[0].plot(x_plot.numpy(), u_ana_full.numpy(), "k-", lw=2, label="analytical")
     ax[0].plot(x_plot.numpy(), u_pgd_full.detach().numpy(), "r--", lw=2,
                label="PGD (sum of modes)")
     ax[0].set_title(f"Full solution u(x, E={E_fixed:.0f})")
     ax[0].set_xlabel("x"); ax[0].set_ylabel("u"); ax[0].legend()
 
-    for m in range(n_modes):
-        ax[1].plot(x_fac.numpy(), norm(factor(m, 0, x_fac)).numpy(),
-                   label=f"PGD mode {m}")
-    ax[1].plot(x_fac.numpy(), norm(ana_x_shape).numpy(), "k:", lw=2,
-               label="analytical shape")
-    ax[1].set_title("Space factor w_m^x(x)  (normalised shape)")
-    ax[1].set_xlabel("x"); ax[1].legend()
+    # Full pgd vs analytical at fixed x (sweep E) -- counterpart of panel 0
+    ax[1].plot(E_sweep.numpy(), u_ana_E.numpy(), "k-", lw=2, label="analytical")
+    ax[1].plot(E_sweep.numpy(), u_pgd_E.detach().numpy(), "r--", lw=2,
+               label="PGD (sum of modes)")
+    ax[1].set_title(f"Full solution u(x={x_fixed:.0f}, E)")
+    ax[1].set_xlabel("E"); ax[1].set_ylabel("u"); ax[1].legend()
 
+    # approx space
     for m in range(n_modes):
-        ax[2].plot(E_fac.numpy(), norm(factor(m, 1, E_fac)).numpy(),
+        ax[2].plot(x_fac.numpy(), norm(factor(m, 0, x_fac)).numpy(),
                    label=f"PGD mode {m}")
-    ax[2].plot(E_fac.numpy(), norm(ana_E_shape).numpy(), "k:", lw=2,
+
+    # analytical space
+    ax[2].plot(x_fac.numpy(), norm(ana_x_shape).numpy(), "k:", lw=2,
+               label="analytical shape")
+    ax[2].set_title("Space factor w_m^x(x)  (normalised shape)")
+    ax[2].set_xlabel("x"); ax[2].legend()
+
+    # approx E
+    for m in range(n_modes):
+        ax[3].plot(E_fac.numpy(), norm(factor(m, 1, E_fac)).numpy(),
+                   label=f"PGD mode {m}")
+
+    # analytical E
+    ax[3].plot(E_fac.numpy(), norm(ana_E_shape).numpy(), "k:", lw=2,
                label="analytical 1/E shape")
-    ax[2].set_title("E factor w_m^E(E)  (normalised shape)")
-    ax[2].set_xlabel("E"); ax[2].legend()
+    ax[3].set_title("E factor w_m^E(E)  (normalised shape)")
+    ax[3].set_xlabel("E"); ax[3].legend()
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
@@ -263,8 +295,7 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
 
  ## Energy
 
-
-def energy(field_layout:FieldLayout, decomposition: any, load_interp : any):
+def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
     # on va chercher les noms des champs {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
     directory = decomposition.directory()
     n_modes = len(directory['space'])
@@ -274,6 +305,9 @@ def energy(field_layout:FieldLayout, decomposition: any, load_interp : any):
     E_modes_names = directory['E']
     space_modes = [field_layout[name] for name in space_modes_names]
     E_modes = [field_layout[name] for name in E_modes_names]
+
+    # et le load
+    load_field = field_layout[load_name]
     
 
     ## Elastic
@@ -326,13 +360,13 @@ def energy(field_layout:FieldLayout, decomposition: any, load_interp : any):
     # the old raw nodal `external_load_values` (N_space, 1), which broadcast wrong
     # against quadrature-point values (silently with N_q=1, crashing with N_q>1).
     # Gm = ∫ lmbda dE carries the constant-in-E factor of the separated load.
-    load_q = load_interp.u
+    load_f = load_field.u
     for m in range(n_modes):
-        Fx = integrate(inner(load_q, u[m]) * J_u[m])
+        Fx = integrate(inner(load_f, u[m]) * J_u[m])
         Gm = integrate(lmbdas[m] * J_E[m])
         load = load + Fx * Gm
 
     return elastic + load
 
 if __name__ == "__main__":
-    test = Test1dBeamDeflection().test_beam(1000)
+    test = Test1dBeamDeflection().test_beam(150)

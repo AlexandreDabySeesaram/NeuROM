@@ -167,20 +167,19 @@ class CPPGD(TensorDecomposition):
     def add_mode(self):
         """Enrich the decomposition with one new mode (greedy PGD).
 
-        Activates the next mode-block in the domain (zeroed out and trainable)
-        without touching the freeze state of the currently-active modes. Returns
-        the index of the newly-activated mode. Raises RuntimeError at capacity.
+        Activates the next mode-block in the domain (trainable) without touching
+        the freeze state of the currently-active modes. Returns the index of the
+        newly-activated mode. Raises RuntimeError at capacity.
+
+        The new mode keeps its ``Axis.init_values`` seed rather than being zeroed:
+        an all-zero mode is a stationary point of the energy (every gradient
+        component is proportional to the *other* factor, so both stay locked at
+        0), which never takes off under a gradient optimizer. A non-zero
+        parametric seed lets the linear load term drive the enrichment.
         """
         new = self.domain.grow()
-        self._zero_out(new)
         self.unfreeze_mode(new)
         return new
-
-    def _zero_out(self, m):
-        """Zero the nodal values of every monom of mode ``m``."""
-        with torch.no_grad():
-            for field in self.monoms[m]:
-                field.values_reduced.zero_()
 
     def add_mode_to_optimizer(self, optim, m=None):
         """Add mode ``m``'s monom parameters to ``optim`` as a new param group.

@@ -4,6 +4,16 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-15 — add_mode() no longer zeroes the new mode
+
+`CPPGD.add_mode()` now activates + unfreezes the new mode **without** zeroing its
+monoms (removed `_zero_out`); the mode keeps its `Axis.init_values` seed. An
+all-zero mode is a stationary point of the energy — every gradient component is
+proportional to the other factor, so both factors stay locked at 0 and the mode
+never takes off under a gradient optimizer. A non-zero (parametric) seed lets the
+linear load term drive the greedy enrichment. Updated the unit test that pinned
+the old zero-out contract.
+
 ## 2026-07-15 — evaluate() takes a (P, n_axes) point tensor (BREAKING)
 
 `TensorDecomposition.evaluate` / `NeuROMModel.forward` (eval mode) now take the

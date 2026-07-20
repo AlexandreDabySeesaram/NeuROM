@@ -172,7 +172,7 @@ def test_add_mode_activates_new_without_freezing_previous():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
 
-    # Dirty the (frozen) mode-1 monoms so we can check zero-out.
+    # Seed the (frozen) mode-1 monoms so we can check they are preserved.
     with torch.no_grad():
         for f in model.monoms[1]:
             f.values_reduced.add_(7.0)
@@ -184,8 +184,9 @@ def test_add_mode_activates_new_without_freezing_previous():
     # Previous mode left untouched (still active), new mode active
     assert all(f.values_reduced.requires_grad for f in model.monoms[0])
     assert all(f.values_reduced.requires_grad for f in model.monoms[1])
-    # New mode zeroed out
-    assert all(torch.count_nonzero(f.values_reduced) == 0 for f in model.monoms[1])
+    # New mode keeps its seed (no zero-out): an all-zero mode is a stationary
+    # point of the energy and never takes off, so add_mode preserves init_values.
+    assert all(torch.count_nonzero(f.values_reduced) > 0 for f in model.monoms[1])
 
 
 def test_add_mode_raises_at_max():

@@ -13,7 +13,6 @@ from neurom.meshes.topology import Topology
 from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
-from neurom.interpolation.separated_domain import SeparatedDomain
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.decompositions.base import TensorDecomposition
 
@@ -65,8 +64,9 @@ class CPPGD(TensorDecomposition):
 
     Represents ``u({x_k}) = sum_m prod_k w_m^k(x_k)`` over ``l`` axes. Holds the
     monoms ``w_m^k`` as ``TrainableField`` on each axis, manages greedy mode
-    enrichment, fills a ``FieldLayout`` through an owned ``SeparatedDomain``, and
-    exposes the active monom field names (:meth:`directory`), matched-pointwise
+    enrichment, fills a ``FieldLayout`` from its own flagged
+    ``QuadratureAssembly`` grid, and exposes the active monom field names
+    (:meth:`directory`), matched-pointwise
     inference (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`). It
     computes no energy and owns no training loop.
 
@@ -107,16 +107,10 @@ class CPPGD(TensorDecomposition):
             )
         self.n_modes_max = n_modes_max
 
-        # One Mesh + QuadratureContext per axis, shared across modes.
-        self._meshes = nn.ModuleList(
-            [Mesh(a.topology, a.nodes_positions) for a in self.axes]
-        )
-        self._contexts = nn.ModuleList(
-            [
-                QuadratureContext(mesh, a.quad, a.mapping)
-                for mesh, a in zip(self._meshes, self.axes)
-            ]
-        )
+        # Contexts are built and owned by the axes (Axis.__post_init__). Keep a
+        # reference ModuleList only so nn.Module registers them (.to(device),
+        # state_dict); dedup by identity happens in IntegrationDomain.
+        self._contexts = nn.ModuleList([a.context for a in self.axes])
 
         # Grid of monoms: modes x axes of TrainableField.
         self.monoms = nn.ModuleList(
@@ -136,16 +130,23 @@ class CPPGD(TensorDecomposition):
             ]
         )
 
-        # Truncation-aware domain: one assembly per monom, grouped by mode.
-        mode_blocks = [
+        # One QuadratureAssembly per monom, grouped into mode-blocks. The leading
+        # `n_ini` blocks start active; the rest inactive. `active` is the single
+        # source of truth for truncation (n_modes_truncated counts leading active
+        # blocks) — no separate counter to keep in sync.
+        n_ini = min(n_modes_ini, n_modes_max)
+        self._assemblies = nn.ModuleList(
             [
-                QuadratureAssembly(self._contexts[k], a.sf, self.monoms[m][k])
-                for k, a in enumerate(self.axes)
+                nn.ModuleList(
+                    [
+                        QuadratureAssembly(
+                            a.context, a.sf, self.monoms[m][k], active=(m < n_ini)
+                        )
+                        for k, a in enumerate(self.axes)
+                    ]
+                )
+                for m in range(self.n_modes_max)
             ]
-            for m in range(self.n_modes_max)
-        ]
-        self.domain = SeparatedDomain(
-            mode_blocks, n_active_modes=min(n_modes_ini, n_modes_max)
         )
 
         # Freeze everything, then unfreeze the initially active modes.
@@ -155,8 +156,26 @@ class CPPGD(TensorDecomposition):
 
     @property
     def n_modes_truncated(self) -> int:
-        """Number of currently-active modes (single source of truth: the domain)."""
-        return int(self.domain.n_active_modes)
+        """Number of active modes: the leading run of active mode-blocks.
+
+        Single source of truth is the assemblies' `active` flags. Active blocks
+        are contiguous from index 0 because the greedy lifecycle is monotone —
+        a mode, once activated, is never deactivated.
+        """
+        n = 0
+        for block in self._assemblies:
+            if not bool(block[0].active):
+                break
+            n += 1
+        return n
+
+    def assemblies(self):
+        """Flat list of this decomposition's QuadratureAssembly, one per monom.
+
+        Mode-major then axis order. The seam a caller uses to build the shared
+        ``IntegrationDomain([*pgd.assemblies(), other_assembly])``.
+        """
+        return [a for block in self._assemblies for a in block]
 
     def freeze_all(self):
         """Freeze the monoms of every mode."""
@@ -176,9 +195,11 @@ class CPPGD(TensorDecomposition):
     def add_mode(self):
         """Enrich the decomposition with one new mode (greedy PGD).
 
-        Activates the next mode-block in the domain (trainable) without touching
-        the freeze state of the currently-active modes. Returns the index of the
-        newly-activated mode. Raises RuntimeError at capacity.
+        Activates the next mode-block's assemblies, then unfreezes its monoms
+        (activate-before-unfreeze, so the mode never passes through the illegal
+        active=False/requires_grad=True state). Leaves the freeze state of the
+        currently-active modes untouched. Returns the new mode index. Raises
+        RuntimeError at capacity.
 
         The new mode keeps its ``Axis.init_values`` seed rather than being zeroed:
         an all-zero mode is a stationary point of the energy (every gradient
@@ -186,9 +207,13 @@ class CPPGD(TensorDecomposition):
         0), which never takes off under a gradient optimizer. A non-zero
         parametric seed lets the linear load term drive the enrichment.
         """
-        new = self.domain.grow()
-        self.unfreeze_mode(new)
-        return new
+        m = self.n_modes_truncated
+        if m >= self.n_modes_max:
+            raise RuntimeError("Cannot add a mode: all modes are already active.")
+        for assembly in self._assemblies[m]:
+            assembly.activate()
+        self.unfreeze_mode(m)
+        return m
 
     def add_mode_to_optimizer(self, optim, m=None):
         """Add mode ``m``'s monom parameters to ``optim`` as a new param group.
@@ -286,7 +311,7 @@ class CPPGD(TensorDecomposition):
             prod = None
             for k, axis in enumerate(self.axes):
                 pwi = PointWiseInterpolator(
-                    self._meshes[k], axis.sf, self.monoms[m][k], axis.mapping
+                    axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
                 w = pwi.at_position(coords[k].reshape(-1))   # (P, 1, dim_k)
                 w = w.reshape(w.shape[0], -1)                # (P, dim_k)
@@ -297,11 +322,15 @@ class CPPGD(TensorDecomposition):
     def fill(self, field_layout):
         """Interpolate every active monom and ``update`` it in the layout.
 
-        Delegates to the truncation-aware :class:`SeparatedDomain`: only active
-        modes are interpolated. CP analogue of
-        ``IntegrationDomain.interpolate_all``.
+        TEMPORARY: kept only so the not-yet-updated NeuROMModel keeps working
+        during the refactor. Task 4 removes this and routes interpolation through
+        the injected IntegrationDomain instead.
         """
-        self.domain.interpolate_all(field_layout)
+        for block in self._assemblies:
+            for assembly in block:
+                if not bool(assembly.active):
+                    continue
+                field_layout.update(assembly.field, assembly.interpolate())
 
     def assemble(self, coords):
         """Assemble the full separated tensor at the given per-axis coordinates.
@@ -323,7 +352,7 @@ class CPPGD(TensorDecomposition):
             cols = []
             for m in range(n_modes):
                 pwi = PointWiseInterpolator(
-                    self._meshes[k], axis.sf, self.monoms[m][k], axis.mapping
+                    axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
                 w = pwi.at_position(coords[k].reshape(-1)).reshape(P_k, -1)  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)

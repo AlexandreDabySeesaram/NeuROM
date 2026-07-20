@@ -109,10 +109,10 @@ def test_assemble_matches_manual_outer_product():
     from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 
     pwi_s = PointWiseInterpolator(
-        model._meshes[0], axes[0].sf, model.monoms[0][0], axes[0].mapping
+        axes[0].mesh, axes[0].sf, model.monoms[0][0], axes[0].mapping
     )
     pwi_e = PointWiseInterpolator(
-        model._meshes[1], axes[1].sf, model.monoms[0][1], axes[1].mapping
+        axes[1].mesh, axes[1].sf, model.monoms[0][1], axes[1].mapping
     )
     s = pwi_s.at_position(x).reshape(-1)
     g = pwi_e.at_position(E).reshape(-1)
@@ -149,16 +149,16 @@ def test_assemble_sums_two_modes_matching_manual_outer_products():
     from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 
     pwi_s0 = PointWiseInterpolator(
-        model._meshes[0], axes[0].sf, model.monoms[0][0], axes[0].mapping
+        axes[0].mesh, axes[0].sf, model.monoms[0][0], axes[0].mapping
     )
     pwi_e0 = PointWiseInterpolator(
-        model._meshes[1], axes[1].sf, model.monoms[0][1], axes[1].mapping
+        axes[1].mesh, axes[1].sf, model.monoms[0][1], axes[1].mapping
     )
     pwi_s1 = PointWiseInterpolator(
-        model._meshes[0], axes[0].sf, model.monoms[1][0], axes[0].mapping
+        axes[0].mesh, axes[0].sf, model.monoms[1][0], axes[0].mapping
     )
     pwi_e1 = PointWiseInterpolator(
-        model._meshes[1], axes[1].sf, model.monoms[1][1], axes[1].mapping
+        axes[1].mesh, axes[1].sf, model.monoms[1][1], axes[1].mapping
     )
     s0 = pwi_s0.at_position(x).reshape(-1)
     g0 = pwi_e0.at_position(E).reshape(-1)
@@ -269,8 +269,9 @@ def test_fill_updates_active_monoms_matching_direct_assembly():
     model.fill(layout)
 
     res = layout[model.monoms[0][0].name]
-    ctx = model._contexts[0]
-    expected = QuadratureAssembly(ctx, axes[0].sf, model.monoms[0][0]).interpolate()
+    expected = QuadratureAssembly(
+        axes[0].context, axes[0].sf, model.monoms[0][0]
+    ).interpolate()
     assert torch.allclose(res.u, expected.u)
 
 
@@ -321,14 +322,46 @@ def test_cppgd_has_name_and_monom_naming():
     assert model.monoms[1][1].name == "beam_dimE_mode1"
 
 
-def test_cppgd_owns_separated_domain_synced_with_truncation():
-    from neurom.interpolation import SeparatedDomain
-
+def test_n_modes_truncated_counts_active_blocks():
     model = CPPGD(axes=make_two_axes(), n_modes_max=3, n_modes_ini=1)
-    assert isinstance(model.domain, SeparatedDomain)
-    assert int(model.domain.n_active_modes) == model.n_modes_truncated == 1
+    assert model.n_modes_truncated == 1
+    # exactly the leading block's assemblies are active
+    assert all(bool(a.active) for a in model._assemblies[0])
+    assert all(not bool(a.active) for a in model._assemblies[1])
     model.add_mode()
-    assert int(model.domain.n_active_modes) == model.n_modes_truncated == 2
+    assert model.n_modes_truncated == 2
+    assert all(bool(a.active) for a in model._assemblies[1])
+
+
+def test_assemblies_accessor_is_flat_and_shares_axis_contexts():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
+    flat = model.assemblies()
+    assert len(flat) == 3 * 2                       # n_modes_max * n_axes
+    # mode-major, axis order: block m, axis k -> flat[m * n_axes + k]
+    assert flat[0].context is axes[0].context
+    assert flat[1].context is axes[1].context
+    assert flat[2].context is axes[0].context       # mode 1, axis 0
+
+
+def test_no_requires_grad_param_in_inactive_assembly():
+    """The illegal state (active=False, requires_grad=True) never occurs across
+    the greedy sequence: every trainable monom belongs to an active assembly."""
+    model = CPPGD(axes=make_two_axes(), n_modes_max=3, n_modes_ini=1)
+
+    def check(mdl):
+        for block in mdl._assemblies:
+            if bool(block[0].active):
+                continue
+            for a in block:
+                assert not a.field.values_reduced.requires_grad
+
+    check(model)                 # initial
+    model.freeze_mode(0)
+    model.add_mode()             # mode 1 active, mode 0 frozen-but-active
+    check(model)
+    model.add_mode()             # capacity
+    check(model)
 
 
 def make_vector_axis(name="space", n=5, lo=0.0, hi=10.0, dim=2):
@@ -387,8 +420,8 @@ def test_evaluate_and_assemble_vector_factor():
     assert grid.shape == (2, 2, 2)         # (N_x, N_E, d)
 
     from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
-    pwi_s = PointWiseInterpolator(model._meshes[0], space.sf, model.monoms[0][0], space.mapping)
-    pwi_g = PointWiseInterpolator(model._meshes[1], para.sf, model.monoms[0][1], para.mapping)
+    pwi_s = PointWiseInterpolator(space.mesh, space.sf, model.monoms[0][0], space.mapping)
+    pwi_g = PointWiseInterpolator(para.mesh, para.sf, model.monoms[0][1], para.mapping)
     S = pwi_s.at_position(x).reshape(2, 2)
     g = pwi_g.at_position(E).reshape(2, 1)
     assert torch.allclose(u, S * g, atol=1e-5)

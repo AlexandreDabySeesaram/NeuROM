@@ -319,19 +319,6 @@ class CPPGD(TensorDecomposition):
             total = prod if total is None else total + prod
         return total
 
-    def fill(self, field_layout):
-        """Interpolate every active monom and ``update`` it in the layout.
-
-        TEMPORARY: kept only so the not-yet-updated NeuROMModel keeps working
-        during the refactor. Task 4 removes this and routes interpolation through
-        the injected IntegrationDomain instead.
-        """
-        for block in self._assemblies:
-            for assembly in block:
-                if not bool(assembly.active):
-                    continue
-                field_layout.update(assembly.field, assembly.interpolate())
-
     def assemble(self, coords):
         """Assemble the full separated tensor at the given per-axis coordinates.
 

@@ -5,10 +5,12 @@ from neurom.decompositions import Axis, CPPGD
 from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearSegment
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology
+from neurom.meshes import Topology, Mesh
 from neurom.fields import Field
 from neurom.constraints import NoConstraint
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
+from neurom.interpolation.quadrature_context import QuadratureContext
+from neurom.interpolation import IntegrationDomain
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
 from neurom.integrate import integrate
@@ -257,56 +259,30 @@ def test_register_into_populates_layout_with_all_monoms():
             assert f.name in layout._fields
 
 
-def test_fill_updates_active_monoms_matching_direct_assembly():
-    axes = make_two_axes()
-    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
-    with torch.no_grad():
-        model.monoms[0][0].values_reduced.copy_(
-            torch.ones_like(model.monoms[0][0].values_reduced)
-        )
-    layout = FieldLayout()
-    model.register_into(layout)
-    model.fill(layout)
-
-    res = layout[model.monoms[0][0].name]
-    expected = QuadratureAssembly(
-        axes[0].context, axes[0].sf, model.monoms[0][0]
-    ).interpolate()
-    assert torch.allclose(res.u, expected.u)
-
-
-def test_fill_leaves_inactive_monoms_uninterpolated():
-    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=1)
-    layout = FieldLayout()
-    model.register_into(layout)
-    model.fill(layout)
-    # mode 1 inactive: registered but never interpolated -> RuntimeError on read
-    with pytest.raises(RuntimeError):
-        _ = layout[model.monoms[1][0].name]
-
-
 class _ConstantDecomposition(TensorDecomposition):
     """Minimal fake decomposition with NO CP structure: registers one fixed
-    Field and fills it with a constant result. Proves NeuROMModel is generic."""
+    Field and exposes a QuadratureAssembly for it. Proves NeuROMModel is
+    generic and interpolates through the injected IntegrationDomain."""
 
     def __init__(self):
         super().__init__()
-        n = 3
+        n = 4
+        coords = torch.linspace(0.0, 1.0, n).unsqueeze(-1)
         nodes = torch.arange(0, n)
         elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
         topo = Topology(nodes, elements)
-        self.field = Field(name="dummy", topology=topo, values=torch.zeros(n, 1))
-        self.filled = False
+        positions = Field(name="dummy_pos", topology=topo, values=coords)
+        self.field = Field(name="dummy", topology=topo, values=torch.ones(n, 1))
+        sf = LinearSegment()
+        mesh = Mesh(topology=topo, nodes_positions=positions)
+        ctx = QuadratureContext(mesh, TwoPoints1D(), IsoparametricMapping1D(sf))
+        self._assembly = QuadratureAssembly(ctx, sf, self.field)
 
     def register_into(self, field_layout):
         field_layout.add(self.field)
 
-    def fill(self, field_layout):
-        self.filled = True
-        res = QuadratureAssemblyResult(
-            x=torch.zeros(1, 1, 1), u=torch.ones(1, 1, 1), measure=torch.ones(1, 1, 1)
-        )
-        field_layout.update(self.field, res)
+    def assemblies(self):
+        return [self._assembly]
 
     def evaluate(self, coords):
         return torch.ones(coords[0].reshape(-1).shape[0], 1)
@@ -439,13 +415,14 @@ def test_neurommodel_train_forward_returns_layout_and_optimizes():
     axes = make_two_axes()
     cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
     layout = FieldLayout()
+    domain = IntegrationDomain(cppgd.assemblies())
 
     def energy(out):
         name = cppgd.directory()["space"][0]
         s = out[name]
         return integrate(s.u * s.measure)   # linear in S -> nonzero grad at 0 init
 
-    model = NeuROMModel(layout, cppgd, energy)
+    model = NeuROMModel(layout, cppgd, domain, energy)
     out = model()                            # training forward
     assert out is layout                     # returns the filled layout
 
@@ -465,7 +442,8 @@ def test_neurommodel_eval_forward_matched_pointwise():
     with torch.no_grad():
         cppgd.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
         cppgd.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
-    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    domain = IntegrationDomain(cppgd.assemblies())
+    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
     model.eval()
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
@@ -477,7 +455,8 @@ def test_neurommodel_eval_forward_matched_pointwise():
 
 def test_neurommodel_eval_forward_requires_coords():
     cppgd = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
-    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    domain = IntegrationDomain(cppgd.assemblies())
+    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
     model.eval()
     with pytest.raises(ValueError):
         model()
@@ -486,7 +465,8 @@ def test_neurommodel_eval_forward_requires_coords():
 def test_neurommodel_assemble_delegates():
     axes = make_two_axes()
     cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
-    model = NeuROMModel(FieldLayout(), cppgd, energy=lambda out: out)
+    domain = IntegrationDomain(cppgd.assemblies())
+    model = NeuROMModel(FieldLayout(), cppgd, domain, energy=lambda out: out)
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
     assert torch.allclose(model.assemble([x, E]), cppgd.assemble([x, E]))
@@ -495,10 +475,10 @@ def test_neurommodel_assemble_delegates():
 def test_neurommodel_is_format_agnostic():
     layout = FieldLayout()
     deco = _ConstantDecomposition()
-    model = NeuROMModel(layout, deco, energy=lambda out: out["dummy"].u.sum())
-    out = model()                            # train: fills
-    assert deco.filled
-    assert float(model.energy(out)) == 1.0
+    domain = IntegrationDomain(deco.assemblies())
+    model = NeuROMModel(layout, deco, domain, energy=lambda out: out["dummy"].u.sum())
+    out = model()                            # train: fills via the domain
+    assert float(model.energy(out)) == out["dummy"].u.sum()
     model.eval()
     assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub
 

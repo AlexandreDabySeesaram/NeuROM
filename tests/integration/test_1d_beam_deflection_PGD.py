@@ -193,7 +193,8 @@ class Test1dBeamDeflectionPGD:
         for _ in range(30):
             optimizer.step(closure)
 
-        # Greedy-enrich with a second mode: freeze mode 0, activate+zero mode 1.
+        # Greedy-enrich with a second mode: freeze mode 0, activate mode 1
+        # (keeps its init_values seed -- add_mode no longer zeroes the new mode).
         cppgd.freeze_mode(0)
         cppgd.add_mode()
 

@@ -18,10 +18,12 @@ class QuadratureAssembly(nn.Module):
         context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
         sf (ShapeFunction): The ShapeFunction to perform the interpolation.
         field (FieldBase): The FieldBase to interpolate.
+        active (bool): Whether ``IntegrationDomain.interpolate_all`` evaluates this assembly. Defaults to ``True``.
     Attributes:
         context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
         sf (ShapeFunction): The ShapeFunction to perform the interpolation.
         field (FieldBase): The FieldBase to interpolate.
+        active (torch.nn.parameter.Buffer): Bool buffer; when ``False`` the domain skips this assembly. Set in place via :meth:`activate`. Round-trips through ``state_dict``.
         _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
     """
 

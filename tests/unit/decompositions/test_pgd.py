@@ -14,7 +14,6 @@ from neurom.interpolation import IntegrationDomain
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
 from neurom.integrate import integrate
-from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 from neurom.neurom_model import NeuROMModel
 
 torch.set_default_dtype(torch.float32)
@@ -478,7 +477,10 @@ def test_neurommodel_is_format_agnostic():
     domain = IntegrationDomain(deco.assemblies())
     model = NeuROMModel(layout, deco, domain, energy=lambda out: out["dummy"].u.sum())
     out = model()                            # train: fills via the domain
-    assert float(model.energy(out)) == out["dummy"].u.sum()
+    # Independent expected value: the fake's field is ones on 3 elements x 2
+    # quad points, interpolated to ones -> sum 6.0. Proves the domain actually
+    # interpolated the field (an unfilled field would raise on `.u`).
+    assert float(model.energy(out).detach()) == 6.0
     model.eval()
     assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub
 

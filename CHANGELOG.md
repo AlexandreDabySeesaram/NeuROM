@@ -4,6 +4,31 @@ All notable changes to this project are recorded here. Newest entries on top.
 Each session that implements something appends an entry. For deep detail on a
 change, follow the linked doc.
 
+## 2026-07-16 — one IntegrationDomain per problem; SeparatedDomain removed (BREAKING)
+
+One `IntegrationDomain` now interpolates every field of a problem — the PGD
+monoms **and** other fields such as loads — fixing the case where a load added
+to the `FieldLayout` was never interpolated (`Field 'load' registered but not
+yet interpolated`). Changes:
+
+- `QuadratureAssembly` gains an `active` bool buffer (default `True`) + `activate()`;
+  `IntegrationDomain.interpolate_all` skips inactive assemblies. Mode truncation
+  lives here now, per assembly.
+- `SeparatedDomain` is **deleted**.
+- `Axis` builds and exposes its own `.mesh` / `.context` (`__post_init__`); the
+  mapping stays injected. Non-monom fields share `axis.context`.
+- `CPPGD` no longer owns a domain or builds meshes: it reads `axis.context`,
+  owns mode-blocked flagged assemblies, derives `n_modes_truncated` from the
+  flags, and exposes `assemblies()`. `fill()` removed.
+- `TensorDecomposition` drops `fill()` from its contract (`register_into` /
+  `evaluate` / `assemble` remain).
+- `NeuROMModel(field_layout, decomposition, integration_domain, energy)` now
+  takes an injected domain (mirroring `FEMModel`); its training forward runs
+  `integration_domain.interpolate_all`.
+
+Design: `docs/superpowers/specs/2026-07-16-single-integration-domain-design.md`.
+Plan: `docs/superpowers/plans/2026-07-16-single-integration-domain.md`.
+
 ## 2026-07-15 — add_mode() no longer zeroes the new mode
 
 `CPPGD.add_mode()` now activates + unfreezes the new mode **without** zeroing its

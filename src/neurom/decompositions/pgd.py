@@ -50,6 +50,15 @@ class Axis:
     def topology(self) -> Topology:
         return self.nodes_positions.topology
 
+    def __post_init__(self):
+        # Build the interpolation geometry once, here, so it is a first-class
+        # attribute other fields (e.g. a load) can share via `axis.context`.
+        # INVARIANT: the Axis builds the *context*, never the *mapping* — the
+        # mapping stays injected so a future sub/super-parametric element can use
+        # a geometry shape function distinct from the field's `sf`.
+        self.mesh = Mesh(self.topology, self.nodes_positions)
+        self.context = QuadratureContext(self.mesh, self.quad, self.mapping)
+
 
 class CPPGD(TensorDecomposition):
     """Canonical-polyadic PGD separated-representation model.

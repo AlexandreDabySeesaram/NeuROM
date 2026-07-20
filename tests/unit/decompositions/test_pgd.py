@@ -468,3 +468,21 @@ def test_neurommodel_is_format_agnostic():
     assert float(model.energy(out)) == 1.0
     model.eval()
     assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub
+
+
+def test_axis_builds_mesh_and_context():
+    from neurom.meshes import Mesh
+    from neurom.interpolation.quadrature_context import QuadratureContext
+
+    axis = make_axis()
+    assert isinstance(axis.mesh, Mesh)
+    assert isinstance(axis.context, QuadratureContext)
+    # Mesh identity: the context's mesh is the axis mesh, built on the axis topology.
+    assert axis.mesh.topology is axis.topology
+    assert axis.mesh.nodes_positions is axis.nodes_positions
+
+
+def test_two_axes_have_distinct_contexts():
+    space, para = make_two_axes()
+    assert space.context is not para.context
+    assert space.mesh is not para.mesh

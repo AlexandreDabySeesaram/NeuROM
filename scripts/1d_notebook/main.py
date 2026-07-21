@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 import matplotlib.pyplot as plt
 
 torch.set_default_dtype(torch.float32)
@@ -208,7 +207,6 @@ def main():
 
     # Training
     Nepoch = 7000
-    lossList = []
     lossTraining = []
     model.train()
     for i in range(Nepoch):

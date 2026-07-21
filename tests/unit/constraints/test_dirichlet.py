@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn as nn
 
 # Import library modules
 from neurom.constraints import Dirichlet
@@ -15,7 +14,6 @@ def dirichlet():
     * nodes: [0, 2, 4]
     * Values: [3., 7., 6.]
     """
-    name = "test"
     nodes = torch.tensor([0, 2, 4], dtype=int)
     values_imposed = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
     bc = Dirichlet(nodes=nodes, values_imposed=values_imposed)

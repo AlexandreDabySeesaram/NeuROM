@@ -1,17 +1,32 @@
+"""Reference and physical quadrature-point positions for elements."""
+
 from dataclasses import dataclass
-import torch
+
+from neurom.samplings import QuadratureSampling
 
 
 @dataclass(frozen=True)
 class QuadraturePositions:
-    """Dataclass containing the positions at quadrature points
+    """Immutable container for quadrature-point positions in all coordinate spaces.
+
+    Stores the three coordinate representations needed for autograd-safe field
+    interpolation: the original reference coordinates, the mapped physical
+    coordinates, and the back-mapped reference coordinates obtained by
+    applying the inverse map to the physical positions.
 
     Attributes:
-        xi_ref (torch.Tensor): The reference positions on the element, tensor of shape (N_e, N_q, x_dim).
-        u (torch.Tensor): The interpolated positions from self.xi_ref, tensor of shape (N_e, N_q, x_dim).
-        measure (torch.Tensor): The reference positions on the element obtained from inverse map from self.x_phys, tensor of shape (N_e, N_q, x_dim).
+        xi_ref (QuadratureSampling): Original reference-element coordinates of
+            the quadrature points, tensor of shape ``(N_e, N_q, dim)``.
+        x_phys (QuadratureSampling): Physical-space coordinates obtained by
+            mapping ``xi_ref`` forward through the geometric mapping, tensor
+            of shape ``(N_e, N_q, dim)``.
+        xi_back (QuadratureSampling): Back-mapped reference coordinates
+            obtained by applying the inverse map to ``x_phys``; used as the
+            input to shape functions so that autograd can trace gradients
+            through the physical positions, tensor of shape
+            ``(N_e, N_q, dim)``.
     """
 
-    xi_ref: torch.Tensor
-    x_phys: torch.Tensor
-    xi_back: torch.Tensor
+    xi_ref: QuadratureSampling
+    x_phys: QuadratureSampling
+    xi_back: QuadratureSampling

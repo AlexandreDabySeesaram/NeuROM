@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from neurom.samplings import QuadratureSampling
 from neurom.physics.elastic_energy import ElasticEnergy
 from neurom.field_layout import FieldLayout
 from neurom.interpolation.quadrature_assembly_result import (
@@ -18,8 +19,8 @@ class DummyField(FieldBase):
     """
 
     def __init__(self, name: str):
-        # ``topology`` is unused in these tests; ``None`` is acceptable.
-        super().__init__(name=name, topology=None)
+        # ``connectivity`` is unused in these tests; ``None`` is acceptable.
+        super().__init__(name=name, connectivity=None)
 
     def full_values(self):
         return torch.tensor([])
@@ -54,7 +55,11 @@ class TestElasticEnergy:
         """
         layout = FieldLayout()
         layout.add(field)
-        result = QuadratureAssemblyResult(x=x, u=u, measure=dx)
+        result = QuadratureAssemblyResult(
+            x=QuadratureSampling(x),
+            u=QuadratureSampling(u),
+            measure=QuadratureSampling(dx),
+        )
         layout.update(field, result)
         return layout
 

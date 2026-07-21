@@ -102,9 +102,7 @@ class CPPGD(TensorDecomposition):
         self.name = name
         self.axes = list(axes)
         if sum(int(a.init_values.shape[1] > 1) for a in self.axes) > 1:
-            raise ValueError(
-                "CP-PGD admits at most one vector-valued factor per mode."
-            )
+            raise ValueError("CP-PGD admits at most one vector-valued factor per mode.")
         self.n_modes_max = n_modes_max
 
         # Contexts are built and owned by the axes (Axis.__post_init__). Keep a
@@ -283,7 +281,11 @@ class CPPGD(TensorDecomposition):
             raise ValueError(
                 "evaluate expects a (P, n_axes) tensor of query points, one point "
                 f"per row; got {type(points).__name__}"
-                + (f" of shape {tuple(points.shape)}" if torch.is_tensor(points) else "")
+                + (
+                    f" of shape {tuple(points.shape)}"
+                    if torch.is_tensor(points)
+                    else ""
+                )
                 + "."
             )
         if points.shape[1] != len(self.axes):
@@ -318,9 +320,9 @@ class CPPGD(TensorDecomposition):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1))   # (P, 1, dim_k)
-                w = w.reshape(w.shape[0], -1)                # (P, dim_k)
-                prod = w if prod is None else prod * w       # scalar * vector broadcasts
+                w = pwi.at_position(coords[k].reshape(-1))  # (P, 1, dim_k)
+                w = w.reshape(w.shape[0], -1)  # (P, dim_k)
+                prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
         return total
 
@@ -346,7 +348,9 @@ class CPPGD(TensorDecomposition):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1)).reshape(P_k, -1)  # (N_k, d_k)
+                w = pwi.at_position(coords[k].reshape(-1)).reshape(
+                    P_k, -1
+                )  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_axis.append(torch.stack(cols, dim=0))
 

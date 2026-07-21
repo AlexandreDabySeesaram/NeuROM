@@ -84,6 +84,7 @@ def test_separated_view_is_removed():
 
 def test_pgdfemmodel_export_is_removed():
     import neurom.decompositions as d
+
     assert not hasattr(d, "PGDFEMModel")
 
 
@@ -100,8 +101,8 @@ def test_assemble_matches_manual_outer_product():
             torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)  # g at 4 E nodes
         )
 
-    x = torch.tensor([2.5, 5.0])          # inside space domain [0, 10]
-    E = torch.tensor([400.0, 700.0])      # inside E domain [100, 1000]
+    x = torch.tensor([2.5, 5.0])  # inside space domain [0, 10]
+    E = torch.tensor([400.0, 700.0])  # inside E domain [100, 1000]
     u = model.assemble([x, E])
 
     assert u.shape == (2, 2)
@@ -141,8 +142,8 @@ def test_assemble_sums_two_modes_matching_manual_outer_products():
             torch.tensor([-2.0, 1.0, 0.0, 3.0]).unsqueeze(-1)  # g1
         )
 
-    x = torch.tensor([2.5, 5.0])          # inside space domain [0, 10]
-    E = torch.tensor([400.0, 700.0])      # inside E domain [100, 1000]
+    x = torch.tensor([2.5, 5.0])  # inside space domain [0, 10]
+    E = torch.tensor([400.0, 700.0])  # inside E domain [100, 1000]
     u = model.assemble([x, E])
 
     assert u.shape == (2, 2)
@@ -201,10 +202,12 @@ def test_mode_parameters_returns_one_param_per_axis():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
     model.add_mode()
-    params = model.mode_parameters()   # defaults to last-activated mode
+    params = model.mode_parameters()  # defaults to last-activated mode
     # one monom parameter per axis, and they are mode 1's tensors
-    assert params == [model.monoms[1][0].values_reduced,
-                      model.monoms[1][1].values_reduced]
+    assert params == [
+        model.monoms[1][0].values_reduced,
+        model.monoms[1][1].values_reduced,
+    ]
 
 
 def test_mode_parameters_explicit_and_negative_index():
@@ -213,8 +216,10 @@ def test_mode_parameters_explicit_and_negative_index():
     model.add_mode()
     model.add_mode()
 
-    assert model.mode_parameters(m=1) == [model.monoms[1][0].values_reduced,
-                                          model.monoms[1][1].values_reduced]
+    assert model.mode_parameters(m=1) == [
+        model.monoms[1][0].values_reduced,
+        model.monoms[1][1].values_reduced,
+    ]
     # Negative index resolves against the active modes.
     assert model.mode_parameters(m=-1) == model.mode_parameters(m=2)
 
@@ -298,11 +303,11 @@ def test_assemblies_accessor_is_flat_and_shares_axis_contexts():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=1)
     flat = model.assemblies()
-    assert len(flat) == 3 * 2                       # n_modes_max * n_axes
+    assert len(flat) == 3 * 2  # n_modes_max * n_axes
     # mode-major, axis order: block m, axis k -> flat[m * n_axes + k]
     assert flat[0].context is axes[0].context
     assert flat[1].context is axes[1].context
-    assert flat[2].context is axes[0].context       # mode 1, axis 0
+    assert flat[2].context is axes[0].context  # mode 1, axis 0
 
 
 def test_no_requires_grad_param_in_inactive_assembly():
@@ -317,11 +322,11 @@ def test_no_requires_grad_param_in_inactive_assembly():
             for a in block:
                 assert not a.field.values_reduced.requires_grad
 
-    check(model)                 # initial
+    check(model)  # initial
     model.freeze_mode(0)
-    model.add_mode()             # mode 1 active, mode 0 frozen-but-active
+    model.add_mode()  # mode 1 active, mode 0 frozen-but-active
     check(model)
-    model.add_mode()             # capacity
+    model.add_mode()  # capacity
     check(model)
 
 
@@ -333,9 +338,13 @@ def make_vector_axis(name="space", n=5, lo=0.0, hi=10.0, dim=2):
     positions = Field(name=f"{name}_positions", topology=topology, values=coords)
     sf = LinearSegment()
     return Axis(
-        name=name, nodes_positions=positions, sf=sf,
-        mapping=IsoparametricMapping1D(sf), quad=TwoPoints1D(),
-        constraint=NoConstraint(), init_values=torch.zeros(n, dim),
+        name=name,
+        nodes_positions=positions,
+        sf=sf,
+        mapping=IsoparametricMapping1D(sf),
+        quad=TwoPoints1D(),
+        constraint=NoConstraint(),
+        init_values=torch.zeros(n, dim),
     )
 
 
@@ -347,7 +356,9 @@ def test_directory_axis_major_active_names():
     assert d["E"] == ["beam_dimE_mode0", "beam_dimE_mode1"]
     model.add_mode()
     assert model.directory()["space"] == [
-        "beam_dimspace_mode0", "beam_dimspace_mode1", "beam_dimspace_mode2",
+        "beam_dimspace_mode0",
+        "beam_dimspace_mode1",
+        "beam_dimspace_mode2",
     ]
 
 
@@ -355,33 +366,44 @@ def test_evaluate_matched_pointwise_matches_assemble_diagonal():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
-        model.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
-        model.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+        model.monoms[0][0].values_reduced.copy_(
+            torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
+        )
+        model.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)
+        )
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
-    u = model.evaluate(torch.stack([x, E], dim=1))   # matched, (2, 1)
-    grid = model.assemble([x, E])          # (2, 2)
+    u = model.evaluate(torch.stack([x, E], dim=1))  # matched, (2, 1)
+    grid = model.assemble([x, E])  # (2, 2)
     assert u.shape == (2, 1)
     assert torch.allclose(u.reshape(-1), torch.diagonal(grid), atol=1e-5)
 
 
 def test_evaluate_and_assemble_vector_factor():
-    space = make_vector_axis(name="space", n=5, dim=2)     # 2-D displacement factor
-    para = make_axis(name="E", n=4, lo=100.0, hi=1000.0)   # scalar weight
+    space = make_vector_axis(name="space", n=5, dim=2)  # 2-D displacement factor
+    para = make_axis(name="E", n=4, lo=100.0, hi=1000.0)  # scalar weight
     model = CPPGD(axes=[space, para], n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
-        model.monoms[0][0].values_reduced.copy_(torch.arange(10, dtype=torch.float32).reshape(5, 2))
-        model.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+        model.monoms[0][0].values_reduced.copy_(
+            torch.arange(10, dtype=torch.float32).reshape(5, 2)
+        )
+        model.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)
+        )
     x = torch.tensor([2.5, 5.0])
     E = torch.tensor([400.0, 700.0])
 
     u = model.evaluate(torch.stack([x, E], dim=1))
-    assert u.shape == (2, 2)               # (P, d)
+    assert u.shape == (2, 2)  # (P, d)
     grid = model.assemble([x, E])
-    assert grid.shape == (2, 2, 2)         # (N_x, N_E, d)
+    assert grid.shape == (2, 2, 2)  # (N_x, N_E, d)
 
     from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
-    pwi_s = PointWiseInterpolator(space.mesh, space.sf, model.monoms[0][0], space.mapping)
+
+    pwi_s = PointWiseInterpolator(
+        space.mesh, space.sf, model.monoms[0][0], space.mapping
+    )
     pwi_g = PointWiseInterpolator(para.mesh, para.sf, model.monoms[0][1], para.mapping)
     S = pwi_s.at_position(x).reshape(2, 2)
     g = pwi_g.at_position(E).reshape(2, 1)
@@ -405,11 +427,11 @@ def test_neurommodel_train_forward_returns_layout_and_optimizes():
     def energy(out):
         name = cppgd.directory()["space"][0]
         s = out[name]
-        return integrate(s.u * s.measure)   # linear in S -> nonzero grad at 0 init
+        return integrate(s.u * s.measure)  # linear in S -> nonzero grad at 0 init
 
     model = NeuROMModel(layout, cppgd, domain, energy)
-    out = model()                            # training forward
-    assert out is layout                     # returns the filled layout
+    out = model()  # training forward
+    assert out is layout  # returns the filled layout
 
     before = cppgd.monoms[0][0].values_reduced.detach().clone()
     optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=1.0)
@@ -426,9 +448,7 @@ def test_neurommodel_add_mode_to_optimizer_grows_param_groups():
     cppgd = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
     model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
-    optim = torch.optim.SGD(
-        [p for p in model.parameters() if p.requires_grad], lr=0.1
-    )
+    optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=0.1)
     n_before = sum(len(g["params"]) for g in optim.param_groups)
     cppgd.add_mode()
     model.add_mode_to_optimizer(optim)
@@ -441,8 +461,12 @@ def test_neurommodel_eval_forward_matched_pointwise():
     axes = make_two_axes()
     cppgd = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
-        cppgd.monoms[0][0].values_reduced.copy_(torch.linspace(0.0, 4.0, 5).unsqueeze(-1))
-        cppgd.monoms[0][1].values_reduced.copy_(torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1))
+        cppgd.monoms[0][0].values_reduced.copy_(
+            torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
+        )
+        cppgd.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)
+        )
     domain = IntegrationDomain(cppgd.assemblies())
     model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     model.eval()
@@ -478,13 +502,13 @@ def test_neurommodel_is_format_agnostic():
     deco = _ConstantDecomposition()
     domain = IntegrationDomain(deco.assemblies())
     model = NeuROMModel(layout, deco, domain, loss=lambda out: out["dummy"].u.sum())
-    out = model()                            # train: fills via the domain
+    out = model()  # train: fills via the domain
     # Independent expected value: the fake's field is ones on 3 elements x 2
     # quad points, interpolated to ones -> sum 6.0. Proves the domain actually
     # interpolated the field (an unfilled field would raise on `.u`).
     assert float(model.loss(out).detach()) == 6.0
     model.eval()
-    assert model([torch.zeros(3)]).shape == (3, 1)   # evaluate stub
+    assert model([torch.zeros(3)]).shape == (3, 1)  # evaluate stub
 
 
 def test_axis_builds_mesh_and_context():

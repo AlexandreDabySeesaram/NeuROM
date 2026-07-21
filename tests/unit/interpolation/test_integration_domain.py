@@ -8,7 +8,11 @@ from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
 from neurom.constraints import NoConstraint
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import QuadratureContext, QuadratureAssembly, IntegrationDomain
+from neurom.interpolation import (
+    QuadratureContext,
+    QuadratureAssembly,
+    IntegrationDomain,
+)
 
 torch.set_default_dtype(torch.float32)
 
@@ -27,7 +31,10 @@ def _ctx(n=4):
 
 def _field(name, topo, n=4):
     return TrainableField(
-        name=name, topology=topo, init_values=torch.ones(n, 1), constraint=NoConstraint()
+        name=name,
+        topology=topo,
+        init_values=torch.ones(n, 1),
+        constraint=NoConstraint(),
     )
 
 
@@ -59,8 +66,8 @@ def test_inactive_assembly_is_not_interpolated():
     domain = IntegrationDomain([a, b])
     layout = _layout([fa, fb])
     domain.interpolate_all(layout)
-    assert layout[fa.name].u.shape[-1] == 1        # active -> interpolated
-    with pytest.raises(RuntimeError):              # inactive -> not interpolated
+    assert layout[fa.name].u.shape[-1] == 1  # active -> interpolated
+    with pytest.raises(RuntimeError):  # inactive -> not interpolated
         _ = layout[fb.name]
 
 

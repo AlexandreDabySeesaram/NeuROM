@@ -34,8 +34,9 @@ class NeuROMModel(nn.Module):
             problem), reading fields from the layout.
     """
 
-    def __init__(self, field_layout, decomposition: TensorDecomposition,
-                 integration_domain, loss):
+    def __init__(
+        self, field_layout, decomposition: TensorDecomposition, integration_domain, loss
+    ):
         super().__init__()
         self.field_layout = field_layout
         self.decomposition = decomposition

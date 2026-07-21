@@ -69,19 +69,19 @@ class Test1dBeamDeflection:
     # `epsilon` is kept deliberately high so mode 0 stops well before full
     # convergence, leaving a genuine residual for modes 1 and 2 to capture (the
     # analytical field is rank-1, so a fully-converged mode 0 would starve them).
-    epsilon: float = 2e-2            # relative-energy plateau -> add next mode
-    plateau_window: int = 20         # window (iters) over which we measure it
-    max_epochs_per_mode: int = 600   # safety cap so a mode always terminates
-    min_epochs_per_mode: int = 120   # skip Adam's sticky early plateau
+    epsilon: float = 2e-2  # relative-energy plateau -> add next mode
+    plateau_window: int = 20  # window (iters) over which we measure it
+    max_epochs_per_mode: int = 600  # safety cap so a mode always terminates
+    min_epochs_per_mode: int = 120  # skip Adam's sticky early plateau
 
     final_error_tol: float = 1.5e-1  # (1) bounded final relative L2 error
-    rank1_error_tol: float = 5e-1    # (7) error mode 0 alone must already beat
-    error_slack: float = 5e-3        # (2) absolute slack on the non-increasing check
-    energy_slack: float = 1e-3       # (3) relative slack on energy monotonicity
-    dirichlet_tol: float = 1e-4      # (5) |u| at the clamped ends, absolute
-    contribution_slack: float = 1e-2 # (6) relative slack on decreasing modes
-    strict_error_tol: float = 3e-2   # (8) accuracy after a joint polish of all modes
-    polish_epochs: int = 200         # joint-refinement iterations feeding (8)
+    rank1_error_tol: float = 5e-1  # (7) error mode 0 alone must already beat
+    error_slack: float = 5e-3  # (2) absolute slack on the non-increasing check
+    energy_slack: float = 1e-3  # (3) relative slack on energy monotonicity
+    dirichlet_tol: float = 1e-4  # (5) |u| at the clamped ends, absolute
+    contribution_slack: float = 1e-2  # (6) relative slack on decreasing modes
+    strict_error_tol: float = 3e-2  # (8) accuracy after a joint polish of all modes
+    polish_epochs: int = 200  # joint-refinement iterations feeding (8)
 
     def test_beam(self):
         # Deterministic run so the calibrated thresholds are meaningful.
@@ -107,21 +107,29 @@ class Test1dBeamDeflection:
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
         nodes_space = torch.arange(0, N_space)
-        elements_space = torch.vstack([torch.arange(0, N_space - 1), torch.arange(1, N_space)]).T
+        elements_space = torch.vstack(
+            [torch.arange(0, N_space - 1), torch.arange(1, N_space)]
+        ).T
 
         topology_space = Topology(nodes_space, elements_space)
-        nodes_positions_space = Field(name=f"space_positions", topology=topology_space, values=x_array)
+        nodes_positions_space = Field(
+            name=f"space_positions", topology=topology_space, values=x_array
+        )
 
         # Initialize displacement values
         u_init = 0.5 * torch.ones(N_space, 1)
 
-        axis_space = Axis(name = "space",
-                        nodes_positions=nodes_positions_space,
-                        sf= sf,
-                        mapping=mapping,
-                        quad=quad,
-                        constraint=Dirichlet( nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)),
-                        init_values=u_init)
+        axis_space = Axis(
+            name="space",
+            nodes_positions=nodes_positions_space,
+            sf=sf,
+            mapping=mapping,
+            quad=quad,
+            constraint=Dirichlet(
+                nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)
+            ),
+            init_values=u_init,
+        )
 
         ## E
         # Dimensions
@@ -135,21 +143,27 @@ class Test1dBeamDeflection:
         elements_E = torch.vstack([torch.arange(0, N_E - 1), torch.arange(1, N_E)]).T
 
         topology_E = Topology(nodes_E, elements_E)
-        nodes_positions_E = Field(name=f"E_positions", topology=topology_E, values=E_array)
+        nodes_positions_E = Field(
+            name=f"E_positions", topology=topology_E, values=E_array
+        )
 
         # Initialize E mode values
         E_init = 0.5 * torch.ones(N_E, 1)
 
-        axis_E = Axis(name = "E",
-                        nodes_positions=nodes_positions_E,
-                        sf= sf,
-                        mapping=mapping,
-                        quad=quad,
-                        constraint=NoConstraint(),
-                        init_values=E_init)
+        axis_E = Axis(
+            name="E",
+            nodes_positions=nodes_positions_E,
+            sf=sf,
+            mapping=mapping,
+            quad=quad,
+            constraint=NoConstraint(),
+            init_values=E_init,
+        )
 
         ## CP PGD object
-        pgd_approx = CPPGD(axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1)
+        pgd_approx = CPPGD(
+            axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1
+        )
         # print(pgd_approx.directory())
 
         ###### Define constant load.
@@ -162,26 +176,35 @@ class Test1dBeamDeflection:
         # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
-        load_value = 1000.0 # x^2 ou une autre expression mathématique
-        load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1)))
-        context_f = axis_space.context # le même context que la partie spatiale
+        load_value = 1000.0  # x^2 ou une autre expression mathématique
+        load_field = field_layout.add(
+            Field(
+                name="load",
+                topology=topology_space,
+                values=load_value * torch.ones(N_space, 1),
+            )
+        )
+        context_f = axis_space.context  # le même context que la partie spatiale
         assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
         # Construction of the shared domain for the whole problem
-        domain = IntegrationDomain([*pgd_approx.assemblies(), assembly_f]) # do not forget * to unpack
+        domain = IntegrationDomain(
+            [*pgd_approx.assemblies(), assembly_f]
+        )  # do not forget * to unpack
 
         # Creer le modele
-        model = NeuROMModel(field_layout=field_layout,
-                            decomposition=pgd_approx,
-                            integration_domain= domain,
-                            loss = lambda out: energy(out, pgd_approx, load_name="load"))
+        model = NeuROMModel(
+            field_layout=field_layout,
+            decomposition=pgd_approx,
+            integration_domain=domain,
+            loss=lambda out: energy(out, pgd_approx, load_name="load"),
+        )
 
         ## add training
         optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],
             lr=0.1,
         )
-
 
         def closure():
             optimizer.zero_grad()
@@ -194,21 +217,21 @@ class Test1dBeamDeflection:
         ### Training: greedy enrichment driven by a relative-energy plateau.
         # Instead of adding a mode after a *fixed* number of epochs, we train the
         # active mode until the energy plateaus -- its relative improvement over the last `plateau_window` iterations falls below `epsilon` -- and only then freeze it and enrich with the next mode. The epoch cap guarantees termination even if the plateau is never reached.
-        
-        loss_history = []            # every iteration (for the no-NaN sweep)
-        loss_per_mode = []           # energy at the end of each mode's training
-        error_per_mode = []          # rel. L2 error vs analytical after each mode
-        contribution_per_mode = []   # L2 norm of each individual mode u_m
+
+        loss_history = []  # every iteration (for the no-NaN sweep)
+        loss_per_mode = []  # energy at the end of each mode's training
+        error_per_mode = []  # rel. L2 error vs analytical after each mode
+        contribution_per_mode = []  # L2 norm of each individual mode u_m
 
         n_modes_target = pgd_approx.n_modes_max
 
         for mode_idx in range(n_modes_target):
             if mode_idx > 0:
                 pgd_approx.freeze_mode(mode_idx - 1)
-                pgd_approx.add_mode()                     # active le mode suivant
+                pgd_approx.add_mode()  # active le mode suivant
                 model.add_mode_to_optimizer(optimizer)
 
-            mode_hist = []   # this mode's energy trajectory (for the plateau test)
+            mode_hist = []  # this mode's energy trajectory (for the plateau test)
             loss_val = math.nan
             for epoch in range(self.max_epochs_per_mode):
                 loss_val = optimizer.step(closure).detach().item()
@@ -217,7 +240,10 @@ class Test1dBeamDeflection:
                 # Relative improvement over the last `plateau_window` iterations.
                 # Denominator floored at 1.0 so the zero-crossing of the energy
                 # doesn't blow it up; only tested after the sticky early phase.
-                if epoch + 1 >= self.min_epochs_per_mode and len(mode_hist) > self.plateau_window:
+                if (
+                    epoch + 1 >= self.min_epochs_per_mode
+                    and len(mode_hist) > self.plateau_window
+                ):
                     past = mode_hist[-1 - self.plateau_window]
                     denom = max(abs(loss_val), abs(past), 1.0)
                     rel_improvement = (past - loss_val) / denom
@@ -227,14 +253,22 @@ class Test1dBeamDeflection:
             loss_per_mode.append(loss_val)
             error_per_mode.append(
                 relative_l2_error(
-                    model, x_min=x_min, x_max=x_max, E_min=E_min, E_max=E_max,
+                    model,
+                    x_min=x_min,
+                    x_max=x_max,
+                    E_min=E_min,
+                    E_max=E_max,
                     load_value=load_value,
                 )
             )
             contribution_per_mode.append(
                 mode_contribution(
-                    pgd_approx, mode_idx, x_min=x_min, x_max=x_max,
-                    E_min=E_min, E_max=E_max,
+                    pgd_approx,
+                    mode_idx,
+                    x_min=x_min,
+                    x_max=x_max,
+                    E_min=E_min,
+                    E_max=E_max,
                 )
             )
 
@@ -250,7 +284,8 @@ class Test1dBeamDeflection:
         for m in range(n_modes):
             pgd_approx.unfreeze_mode(m)
         polish_optimizer = torch.optim.Adam(
-            [p for p in model.parameters() if p.requires_grad], lr=0.1,
+            [p for p in model.parameters() if p.requires_grad],
+            lr=0.1,
         )
 
         def polish_closure():
@@ -264,7 +299,11 @@ class Test1dBeamDeflection:
             polish_optimizer.step(polish_closure)
 
         final_error_polished = relative_l2_error(
-            model, x_min=x_min, x_max=x_max, E_min=E_min, E_max=E_max,
+            model,
+            x_min=x_min,
+            x_max=x_max,
+            E_min=E_min,
+            E_max=E_max,
             load_value=load_value,
         )
 
@@ -280,8 +319,12 @@ class Test1dBeamDeflection:
         # ================================================================
 
         # (4) No NaN/Inf anywhere -- catch a diverging optimisation early.
-        assert all(math.isfinite(l) for l in loss_history), "non-finite loss encountered"
-        assert all(math.isfinite(e) for e in error_per_mode), "non-finite error encountered"
+        assert all(math.isfinite(l) for l in loss_history), (
+            "non-finite loss encountered"
+        )
+        assert all(math.isfinite(e) for e in error_per_mode), (
+            "non-finite error encountered"
+        )
         assert all(math.isfinite(c) for c in contribution_per_mode)
 
         # (1) Bounded error: the converged rank-N PGD matches the analytical
@@ -317,10 +360,18 @@ class Test1dBeamDeflection:
         model.eval()
         E_probe = torch.linspace(E_min, E_max, 5)
         with torch.no_grad():
-            u_lo = model(torch.stack([torch.full_like(E_probe, x_min), E_probe], dim=1)).reshape(-1)
-            u_hi = model(torch.stack([torch.full_like(E_probe, x_max), E_probe], dim=1)).reshape(-1)
-        assert u_lo.abs().max().item() < self.dirichlet_tol, "Dirichlet BC violated at x_min"
-        assert u_hi.abs().max().item() < self.dirichlet_tol, "Dirichlet BC violated at x_max"
+            u_lo = model(
+                torch.stack([torch.full_like(E_probe, x_min), E_probe], dim=1)
+            ).reshape(-1)
+            u_hi = model(
+                torch.stack([torch.full_like(E_probe, x_max), E_probe], dim=1)
+            ).reshape(-1)
+        assert u_lo.abs().max().item() < self.dirichlet_tol, (
+            "Dirichlet BC violated at x_min"
+        )
+        assert u_hi.abs().max().item() < self.dirichlet_tol, (
+            "Dirichlet BC violated at x_max"
+        )
 
         # (6) Decreasing mode contribution: the greedy PGD peels off the most
         #     energetic content first, so ||u_m|| is non-increasing in m.
@@ -354,6 +405,7 @@ class Test1dBeamDeflection:
 
 ## Metric helpers ----------------------------------------------------------
 
+
 def analytical(x, E, *, x_min, x_max, load_value):
     """Analytical parametric beam deflection u(x, E) = 0.5 q (x-x_min)(x-x_max)/E.
 
@@ -363,8 +415,7 @@ def analytical(x, E, *, x_min, x_max, load_value):
     return 0.5 * load_value * (x - x_min) * (x - x_max) / E
 
 
-def relative_l2_error(model, *, x_min, x_max, E_min, E_max, load_value,
-                      n_x=60, n_E=40):
+def relative_l2_error(model, *, x_min, x_max, E_min, E_max, load_value, n_x=60, n_E=40):
     """Relative L2 error of the assembled PGD field against the analytical one.
 
     Uses ``model.assemble`` to evaluate the full separated tensor u(x, E) on a
@@ -374,10 +425,13 @@ def relative_l2_error(model, *, x_min, x_max, E_min, E_max, load_value,
     x_grid = torch.linspace(x_min, x_max, n_x)
     E_grid = torch.linspace(E_min, E_max, n_E)
     with torch.no_grad():
-        u_pgd = model.assemble([x_grid, E_grid])          # (n_x, n_E)
+        u_pgd = model.assemble([x_grid, E_grid])  # (n_x, n_E)
     u_ana = analytical(
-        x_grid.unsqueeze(-1), E_grid.unsqueeze(0),
-        x_min=x_min, x_max=x_max, load_value=load_value,
+        x_grid.unsqueeze(-1),
+        E_grid.unsqueeze(0),
+        x_min=x_min,
+        x_max=x_max,
+        load_value=load_value,
     )
     return (torch.norm(u_pgd - u_ana) / torch.norm(u_ana)).item()
 
@@ -409,26 +463,26 @@ def mode_contribution(pgd_approx, m, *, x_min, x_max, E_min, E_max, n=200):
     with torch.no_grad():
         w_x = _factor(pgd_approx, m, 0, x_grid)
         w_E = _factor(pgd_approx, m, 1, E_grid)
-    u_m = torch.outer(w_x, w_E)                            # (n, n)
-    return torch.sqrt(torch.mean(u_m ** 2)).item()
+    u_m = torch.outer(w_x, w_E)  # (n, n)
+    return torch.sqrt(torch.mean(u_m**2)).item()
 
 
 ## Energy
 
-def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
+
+def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # on va chercher les noms des champs {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
     directory = decomposition.directory()
-    n_modes = len(directory['space'])
+    n_modes = len(directory["space"])
 
     # on les récupère dans le field_layout
-    space_modes_names =  directory['space']
-    E_modes_names = directory['E']
+    space_modes_names = directory["space"]
+    E_modes_names = directory["E"]
     space_modes = [field_layout[name] for name in space_modes_names]
     E_modes = [field_layout[name] for name in E_modes_names]
 
     # et le load
     load_field = field_layout[load_name]
-
 
     ## Elastic
     elastic = 0.0
@@ -465,7 +519,6 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
     # integrated on a common intersection mesh with a recomputed measure.
     for m in range(n_modes):
         for n in range(n_modes):
-
             # inner() contracts grad(u_m) . grad(u_n) over the field and d axes,
             # returning (N_e, N_q, 1) -- same rank as the measure J_u -- so the
             # `* J_u[m]` below aligns element-wise as intended (no reshape needed).

@@ -51,21 +51,27 @@ def main(n_iter_training=150):
     # Generate vertices and connectivity
     x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
     nodes_space = torch.arange(0, N_space)
-    elements_space = torch.vstack([torch.arange(0, N_space - 1), torch.arange(1, N_space)]).T
+    elements_space = torch.vstack(
+        [torch.arange(0, N_space - 1), torch.arange(1, N_space)]
+    ).T
 
     topology_space = Topology(nodes_space, elements_space)
-    nodes_positions_space = Field(name=f"space_positions", topology=topology_space, values=x_array)
+    nodes_positions_space = Field(
+        name=f"space_positions", topology=topology_space, values=x_array
+    )
 
     # Initialize displacement values
     u_init = 0.5 * torch.ones(N_space, 1)
 
-    axis_space = Axis(name = "space",
-                    nodes_positions=nodes_positions_space,
-                    sf= sf,
-                    mapping=mapping,
-                    quad=quad,
-                    constraint=Dirichlet( nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)),
-                    init_values=u_init)
+    axis_space = Axis(
+        name="space",
+        nodes_positions=nodes_positions_space,
+        sf=sf,
+        mapping=mapping,
+        quad=quad,
+        constraint=Dirichlet(nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)),
+        init_values=u_init,
+    )
 
     ## E
     # Dimensions
@@ -84,16 +90,20 @@ def main(n_iter_training=150):
     # Initialize E mode values
     E_init = 0.5 * torch.ones(N_E, 1)
 
-    axis_E = Axis(name = "E",
-                    nodes_positions=nodes_positions_E,
-                    sf= sf,
-                    mapping=mapping,
-                    quad=quad,
-                    constraint=NoConstraint(),
-                    init_values=E_init)
+    axis_E = Axis(
+        name="E",
+        nodes_positions=nodes_positions_E,
+        sf=sf,
+        mapping=mapping,
+        quad=quad,
+        constraint=NoConstraint(),
+        init_values=E_init,
+    )
 
     ## CP PGD object
-    pgd_approx = CPPGD(axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1)
+    pgd_approx = CPPGD(
+        axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1
+    )
     # print(pgd_approx.directory())
 
     ###### Define constant load.
@@ -106,26 +116,35 @@ def main(n_iter_training=150):
     # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
     # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
-    load_value = 1000.0 # x^2 ou une autre expression mathématique
-    load_field = field_layout.add(Field(name="load", topology=topology_space, values=load_value * torch.ones(N_space, 1)))
-    context_f = axis_space.context # le même context que la partie spatiale
+    load_value = 1000.0  # x^2 ou une autre expression mathématique
+    load_field = field_layout.add(
+        Field(
+            name="load",
+            topology=topology_space,
+            values=load_value * torch.ones(N_space, 1),
+        )
+    )
+    context_f = axis_space.context  # le même context que la partie spatiale
     assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
     # Construction of the shared domain for the whole problem
-    domain = IntegrationDomain([*pgd_approx.assemblies(), assembly_f]) # do not forget * to unpack
+    domain = IntegrationDomain(
+        [*pgd_approx.assemblies(), assembly_f]
+    )  # do not forget * to unpack
 
     # Creer le modele
-    model = NeuROMModel(field_layout=field_layout,
-                        decomposition=pgd_approx,
-                        integration_domain= domain,
-                        loss = lambda out: energy(out, pgd_approx, load_name="load"))
+    model = NeuROMModel(
+        field_layout=field_layout,
+        decomposition=pgd_approx,
+        integration_domain=domain,
+        loss=lambda out: energy(out, pgd_approx, load_name="load"),
+    )
 
     ## add training
     optimizer = torch.optim.Adam(
         [p for p in model.parameters() if p.requires_grad],
         lr=0.1,
     )
-
 
     def closure():
         optimizer.zero_grad()
@@ -144,7 +163,7 @@ def main(n_iter_training=150):
 
     # Mode 1
     pgd_approx.freeze_mode(0)
-    pgd_approx.add_mode()                     # active le mode 1
+    pgd_approx.add_mode()  # active le mode 1
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -153,7 +172,7 @@ def main(n_iter_training=150):
 
     # Mode 2
     pgd_approx.freeze_mode(1)
-    pgd_approx.add_mode()                     # active le mode 1
+    pgd_approx.add_mode()  # active le mode 1
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -162,11 +181,14 @@ def main(n_iter_training=150):
     print("Successfully trained!")
 
     ## Plotting
-    plot_convergence(loss_history) # OK
-    plot_solution(                              # investigate how to get the information monom per monom
-        model, pgd_approx,
-        x_min=x_min, x_max=x_max,
-        E_min=E_min, E_max=E_max,
+    plot_convergence(loss_history)  # OK
+    plot_solution(  # investigate how to get the information monom per monom
+        model,
+        pgd_approx,
+        x_min=x_min,
+        x_max=x_max,
+        E_min=E_min,
+        E_max=E_max,
         load_value=load_value,
     )
 
@@ -192,8 +214,18 @@ def plot_convergence(loss_history, save_path="pgd_convergence.png"):
     fig.savefig(save_path, dpi=120)
     plt.show()
 
-def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
-                  save_path="pgd_vs_analytical.png"):
+
+def plot_solution(
+    model,
+    pgd_approx,
+    *,
+    x_min,
+    x_max,
+    E_min,
+    E_max,
+    load_value,
+    save_path="pgd_vs_analytical.png",
+):
     """Compare the PGD solution to the analytical beam deflection.
 
     Four panels: (1) the full solution u(x, E) at a fixed E, PGD vs analytical;
@@ -239,7 +271,9 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
     E_fixed = E_max / 2
     x_plot = torch.linspace(x_min, x_max, 200)
     E_plot = E_fixed * torch.ones_like(x_plot)
-    u_pgd_full = model(torch.stack([x_plot, E_plot], dim=1)).reshape(-1)  # sum_m w_m^x w_m^E
+    u_pgd_full = model(torch.stack([x_plot, E_plot], dim=1)).reshape(
+        -1
+    )  # sum_m w_m^x w_m^E
     u_ana_full = 0.5 * load_value * (x_plot - x_min) * (x_plot - x_max) / E_plot
 
     # Counterpart of panel 1: fix x at mid-span, sweep E. Same diagonal
@@ -268,61 +302,89 @@ def plot_solution(model, pgd_approx, *, x_min, x_max, E_min, E_max, load_value,
 
     # Full pgd vs analytical at fixed E (sweep x)
     ax[0].plot(x_plot.numpy(), u_ana_full.numpy(), "k-", lw=2, label="analytical")
-    ax[0].plot(x_plot.numpy(), u_pgd_full.detach().numpy(), "r--", lw=2,
-               label="PGD (sum of modes)")
+    ax[0].plot(
+        x_plot.numpy(),
+        u_pgd_full.detach().numpy(),
+        "r--",
+        lw=2,
+        label="PGD (sum of modes)",
+    )
     ax[0].set_title(f"Full solution u(x, E={E_fixed:.0f})")
-    ax[0].set_xlabel("x"); ax[0].set_ylabel("u"); ax[0].legend()
+    ax[0].set_xlabel("x")
+    ax[0].set_ylabel("u")
+    ax[0].legend()
 
     # Full pgd vs analytical at fixed x (sweep E) -- counterpart of panel 0
     ax[1].plot(E_sweep.numpy(), u_ana_E.numpy(), "k-", lw=2, label="analytical")
-    ax[1].plot(E_sweep.numpy(), u_pgd_E.detach().numpy(), "r--", lw=2,
-               label="PGD (sum of modes)")
+    ax[1].plot(
+        E_sweep.numpy(),
+        u_pgd_E.detach().numpy(),
+        "r--",
+        lw=2,
+        label="PGD (sum of modes)",
+    )
     ax[1].set_title(f"Full solution u(x={x_fixed:.0f}, E)")
-    ax[1].set_xlabel("E"); ax[1].set_ylabel("u"); ax[1].legend()
+    ax[1].set_xlabel("E")
+    ax[1].set_ylabel("u")
+    ax[1].legend()
 
     # approx space (per mode)
     for m in range(n_modes):
-        ax[2].plot(x_fac.numpy(), norm(factor(m, 0, x_fac)).detach().numpy(),
-                   label=f"PGD mode {m}")
+        ax[2].plot(
+            x_fac.numpy(),
+            norm(factor(m, 0, x_fac)).detach().numpy(),
+            label=f"PGD mode {m}",
+        )
 
     # analytical space
-    ax[2].plot(x_fac.numpy(), norm(ana_x_shape).numpy(), "k:", lw=2,
-               label="analytical shape")
+    ax[2].plot(
+        x_fac.numpy(), norm(ana_x_shape).numpy(), "k:", lw=2, label="analytical shape"
+    )
     ax[2].set_title("Space factor w_m^x(x)  (normalised shape)")
-    ax[2].set_xlabel("x"); ax[2].legend()
+    ax[2].set_xlabel("x")
+    ax[2].legend()
 
     # approx E (per mode)
     for m in range(n_modes):
-        ax[3].plot(E_fac.numpy(), norm(factor(m, 1, E_fac)).detach().numpy(),
-                   label=f"PGD mode {m}")
+        ax[3].plot(
+            E_fac.numpy(),
+            norm(factor(m, 1, E_fac)).detach().numpy(),
+            label=f"PGD mode {m}",
+        )
 
     # analytical E
-    ax[3].plot(E_fac.numpy(), norm(ana_E_shape).numpy(), "k:", lw=2,
-               label="analytical 1/E shape")
+    ax[3].plot(
+        E_fac.numpy(),
+        norm(ana_E_shape).numpy(),
+        "k:",
+        lw=2,
+        label="analytical 1/E shape",
+    )
     ax[3].set_title("E factor w_m^E(E)  (normalised shape)")
-    ax[3].set_xlabel("E"); ax[3].legend()
+    ax[3].set_xlabel("E")
+    ax[3].legend()
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
     plt.show()
 
 
- ## Energy
+## Energy
 
-def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
+
+def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # on va chercher les noms des champs {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
     directory = decomposition.directory()
-    n_modes = len(directory['space'])
+    n_modes = len(directory["space"])
 
     # on les récupère dans le field_layout
-    space_modes_names =  directory['space']
-    E_modes_names = directory['E']
+    space_modes_names = directory["space"]
+    E_modes_names = directory["E"]
     space_modes = [field_layout[name] for name in space_modes_names]
     E_modes = [field_layout[name] for name in E_modes_names]
 
     # et le load
     load_field = field_layout[load_name]
-
 
     ## Elastic
     elastic = 0.0
@@ -359,7 +421,6 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
     # integrated on a common intersection mesh with a recomputed measure.
     for m in range(n_modes):
         for n in range(n_modes):
-
             # inner() contracts grad(u_m) . grad(u_n) over the field and d axes,
             # returning (N_e, N_q, 1) -- same rank as the measure J_u -- so the
             # `* J_u[m]` below aligns element-wise as intended (no reshape needed).
@@ -381,6 +442,7 @@ def energy(field_layout:FieldLayout, decomposition: any, load_name : str):
         load = load + Fx * Gm
 
     return elastic + load
+
 
 if __name__ == "__main__":
     main(150)

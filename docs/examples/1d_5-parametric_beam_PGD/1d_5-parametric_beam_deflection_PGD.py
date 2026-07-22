@@ -13,8 +13,8 @@ solution is sought in separated form
 Because ``E1, E2 > 0`` and ``tanh`` maps into (-1, 1), the modulus stays strictly
 between E1 and E2 -- positivity is structural, no clamping needed.
 
-This module only *builds* the problem (axes, decomposition, energy, model). Training
-and post-processing come in a later step.
+This module builds the problem (axes, decomposition, energy, model) and evaluates
+the energy once in ``main``. Training and plotting are not implemented yet.
 """
 
 from dataclasses import dataclass
@@ -119,10 +119,12 @@ class Problem:
     pgd: CPPGD
     field_layout: FieldLayout
     domain: IntegrationDomain
-    axes: dict
+    axes: dict[str, Axis]
 
 
-def build_problem(loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None):
+def build_problem(
+    loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None
+):
     """Assemble the five axes, the CP-PGD, the load and the model.
 
     The energy is *injected*: this function never references ``energy`` directly,
@@ -135,12 +137,16 @@ def build_problem(loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=No
         n_modes_ini (int): Number of initially active (trainable) modes.
         n_nodes (dict[str, int], optional): Per-axis node counts overriding
             ``DEFAULT_N_NODES``; used by the tests to build a tiny problem.
+        quad (QuadratureRule, optional): Shared quadrature rule for every axis;
+            defaults to ``MidPoint1D()`` (one point per element). Injectable so
+            tests can exercise ``N_q > 1`` rules (e.g. ``TwoPoints1D``), which
+            catch broadcasting bugs that a single quadrature point hides.
 
     Returns:
         Problem: the assembled objects.
     """
     sf = LinearSegment()
-    quad = MidPoint1D()
+    quad = quad if quad is not None else MidPoint1D()
     mapping = IsoparametricMapping1D(sf)
 
     counts = dict(DEFAULT_N_NODES)
@@ -177,7 +183,7 @@ def build_problem(loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=No
     # spatial factor of the separated source f = f_0(x) (x) 1(E1) (x) ... ; the
     # constant parametric factors are carried by the int lambda_i dE1 ... terms
     # of the load part of the energy.
-    axis_space = axes[0]
+    axis_space = next(axis for axis in axes if axis.name == "space")
     load_field = field_layout.add(
         Field(
             name="load",

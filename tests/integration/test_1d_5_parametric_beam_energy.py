@@ -12,6 +12,7 @@ import pytest
 import torch
 
 from neurom.differential import jacobian_field
+from neurom.quadratures import MidPoint1D, TwoPoints1D
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_PATH = (
@@ -239,13 +240,23 @@ def _randomise_monoms(pgd, seed=0):
                 )
 
 
+@pytest.mark.parametrize("quad_cls", [MidPoint1D, TwoPoints1D])
 @pytest.mark.parametrize("n_modes_ini", [1, 2])
-def test_energy_matches_brute_force_5d_quadrature(beam5p, float64, n_modes_ini):
+def test_energy_matches_brute_force_5d_quadrature(
+    beam5p, float64, n_modes_ini, quad_cls
+):
+    # Instantiated inside the test (not at parametrize-decoration time) so the
+    # quadrature rule's buffers pick up the float64 default the `float64`
+    # fixture has already switched to; building it at collection time would
+    # freeze it at whatever dtype was active at import, which mismatches the
+    # rest of the (float64) problem and fails with a dtype error in einsum.
+    quad = quad_cls()
     problem = beam5p.build_problem(
         lambda layout, decomposition: beam5p.energy(layout, decomposition),
         n_modes_max=3,
         n_modes_ini=n_modes_ini,
         n_nodes=TINY,
+        quad=quad,
     )
     _randomise_monoms(problem.pgd)
 
@@ -258,20 +269,49 @@ def test_energy_matches_brute_force_5d_quadrature(beam5p, float64, n_modes_ini):
     assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
 
 
+def test_energy_after_add_mode_matches_brute_force(beam5p, float64):
+    """Pin the greedy-enrichment seam: energy must stay correct after add_mode.
+
+    ``add_mode`` activates a new mode's pre-allocated assemblies without
+    touching the ``IntegrationDomain`` or rebuilding it, and ``energy`` must
+    pick the new mode up through ``directory()`` alone. This is exactly the
+    machinery the next piece of work (greedy training) turns on, and nothing
+    else exercises it yet.
+    """
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=3,
+        n_nodes=TINY,
+    )
+
+    problem.pgd.add_mode()
+    assert problem.pgd.n_modes_truncated == 2
+    _randomise_monoms(problem.pgd)
+
+    layout = problem.model()
+    separated = problem.model.loss(layout)
+    reference = brute_force_energy(layout, problem.pgd)
+
+    assert torch.isfinite(separated)
+    assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
+
+
 def test_energy_is_differentiable_wrt_the_monoms(beam5p):
     problem = beam5p.build_problem(
         lambda layout, decomposition: beam5p.energy(layout, decomposition),
         n_modes_max=3,
+        n_modes_ini=2,
         n_nodes=TINY,
     )
     layout = problem.model()
     loss = problem.model.loss(layout)
     loss.backward(retain_graph=True)
 
-    for field in problem.pgd.monoms[0]:
-        assert field.values_reduced.grad is not None
-        assert torch.isfinite(field.values_reduced.grad).all()
-        assert field.values_reduced.grad.abs().max() > 0.0
+    for m in range(problem.pgd.n_modes_truncated):
+        for field in problem.pgd.monoms[m]:
+            assert field.values_reduced.grad is not None
+            assert torch.isfinite(field.values_reduced.grad).all()
+            assert field.values_reduced.grad.abs().max() > 0.0
 
 
 def test_flat_modulus_limit_matches_the_separable_only_energy(beam5p, float64):

@@ -307,3 +307,17 @@ def test_flat_modulus_limit_matches_the_separable_only_energy(beam5p, float64):
     flat_reference = brute_force_energy(layout, problem.pgd, include_tanh=False)
 
     assert separated.item() == pytest.approx(flat_reference.item(), rel=1e-9)
+
+
+def test_main_builds_and_evaluates_a_finite_energy(beam5p, capsys):
+    problem = beam5p.main(verbose=True)
+
+    assert problem.pgd.n_modes_truncated == 1
+    assert problem.pgd.n_modes_max == 10
+
+    layout = problem.model()
+    value = problem.model.loss(layout)
+    assert value.dim() == 0
+    assert torch.isfinite(value)
+
+    assert "energy" in capsys.readouterr().out.lower()

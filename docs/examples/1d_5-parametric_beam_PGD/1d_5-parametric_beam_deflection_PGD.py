@@ -320,3 +320,34 @@ def energy(field_layout, decomposition, load_name="load"):
         )
 
     return elastic + load
+
+
+def main(verbose=True):
+    """Assemble the 5-parametric problem and evaluate the energy once.
+
+    No training and no plotting yet -- this only proves the whole chain
+    (five axes -> CP-PGD -> shared IntegrationDomain -> separated energy)
+    assembles and produces a finite value.
+
+    Args:
+        verbose (bool): print a short summary of the assembled problem.
+
+    Returns:
+        Problem: the assembled objects, for interactive use.
+    """
+    problem = build_problem(lambda layout, pgd: energy(layout, pgd, load_name="load"))
+
+    field_layout = problem.model()
+    value = problem.model.loss(field_layout)
+
+    if verbose:
+        print("axes            :", [axis.name for axis in problem.pgd.axes])
+        print("nodes per axis  :", DEFAULT_N_NODES)
+        print("active modes    :", problem.pgd.n_modes_truncated)
+        print(f"energy          : {value.item():.6e}")
+
+    return problem
+
+
+if __name__ == "__main__":
+    main()

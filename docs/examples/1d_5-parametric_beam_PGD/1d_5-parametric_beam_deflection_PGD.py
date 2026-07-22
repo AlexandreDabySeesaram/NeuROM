@@ -341,8 +341,11 @@ def main(verbose=True):
     value = problem.model.loss(field_layout)
 
     if verbose:
+        n_nodes_actual = {
+            name: problem.axes[name].topology.n_nodes for name in AXIS_ORDER
+        }
         print("axes            :", [axis.name for axis in problem.pgd.axes])
-        print("nodes per axis  :", DEFAULT_N_NODES)
+        print("nodes per axis  :", n_nodes_actual)
         print("active modes    :", problem.pgd.n_modes_truncated)
         print(f"energy          : {value.item():.6e}")
 

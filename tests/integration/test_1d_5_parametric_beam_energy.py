@@ -5,6 +5,7 @@ so it cannot be imported by module name; it is loaded from its path instead.
 """
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -320,4 +321,9 @@ def test_main_builds_and_evaluates_a_finite_energy(beam5p, capsys):
     assert value.dim() == 0
     assert torch.isfinite(value)
 
-    assert "energy" in capsys.readouterr().out.lower()
+    printed = capsys.readouterr().out
+    match = re.search(r"energy\s*:\s*(\S+)", printed)
+    assert match is not None, f"no 'energy : <value>' line found in output:\n{printed}"
+    printed_energy = float(match.group(1))
+
+    assert printed_energy == pytest.approx(value.item(), rel=1e-6)

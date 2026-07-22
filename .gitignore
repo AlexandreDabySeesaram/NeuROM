@@ -16,3 +16,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Generated example/test plots
+pgd_convergence.png
+pgd_vs_analytical.png

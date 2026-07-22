@@ -23,9 +23,12 @@ import torch
 
 from neurom.constraints import Dirichlet, NoConstraint
 from neurom.decompositions import Axis, CPPGD
+from neurom.differential import jacobian_field
 from neurom.field_layout import FieldLayout
 from neurom.fields import Field
 from neurom.geometry import IsoparametricMapping1D
+from neurom.inner import inner
+from neurom.integrate import integrate
 from neurom.interpolation.integration_domain import IntegrationDomain
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.meshes import Topology
@@ -200,3 +203,112 @@ def build_problem(loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=No
         domain=domain,
         axes={axis.name: axis for axis in axes},
     )
+
+
+def energy(field_layout, decomposition, load_name="load"):
+    """Total potential energy of the tanh-graded bar, in separated form.
+
+    With u = sum_i X_i(x) lambda_i(E1) mu_i(E2) A_i(alpha) N_i(n) and
+
+        E(x, E1, E2, alpha, n) = (E2 + E1)/2 + (E2 - E1)/2 tanh(n (x - alpha)),
+
+    every factor of the elastic term separates into a product of 1-D integrals
+    *except* tanh(n (x - alpha)), which couples x, alpha and n. That coupled block
+    is integrated by an exact 3-D tensor-product quadrature over those three
+    axes' quadrature points (one einsum per mode pair); the (E2 +/- E1)/2
+    prefactors stay 1-D moments of the E1 and E2 factors.
+
+    Sign convention follows the 2-parameter example: the returned value is
+    ``elastic + load``, the load field carrying its own sign.
+
+    Args:
+        field_layout (FieldLayout): filled by ``model()`` (train mode).
+        decomposition (CPPGD): supplies the active monom names via ``directory()``.
+        load_name (str): name of the load field in the layout.
+
+    Returns:
+        torch.Tensor: 0-dim energy.
+    """
+    directory = decomposition.directory()
+    n_modes = len(directory["space"])
+
+    spc = [field_layout[name] for name in directory["space"]]
+    e1 = [field_layout[name] for name in directory["E1"]]
+    e2 = [field_layout[name] for name in directory["E2"]]
+    alp = [field_layout[name] for name in directory["alpha"]]
+    slp = [field_layout[name] for name in directory["n"]]
+
+    # Space factors. jacobian_field returns (N_e, N_q, *u_shape, d) -- one extra
+    # trailing axis compared to u -- which must be *contracted away* by inner(),
+    # not reshaped away: reshaping only appears to work for d = 1 and turns the
+    # cross terms into a silent element-wise broadcast (see the 2-parameter
+    # example for the full story).
+    X = [r.u for r in spc]
+    gX = [jacobian_field(x=r.x, u=r.u) for r in spc]
+    Jx = [r.measure for r in spc]
+
+    # Parametric factors, with their own coordinate values (needed for the
+    # first moments int E1 lambda_i lambda_j dE1 and int E2 mu_i mu_j dE2).
+    lam, E1_val, J1 = [r.u for r in e1], [r.x for r in e1], [r.measure for r in e1]
+    mu, E2_val, J2 = [r.u for r in e2], [r.x for r in e2], [r.measure for r in e2]
+    A, Ja = [r.u for r in alp], [r.measure for r in alp]
+    N, Jn = [r.u for r in slp], [r.measure for r in slp]
+
+    # The one non-separable block: tanh(n (x - alpha)) on the tensor product of
+    # the space, alpha and n quadrature points, shape (Qx, Qalpha, Qn). It does
+    # not depend on the mode pair, so it is built once and reused below.
+    # Rebuilt every call (rather than cached at setup) so it stays correct if the
+    # meshes ever become trainable (r-adaptivity).
+    xq = spc[0].x.reshape(-1)
+    aq = alp[0].x.reshape(-1)
+    nq = slp[0].x.reshape(-1)
+    tanh_grid = torch.tanh(nq[None, None, :] * (xq[:, None, None] - aq[None, :, None]))
+
+    # NB: as in the 2-parameter example, the cross terms (i, j) assume modes i
+    # and j share a mesh per axis (the measure and coordinates indexed by i are
+    # used for both). Independent per-mode meshes would need a common
+    # intersection mesh with a recomputed measure.
+    elastic = 0.0
+    for i in range(n_modes):
+        for j in range(n_modes):
+            # Densities at the quadrature points, reused both integrated (the
+            # separable part) and raw (contracted against tanh_grid).
+            kx_density = inner(gX[i], gX[j]) * Jx[i]
+            a_density = A[i] * A[j] * Ja[i]
+            n_density = N[i] * N[j] * Jn[i]
+
+            Kx = integrate(kx_density)
+            P0 = integrate(a_density)
+            Q0 = integrate(n_density)
+            L0 = integrate(lam[i] * lam[j] * J1[i])
+            L1 = integrate(E1_val[i] * lam[i] * lam[j] * J1[i])
+            M0 = integrate(mu[i] * mu[j] * J2[i])
+            M1 = integrate(E2_val[i] * mu[i] * mu[j] * J2[i])
+
+            T = torch.einsum(
+                "xan,x,a,n->",
+                tanh_grid,
+                kx_density.reshape(-1),
+                a_density.reshape(-1),
+                n_density.reshape(-1),
+            )
+
+            mean_modulus = 0.5 * (M1 * L0 + L1 * M0)  # (E2 + E1) / 2
+            half_contrast = 0.5 * (M1 * L0 - L1 * M0)  # (E2 - E1) / 2
+            elastic = elastic + mean_modulus * Kx * P0 * Q0 + half_contrast * T
+    elastic = 0.5 * elastic
+
+    # Constant load: separable across every axis, so one 1-D integral per factor.
+    load_f = field_layout[load_name].u
+    load = 0.0
+    for i in range(n_modes):
+        Fx = integrate(inner(load_f, X[i]) * Jx[i])
+        load = load + (
+            Fx
+            * integrate(lam[i] * J1[i])
+            * integrate(mu[i] * J2[i])
+            * integrate(A[i] * Ja[i])
+            * integrate(N[i] * Jn[i])
+        )
+
+    return elastic + load

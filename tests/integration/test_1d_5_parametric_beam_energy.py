@@ -113,3 +113,177 @@ def test_loss_is_the_injected_callable(beam5p):
     assert problem.model.loss(out).item() == 42.0
     assert seen["layout"] is problem.field_layout
     assert seen["decomposition"] is problem.pgd
+
+
+# --- brute-force reference ------------------------------------------------
+#
+# Independent check of the separated energy: assemble u and grad_x u as FULL
+# 5-D tensors over the tensor product of every axis's quadrature points, form
+# E(x, E1, E2, alpha, n) pointwise there, and sum. This exploits no separability
+# whatsoever, so it cannot share a bug with the implementation under test. Only
+# tractable because the test uses a tiny mesh (4 x 3 x 3 x 3 x 3 = 324 points).
+
+
+def _flat(result_attr):
+    return result_attr.reshape(-1)
+
+
+def brute_force_energy(layout, decomposition, load_name="load", include_tanh=True):
+    """Reference energy by direct 5-D tensor-product quadrature.
+
+    ``include_tanh=False`` drops the tanh term from the modulus, leaving the
+    constant modulus (E1 + E2) / 2 -- used to check the coupled block cancels
+    when it must.
+    """
+    from neurom.differential import jacobian_field
+
+    directory = decomposition.directory()
+    n_modes = len(directory["space"])
+
+    spc = [layout[name] for name in directory["space"]]
+    e1 = [layout[name] for name in directory["E1"]]
+    e2 = [layout[name] for name in directory["E2"]]
+    alp = [layout[name] for name in directory["alpha"]]
+    slp = [layout[name] for name in directory["n"]]
+
+    gX = [_flat(jacobian_field(x=r.x, u=r.u)) for r in spc]
+    Xf = [_flat(r.u) for r in spc]
+    lam = [_flat(r.u) for r in e1]
+    mu = [_flat(r.u) for r in e2]
+    A = [_flat(r.u) for r in alp]
+    N = [_flat(r.u) for r in slp]
+
+    xq, aq, nq = _flat(spc[0].x), _flat(alp[0].x), _flat(slp[0].x)
+    e1q, e2q = _flat(e1[0].x), _flat(e2[0].x)
+
+    shape = (xq.numel(), e1q.numel(), e2q.numel(), aq.numel(), nq.numel())
+    grad_u = torch.zeros(shape, dtype=xq.dtype)
+    u_full = torch.zeros(shape, dtype=xq.dtype)
+    for i in range(n_modes):
+        grad_u = grad_u + torch.einsum(
+            "v,w,x,y,z->vwxyz", gX[i], lam[i], mu[i], A[i], N[i]
+        )
+        u_full = u_full + torch.einsum(
+            "v,w,x,y,z->vwxyz", Xf[i], lam[i], mu[i], A[i], N[i]
+        )
+
+    xv = xq.view(-1, 1, 1, 1, 1)
+    e1v = e1q.view(1, -1, 1, 1, 1)
+    e2v = e2q.view(1, 1, -1, 1, 1)
+    av = aq.view(1, 1, 1, -1, 1)
+    nv = nq.view(1, 1, 1, 1, -1)
+
+    E_grid = 0.5 * (e2v + e1v)
+    if include_tanh:
+        E_grid = E_grid + 0.5 * (e2v - e1v) * torch.tanh(nv * (xv - av))
+
+    measure = (
+        _flat(spc[0].measure).view(-1, 1, 1, 1, 1)
+        * _flat(e1[0].measure).view(1, -1, 1, 1, 1)
+        * _flat(e2[0].measure).view(1, 1, -1, 1, 1)
+        * _flat(alp[0].measure).view(1, 1, 1, -1, 1)
+        * _flat(slp[0].measure).view(1, 1, 1, 1, -1)
+    )
+
+    fq = _flat(layout[load_name].u).view(-1, 1, 1, 1, 1)
+
+    elastic = 0.5 * torch.sum(E_grid * grad_u * grad_u * measure)
+    load = torch.sum(fq * u_full * measure)
+    return elastic + load
+
+
+TINY = {"space": 5, "E1": 4, "E2": 4, "alpha": 4, "n": 4}
+
+
+@pytest.fixture
+def float64():
+    """Run the energy comparison in double precision.
+
+    The separated form and the brute-force form sum in very different orders and
+    the elastic term involves a difference (M1 L0 - L1 M0); float32 leaves too
+    little margin to distinguish a real bug from round-off.
+    """
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    yield
+    torch.set_default_dtype(previous)
+
+
+def _randomise_monoms(pgd, seed=0):
+    """Give every active monom non-trivial nodal values."""
+    generator = torch.Generator().manual_seed(seed)
+    for m in range(pgd.n_modes_truncated):
+        for field in pgd.monoms[m]:
+            with torch.no_grad():
+                field.values_reduced.copy_(
+                    torch.rand(
+                        field.values_reduced.shape,
+                        generator=generator,
+                        dtype=field.values_reduced.dtype,
+                    )
+                    + 0.5
+                )
+
+
+@pytest.mark.parametrize("n_modes_ini", [1, 2])
+def test_energy_matches_brute_force_5d_quadrature(beam5p, float64, n_modes_ini):
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=3,
+        n_modes_ini=n_modes_ini,
+        n_nodes=TINY,
+    )
+    _randomise_monoms(problem.pgd)
+
+    layout = problem.model()
+    separated = beam5p.energy(layout, problem.pgd)
+    reference = brute_force_energy(layout, problem.pgd)
+
+    assert separated.dim() == 0
+    assert torch.isfinite(separated)
+    assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
+
+
+def test_energy_is_differentiable_wrt_the_monoms(beam5p):
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=3,
+        n_nodes=TINY,
+    )
+    layout = problem.model()
+    loss = problem.model.loss(layout)
+    loss.backward(retain_graph=True)
+
+    for field in problem.pgd.monoms[0]:
+        assert field.values_reduced.grad is not None
+        assert torch.isfinite(field.values_reduced.grad).all()
+        assert field.values_reduced.grad.abs().max() > 0.0
+
+
+def test_flat_modulus_limit_matches_the_separable_only_energy(beam5p, float64):
+    """When the E1 and E2 factors coincide, the whole tanh block must drop out.
+
+    The coupled term carries the prefactor (M1 L0 - L1 M0), the discrete image of
+    (E2 - E1)/2. The two modulus axes share an interval and a mesh here, so giving
+    them identical monom values makes M1 == L1 and L0 == M0, and that prefactor
+    vanishes exactly. The energy must then equal the brute-force reference
+    computed with the tanh term dropped entirely -- if it does not, the coupled
+    and separable parts are wired together wrongly.
+    """
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=2,
+        n_nodes=TINY,
+    )
+    _randomise_monoms(problem.pgd)
+    # Identical E1 and E2 factors: same mesh, same interval, same nodal values.
+    with torch.no_grad():
+        problem.pgd.monoms[0][2].values_reduced.copy_(
+            problem.pgd.monoms[0][1].values_reduced
+        )
+
+    layout = problem.model()
+    separated = beam5p.energy(layout, problem.pgd)
+    flat_reference = brute_force_energy(layout, problem.pgd, include_tanh=False)
+
+    assert separated.item() == pytest.approx(flat_reference.item(), rel=1e-9)

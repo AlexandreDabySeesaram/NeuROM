@@ -254,6 +254,13 @@ def energy(field_layout, decomposition, load_name="load"):
     A, Ja = [r.u for r in alp], [r.measure for r in alp]
     N, Jn = [r.u for r in slp], [r.measure for r in slp]
 
+    # NB: as in the 2-parameter example, the cross terms (i, j) assume modes i
+    # and j share a mesh per axis (the measure and coordinates indexed by i are
+    # used for both). Independent per-mode meshes would need a common
+    # intersection mesh with a recomputed measure. tanh_grid below is the more
+    # fragile consumer of this assumption, since it hard-codes mode 0's
+    # quadrature points for every (i, j) pair.
+    #
     # The one non-separable block: tanh(n (x - alpha)) on the tensor product of
     # the space, alpha and n quadrature points, shape (Qx, Qalpha, Qn). It does
     # not depend on the mode pair, so it is built once and reused below.
@@ -264,10 +271,6 @@ def energy(field_layout, decomposition, load_name="load"):
     nq = slp[0].x.reshape(-1)
     tanh_grid = torch.tanh(nq[None, None, :] * (xq[:, None, None] - aq[None, :, None]))
 
-    # NB: as in the 2-parameter example, the cross terms (i, j) assume modes i
-    # and j share a mesh per axis (the measure and coordinates indexed by i are
-    # used for both). Independent per-mode meshes would need a common
-    # intersection mesh with a recomputed measure.
     elastic = 0.0
     for i in range(n_modes):
         for j in range(n_modes):
@@ -285,6 +288,11 @@ def energy(field_layout, decomposition, load_name="load"):
             M0 = integrate(mu[i] * mu[j] * J2[i])
             M1 = integrate(E2_val[i] * mu[i] * mu[j] * J2[i])
 
+            # kx_density, a_density and n_density are all scalar (N_e, N_q, 1)
+            # densities (no trailing vector/jacobian axis like gX), so
+            # .reshape(-1) is an exact flatten (numel == Qx, Qalpha, Qn
+            # respectively) -- unlike the d-trailing jacobian_field output
+            # discussed above, there is no broadcast trap here.
             T = torch.einsum(
                 "xan,x,a,n->",
                 tanh_grid,

@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import torch
 
+from neurom.differential import jacobian_field
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_PATH = (
     REPO_ROOT
@@ -135,8 +137,6 @@ def brute_force_energy(layout, decomposition, load_name="load", include_tanh=Tru
     constant modulus (E1 + E2) / 2 -- used to check the coupled block cancels
     when it must.
     """
-    from neurom.differential import jacobian_field
-
     directory = decomposition.directory()
     n_modes = len(directory["space"])
 
@@ -192,7 +192,15 @@ def brute_force_energy(layout, decomposition, load_name="load", include_tanh=Tru
     return elastic + load
 
 
-TINY = {"space": 5, "E1": 4, "E2": 4, "alpha": 4, "n": 4}
+# Every axis has a distinct node count, so an axis mix-up (e.g. reading E2's
+# values/measure where E1's were meant, or swapping alpha/n in an einsum)
+# turns into a shape mismatch instead of a silently-passing wrong number.
+TINY = {"space": 5, "E1": 4, "E2": 6, "alpha": 7, "n": 3}
+
+# test_flat_modulus_limit_matches_the_separable_only_energy needs E1 and E2 to
+# share a mesh (same node count, same interval) for its cancellation argument
+# to hold, so it gets its own dict with E1 == E2.
+TINY_FLAT = {"space": 5, "E1": 4, "E2": 4, "alpha": 7, "n": 3}
 
 
 @pytest.fixture
@@ -210,18 +218,23 @@ def float64():
 
 
 def _randomise_monoms(pgd, seed=0):
-    """Give every active monom non-trivial nodal values."""
+    """Give every active monom non-trivial nodal values, spanning both signs.
+
+    Strictly positive values (e.g. ``rand + 0.5``) would never exercise
+    sign-dependent cancellation paths, so this draws from ``[-1, 1)`` instead.
+    """
     generator = torch.Generator().manual_seed(seed)
     for m in range(pgd.n_modes_truncated):
         for field in pgd.monoms[m]:
             with torch.no_grad():
                 field.values_reduced.copy_(
-                    torch.rand(
+                    2.0
+                    * torch.rand(
                         field.values_reduced.shape,
                         generator=generator,
                         dtype=field.values_reduced.dtype,
                     )
-                    + 0.5
+                    - 1.0
                 )
 
 
@@ -269,18 +282,25 @@ def test_flat_modulus_limit_matches_the_separable_only_energy(beam5p, float64):
     vanishes exactly. The energy must then equal the brute-force reference
     computed with the tanh term dropped entirely -- if it does not, the coupled
     and separable parts are wired together wrongly.
+
+    n_modes_ini=2 keeps both modes active (not just mode 0), and the E1->E2
+    copy runs for every active mode, so the cancellation is exercised across
+    all mode pairs, including the (0, 1) / (1, 0) cross terms.
     """
     problem = beam5p.build_problem(
         lambda layout, decomposition: beam5p.energy(layout, decomposition),
         n_modes_max=2,
-        n_nodes=TINY,
+        n_modes_ini=2,
+        n_nodes=TINY_FLAT,
     )
     _randomise_monoms(problem.pgd)
-    # Identical E1 and E2 factors: same mesh, same interval, same nodal values.
+    # Identical E1 and E2 factors on every active mode: same mesh, same
+    # interval, same nodal values.
     with torch.no_grad():
-        problem.pgd.monoms[0][2].values_reduced.copy_(
-            problem.pgd.monoms[0][1].values_reduced
-        )
+        for m in range(problem.pgd.n_modes_truncated):
+            problem.pgd.monoms[m][2].values_reduced.copy_(
+                problem.pgd.monoms[m][1].values_reduced
+            )
 
     layout = problem.model()
     separated = beam5p.energy(layout, problem.pgd)

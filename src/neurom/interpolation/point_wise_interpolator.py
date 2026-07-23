@@ -51,12 +51,28 @@ class PointWiseInterpolator(nn.Module):
 
         Args:
             x (torch.Tensor): Physical query positions, tensor of shape
-                ``(N_pts, dim)``.
+                ``(N_pts, N_q, dim)`` — one query point per leading index,
+                usually with ``N_q == 1``.
 
         Returns:
             torch.Tensor: Interpolated field values at each query point,
             tensor of shape ``(N_pts, 1, field_dim)``.
+
+        Raises:
+            ValueError: If ``x`` does not have shape ``(N_pts, N_q, dim)``.
         """
+        # Guard the rank explicitly: a flat (N_pts,) tensor does NOT fail
+        # downstream, it broadcasts inside `inverse_map_at` into a
+        # point-by-element cross product, which the shape function then slices
+        # back down to the *correct output shape* with wrong values. Silent
+        # numerical corruption; caught here instead.
+        if x.ndim != 3 or x.shape[-1] != self.mesh.dim:
+            raise ValueError(
+                f"at_position expects x of shape (N_pts, N_q, dim) with "
+                f"dim={self.mesh.dim}, got {tuple(x.shape)}. Reshape a flat "
+                f"list of points with x.reshape(-1, 1, {self.mesh.dim})."
+            )
+
         element_ids = self.mesh.elements_at(x)
         # Get connectivity for those elements
         element_nodes_ids = self.mesh.connectivity.element_connectivity[element_ids, :]

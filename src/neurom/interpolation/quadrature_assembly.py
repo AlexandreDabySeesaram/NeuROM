@@ -1,5 +1,6 @@
 """Assembly of interpolated field quantities at quadrature points."""
 
+import torch
 import torch.nn as nn
 
 from neurom.interpolation.field_interpolator import FieldInterpolator
@@ -22,32 +23,38 @@ class QuadratureAssembly(nn.Module):
     ``QuadratureAssemblyResult`` ready for numerical integration.
 
     Args:
-        context (QuadratureContext): Provides the quadrature positions in
-            physical and reference coordinates as well as the integration
-            measure.
-        sf (ShapeFunction): The shape function used to perform the
-            interpolation.
-        field (FieldBase): The field whose nodal values are interpolated at
-            the quadrature points.
-
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
+        active (bool): Whether ``IntegrationDomain.interpolate_all`` evaluates this assembly. Defaults to ``True``.
     Attributes:
-        context (QuadratureContext): Provides the quadrature positions in
-            physical and reference coordinates as well as the integration
-            measure.
-        sf (ShapeFunction): The shape function used to perform the
-            interpolation.
-        field (FieldBase): The field whose nodal values are interpolated at
-            the quadrature points.
-        _field_interpolator (FieldInterpolator): Internal interpolator that
-            evaluates ``field`` using ``sf`` at reference coordinates.
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
+        active (torch.nn.parameter.Buffer): Bool buffer; when ``False`` the domain skips this assembly. Set in place via :meth:`activate`. Round-trips through ``state_dict``.
+        _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
     """
 
-    def __init__(self, context: QuadratureContext, sf: ShapeFunction, field: FieldBase):
+    def __init__(
+        self,
+        context: QuadratureContext,
+        sf: ShapeFunction,
+        field: FieldBase,
+        active: bool = True,
+    ):
         super().__init__()
         self.context = context
         self.field = field
         self.sf = sf
         self._field_interpolator = FieldInterpolator(self.sf, self.field)
+        # Whether interpolate_all should evaluate this assembly. A registered
+        # buffer so it round-trips through state_dict. Monotone for PGD modes
+        # (activated, never deactivated); see the single-IntegrationDomain spec.
+        self.register_buffer("active", torch.tensor(bool(active)))
+
+    def activate(self) -> None:
+        """Mark this assembly for interpolation (in place; keeps buffer identity)."""
+        self.active.fill_(True)
 
     def interpolate(self) -> QuadratureAssemblyResult:
         """Interpolate the field at all quadrature points.

@@ -61,5 +61,6 @@ class IntegrationDomain(nn.Module):
         """
         # Interpolate all required fields and update() their values in FieldLayout
         for assembly in self.assemblies:
-            result = assembly.interpolate()
-            field_layout.update(assembly.field, result)
+            if not bool(assembly.active):
+                continue
+            field_layout.update(assembly.field, assembly.interpolate())

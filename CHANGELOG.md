@@ -1,3 +1,51 @@
+## 2026-07-23 — GreedyTrainer, and two base.py bugs only real physics exposed
+
+- **New** `src/neurom/training/greedy.py`: `GreedyTrainer(PGDTrainer)`, the
+  first concrete strategy. One stage = one mode: stage 0 trains the
+  initially-active mode(s), every later stage calls `freeze_all()` then
+  `add_mode()` before building a fresh optimizer. `should_add_stage` checks
+  `n_modes_truncated >= n_modes_max` itself (stop reason `"capacity"`) so
+  `CPPGD.add_mode()`'s `RuntimeError` at capacity is never hit. `on_stage_end`
+  records two diagnostics per stage from raw nodal vectors (cheap, no forward
+  pass): `amplitude` (`prod_k ||w_m^k||`) and `max_correlation` (largest
+  normalised rank-1 inner product against earlier modes) — meant to *spot*, not
+  quantify, a greedy step rediscovering an existing mode (every mode shares the
+  same `Axis.init_values` seed).
+- **Verified** (`tests/integration/test_greedy_trainer.py`, 7 tests, against
+  the real 5-parametric beam on a tiny mesh
+  `{space:5, E1:4, E2:6, alpha:7, n:3}`, `n_modes_max=3`): one mode added per
+  stage, stage 0 does not enrich, frozen modes are bitwise unchanged by later
+  stages, capacity stops the run before `add_mode()` can raise, diagnostics
+  are in range and the first mode's `max_correlation` is exactly 0. The
+  end-of-stage-energy-never-rises property (`FixedIterations(80)`, tolerance
+  `1e-9 * |previous.energy|`) **passed unmodified** — 80 iterations was enough
+  for each stage to work off the seam jump from the new mode's nonzero seed.
+- **Two pre-existing `base.py` bugs found and fixed**, both invisible to Task
+  2's synthetic stub loss and both hit by every single new test on first run:
+  1. `step()`'s `loss.backward()` needed `retain_graph=True`. Cause:
+     `QuadratureContext` caches its quadrature-point tensor (`x_phys`) once at
+     construction from a leaf (`_xi_ref`); `NeuROMModel.forward` never rebuilds
+     it. `jacobian_field`'s internal `torch.autograd.grad(..., create_graph=True)`
+     grafts every iteration's fresh downstream graph onto that one shared
+     upstream node, and a non-retaining `backward()` frees it after the first
+     iteration, so the second iteration's backward raises "Trying to backward
+     through the graph a second time". Confirmed by reproducing standalone with
+     a bare `Adam` + closure (2 steps, no trainer). This is expected to bite
+     *any* strategy trained against an autograd-differentiated energy, not
+     just `GreedyTrainer`.
+  2. `_record_final_energy` wrapped its forward pass in `torch.no_grad()`,
+     which strips `grad_fn` from every intermediate tensor regardless of the
+     underlying leaves — fatal for any energy using `jacobian_field` internally
+     (`torch.autograd.grad` has nothing to differentiate). Fixed by dropping
+     `no_grad()` and using `.detach()` on the returned loss instead, matching
+     the pre-trainer 2-parameter example's own `loss.detach().item()` pattern.
+     Not anticipated by the Task 3 brief; a latent defect in already-committed
+     code that would otherwise have broken end-of-stage energy tracking
+     (`StageRecord.energy`, `gain`, `RelativeGain`) for every future strategy
+     trained against real physics.
+- Full suite: 153 passed (146 baseline + 7 new), no regressions. Full report:
+  `.superpowers/sdd/task-3-report.md`.
+
 ## 2026-07-22 — 5-parametric beam with tanh-graded modulus
 
 - **New example** `docs/examples/1d_5-parametric_beam_PGD/1d_5-parametric_beam_deflection_PGD.py`:

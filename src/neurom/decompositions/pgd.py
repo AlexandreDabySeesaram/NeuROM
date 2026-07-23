@@ -9,7 +9,7 @@ from neurom.fields.trainable_field import TrainableField
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.quadratures.quadrature_rule import QuadratureRule
 from neurom.constraints.constraint import Constraint
-from neurom.meshes.topology import Topology
+from neurom.meshes.connectivity import Connectivity
 from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
@@ -22,15 +22,19 @@ class Axis:
     """Descriptor of one factor (coordinate direction) of a CP-PGD decomposition.
 
     Groups everything needed to build and interpolate the monoms living on this
-    axis. The axis mesh topology is derived from ``nodes_positions`` so that the
-    ``Mesh`` identity check and the monoms' ``TrainableField`` share the exact
-    same ``Topology`` object.
+    axis. The ``mesh`` and the ``mapping`` are built by the caller and injected:
+    the mapping is mesh-bound, so each axis needs its own instance (they must not
+    be shared between axes). ``Mesh`` itself enforces that its ``Connectivity``
+    is the very same object as ``nodes_positions.connectivity``, which is what
+    the monoms' ``TrainableField`` also bind to.
 
     Attributes:
         name (str): Axis name, used as key in the separated interpolation output.
-        nodes_positions (Field): Coordinates of the axis mesh nodes.
+        mesh (Mesh): Mesh of this axis; also carries ``nodes_positions`` and the
+            ``Connectivity`` the monoms are built on.
         sf (ShapeFunction): Shape function used for interpolation on this axis.
-        mapping: Reference/physical mapping (e.g. IsoparametricMapping1D).
+        mapping: Reference/physical mapping built on this axis' ``mesh``
+            (e.g. ``IsoparametricMapping1D(sf, mesh)``).
         quad (QuadratureRule): Quadrature rule for integration on this axis.
         constraint (Constraint): Constraint (boundary conditions) on this axis.
         init_values (torch.Tensor): Initial nodal values for each new monom,
@@ -38,7 +42,7 @@ class Axis:
     """
 
     name: str
-    nodes_positions: Field
+    mesh: Mesh
     sf: ShapeFunction
     mapping: object
     quad: QuadratureRule
@@ -46,16 +50,19 @@ class Axis:
     init_values: torch.Tensor
 
     @property
-    def topology(self) -> Topology:
-        return self.nodes_positions.topology
+    def connectivity(self) -> Connectivity:
+        return self.mesh.connectivity
+
+    @property
+    def nodes_positions(self) -> Field:
+        return self.mesh.nodes_positions
 
     def __post_init__(self):
-        # Build the interpolation geometry once, here, so it is a first-class
+        # Build the interpolation context once, here, so it is a first-class
         # attribute other fields (e.g. a load) can share via `axis.context`.
-        # INVARIANT: the Axis builds the *context*, never the *mapping* — the
-        # mapping stays injected so a future sub/super-parametric element can use
-        # a geometry shape function distinct from the field's `sf`.
-        self.mesh = Mesh(self.topology, self.nodes_positions)
+        # INVARIANT: the Axis builds the *context*, never the *mesh* or the
+        # *mapping* — both stay injected so a future sub/super-parametric element
+        # can use a geometry shape function distinct from the field's `sf`.
         self.context = QuadratureContext(self.mesh, self.quad, self.mapping)
 
 
@@ -117,7 +124,7 @@ class CPPGD(TensorDecomposition):
                     [
                         TrainableField(
                             name=f"{self.name}_dim{a.name}_mode{m}",
-                            topology=a.topology,
+                            connectivity=a.connectivity,
                             init_values=a.init_values,
                             constraint=a.constraint,
                         )
@@ -320,7 +327,7 @@ class CPPGD(TensorDecomposition):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1))  # (P, 1, dim_k)
+                w = pwi.at_position(coords[k].reshape(-1, 1, 1))  # (P, 1, dim_k)
                 w = w.reshape(w.shape[0], -1)  # (P, dim_k)
                 prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
@@ -348,7 +355,7 @@ class CPPGD(TensorDecomposition):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1)).reshape(
+                w = pwi.at_position(coords[k].reshape(-1, 1, 1)).reshape(
                     P_k, -1
                 )  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)

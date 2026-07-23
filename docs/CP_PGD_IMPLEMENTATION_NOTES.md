@@ -85,8 +85,8 @@ enrichment.
   mesh coordinates), `sf` (`ShapeFunction`), `mapping`, `quad`
   (`QuadratureRule`), `constraint` (`Constraint`, carries the BCs),
   `init_values` (initial nodal values for each monom on this axis). Read-only
-  property `topology` returns `nodes_positions.topology` (guarantees the same
-  `Topology` object is shared by the `Mesh` and the monoms' `TrainableField`).
+  property `connectivity` returns `nodes_positions.connectivity` (guarantees the same
+  `Connectivity` object is shared by the `Mesh` and the monoms' `TrainableField`).
 
   **`CPPGD(TensorDecomposition)`** — `CPPGD(axes: list[Axis], n_modes_max, n_modes_ini=1)`.
   - `self.monoms` — `ModuleList` over modes of `ModuleList` over axes of
@@ -109,7 +109,7 @@ enrichment.
     shared `x`, `measure`). **Exposes each monom individually** so a separable
     energy can be written monom-by-monom. **Replaces** the old
     `interpolate_separated()` (removed — no `FieldLayout` bypass). Each monom
-    keeps its own autograd link, so `jacobian_field` applies per monom.
+    keeps its own autograd link, so `jacobian` applies per monom.
   - `assemble(coords: list[torch.Tensor]) -> torch.Tensor` — full tensor of
     shape `(N_1, ..., N_l)` = `Σ_m Π_k w_m^k(coords[k])`, via
     `PointWiseInterpolator` per monom + a dynamically-built einsum over any
@@ -136,7 +136,7 @@ enrichment.
 
 ### Added — tests
 
-- `tests/unit/decompositions/test_pgd.py` — `Axis` topology, `CPPGD`
+- `tests/unit/decompositions/test_pgd.py` — `Axis` connectivity, `CPPGD`
   construction + freeze state, `separated_view` keys/shapes/values (read back
   from a `FieldLayout` after `register_into` + `fill`), a
   `test_interpolate_separated_is_removed` regression test pinning the

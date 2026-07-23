@@ -6,18 +6,18 @@ import torch
 from neurom.decompositions import Axis, CPPGD
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.fields import Field
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.interpolation.integration_domain import IntegrationDomain
 from neurom.constraints import Dirichlet, NoConstraint
-from neurom.differential import jacobian_field
-from neurom.inner import inner
-from neurom.integrate import integrate
+from neurom.math import jacobian
+from neurom.math import inner
+from neurom.math import integrate
 from neurom.field_layout import FieldLayout
 
 torch.set_default_dtype(torch.float32)
@@ -89,11 +89,12 @@ class Test1dBeamDeflection:
 
         ## Axis
         # Shape function
-        sf = LinearSegment()
+        sf = LinearBar()
         # Quadrature strategy
         quad = TwoPoints1D()
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf)
+
+        # Mapping from/to reference/physical coordinates: built per axis below,
+        # since a mapping is bound to one mesh and must not be shared.
 
         # Prepare Field layout and fill it with actual fields
         field_layout = FieldLayout()
@@ -111,19 +112,21 @@ class Test1dBeamDeflection:
             [torch.arange(0, N_space - 1), torch.arange(1, N_space)]
         ).T
 
-        topology_space = Topology(nodes_space, elements_space)
+        connectivity_space = Connectivity(nodes_space, elements_space)
         nodes_positions_space = Field(
-            name=f"space_positions", topology=topology_space, values=x_array
+            name=f"space_positions", connectivity=connectivity_space, values=x_array
         )
 
         # Initialize displacement values
         u_init = 0.5 * torch.ones(N_space, 1)
 
+        mesh_space = Mesh(connectivity_space, nodes_positions_space)
+
         axis_space = Axis(
             name="space",
-            nodes_positions=nodes_positions_space,
+            mesh=mesh_space,
             sf=sf,
-            mapping=mapping,
+            mapping=IsoparametricMapping1D(sf, mesh_space),
             quad=quad,
             constraint=Dirichlet(
                 nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)
@@ -142,19 +145,21 @@ class Test1dBeamDeflection:
         nodes_E = torch.arange(0, N_E)
         elements_E = torch.vstack([torch.arange(0, N_E - 1), torch.arange(1, N_E)]).T
 
-        topology_E = Topology(nodes_E, elements_E)
+        connectivity_E = Connectivity(nodes_E, elements_E)
         nodes_positions_E = Field(
-            name=f"E_positions", topology=topology_E, values=E_array
+            name=f"E_positions", connectivity=connectivity_E, values=E_array
         )
 
         # Initialize E mode values
         E_init = 0.5 * torch.ones(N_E, 1)
 
+        mesh_E = Mesh(connectivity_E, nodes_positions_E)
+
         axis_E = Axis(
             name="E",
-            nodes_positions=nodes_positions_E,
+            mesh=mesh_E,
             sf=sf,
-            mapping=mapping,
+            mapping=IsoparametricMapping1D(sf, mesh_E),
             quad=quad,
             constraint=NoConstraint(),
             init_values=E_init,
@@ -171,7 +176,7 @@ class Test1dBeamDeflection:
         # sampled at the SAME quadrature points as u so that inner(f, u) aligns
         # (this is exactly what neurom.physics.LoadPotential does). We give it its
         # own nodal values on the space mesh, then interpolate it once on the
-        # space axis's quadrature (same sf / quad / mapping / topology as u).
+        # space axis's quadrature (same sf / quad / mapping / connectivity as u).
         # For a load that is constant in E, this is the single rank-1 spatial
         # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
@@ -180,7 +185,7 @@ class Test1dBeamDeflection:
         load_field = field_layout.add(
             Field(
                 name="load",
-                topology=topology_space,
+                connectivity=connectivity_space,
                 values=load_value * torch.ones(N_space, 1),
             )
         )
@@ -448,7 +453,7 @@ def _factor(pgd_approx, m, k, pts):
         pgd_approx.monoms[m][k],
         pgd_approx.axes[k].mapping,
     )
-    return pwi.at_position(pts.reshape(-1)).reshape(-1)
+    return pwi.at_position(pts.reshape(-1, 1, 1)).reshape(-1)
 
 
 def mode_contribution(pgd_approx, m, *, x_min, x_max, E_min, E_max, n=200):
@@ -487,18 +492,18 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     ## Elastic
     elastic = 0.0
     # param part
-    E_val = [E_mode_field.x for E_mode_field in E_modes]
-    lmbdas = [E_mode_field.u for E_mode_field in E_modes]
-    J_E = [E_mode_field.measure for E_mode_field in E_modes]
+    E_val = [E_mode_field.x.values for E_mode_field in E_modes]
+    lmbdas = [E_mode_field.u.values for E_mode_field in E_modes]
+    J_E = [E_mode_field.measure.values for E_mode_field in E_modes]
 
     # space part
-    u = [space_mode_field.u for space_mode_field in space_modes]
-    x_val = [space_mode_field.x for space_mode_field in space_modes]
-    # jacobian_field returns (N_e, N_q, *u_shape, d): one extra trailing axis of
+    u = [space_mode_field.u.values for space_mode_field in space_modes]
+    x_val = [space_mode_field.x.values for space_mode_field in space_modes]
+    # jacobian returns (N_e, N_q, *u_shape, d): one extra trailing axis of
     # size d (the physical dimension) compared to u's own shape (N_e, N_q,
     # *u_shape). That axis must be *contracted away* -- the elastic term is the
     # scalar product grad(u_m) . grad(u_n) summed over the spatial directions --
-    # so we keep the raw jacobian_field output here (no reshape) and let inner()
+    # so we keep the raw jacobian output here (no reshape) and let inner()
     # perform the contraction in the loop below. See Kx there.
     #
     # This replaces an earlier `.reshape(u[n].shape)` on the line below. That
@@ -510,8 +515,8 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # shapes don't broadcast and it hard-failed with "size of tensor a (2) must
     # match size of tensor b (N_e)"; and in 2D/3D (d>1) reshape can't collapse the
     # axis at all. Using inner() instead is correct AND dimension-agnostic.
-    grad_u = [jacobian_field(x=x_val[n], u=u[n]) for n in range(n_modes)]
-    J_u = [space_mode_field.measure for space_mode_field in space_modes]
+    grad_u = [jacobian(x_val[n], u[n]) for n in range(n_modes)]
+    J_u = [space_mode_field.measure.values for space_mode_field in space_modes]
 
     # NB: cross terms (m, n) below assume modes m and n share the same mesh
     # (measure/coords indexed by m are used for both). Once modes can live on
@@ -533,7 +538,7 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # the old raw nodal `external_load_values` (N_space, 1), which broadcast wrong
     # against quadrature-point values (silently with N_q=1, crashing with N_q>1).
     # Gm = ∫ lmbda dE carries the constant-in-E factor of the separated load.
-    load_f = load_field.u
+    load_f = load_field.u.values
     for m in range(n_modes):
         Fx = integrate(inner(load_f, u[m]) * J_u[m])
         Gm = integrate(lmbdas[m] * J_E[m])

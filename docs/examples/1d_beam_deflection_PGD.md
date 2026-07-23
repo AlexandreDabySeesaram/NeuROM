@@ -156,8 +156,8 @@ reconstruction is what panels 1–2 compare against the analytical solution.
 ## Implementation note
 
 The separated energy is assembled with the library helpers rather than a hand-
-written `einsum`: `neurom.inner.inner` contracts the field and physical
-directions (e.g. $\nabla u_m \cdot \nabla u_n$) and `neurom.integrate.integrate`
+written `einsum`: `neurom.math.inner` contracts the field and physical
+directions (e.g. $\nabla u_m \cdot \nabla u_n$) and `neurom.math.integrate`
 performs the quadrature sum, inside a loop over the mode pairs $(m, n)$. Under
 the hood, the tensor assembly of the decomposition
 (`CPPGD.assemble` / `CPPGD.evaluate`) *does* use `torch.einsum` to contract the

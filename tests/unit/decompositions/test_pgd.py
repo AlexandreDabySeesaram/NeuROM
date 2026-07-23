@@ -3,9 +3,9 @@ import torch
 
 from neurom.decompositions import Axis, CPPGD
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.fields import Field
 from neurom.constraints import NoConstraint
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
@@ -13,7 +13,7 @@ from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation import IntegrationDomain
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
-from neurom.integrate import integrate
+from neurom.math import integrate
 from neurom.neurom_model import NeuROMModel
 
 torch.set_default_dtype(torch.float32)
@@ -23,26 +23,29 @@ def make_axis(name="space", n=5, lo=0.0, hi=10.0):
     coords = torch.linspace(lo, hi, n).unsqueeze(-1)
     nodes = torch.arange(0, n)
     elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
-    topology = Topology(nodes, elements)
-    positions = Field(name=f"{name}_positions", topology=topology, values=coords)
-    sf = LinearSegment()
+    connectivity = Connectivity(nodes, elements)
+    positions = Field(
+        name=f"{name}_positions", connectivity=connectivity, values=coords
+    )
+    sf = LinearBar()
+    mesh = Mesh(connectivity, positions)
     return Axis(
         name=name,
-        nodes_positions=positions,
+        mesh=mesh,
         sf=sf,
-        mapping=IsoparametricMapping1D(sf),
+        mapping=IsoparametricMapping1D(sf, mesh),
         quad=TwoPoints1D(),
         constraint=NoConstraint(),
         init_values=torch.zeros(n, 1),
     )
 
 
-def test_axis_exposes_topology_from_positions():
+def test_axis_exposes_connectivity_from_positions():
     axis = make_axis()
     assert axis.name == "space"
-    # topology property must be the SAME object as the positions' topology
-    assert axis.topology is axis.nodes_positions.topology
-    assert axis.topology.n_nodes == 5
+    # connectivity property must be the SAME object as the positions' connectivity
+    assert axis.connectivity is axis.nodes_positions.connectivity
+    assert axis.connectivity.n_nodes == 5
 
 
 def make_two_axes():
@@ -116,8 +119,8 @@ def test_assemble_matches_manual_outer_product():
     pwi_e = PointWiseInterpolator(
         axes[1].mesh, axes[1].sf, model.monoms[0][1], axes[1].mapping
     )
-    s = pwi_s.at_position(x).reshape(-1)
-    g = pwi_e.at_position(E).reshape(-1)
+    s = pwi_s.at_position(x.reshape(-1, 1, 1)).reshape(-1)
+    g = pwi_e.at_position(E.reshape(-1, 1, 1)).reshape(-1)
     expected = torch.outer(s, g)
     assert torch.allclose(u, expected, atol=1e-5)
 
@@ -162,10 +165,10 @@ def test_assemble_sums_two_modes_matching_manual_outer_products():
     pwi_e1 = PointWiseInterpolator(
         axes[1].mesh, axes[1].sf, model.monoms[1][1], axes[1].mapping
     )
-    s0 = pwi_s0.at_position(x).reshape(-1)
-    g0 = pwi_e0.at_position(E).reshape(-1)
-    s1 = pwi_s1.at_position(x).reshape(-1)
-    g1 = pwi_e1.at_position(E).reshape(-1)
+    s0 = pwi_s0.at_position(x.reshape(-1, 1, 1)).reshape(-1)
+    g0 = pwi_e0.at_position(E.reshape(-1, 1, 1)).reshape(-1)
+    s1 = pwi_s1.at_position(x.reshape(-1, 1, 1)).reshape(-1)
+    g1 = pwi_e1.at_position(E.reshape(-1, 1, 1)).reshape(-1)
     expected = torch.outer(s0, g0) + torch.outer(s1, g1)
     assert torch.allclose(u, expected, atol=1e-5)
 
@@ -260,12 +263,12 @@ class _ConstantDecomposition(TensorDecomposition):
         coords = torch.linspace(0.0, 1.0, n).unsqueeze(-1)
         nodes = torch.arange(0, n)
         elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
-        topo = Topology(nodes, elements)
-        positions = Field(name="dummy_pos", topology=topo, values=coords)
-        self.field = Field(name="dummy", topology=topo, values=torch.ones(n, 1))
-        sf = LinearSegment()
-        mesh = Mesh(topology=topo, nodes_positions=positions)
-        ctx = QuadratureContext(mesh, TwoPoints1D(), IsoparametricMapping1D(sf))
+        conn = Connectivity(nodes, elements)
+        positions = Field(name="dummy_pos", connectivity=conn, values=coords)
+        self.field = Field(name="dummy", connectivity=conn, values=torch.ones(n, 1))
+        sf = LinearBar()
+        mesh = Mesh(connectivity=conn, nodes_positions=positions)
+        ctx = QuadratureContext(mesh, TwoPoints1D(), IsoparametricMapping1D(sf, mesh))
         self._assembly = QuadratureAssembly(ctx, sf, self.field)
 
     def register_into(self, field_layout):
@@ -334,14 +337,17 @@ def make_vector_axis(name="space", n=5, lo=0.0, hi=10.0, dim=2):
     coords = torch.linspace(lo, hi, n).unsqueeze(-1)
     nodes = torch.arange(0, n)
     elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
-    topology = Topology(nodes, elements)
-    positions = Field(name=f"{name}_positions", topology=topology, values=coords)
-    sf = LinearSegment()
+    connectivity = Connectivity(nodes, elements)
+    positions = Field(
+        name=f"{name}_positions", connectivity=connectivity, values=coords
+    )
+    sf = LinearBar()
+    mesh = Mesh(connectivity, positions)
     return Axis(
         name=name,
-        nodes_positions=positions,
+        mesh=mesh,
         sf=sf,
-        mapping=IsoparametricMapping1D(sf),
+        mapping=IsoparametricMapping1D(sf, mesh),
         quad=TwoPoints1D(),
         constraint=NoConstraint(),
         init_values=torch.zeros(n, dim),
@@ -405,8 +411,8 @@ def test_evaluate_and_assemble_vector_factor():
         space.mesh, space.sf, model.monoms[0][0], space.mapping
     )
     pwi_g = PointWiseInterpolator(para.mesh, para.sf, model.monoms[0][1], para.mapping)
-    S = pwi_s.at_position(x).reshape(2, 2)
-    g = pwi_g.at_position(E).reshape(2, 1)
+    S = pwi_s.at_position(x.reshape(-1, 1, 1)).reshape(2, 2)
+    g = pwi_g.at_position(E.reshape(-1, 1, 1)).reshape(2, 1)
     assert torch.allclose(u, S * g, atol=1e-5)
     assert torch.allclose(torch.stack([grid[0, 0], grid[1, 1]]), u, atol=1e-5)
 
@@ -427,7 +433,9 @@ def test_neurommodel_train_forward_returns_layout_and_optimizes():
     def energy(out):
         name = cppgd.directory()["space"][0]
         s = out[name]
-        return integrate(s.u * s.measure)  # linear in S -> nonzero grad at 0 init
+        return integrate(
+            s.u.values * s.measure.values
+        )  # linear in S -> nonzero grad at 0 init
 
     model = NeuROMModel(layout, cppgd, domain, energy)
     out = model()  # training forward
@@ -501,7 +509,9 @@ def test_neurommodel_is_format_agnostic():
     layout = FieldLayout()
     deco = _ConstantDecomposition()
     domain = IntegrationDomain(deco.assemblies())
-    model = NeuROMModel(layout, deco, domain, loss=lambda out: out["dummy"].u.sum())
+    model = NeuROMModel(
+        layout, deco, domain, loss=lambda out: out["dummy"].u.values.sum()
+    )
     out = model()  # train: fills via the domain
     # Independent expected value: the fake's field is ones on 3 elements x 2
     # quad points, interpolated to ones -> sum 6.0. Proves the domain actually
@@ -518,8 +528,8 @@ def test_axis_builds_mesh_and_context():
     axis = make_axis()
     assert isinstance(axis.mesh, Mesh)
     assert isinstance(axis.context, QuadratureContext)
-    # Mesh identity: the context's mesh is the axis mesh, built on the axis topology.
-    assert axis.mesh.topology is axis.topology
+    # Mesh identity: the context's mesh is the axis mesh, built on the axis connectivity.
+    assert axis.mesh.connectivity is axis.connectivity
     assert axis.mesh.nodes_positions is axis.nodes_positions
 
 

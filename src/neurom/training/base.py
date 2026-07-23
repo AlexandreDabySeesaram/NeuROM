@@ -189,7 +189,22 @@ class PGDTrainer(ABC):
             self.optimizer.zero_grad()
             output = self.model()
             loss = self.model.loss(output)
-            loss.backward()
+            # retain_graph=True is required, not speculative: it was added after
+            # tests/integration/test_greedy_trainer.py::test_greedy_adds_one_mode_per_stage
+            # (and every other test in that file) failed on their SECOND
+            # iteration with "Trying to backward through the graph a second
+            # time". Cause: QuadratureContext caches `x_phys` at construction
+            # (`_compute_quad_pos`, built from the leaf `_xi_ref`) and
+            # NeuROMModel.forward never calls `update_contexts()`, so that same
+            # cached, non-leaf tensor is reused as-is by every iteration's
+            # energy() call. jacobian_field() differentiates through it with
+            # create_graph=True, grafting each iteration's fresh downstream
+            # graph onto that one shared upstream node. A non-retaining
+            # backward() frees that shared node after the first iteration, so
+            # the second iteration's backward through it raises. Retaining it
+            # keeps that (small, unchanging) upstream subgraph alive for every
+            # later iteration instead of rebuilding it.
+            loss.backward(retain_graph=True)
             return loss
 
         return float(self.optimizer.step(closure).detach())
@@ -201,11 +216,26 @@ class PGDTrainer(ABC):
         iterations -- and it is what makes ``StageRecord.energy`` describe the
         state the stage produced rather than the one before its last update.
 
+        Deliberately **not** wrapped in ``torch.no_grad()``: a physics loss that
+        computes spatial derivatives via ``torch.autograd.grad`` (see
+        ``neurom.differential.jacobian_field``, used by the 5-parametric beam's
+        energy) needs an active, grad-tracking forward pass to differentiate
+        through at all -- under ``no_grad()`` every intermediate tensor loses
+        its ``grad_fn`` and that inner ``autograd.grad`` call raises "element 0
+        of tensors does not require grad and does not have a grad_fn" the
+        instant it is evaluated, which is exactly what
+        ``tests/integration/test_greedy_trainer.py`` hit here on real data (the
+        stub loss in ``tests/unit/training/test_base.py`` has no such internal
+        differentiation, so it never surfaced this). ``.detach()`` gets the
+        same "no gradient escapes this call" outcome without disabling the
+        graph the loss needs internally -- the same pattern the pre-trainer
+        2-parameter example uses (``loss.detach().item()``) rather than
+        ``no_grad()``.
+
         Args:
             record (StageRecord): The stage record to fill in, in place.
         """
-        with torch.no_grad():
-            record.final_energy = float(self.model.loss(self.model()))
+        record.final_energy = float(self.model.loss(self.model()).detach())
 
     @abstractmethod
     def prepare_stage(self, stage_index):

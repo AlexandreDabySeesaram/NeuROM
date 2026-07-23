@@ -8,3 +8,4 @@ from neurom.training.criteria import (
     MaxStages,
 )
 from neurom.training.base import PGDTrainer
+from neurom.training.greedy import GreedyTrainer

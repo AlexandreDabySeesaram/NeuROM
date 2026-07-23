@@ -41,3 +41,15 @@ def test_records_carry_independent_mutable_defaults():
 
     assert second.losses == []
     assert second.diagnostics == {}
+
+
+def test_energy_prefers_the_recorded_end_of_stage_value():
+    # losses[-1] is the loss BEFORE the last update, so a stage that recorded
+    # its true final energy must report that instead.
+    record = StageRecord(stage=0, losses=[5.0, 3.0, 2.0], final_energy=1.5)
+    assert record.energy == 1.5
+
+
+def test_energy_falls_back_to_the_last_loss_when_no_final_energy_was_recorded():
+    record = StageRecord(stage=0, losses=[5.0, 3.0, 2.0])
+    assert record.energy == 2.0

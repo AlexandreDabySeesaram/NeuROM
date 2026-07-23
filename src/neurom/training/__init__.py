@@ -7,3 +7,4 @@ from neurom.training.criteria import (
     RelativeGain,
     MaxStages,
 )
+from neurom.training.base import PGDTrainer

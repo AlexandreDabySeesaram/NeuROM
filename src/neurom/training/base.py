@@ -1,0 +1,227 @@
+"""Base class for PGD training strategies."""
+
+import math
+from abc import ABC, abstractmethod
+
+import torch
+
+from neurom.training.criteria import RelativeChange, RelativeGain
+from neurom.training.history import StageRecord, TrainingHistory
+
+
+def _default_optimizer(params):
+    return torch.optim.Adam(params, lr=0.1)
+
+
+class PGDTrainer(ABC):
+    """Template for a PGD training strategy.
+
+    The loop is ``enrich`` -> ``stage`` -> ``step``: a run is a sequence of
+    *stages*, each of which iterates until its criterion fires.
+
+    **The base knows nothing about modes.** It never calls ``add_mode`` or
+    ``mode_parameters``, and it never assumes a stage index is a mode index.
+    Everything that touches the decomposition happens in :meth:`prepare_stage`,
+    and the trainable set is read off the freeze state::
+
+        [p for p in model.parameters() if p.requires_grad]
+
+    which names whatever is currently trainable -- a CP mode, one axis of one, or
+    a global non-linear correction -- without the base having to know which. That
+    is what lets the same loop drive the non-linear decompositions, whose terms
+    are not all modes.
+
+    Subclasses implement :meth:`prepare_stage` and :meth:`should_add_stage`.
+    Overriding :meth:`step` gives a different inner iteration (alternating
+    directions); overriding :meth:`stage` gives a different inner loop entirely.
+
+    Args:
+        model (NeuROMModel): The model to train. Must be callable with no
+            arguments in training mode and expose ``loss(output)``.
+        optimizer_factory (Callable, optional): ``params -> Optimizer``. Called
+            once per stage, on the currently-unfrozen parameters. Defaults to
+            ``Adam(lr=0.1)``.
+        stage_criterion (StageCriterion, optional): When a stage is done.
+            Defaults to :class:`RelativeChange`.
+        enrichment_criterion (EnrichmentCriterion, optional): When to stop
+            starting stages. Defaults to :class:`RelativeGain`.
+
+    Attributes:
+        optimizer (torch.optim.Optimizer): The current stage's optimizer, or
+            None before the first :meth:`prepare_stage`.
+        history (TrainingHistory): Accumulates across ``enrich`` calls, so a run
+            can be resumed.
+    """
+
+    def __init__(
+        self,
+        model,
+        optimizer_factory=None,
+        stage_criterion=None,
+        enrichment_criterion=None,
+    ):
+        self.model = model
+        self.optimizer_factory = optimizer_factory or _default_optimizer
+        self.stage_criterion = stage_criterion or RelativeChange()
+        self.enrichment_criterion = enrichment_criterion or RelativeGain()
+        self.optimizer = None
+        self.history = TrainingHistory()
+
+    def trainable_parameters(self):
+        """The parameters the current freeze state leaves trainable.
+
+        Returns:
+            list[torch.nn.Parameter]: Every parameter of ``self.model`` with
+                ``requires_grad`` set.
+        """
+        return [p for p in self.model.parameters() if p.requires_grad]
+
+    def make_optimizer(self):
+        """Build a fresh optimizer over the currently-trainable parameters.
+
+        A fresh optimizer per stage matters less for purely greedy training --
+        a frozen parameter gets no gradient and ``Adam.step`` skips it either
+        way -- than for the strategies that *unfreeze* earlier modes. Adam's
+        moment buffers persist in ``optimizer.state`` indefinitely, so a reused
+        optimizer would resume an unfrozen mode with moment estimates
+        accumulated against the energy at a different truncation order. A fresh
+        optimizer makes that impossible rather than something to remember.
+
+        Returns:
+            torch.optim.Optimizer: The newly built optimizer, also stored on
+                ``self.optimizer``.
+
+        Raises:
+            RuntimeError: If nothing is trainable, which means ``prepare_stage``
+                left everything frozen.
+        """
+        params = self.trainable_parameters()
+        if not params:
+            raise RuntimeError(
+                "No trainable parameters: prepare_stage left everything frozen."
+            )
+        self.optimizer = self.optimizer_factory(params)
+        return self.optimizer
+
+    def enrich(self):
+        """Run stages until the strategy or a criterion stops them.
+
+        Resumable: the next stage index is ``len(self.history.stages)``, and the
+        history accumulates, so calling this again continues from the current
+        state.
+
+        Leaves the model in training mode; call ``model.eval()`` before
+        evaluating at arbitrary points.
+
+        Returns:
+            TrainingHistory: The accumulated history (also on ``self.history``).
+        """
+        self.model.train()
+        while self.should_add_stage(len(self.history.stages)):
+            stage_index = len(self.history.stages)
+            self.prepare_stage(stage_index)
+            record = self.stage(stage_index)
+            self.on_stage_end(record)
+            self.history.append(record)
+            if record.diverged:
+                self.history.stop_reason = "diverged"
+                break
+        return self.history
+
+    def stage(self, stage_index):
+        """Iterate :meth:`step` until the stage criterion fires.
+
+        A non-finite loss ends the stage immediately as diverged, which stops
+        the whole run. This energy multiplies five factors and passes one
+        through a tanh, so blow-up is realistic, and a NaN would otherwise
+        silently poison every later stage.
+
+        Args:
+            stage_index (int): Index of this stage within the run.
+
+        Returns:
+            StageRecord: The stage's losses and outcome.
+        """
+        record = StageRecord(stage=stage_index)
+        while True:
+            loss = self.step()
+            record.losses.append(loss)
+            if not math.isfinite(loss):
+                record.diverged = True
+                record.stop_reason = "diverged"
+                record.final_energy = record.losses[-1]
+                return record
+            reason = self.stage_criterion.stop_reason(record.losses)
+            if reason:
+                record.stop_reason = reason
+                self._record_final_energy(record)
+                return record
+
+    def step(self):
+        """Run one optimizer iteration.
+
+        Closure-based, so second-order optimizers that re-evaluate the loss
+        (LBFGS) work with no branching.
+
+        Returns:
+            float: The loss **before** this iteration's update -- that is what
+            ``optimizer.step(closure)`` hands back. A monotonicity check written
+            without knowing this will look off by one.
+        """
+
+        def closure():
+            self.optimizer.zero_grad()
+            output = self.model()
+            loss = self.model.loss(output)
+            loss.backward()
+            return loss
+
+        return float(self.optimizer.step(closure).detach())
+
+    def _record_final_energy(self, record):
+        """Evaluate the loss of the state the stage ended in.
+
+        One extra forward pass per stage -- negligible against hundreds of
+        iterations -- and it is what makes ``StageRecord.energy`` describe the
+        state the stage produced rather than the one before its last update.
+
+        Args:
+            record (StageRecord): The stage record to fill in, in place.
+        """
+        with torch.no_grad():
+            record.final_energy = float(self.model.loss(self.model()))
+
+    @abstractmethod
+    def prepare_stage(self, stage_index):
+        """Set the freeze state for this stage and build its optimizer.
+
+        The strategy's main variation point, and the only place the
+        decomposition is manipulated. Implementations must end by calling
+        :meth:`make_optimizer`.
+
+        Args:
+            stage_index (int): Index of the stage about to run.
+        """
+
+    @abstractmethod
+    def should_add_stage(self, stage_index):
+        """Whether to run stage ``stage_index``.
+
+        Implementations that stop should set ``self.history.stop_reason`` before
+        returning False, so the history says why the run ended.
+
+        Args:
+            stage_index (int): Index of the stage that would run next.
+
+        Returns:
+            bool: True to run the stage, False to stop the run.
+        """
+
+    def on_stage_end(self, record):
+        """Hook called after each stage, before it enters the history.
+
+        Default does nothing. Strategies fill ``record.diagnostics`` here.
+
+        Args:
+            record (StageRecord): The stage that just finished.
+        """

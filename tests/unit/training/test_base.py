@@ -180,6 +180,24 @@ def test_a_non_finite_loss_marks_the_stage_diverged_and_stops_the_run():
     assert len(history.stages) < 4
 
 
+def test_divergence_caused_by_the_final_update_is_still_caught():
+    # step() reports the loss BEFORE its update, so a stage whose last update
+    # blows the model up would otherwise return a clean record carrying a stale
+    # finite energy, and the run would keep building on a poisoned state.
+    trainer = make_trainer(
+        optimizer_factory=lambda params: torch.optim.Adam(params, lr=1e30),
+        stage_criterion=FixedIterations(1),
+        enrichment_criterion=MaxStages(1),
+    )
+    history = trainer.enrich()
+
+    record = history.stages[0]
+    assert math.isfinite(record.losses[0])  # the only recorded loss was finite
+    assert record.diverged
+    assert record.stop_reason == "diverged"
+    assert history.stop_reason == "diverged"
+
+
 def test_enrich_is_resumable():
     # Two calls of one stage each must reach the same state as one call of two.
     incremental = make_trainer(enrichment_criterion=MaxStages(1))

@@ -53,3 +53,10 @@ def test_energy_prefers_the_recorded_end_of_stage_value():
 def test_energy_falls_back_to_the_last_loss_when_no_final_energy_was_recorded():
     record = StageRecord(stage=0, losses=[5.0, 3.0, 2.0])
     assert record.energy == 2.0
+
+
+def test_energy_reports_a_genuinely_nan_final_energy_instead_of_falling_back():
+    # A NaN sentinel could not tell "never computed" from "computed and NaN",
+    # so a diverged stage reported a stale finite loss as its energy.
+    record = StageRecord(stage=0, losses=[5.0, 3.0], final_energy=float("nan"))
+    assert math.isnan(record.energy)

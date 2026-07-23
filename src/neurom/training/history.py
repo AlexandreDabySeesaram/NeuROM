@@ -4,7 +4,6 @@ Plain data: no torch, no model. The trainer fills these in; examples and tests
 read them.
 """
 
-import math
 from dataclasses import dataclass, field
 
 
@@ -27,8 +26,8 @@ class StageRecord:
         gain (float): Improvement over the previous stage's final energy. Set by
             :meth:`TrainingHistory.append`; NaN for the first stage.
         final_energy (float): Loss of the state the stage actually ended in,
-            evaluated once after the last update. NaN on records that never ran
-            a stage.
+            evaluated once after the last update. None on records that never
+            ran a stage.
         diagnostics (dict): Strategy-specific extras. The base trainer never
             writes here; concrete strategies fill it in ``on_stage_end``.
     """
@@ -38,8 +37,8 @@ class StageRecord:
     stop_reason: str = ""
     diverged: bool = False
     gain: float = float("nan")
-    final_energy: float = float("nan")
     diagnostics: dict = field(default_factory=dict)
+    final_energy: float = None
 
     @property
     def n_iter(self) -> int:
@@ -54,9 +53,12 @@ class StageRecord:
         the last recorded loss is the one *before* the final update, so it
         describes a state the stage did not end in. Using it here would put a
         one-update error into ``gain`` and into every enrichment decision.
-        Falls back to ``losses[-1]`` for records built by hand.
+        ``final_energy`` is ``None`` only for records that never ran a stage
+        (built by hand) -- a genuinely NaN ``final_energy`` is returned as-is,
+        never mistaken for "not computed". Falls back to ``losses[-1]`` for
+        records built by hand, or to NaN if there is no loss either.
         """
-        if not math.isnan(self.final_energy):
+        if self.final_energy is not None:
             return self.final_energy
         return self.losses[-1] if self.losses else float("nan")
 

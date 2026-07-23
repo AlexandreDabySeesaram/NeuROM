@@ -131,10 +131,21 @@ class PGDTrainer(ABC):
     def stage(self, stage_index):
         """Iterate :meth:`step` until the stage criterion fires.
 
-        A non-finite loss ends the stage immediately as diverged, which stops
-        the whole run. This energy multiplies five factors and passes one
-        through a tanh, so blow-up is realistic, and a NaN would otherwise
-        silently poison every later stage.
+        Divergence is checked twice, because ``step()`` only ever reports the
+        loss *before* that iteration's update:
+
+        - Inside the loop, on every recorded (pre-update) loss. A non-finite
+          value here ends the stage immediately as diverged, which stops the
+          whole run.
+        - After the criterion fires and the post-loop final energy has been
+          evaluated, on that final energy. This is what catches the case
+          where the stage's *last* update is what blows the model up: every
+          recorded loss is still finite, so the in-loop check cannot see it,
+          but the state the stage actually ended in is not finite either.
+
+        This energy multiplies five factors and passes one through a tanh, so
+        blow-up is realistic, and a NaN would otherwise silently poison every
+        later stage.
 
         Args:
             stage_index (int): Index of this stage within the run.
@@ -149,12 +160,17 @@ class PGDTrainer(ABC):
             if not math.isfinite(loss):
                 record.diverged = True
                 record.stop_reason = "diverged"
-                record.final_energy = record.losses[-1]
+                record.final_energy = loss
                 return record
             reason = self.stage_criterion.stop_reason(record.losses)
             if reason:
                 record.stop_reason = reason
                 self._record_final_energy(record)
+                # step() only ever sees PRE-update losses, so the final update
+                # can blow the model up without any recorded loss showing it.
+                if not math.isfinite(record.final_energy):
+                    record.diverged = True
+                    record.stop_reason = "diverged"
                 return record
 
     def step(self):

@@ -15,24 +15,33 @@
   the real 5-parametric beam on a tiny mesh
   `{space:5, E1:4, E2:6, alpha:7, n:3}`, `n_modes_max=3`): one mode added per
   stage, stage 0 does not enrich, frozen modes are bitwise unchanged by later
-  stages, capacity stops the run before `add_mode()` can raise, diagnostics
-  are in range and the first mode's `max_correlation` is exactly 0. The
-  end-of-stage-energy-never-rises property (`FixedIterations(80)`, tolerance
-  `1e-9 * |previous.energy|`) **passed unmodified** — 80 iterations was enough
-  for each stage to work off the seam jump from the new mode's nonzero seed.
+  stages, capacity stops the run before `add_mode()` can raise, and the first
+  mode's `max_correlation` is exactly 0. The end-of-stage-energy-never-rises
+  property (`FixedIterations(80)`, tolerance `1e-9 * |previous.energy|`)
+  **passed unmodified** — 80 iterations was enough for each stage to work off
+  the seam jump from the new mode's nonzero seed. Note the caveat below: at
+  the shorter `FixedIterations(15)` most tests use, the diagnostics being "in
+  range" hides that they are pinned at a degenerate value, not a healthy one
+  — see the negative result below.
 - **Two pre-existing `base.py` bugs found and fixed**, both invisible to Task
   2's synthetic stub loss and both hit by every single new test on first run:
   1. `step()`'s `loss.backward()` needed `retain_graph=True`. Cause:
-     `QuadratureContext` caches its quadrature-point tensor (`x_phys`) once at
-     construction from a leaf (`_xi_ref`); `NeuROMModel.forward` never rebuilds
-     it. `jacobian_field`'s internal `torch.autograd.grad(..., create_graph=True)`
-     grafts every iteration's fresh downstream graph onto that one shared
-     upstream node, and a non-retaining `backward()` frees it after the first
+     `QuadratureContext.__init__` builds `x_phys` **and** `xi_back` once, at
+     construction, from the `requires_grad` leaf `_xi_ref`
+     (`_compute_quad_pos`); `NeuROMModel.forward` only calls
+     `interpolate_all` and never `IntegrationDomain.update_contexts()`, so
+     every iteration's forward reads through that same already-built
+     subgraph. A non-retaining `backward()` frees it after the first
      iteration, so the second iteration's backward raises "Trying to backward
-     through the graph a second time". Confirmed by reproducing standalone with
-     a bare `Adam` + closure (2 steps, no trainer). This is expected to bite
-     *any* strategy trained against an autograd-differentiated energy, not
-     just `GreedyTrainer`.
+     through the graph a second time". This is **not** about
+     `jacobian_field`'s `create_graph=True`: an energy with no
+     `jacobian_field`, no `create_graph`, and no reference to `_xi_ref` fails
+     identically on iteration 2, because it still reads interpolated
+     quantities built on that one shared subgraph. Confirmed by reproducing
+     standalone with a bare `Adam` + closure (2 steps, no trainer). Expected
+     to bite *any* strategy trained against *any* energy that reads
+     interpolated fields, not just `GreedyTrainer` or autograd-differentiated
+     ones.
   2. `_record_final_energy` wrapped its forward pass in `torch.no_grad()`,
      which strips `grad_fn` from every intermediate tensor regardless of the
      underlying leaves — fatal for any energy using `jacobian_field` internally
@@ -43,7 +52,20 @@
      code that would otherwise have broken end-of-stage energy tracking
      (`StageRecord.energy`, `gain`, `RelativeGain`) for every future strategy
      trained against real physics.
-- Full suite: 153 passed (146 baseline + 7 new), no regressions. Full report:
+- **Negative result — short stages make greedy enrichment degenerate.** On the
+  tiny-mesh 5-parametric problem the new `max_correlation` diagnostic
+  immediately earned its keep. At `FixedIterations(15)` (what most of the tests
+  use) it reads **1.0** for stages 1 and 2, amplitudes match to 4 decimals, and
+  the stage energies come out exactly 1x/2x/3x — three copies of the same mode.
+  Measured sweep of (energies, correlations): 5 iters -> energies RISE; 15 ->
+  corr 0.0/1.0/1.0; 40 -> corr 0.0/0.999998/0.999996; 80 -> corr
+  0.0/0.0092/0.176; 200 -> corr 0.0/0.066/0.135. So ~80 iterations per stage is
+  where the modes actually separate on this problem. The cause is that every
+  mode carries the same `0.5*ones` seed and, early on, the linear load term
+  dominates, so a fresh mode retraces mode 0's trajectory. **Do not read a
+  falling energy as successful enrichment** — check `max_correlation`. Whether
+  a per-mode seeding strategy is needed is still open.
+- Full suite: 155 passed (146 baseline + 9), no regressions. Full report:
   `.superpowers/sdd/task-3-report.md`.
 
 ## 2026-07-22 — 5-parametric beam with tanh-graded modulus

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from neurom.training import FixedIterations, GreedyTrainer, MaxStages
+from neurom.training import FixedIterations, GreedyTrainer, MaxStages, StageRecord
 
 EXAMPLE = (
     Path(__file__).resolve().parents[2]
@@ -86,15 +86,14 @@ def test_frozen_modes_are_bitwise_unchanged_by_later_stages(problem):
     # The defining property of purely greedy enrichment.
     trainer = make_trainer(problem, enrichment_criterion=MaxStages(1))
     trainer.enrich()
-    frozen = [
-        field.values_reduced.detach().clone() for field in problem.pgd.monoms[0]
-    ]
+    frozen = [field.values_reduced.detach().clone() for field in problem.pgd.monoms[0]]
 
     trainer.enrichment_criterion = MaxStages(3)
     trainer.enrich()
 
     for before, field in zip(frozen, problem.pgd.monoms[0]):
         assert torch.equal(before, field.values_reduced.detach())
+    assert problem.pgd.n_modes_truncated == 3  # the second enrich did enrich
 
 
 def test_capacity_stops_the_run_before_add_mode_can_raise(problem):
@@ -119,4 +118,37 @@ def test_every_stage_records_duplication_diagnostics(problem):
 def test_losses_stay_finite_throughout(problem):
     history = make_trainer(problem).enrich()
 
+    assert len(history.losses) > 0
     assert all(torch.isfinite(torch.tensor(value)) for value in history.losses)
+
+
+def test_amplitude_is_the_frobenius_norm_of_the_mode(problem):
+    # The existing range assertions are Cauchy-Schwarz tautologies and cannot
+    # fail, so pin the actual value against an independent computation.
+    trainer = make_trainer(problem, enrichment_criterion=MaxStages(1))
+    trainer.enrich()
+
+    expected = 1.0
+    for field in problem.pgd.monoms[0]:
+        expected *= float(field.full_values().norm())
+
+    record = trainer.history.stages[0]
+    assert record.diagnostics["amplitude"] == pytest.approx(expected, rel=1e-9)
+
+
+def test_max_correlation_is_one_for_a_deliberately_duplicated_mode(problem):
+    # The whole point of the diagnostic: a greedy step that rediscovers a mode
+    # it already has must be visible. Copy mode 0 into mode 1 verbatim and the
+    # detector must report exactly 1.
+    trainer = make_trainer(problem, enrichment_criterion=MaxStages(1))
+    trainer.enrich()
+
+    problem.pgd.add_mode()
+    with torch.no_grad():
+        for source, target in zip(problem.pgd.monoms[0], problem.pgd.monoms[1]):
+            target.values_reduced.copy_(source.values_reduced)
+
+    record = StageRecord(stage=1)
+    trainer.on_stage_end(record)
+
+    assert record.diagnostics["max_correlation"] == pytest.approx(1.0, rel=1e-6)

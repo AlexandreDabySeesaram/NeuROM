@@ -1,5 +1,7 @@
 """Purely greedy PGD training."""
 
+import math
+
 from neurom.training.base import PGDTrainer
 
 
@@ -34,6 +36,9 @@ class GreedyTrainer(PGDTrainer):
 
         Stage 0 adds nothing: the decomposition already has ``n_modes_ini``
         active modes, and they are what stage 0 trains.
+
+        Args:
+            stage_index (int): Index of the stage about to run.
         """
         if stage_index > 0:
             self.decomposition.freeze_all()
@@ -45,6 +50,12 @@ class GreedyTrainer(PGDTrainer):
 
         Capacity is checked here because ``add_mode()`` raises once every mode
         is active.
+
+        Args:
+            stage_index (int): Index of the stage that would run next.
+
+        Returns:
+            bool: True to run the stage, False to stop the run.
         """
         if stage_index == 0:
             return True
@@ -58,7 +69,7 @@ class GreedyTrainer(PGDTrainer):
         return True
 
     def on_stage_end(self, record):
-        """Record how large the new mode is and how much it duplicates earlier ones.
+        """Record how large the last active mode is and how much it duplicates earlier ones.
 
         Every mode is seeded with the same ``Axis.init_values``, so successive
         greedy steps could in principle converge to the same mode. Freezing is
@@ -76,6 +87,17 @@ class GreedyTrainer(PGDTrainer):
         Caveat: these use raw nodal vectors, not the quadrature-weighted L2
         inner product, so this is not the energy-norm correlation. Cheap (no
         forward pass) and good enough to *spot* duplication, not to quantify it.
+
+        If a stage diverged, ``current``'s norms are NaN and the per-pair
+        ``correlation`` propagates that NaN; it is recorded as NaN rather than
+        silently swallowed. ``max(0.0, nan)`` would return ``0.0`` in Python
+        (``max``/``min`` prefer the first argument on a NaN comparison), which
+        would report perfect orthogonality exactly when the state is garbage
+        -- the opposite of what the diagnostic is for.
+
+        Args:
+            record (StageRecord): The stage that just finished; ``diagnostics``
+                is filled in place with ``"amplitude"`` and ``"max_correlation"``.
         """
         current_mode = self.decomposition.n_modes_truncated - 1
         current = self._monom_values(current_mode)
@@ -94,11 +116,31 @@ class GreedyTrainer(PGDTrainer):
                     correlation = 0.0
                     break
                 correlation *= float((a * b).sum() / norms)
-            max_correlation = max(max_correlation, abs(correlation))
+            correlation = abs(correlation)
+            if math.isnan(correlation) or math.isnan(max_correlation):
+                max_correlation = math.nan
+            else:
+                max_correlation = max(max_correlation, correlation)
 
         record.diagnostics["amplitude"] = amplitude
         record.diagnostics["max_correlation"] = max_correlation
 
     def _monom_values(self, mode):
-        """Full nodal values of every monom of ``mode`` (constrained DOFs included)."""
-        return [field.full_values().detach() for field in self.decomposition.monoms[mode]]
+        """Full nodal values of every monom of ``mode`` (constrained DOFs included).
+
+        ``full_values()`` is correct here because the space axis's Dirichlet
+        values are homogeneous (zero): every mode's constrained DOFs are zero
+        too, so including them does not bias the correlation. With
+        **inhomogeneous** Dirichlet data every mode would share the same
+        nonzero constant component on those DOFs, and ``max_correlation``
+        would be biased upward regardless of how different the free DOFs are.
+
+        Args:
+            mode (int): Index of the mode whose monoms to read.
+
+        Returns:
+            list[torch.Tensor]: One detached tensor per monom/axis of ``mode``.
+        """
+        return [
+            field.full_values().detach() for field in self.decomposition.monoms[mode]
+        ]

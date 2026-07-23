@@ -189,21 +189,20 @@ class PGDTrainer(ABC):
             self.optimizer.zero_grad()
             output = self.model()
             loss = self.model.loss(output)
-            # retain_graph=True is required, not speculative: it was added after
-            # tests/integration/test_greedy_trainer.py::test_greedy_adds_one_mode_per_stage
-            # (and every other test in that file) failed on their SECOND
-            # iteration with "Trying to backward through the graph a second
-            # time". Cause: QuadratureContext caches `x_phys` at construction
-            # (`_compute_quad_pos`, built from the leaf `_xi_ref`) and
-            # NeuROMModel.forward never calls `update_contexts()`, so that same
-            # cached, non-leaf tensor is reused as-is by every iteration's
-            # energy() call. jacobian_field() differentiates through it with
-            # create_graph=True, grafting each iteration's fresh downstream
-            # graph onto that one shared upstream node. A non-retaining
-            # backward() frees that shared node after the first iteration, so
-            # the second iteration's backward through it raises. Retaining it
-            # keeps that (small, unchanging) upstream subgraph alive for every
-            # later iteration instead of rebuilding it.
+            # retain_graph=True is required, not speculative. QuadratureContext
+            # builds x_phys and xi_back once at construction from the
+            # requires_grad leaf _xi_ref (_compute_quad_pos), and
+            # NeuROMModel.forward never calls IntegrationDomain.update_contexts(),
+            # so every iteration's forward reads through that same already-built
+            # subgraph. A non-retaining backward() frees it, and the second
+            # iteration then fails with "Trying to backward through the graph a
+            # second time". Any energy reading interpolated quantities hits this,
+            # not only autograd-differentiated ones.
+            #
+            # The alternative fix is calling update_contexts() every forward,
+            # which rebuilds the subgraph and also works, at the cost of a
+            # re-map per context per iteration. Retaining is cheaper while the
+            # geometry is static; revisit if meshes become trainable.
             loss.backward(retain_graph=True)
             return loss
 

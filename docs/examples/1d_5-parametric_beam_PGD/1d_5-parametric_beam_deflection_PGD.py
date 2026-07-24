@@ -13,8 +13,10 @@ solution is sought in separated form
 Because ``E1, E2 > 0`` and ``tanh`` maps into (-1, 1), the modulus stays strictly
 between E1 and E2 -- positivity is structural, no clamping needed.
 
-This module builds the problem (axes, decomposition, energy, model) and evaluates
-the energy once in ``main``. Training and plotting are not implemented yet.
+This module builds the problem (axes, decomposition, energy, model), evaluates
+the energy once, and then trains it greedily in ``main`` -- one mode per stage,
+every earlier mode frozen -- reporting a per-stage diagnostics table. Pass
+``train=False`` for assembly only. Plotting is not implemented yet.
 """
 
 from dataclasses import dataclass

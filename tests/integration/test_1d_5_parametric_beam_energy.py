@@ -374,10 +374,21 @@ def test_main_trains_and_reports_a_decreasing_energy(beam5p, capsys):
     problem = beam5p.main(verbose=True, train=True)
 
     assert problem.history is not None
-    assert len(problem.history.stages) >= 1
+
+    # Greedy enrichment must actually get past stage 0 -- that is the point of
+    # wiring the trainer in. Without this, a regression that disabled add_mode
+    # entirely would still satisfy every other assertion here: stage 0 alone
+    # drops the energy from ~6.6e7 to ~-1.9e11, swamping what later stages do,
+    # and n_modes_truncated == len(stages) is an architectural tautology of
+    # GreedyTrainer with n_modes_ini=1 whether or not a mode is ever added.
+    assert len(problem.history.stages) > 1
+    assert problem.pgd.n_modes_truncated > 1
     assert problem.pgd.n_modes_truncated == len(problem.history.stages)
 
-    # Training must have improved on where it started.
+    # Each stage must pay for itself, not just the run as a whole.
+    for record in problem.history.stages[1:]:
+        assert record.energy <= problem.history.stages[0].energy
+
     losses = problem.history.losses
     assert losses[-1] < losses[0]
     assert all(math.isfinite(value) for value in losses)

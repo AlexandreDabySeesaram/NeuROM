@@ -8,9 +8,12 @@
   untrained behaviour so the pre-existing energy-matches-printed-value test
   keeps its exact assertions.
 - **Verified** (`tests/integration/test_1d_5_parametric_beam_energy.py`, +1
-  test, 18 total): the trained run's concatenated losses strictly improve and
-  stay finite, `n_modes_truncated == len(history.stages)`, and the table is
-  printed.
+  test, 18 total): greedy enrichment gets past stage 0 (`len(stages) > 1` and
+  `n_modes_truncated > 1`), every later stage's energy is at or below stage 0's,
+  the concatenated losses stay finite, and the table is printed. Note
+  `n_modes_truncated == len(history.stages)` is kept as a consistency check but
+  carries no information on its own — it is an architectural tautology of
+  `GreedyTrainer` at `n_modes_ini=1`, true whether or not a mode is ever added.
 - **Result — `min_iter=120` keeps modes distinct on the real (non-tiny) 5-parametric
   problem, at least in this one run.** All 8 stages before `RelativeGain`
   stopped the run converged in exactly 120 iterations (the criterion's first
@@ -25,6 +28,17 @@
   `"converged"` (capacity, `n_modes_max=10`, was not reached). Single run, not
   ablated across seeds — stage 6's jump to `max_correlation=0.433` is the
   largest value seen and worth watching if this is rerun.
+- **`min_iter` is load-bearing, and this was ablated.** Replaying the same run
+  with `min_iter=1`: stages 1, 3, 4, 5, 6 and 7 all falsely fire `"converged"`
+  at iteration 21. Tracing stage 1, the relative change dips to `3.8e-5` at
+  n=21 (a false plateau), climbs back to `0.023` by n=50 as Adam escapes and
+  the loss dives from `-1.9046e11` to `-1.9593e11`, then decays back under
+  `tol` around n=80. That is the "Adam sticky early phase" the criterion was
+  designed around, reproduced concretely. Conversely `tol` is not decorative
+  either: extending stage 1 to n=300 and stage 6 to n=400 shows the relative
+  change shrinking to 1e-6–1e-7 and stage 6's `max_correlation` drifting only
+  0.433 -> 0.423, so stopping at 120 is genuine convergence detection rather
+  than a disguised `FixedIterations(120)`.
 - Full suite: 156 passed (155 baseline + 1). Full report:
   `.superpowers/sdd/task-4-report.md`.
 

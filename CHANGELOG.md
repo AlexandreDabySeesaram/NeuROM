@@ -1,3 +1,40 @@
+## 2026-07-24 — FEM reference solutions for the 5-parametric bar, and plotting against them
+
+- **Added** `docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py`
+  and the bundle it writes, `reference_solution.pt` (12 kB). One plain
+  `FEMModel` solve per parameter point — 400 nodes, `TwoPoints1D`, LBFGS — at 10
+  seeded-uniform `(E1, E2, alpha, n)` points, sampled on a fixed 101-point `x`
+  grid. Saving it is the point: every decomposition strategy is scored against
+  *the same* numbers without re-solving. Regenerate with
+  `python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py`
+  (~20 s); the parameter points are seeded, so they stay comparable across runs.
+- **Library change**: `ElasticEnergy(field, modulus=None)` now accepts an
+  optional modulus — either a field looked up in the layout (like
+  `LoadPotential`'s load) or a callable evaluated at the quadrature points.
+  Default `None` keeps the old unit-modulus behaviour; every existing test
+  passes untouched. The reference passes the modulus as a *callable*, so `E(x)`
+  is exact at the quadrature points instead of piecewise-linearly interpolated.
+- **The reference runs in float64** (scoped `double_precision()` context, cast
+  back to the caller's dtype on load). In float32 it stalled at ~1e-3 relative:
+  halving both moduli, which must scale `u` by exactly 2, was off by 3e-3, and
+  the constant-modulus check sat at 2.7e-4. In float64 those are 8e-5 and
+  **6.3e-6** — the reference is no longer the limiting error.
+- **Discarded approach**: a first version computed the reference analytically by
+  quadrature (`(E u')' = f` → `u = int (C + f s)/E(s) ds`). It was correct
+  (6e-5 vs the constant-`E` parabola) but it is not what the surrogate is
+  approximating; the direct FEM solve is the right yardstick and is reusable.
+- **Added** plotting to the example: `plot_convergence` (energy vs iteration
+  with stage boundaries), `plot_solution` (one panel per reference parameter
+  point, PGD vs FEM, per-panel relative L2), `plot_modes` (each mode's per-axis
+  factor, normalised — CP factors are only defined up to a per-axis scale, so
+  coinciding curves are the degeneracy `max_correlation` reports). `main` gained
+  `plot=True`; matplotlib is imported lazily inside the helpers.
+- **Result**: a 3-mode greedy CP-PGD (default 30/20/20/15/15 nodes,
+  `RelativeChange(tol=1e-3, window=20, max_iter=400, min_iter=120)`) reaches
+  **4.2 % mean / 13.8 % worst** relative L2 error over the 10 reference points.
+  The worst point is the stiffest one (`E1=97, E2=74`), where the PGD
+  under-deflects; the softer points are at 1–2 %.
+
 ## 2026-07-24 — GreedyTrainer wired into the 2-parametric example; validated against the analytical solution
 
 - **Changed** `docs/examples/1d_2-parametric_beam_PGD/1d_beam_deflection_PGD.py`:

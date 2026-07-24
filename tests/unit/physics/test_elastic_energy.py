@@ -121,6 +121,51 @@ class TestElasticEnergy:
             expected.detach(), rel=self.relative_tolerance
         )
 
+    def test_modulus_as_a_callable_weights_the_density(self):
+        """A callable modulus is evaluated at the quadrature points and multiplies.
+
+        Same setup as ``test_linear_scalar_field`` with ``E(x) = 2x``, so the
+        density becomes ``2x * 2x**2 * dx``.
+        """
+        field = DummyField(name="u")
+        x = torch.tensor([3.0, 2.0, 2.0, 4.0, 5.0, -6.0], requires_grad=True).reshape(
+            3, 2, 1
+        )
+        u = x**2
+        dx = 0.5 * torch.ones(3, 2, 1)
+
+        layout = self._setup_layout(field, x, u, dx)
+        result = ElasticEnergy(field, modulus=lambda pts: 2.0 * pts).integrand(layout)
+
+        expected = 2.0 * x * x**2
+        assert result.detach() == pytest.approx(
+            expected.detach(), rel=self.relative_tolerance
+        )
+
+    def test_modulus_as_a_field_is_looked_up_in_the_layout(self):
+        """A modulus given as a field is read from the layout, like the load."""
+        field = DummyField(name="u")
+        x = torch.tensor([3.0, 2.0, 2.0, 4.0, 5.0, -6.0], requires_grad=True).reshape(
+            3, 2, 1
+        )
+        u = x**2
+        dx = 0.5 * torch.ones(3, 2, 1)
+
+        layout = self._setup_layout(field, x, u, dx)
+        modulus = DummyField(name="modulus")
+        modulus_values = torch.linspace(1.0, 6.0, 6).reshape(3, 2, 1)
+        layout.add(modulus)
+        layout.update(
+            modulus, QuadratureAssemblyResult(x=x, u=modulus_values, measure=dx)
+        )
+
+        result = ElasticEnergy(field, modulus=modulus).integrand(layout)
+
+        expected = modulus_values * x**2
+        assert result.detach() == pytest.approx(
+            expected.detach(), rel=self.relative_tolerance
+        )
+
     def test_vector_field_2d(self):
         """Elastic energy for a simple 2‑D vector field.
 

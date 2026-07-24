@@ -20,3 +20,6 @@ wheels/
 # Generated example/test plots
 pgd_convergence.png
 pgd_vs_analytical.png
+pgd5_convergence.png
+pgd5_vs_reference.png
+pgd5_modes.png

@@ -16,7 +16,13 @@ between E1 and E2 -- positivity is structural, no clamping needed.
 This module builds the problem (axes, decomposition, energy, model), evaluates
 the energy once, and then trains it greedily in ``main`` -- one mode per stage,
 every earlier mode frozen -- reporting a per-stage diagnostics table. Pass
-``train=False`` for assembly only. Plotting is not implemented yet.
+``train=False`` for assembly only, ``plot=False`` to skip the figures.
+
+Accuracy is judged against ``reference_fem_solution.py``: a direct, non-reduced
+FEM solve at a handful of parameter points, saved to ``reference_solution.pt``.
+Generate it once before plotting::
+
+    python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py
 """
 
 from dataclasses import dataclass
@@ -334,7 +340,184 @@ def energy(field_layout, decomposition, load_name="load"):
     return elastic + load
 
 
-def main(verbose=True, train=True):
+## Reference solution and plotting helpers
+
+
+def modulus(x, E1, E2, alpha, n):
+    """The tanh-graded modulus E(x, E1, E2, alpha, n), broadcasting over ``x``.
+
+    Single source of truth for the modulus law: the separated ``energy`` above
+    hard-codes its tanh structure to keep the integrals separable, and
+    ``reference_fem_solution.py`` injects *this* function into a direct FEM
+    solve. If the law changes, both must change together.
+    """
+    return 0.5 * (E2 - E1) * torch.tanh(n * (x - alpha)) + 0.5 * (E2 + E1)
+
+
+def load_reference_bundle():
+    """Load the FEM reference solutions from the sibling ``reference_fem_solution``.
+
+    Imported by path, and lazily, so that this example neither depends on the
+    reference module at import time nor requires the reference file to exist
+    unless you actually plot.
+
+    Returns:
+        dict: the bundle described in ``reference_fem_solution.generate``.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "reference_fem_solution.py"
+    spec = importlib.util.spec_from_file_location("reference_fem_solution", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.load_reference()
+
+
+def plot_convergence(history, save_path="pgd5_convergence.png"):
+    """Plot the energy against the training iteration, with the stage boundaries.
+
+    Args:
+        history (TrainingHistory): filled by ``GreedyTrainer.enrich``.
+        save_path (str): where to write the PNG.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(range(len(history.losses)), history.losses, "b-")
+
+    # One vertical rule per greedy stage boundary: each stage adds one mode, so
+    # these mark where the energy is allowed to drop again.
+    boundary = 0
+    for record in history.stages[:-1]:
+        boundary += record.n_iter
+        ax.axvline(boundary, color="grey", ls=":", lw=1)
+
+    ax.set_title("Greedy training convergence")
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("energy (loss)")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=120)
+    plt.show()
+
+
+def plot_solution(pgd, reference=None, save_path="pgd5_vs_reference.png"):
+    """Compare the PGD surrogate to the stored FEM reference, one panel per point.
+
+    The reference is the bundle written by ``reference_fem_solution.py``: a
+    direct (non-reduced) FEM solve at each of a handful of parameter points,
+    sampled on a fixed ``x`` grid. Comparing against the *saved* solutions --
+    rather than re-solving here -- is what makes different decomposition
+    strategies comparable to each other.
+
+    Each panel also reports the relative L2 error of the PGD against that point;
+    the figure title reports the worst one over all points.
+
+    Args:
+        pgd (CPPGD): the trained decomposition.
+        reference (dict, optional): a loaded reference bundle; by default the one
+            on disk next to this script.
+        save_path (str): where to write the PNG.
+    """
+    import matplotlib.pyplot as plt
+
+    if reference is None:
+        reference = load_reference_bundle()
+
+    x_ref = reference["x"]
+    names = reference["param_names"]
+    n_points = reference["params"].shape[0]
+
+    n_cols = min(5, n_points)
+    n_rows = -(-n_points // n_cols)
+    fig, ax = plt.subplots(
+        n_rows, n_cols, figsize=(3.6 * n_cols, 3.2 * n_rows), squeeze=False
+    )
+    ax = ax.ravel()
+
+    errors = []
+    for k in range(n_points):
+        params = dict(zip(names, (v.item() for v in reference["params"][k])))
+        u_ref = reference["u"][k]
+
+        # (P, 5) query matrix: the reference x grid, the parameters held constant.
+        columns = {"space": x_ref, **{n: torch.full_like(x_ref, v) for n, v in params.items()}}
+        u_pgd = pgd.evaluate(
+            torch.stack([columns[name] for name in AXIS_ORDER], dim=1)
+        ).reshape(-1)
+
+        error = (torch.linalg.norm(u_pgd - u_ref) / torch.linalg.norm(u_ref)).item()
+        errors.append(error)
+
+        ax[k].plot(x_ref.numpy(), u_ref.numpy(), "k-", lw=2, label="FEM reference")
+        ax[k].plot(x_ref.numpy(), u_pgd.numpy(), "r--", lw=2, label="PGD")
+        ax[k].set_title(
+            "E1={E1:.0f} E2={E2:.0f} a={alpha:.1f} n={n:.1f}".format(**params)
+            + f"\nrel. L2 = {error:.2e}",
+            fontsize="small",
+        )
+        ax[k].set_xlabel("x")
+        ax[k].set_ylabel("u")
+        ax[k].grid(True, alpha=0.3)
+    ax[0].legend(fontsize="small")
+
+    for panel in ax[n_points:]:
+        panel.set_visible(False)
+
+    fig.suptitle(
+        f"PGD vs FEM reference -- worst relative L2 error {max(errors):.2e} "
+        f"over {n_points} parameter points"
+    )
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=120)
+    plt.show()
+    return errors
+
+
+def plot_modes(pgd, save_path="pgd5_modes.png"):
+    """Plot every mode's factor on every axis, normalised by its max modulus.
+
+    A CP mode is defined up to a per-axis scale (multiply one factor by ``c``,
+    divide another by ``c`` and the product is unchanged), so only the *shape*
+    of a factor is meaningful -- hence the normalisation. Two modes whose curves
+    coincide on every axis are the degenerate case the ``max_correlation``
+    diagnostic reports.
+
+    Args:
+        pgd (CPPGD): the trained decomposition.
+        save_path (str): where to write the PNG.
+    """
+    import matplotlib.pyplot as plt
+
+    from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+
+    def factor(m, k, pts):
+        axis = pgd.axes[k]
+        pwi = PointWiseInterpolator(axis.mesh, axis.sf, pgd.monoms[m][k], axis.mapping)
+        return pwi.at_position(pts.reshape(-1)).reshape(-1)
+
+    def norm(v):
+        peak = v.abs().max()
+        return v / peak if peak > 0 else v
+
+    fig, ax = plt.subplots(1, len(AXIS_ORDER), figsize=(4 * len(AXIS_ORDER), 3.5))
+    for k, name in enumerate(AXIS_ORDER):
+        lo, hi = AXIS_BOUNDS[name]
+        pts = torch.linspace(lo, hi, 200)
+        for m in range(pgd.n_modes_truncated):
+            ax[k].plot(pts.numpy(), norm(factor(m, k, pts)).numpy(), label=f"mode {m}")
+        ax[k].set_title(f"{name} factor (normalised)")
+        ax[k].set_xlabel(name)
+        ax[k].grid(True, alpha=0.3)
+    ax[-1].legend(fontsize="small")
+
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=120)
+    plt.show()
+
+
+def main(verbose=True, train=True, plot=True):
     """Assemble the 5-parametric problem, evaluate the energy once, and train it.
 
     Always builds the problem and evaluates the energy once at the initial
@@ -350,6 +533,9 @@ def main(verbose=True, train=True):
         train (bool): if True, train the decomposition with ``GreedyTrainer``
             after the initial energy evaluation; if False, return the
             untrained problem (``history`` stays ``None``).
+        plot (bool): if True (and training ran), draw the convergence curve, the
+            PGD-vs-reference comparison and the per-axis mode factors. Requires
+            matplotlib, which is imported lazily inside the plotting helpers.
 
     Returns:
         Problem: the assembled objects, for interactive use.
@@ -381,8 +567,8 @@ def main(verbose=True, train=True):
     # you whether that is happening.
     trainer = GreedyTrainer(
         problem.model,
-        stage_criterion=RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
-        enrichment_criterion=RelativeGain(tol=1e-3),
+        stage_criterion = RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
+        enrichment_criterion = RelativeGain(tol=1e-3),
     )
     history = trainer.enrich()
     problem.history = history
@@ -401,6 +587,15 @@ def main(verbose=True, train=True):
                 f"{record.diagnostics['amplitude']:11.4e} "
                 f"{record.diagnostics['max_correlation']:9.3f}"
             )
+
+    if plot:
+        plot_convergence(history)
+        errors = plot_solution(problem.pgd)
+        plot_modes(problem.pgd)
+        if verbose:
+            print()
+            print(f"relative L2 error vs the FEM reference, worst: {max(errors):.3e}")
+            print(f"                                        mean: {sum(errors) / len(errors):.3e}")
 
     return problem
 

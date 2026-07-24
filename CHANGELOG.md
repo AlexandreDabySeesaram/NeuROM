@@ -1,3 +1,28 @@
+## 2026-07-24 — Two hard reference points instead of ten superposed curves; two error measures
+
+- `reference_fem_solution.py` now appends two named `EXTREME_POINTS` to the ten
+  random ones (12 total): `soft-stiff-left` (`E1=10, E2=100, alpha=3, n=5`) and
+  `stiff-soft-right` (`E1=100, E2=20, alpha=6.5, n=4`). Sharp transitions, and
+  deliberately *not* mirror images — opposite contrast direction, different
+  ratio, transition on either side of mid-span. The bundle gained `labels` and
+  `metadata["highlight"]`; `reference_solution.pt` regenerated.
+- `plot_solution` no longer draws ten near-identical parabolas. It draws the two
+  highlighted points as two columns: `E(x)` on top (the nonlinearity being
+  asked for) and `u(x)` below, reference vs PGD, with the pointwise error on a
+  twin axis — a small global L2 can hide a local failure at the transition.
+- **Error definition clarified**, and both are now reported by the new
+  `relative_errors`. `per_point[label]` is **space-only**: the L2 ratio over the
+  101-point `x` grid with the parameters frozen. `overall` flattens the whole
+  `(12, 101)` table into a single ratio of norms, i.e. space and parameter
+  points jointly. Neither weights the parameter volume — the reference points
+  are samples, not a quadrature. The old code reported only the mean/worst of
+  the per-point numbers, which weights a barely-deflected stiff bar the same as
+  a soft one.
+- **Result** (4-mode budget, greedy, default meshes): overall 5.5e-2;
+  `soft-stiff-left` 1.20e-1, `stiff-soft-right` 3.05e-2, worst random point
+  1.38e-1. The PGD over-deflects on the soft side of a sharp interface — that is
+  the failure mode to beat with the non-linear decompositions.
+
 ## 2026-07-24 — FEM reference solutions for the 5-parametric bar, and plotting against them
 
 - **Added** `docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py`

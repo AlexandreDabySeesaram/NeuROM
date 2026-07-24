@@ -73,6 +73,22 @@ def test_softer_zone_deflects_more(reference_module):
     assert soft[1:-1] == pytest.approx(2.0 * stiff[1:-1], rel=1e-3)
 
 
+def test_the_shipped_bundle_labels_its_highlighted_points(reference_module):
+    """The extreme points must be present, labelled, and flagged for plotting."""
+    bundle = reference_module.load_reference()
+    names = [name for name, _ in reference_module.EXTREME_POINTS]
+
+    assert bundle["metadata"]["highlight"] == names
+    assert set(names) <= set(bundle["labels"])
+    assert len(bundle["labels"]) == bundle["params"].shape[0] == bundle["u"].shape[0]
+
+    # The stored parameters of a highlighted point are the ones declared here.
+    for name, point in reference_module.EXTREME_POINTS:
+        row = bundle["params"][bundle["labels"].index(name)]
+        stored = dict(zip(bundle["param_names"], (v.item() for v in row)))
+        assert stored == pytest.approx(point)
+
+
 def test_saved_reference_round_trips(reference_module, tmp_path):
     bundle = {
         "x": torch.linspace(0.0, 1.0, 5),

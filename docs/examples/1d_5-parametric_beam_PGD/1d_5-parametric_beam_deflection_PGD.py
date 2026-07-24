@@ -402,72 +402,141 @@ def plot_convergence(history, save_path="pgd5_convergence.png"):
     plt.show()
 
 
-def plot_solution(pgd, reference=None, save_path="pgd5_vs_reference.png"):
-    """Compare the PGD surrogate to the stored FEM reference, one panel per point.
+def relative_errors(pgd, reference=None):
+    """Relative L2 errors of the PGD against the stored FEM reference.
 
-    The reference is the bundle written by ``reference_fem_solution.py``: a
-    direct (non-reduced) FEM solve at each of a handful of parameter points,
-    sampled on a fixed ``x`` grid. Comparing against the *saved* solutions --
-    rather than re-solving here -- is what makes different decomposition
-    strategies comparable to each other.
+    Two different things are reported, because they answer different questions:
 
-    Each panel also reports the relative L2 error of the PGD against that point;
-    the figure title reports the worst one over all points.
+    * ``per_point[label]`` is a **space-only** error at one parameter point --
+      ``||u_pgd(., p) - u_ref(., p)|| / ||u_ref(., p)||`` over the reference
+      ``x`` grid, with the parameters frozen at ``p``. This is what a single
+      panel of ``plot_solution`` shows.
+    * ``overall`` is the error over space **and** the sampled parameter points
+      jointly: the two ``(K, P)`` tables are flattened and one ratio of norms is
+      taken. It is dominated by the points with the largest deflection (the soft
+      ones), which is the honest global figure -- the mean of the per-point
+      errors, by contrast, weights a barely-loaded stiff bar as much as a soft
+      one. Both are returned; neither weights the parameter volume, since the
+      reference points are only a handful of samples, not a quadrature.
 
     Args:
         pgd (CPPGD): the trained decomposition.
-        reference (dict, optional): a loaded reference bundle; by default the one
-            on disk next to this script.
+        reference (dict, optional): a loaded reference bundle; by default the
+            one on disk next to this script.
+
+    Returns:
+        dict: ``{"per_point": {label: float}, "overall": float, "u_pgd": Tensor}``
+        where ``u_pgd`` is the ``(K, P)`` table the errors were computed from.
+    """
+    if reference is None:
+        reference = load_reference_bundle()
+
+    x_ref = reference["x"]
+    u_ref = reference["u"]
+
+    rows = []
+    for row in reference["params"]:
+        params = dict(zip(reference["param_names"], (v.item() for v in row)))
+        # (P, 5) query matrix: the reference x grid, the parameters held constant.
+        columns = {"space": x_ref}
+        columns.update({name: torch.full_like(x_ref, v) for name, v in params.items()})
+        rows.append(
+            pgd.evaluate(
+                torch.stack([columns[name] for name in AXIS_ORDER], dim=1)
+            ).reshape(-1)
+        )
+    u_pgd = torch.stack(rows)
+
+    per_point = {
+        label: (
+            torch.linalg.norm(u_pgd[k] - u_ref[k]) / torch.linalg.norm(u_ref[k])
+        ).item()
+        for k, label in enumerate(reference["labels"])
+    }
+    overall = (torch.linalg.norm(u_pgd - u_ref) / torch.linalg.norm(u_ref)).item()
+    return {"per_point": per_point, "overall": overall, "u_pgd": u_pgd}
+
+
+def plot_solution(pgd, reference=None, labels=None, save_path="pgd5_vs_reference.png"):
+    """Compare the PGD to the FEM reference at the two hardest parameter points.
+
+    Ten superposed near-parabolas say very little; two well-chosen points say a
+    lot. The default pair is the one the reference bundle flags as
+    ``metadata["highlight"]``: sharp, high-contrast moduli of opposite sign and
+    different ratio, where ``u`` has a visible kink and a separated
+    representation is under real strain.
+
+    Each column is one parameter point: the modulus ``E(x)`` on top (so the
+    nonlinearity being asked for is visible), and below it the deflection --
+    reference against PGD -- with the pointwise error on a twin axis.
+
+    Args:
+        pgd (CPPGD): the trained decomposition.
+        reference (dict, optional): a loaded reference bundle; by default the
+            one on disk next to this script.
+        labels (list[str], optional): which reference points to draw; defaults
+            to the bundle's highlighted ones.
         save_path (str): where to write the PNG.
+
+    Returns:
+        dict: the ``relative_errors`` result, computed over *all* the reference
+        points, not only the plotted ones.
     """
     import matplotlib.pyplot as plt
 
     if reference is None:
         reference = load_reference_bundle()
+    if labels is None:
+        labels = reference["metadata"]["highlight"]
 
+    errors = relative_errors(pgd, reference)
     x_ref = reference["x"]
-    names = reference["param_names"]
-    n_points = reference["params"].shape[0]
+    index = {label: k for k, label in enumerate(reference["labels"])}
 
-    n_cols = min(5, n_points)
-    n_rows = -(-n_points // n_cols)
     fig, ax = plt.subplots(
-        n_rows, n_cols, figsize=(3.6 * n_cols, 3.2 * n_rows), squeeze=False
+        2, len(labels), figsize=(6.0 * len(labels), 7.0), squeeze=False
     )
-    ax = ax.ravel()
-
-    errors = []
-    for k in range(n_points):
-        params = dict(zip(names, (v.item() for v in reference["params"][k])))
-        u_ref = reference["u"][k]
-
-        # (P, 5) query matrix: the reference x grid, the parameters held constant.
-        columns = {"space": x_ref, **{n: torch.full_like(x_ref, v) for n, v in params.items()}}
-        u_pgd = pgd.evaluate(
-            torch.stack([columns[name] for name in AXIS_ORDER], dim=1)
-        ).reshape(-1)
-
-        error = (torch.linalg.norm(u_pgd - u_ref) / torch.linalg.norm(u_ref)).item()
-        errors.append(error)
-
-        ax[k].plot(x_ref.numpy(), u_ref.numpy(), "k-", lw=2, label="FEM reference")
-        ax[k].plot(x_ref.numpy(), u_pgd.numpy(), "r--", lw=2, label="PGD")
-        ax[k].set_title(
-            "E1={E1:.0f} E2={E2:.0f} a={alpha:.1f} n={n:.1f}".format(**params)
-            + f"\nrel. L2 = {error:.2e}",
-            fontsize="small",
+    for column, label in enumerate(labels):
+        k = index[label]
+        params = dict(
+            zip(reference["param_names"], (v.item() for v in reference["params"][k]))
         )
-        ax[k].set_xlabel("x")
-        ax[k].set_ylabel("u")
-        ax[k].grid(True, alpha=0.3)
-    ax[0].legend(fontsize="small")
+        u_ref = reference["u"][k]
+        u_pgd = errors["u_pgd"][k]
 
-    for panel in ax[n_points:]:
-        panel.set_visible(False)
+        top = ax[0][column]
+        top.plot(x_ref.numpy(), modulus(x_ref, **params).numpy(), "b-", lw=2)
+        top.set_title(
+            f"{label}\n"
+            + "E1={E1:.0f}, E2={E2:.0f}, alpha={alpha:.1f}, n={n:.1f}".format(**params)
+        )
+        top.set_xlabel("x")
+        top.set_ylabel("E(x)")
+        top.grid(True, alpha=0.3)
+
+        bottom = ax[1][column]
+        bottom.plot(x_ref.numpy(), u_ref.numpy(), "k-", lw=2, label="FEM reference")
+        bottom.plot(x_ref.numpy(), u_pgd.numpy(), "r--", lw=2, label="PGD")
+        bottom.set_xlabel("x")
+        bottom.set_ylabel("u(x)")
+        bottom.grid(True, alpha=0.3)
+        bottom.legend(loc="lower left", fontsize="small")
+        bottom.set_title(
+            f"space-only relative L2 = {errors['per_point'][label]:.2e}",
+            fontsize="medium",
+        )
+
+        # Pointwise error on a twin axis: a small global L2 can still hide a
+        # local failure right at the modulus transition, which is exactly where
+        # this problem is hard.
+        twin = bottom.twinx()
+        twin.plot(x_ref.numpy(), (u_pgd - u_ref).numpy(), color="grey", lw=1, ls=":")
+        twin.set_ylabel("PGD - reference", color="grey")
+        twin.tick_params(axis="y", colors="grey")
 
     fig.suptitle(
-        f"PGD vs FEM reference -- worst relative L2 error {max(errors):.2e} "
-        f"over {n_points} parameter points"
+        f"PGD vs FEM reference -- overall relative L2 "
+        f"{errors['overall']:.2e} over all {len(reference['labels'])} reference points"
     )
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
@@ -567,8 +636,8 @@ def main(verbose=True, train=True, plot=True):
     # you whether that is happening.
     trainer = GreedyTrainer(
         problem.model,
-        stage_criterion = RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
-        enrichment_criterion = RelativeGain(tol=1e-3),
+        stage_criterion=RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
+        enrichment_criterion=RelativeGain(tol=1e-3),
     )
     history = trainer.enrich()
     problem.history = history
@@ -593,9 +662,15 @@ def main(verbose=True, train=True, plot=True):
         errors = plot_solution(problem.pgd)
         plot_modes(problem.pgd)
         if verbose:
+            per_point = errors["per_point"]
             print()
-            print(f"relative L2 error vs the FEM reference, worst: {max(errors):.3e}")
-            print(f"                                        mean: {sum(errors) / len(errors):.3e}")
+            print("relative L2 error vs the FEM reference")
+            print(
+                f"  overall (space and parameter points jointly): {errors['overall']:.3e}"
+            )
+            print(f"  worst single point ...........: {max(per_point.values()):.3e}")
+            for label, value in per_point.items():
+                print(f"    {label:>17} (space only): {value:.3e}")
 
     return problem
 

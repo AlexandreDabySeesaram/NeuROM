@@ -76,6 +76,18 @@ MAX_ITER = 200
 
 PARAM_NAMES = ["E1", "E2", "alpha", "n"]
 
+# Two deliberately hard points, appended to the random ones. Both use a sharp
+# transition (n near its maximum), so E(x) is close to a step and u(x) is two
+# parabola halves joined at a kink -- the regime where a separated
+# representation has the most trouble. They are *not* mirror images of each
+# other: opposite contrast direction, different contrast ratio (10x vs 5x) and
+# a transition on either side of mid-span, so nothing about the second is
+# implied by getting the first right.
+EXTREME_POINTS = [
+    ("soft-stiff-left", {"E1": 10.0, "E2": 100.0, "alpha": 3.0, "n": 5.0}),
+    ("stiff-soft-right", {"E1": 100.0, "E2": 20.0, "alpha": 6.5, "n": 4.0}),
+]
+
 
 @contextmanager
 def double_precision():
@@ -224,34 +236,44 @@ def solve_one(params, x_samples, *, example=None, n_nodes=N_NODES, quad=None):
 
 
 def generate(n_points=N_PARAM_POINTS, n_x=N_X_SAMPLES, seed=SEED, verbose=True):
-    """Solve at every sampled parameter point and return the reference bundle.
+    """Solve at every parameter point -- the random ones then ``EXTREME_POINTS``.
 
     Returns:
-        dict: ``x`` ``(P,)``, ``params`` ``(K, 4)``, ``param_names``, ``u``
+        dict: ``x`` ``(P,)``, ``params`` ``(K, 4)``, ``param_names``, ``labels``
+        (``K`` strings, ``"random-i"`` or the extreme point's name), ``u``
         ``(K, P)``, ``energy`` ``(K,)`` and a ``metadata`` dict describing the
-        discretisation the reference was produced with.
+        discretisation and naming the highlighted points.
     """
     example = load_example()
     with double_precision():
         x_samples = torch.linspace(example.X_MIN, example.X_MAX, n_x)
-        params = sample_parameters(n_points, seed=seed, example=example)
+        sampled = sample_parameters(n_points, seed=seed, example=example)
+        extreme = torch.tensor(
+            [[point[name] for name in PARAM_NAMES] for _, point in EXTREME_POINTS]
+        )
+        params = torch.cat([sampled, extreme])
+
+    labels = [f"random-{i}" for i in range(len(sampled))]
+    labels += [name for name, _ in EXTREME_POINTS]
 
     solutions, energies = [], []
-    for row in params:
+    for label, row in zip(labels, params):
         point = dict(zip(PARAM_NAMES, (v.item() for v in row)))
         u_samples, energy = solve_one(point, x_samples, example=example)
         solutions.append(u_samples)
         energies.append(energy)
         if verbose:
-            labels = ", ".join(f"{k}={v:7.3f}" for k, v in point.items())
+            values = ", ".join(f"{k}={v:7.3f}" for k, v in point.items())
             print(
-                f"{labels} -> energy {energy.item():14.6e}  min u {u_samples.min():12.5e}"
+                f"{label:>17}  {values} -> energy {energy.item():14.6e}"
+                f"  min u {u_samples.min():12.5e}"
             )
 
     return {
         "x": x_samples,
         "params": params,
         "param_names": list(PARAM_NAMES),
+        "labels": labels,
         "u": torch.stack(solutions),
         "energy": torch.stack(energies),
         "metadata": {
@@ -262,6 +284,9 @@ def generate(n_points=N_PARAM_POINTS, n_x=N_X_SAMPLES, seed=SEED, verbose=True):
             "x_bounds": (example.X_MIN, example.X_MAX),
             "axis_bounds": dict(example.AXIS_BOUNDS),
             "seed": seed,
+            # The points worth looking at one by one; the rest are there to be
+            # averaged over, not plotted.
+            "highlight": [name for name, _ in EXTREME_POINTS],
         },
     }
 

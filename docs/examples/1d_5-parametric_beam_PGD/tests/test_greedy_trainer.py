@@ -13,13 +13,8 @@ import torch
 
 from neurom.training import FixedIterations, GreedyTrainer, MaxStages, StageRecord
 
-EXAMPLE = (
-    Path(__file__).resolve().parents[2]
-    / "docs"
-    / "examples"
-    / "1d_5-parametric_beam_PGD"
-    / "1d_5-parametric_beam_deflection_PGD.py"
-)
+EXAMPLE_DIR = Path(__file__).resolve().parents[1]
+EXAMPLE = EXAMPLE_DIR / "1d_5-parametric_beam_deflection_PGD.py"
 
 TINY = {"space": 5, "E1": 4, "E2": 6, "alpha": 7, "n": 3}
 
@@ -161,12 +156,10 @@ def test_max_correlation_is_one_for_a_deliberately_duplicated_mode(problem):
     assert record.diagnostics["max_correlation"] == pytest.approx(1.0, rel=1e-6)
 
 
+# The only cross-example reference here: the 2-parametric beam is the one
+# problem with a closed-form solution, so the accuracy check below borrows it.
 EXAMPLE_2P = (
-    Path(__file__).resolve().parents[2]
-    / "docs"
-    / "examples"
-    / "1d_2-parametric_beam_PGD"
-    / "1d_beam_deflection_PGD.py"
+    EXAMPLE_DIR.parent / "1d_2-parametric_beam_PGD" / "1d_beam_deflection_PGD.py"
 )
 
 

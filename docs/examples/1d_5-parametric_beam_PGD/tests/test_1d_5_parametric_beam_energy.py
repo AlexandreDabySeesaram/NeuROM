@@ -15,14 +15,8 @@ import torch
 from neurom.differential import jacobian_field
 from neurom.quadratures import MidPoint1D, TwoPoints1D
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE_PATH = (
-    REPO_ROOT
-    / "docs"
-    / "examples"
-    / "1d_5-parametric_beam_PGD"
-    / "1d_5-parametric_beam_deflection_PGD.py"
-)
+EXAMPLE_DIR = Path(__file__).resolve().parents[1]
+EXAMPLE_PATH = EXAMPLE_DIR / "1d_5-parametric_beam_deflection_PGD.py"
 
 
 def load_module(path=EXAMPLE_PATH):

@@ -33,8 +33,14 @@
   `-s` gives the actual numbers: `rel. error per mode : [0.3269, 0.1807,
   0.09536]`, `error after polish : 0.01527`. So the hand-rolled loop's real
   greedy-regime error is **0.0954**, not 15%, and `GreedyTrainer`'s **0.1019**
-  is **marginally worse**, by about 7% relative, under a different
-  stage-length rule (`RelativeChange` vs. the loop's fixed 150 iterations).
+  is **marginally worse**, by about 7% relative. Note the comparison is not
+  against the old example's fixed-150-iteration loop — no measurement here
+  comes from that. It is against the *baseline test*, which runs its own
+  hand-calibrated plateau rule (`epsilon=2e-2`, `plateau_window=20`,
+  `min_epochs_per_mode=120`, `max_epochs_per_mode=600`). That rule and
+  `RelativeChange(tol=1e-3, window=20, min_iter=120, max_iter=600)` are nearly
+  the same criterion; they differ mainly in `tol` (1e-3 vs 2e-2), which makes
+  the two numbers a fair like-for-like comparison rather than a confound.
   The polished baseline is **0.0153**, not 3% — an extra all-modes joint
   optimization stage `GreedyTrainer` does not perform, so the trainer does not
   yet close that gap either.
@@ -182,6 +188,14 @@
     `record.gain` is still NaN -- it is only filled in by
     `TrainingHistory.append` afterwards. A strategy wanting the gain inside
     `on_stage_end` currently cannot get it there.
+  - **Divergence is detected but not latched.** `enrich()` breaks out of the
+    loop on a diverged stage, but calling `enrich()` again resumes on the
+    poisoned state and burns another mode; `history.stop_reason` is silently
+    overwritten. `RelativeGain` cannot stop it either -- `(previous - current)
+    / denom < tol` is False under NaN, so a NaN history reads as "still
+    gaining". Self-limiting in practice (the poisoned state re-diverges at
+    once, so it is not data corruption), but `enrich()` should refuse to
+    resume a history whose last stage diverged.
 
 ## 2026-07-23 — GreedyTrainer, and two base.py bugs only real physics exposed
 

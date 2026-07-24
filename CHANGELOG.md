@@ -1,3 +1,50 @@
+## 2026-07-24 — GreedyTrainer wired into the 2-parametric example; validated against the analytical solution
+
+- **Changed** `docs/examples/1d_2-parametric_beam_PGD/1d_beam_deflection_PGD.py`:
+  the three copy-pasted 150-iteration blocks (`freeze_mode` / `add_mode` /
+  `add_mode_to_optimizer`, one persistent `Adam` + closure reused across all
+  three) are gone, replaced by a single `GreedyTrainer(...).enrich()` call with
+  `DEFAULT_STAGE_CRITERION` (`RelativeChange(tol=1e-3, window=20, max_iter=600,
+  min_iter=120)`) and `DEFAULT_ENRICHMENT_CRITERION` (`RelativeGain(tol=1e-3)`).
+  Setup moved into `build_problem(loss_fn, *, n_modes_max=3, n_modes_ini=1,
+  n_nodes=None, quad=None) -> Problem`, mirroring the 5-parametric example's
+  `make_axis` / `Problem` / `build_problem` shape exactly (this example is now
+  structurally parallel to it). `Problem` carries `x_min`, `x_max`, `E_min`,
+  `E_max`, `load_value` alongside the usual `model`/`pgd`/`field_layout`/
+  `domain`/`axes`/`history`, since this is the one problem whose exact
+  analytical solution can be checked against those scalars.
+- **This is the only task in the plan that checks the answer, not the
+  machinery.** The 2-parametric beam is exactly rank-1
+  (`u = 0.5 q (x-x_min)(x-x_max) / E`). New test
+  `tests/integration/test_greedy_trainer.py::test_greedy_trainer_recovers_the_analytical_beam`
+  trains via `GreedyTrainer` and asserts the trained model's relative L2 error
+  against that closed form (dense 60x40 (x, E) grid) is below
+  `ANALYTICAL_ERROR_TOL`.
+- **Measured relative L2 error: 0.1019** (10.2%), identical across
+  `manual_seed(0)` and `manual_seed(42)` — this pipeline has no randomness
+  beyond the deterministic `0.5*ones` monom seed, so the run is fully
+  reproducible, not a lucky draw. `ANALYTICAL_ERROR_TOL` set to `0.21`, roughly
+  double the measurement, rounded up. Compared against the hand-rolled
+  baseline in `tests/integration/test_1d_beam_deflection_PGD.py`: better than
+  its greedy figure (`final_error_tol = 15%`, no joint polish — the same
+  regime `GreedyTrainer` runs in, one persistent-mode-then-freeze pass, no
+  final all-modes polish) and, as expected, worse than its polished one
+  (`strict_error_tol = 3%`, an extra all-modes joint optimization stage that
+  `GreedyTrainer` does not perform). So the trainer replaces the loop it was
+  built to replace without a regression; a future `simultaneous`/`greedy+update`
+  strategy is the natural place to recover the 3% figure.
+- **Trained `max_correlation`: stage 0 = 0.000 (nothing to correlate against),
+  stage 1 = 0.242, stage 2 = 0.161.** Both well below 1.0 — modes 1 and 2 do
+  *not* duplicate mode 0 here, unlike the 5-parametric problem at short stage
+  lengths (Task 3's negative result). Training stopped at `"capacity"`
+  (`n_modes_max=3` reached) rather than `RelativeGain` converging first, so a
+  larger mode budget was not tried; with the true rank being 1, modes 1 and 2
+  are pure numerical residue and their shrinking amplitudes (7.04e3, 1.34e3,
+  4.17e2) and gains (stage 1 gain 2.46e5, stage 2 gain 3.98e3) are consistent
+  with that, not with degeneracy.
+- Full suite: 157 passed (156 baseline + 1). Full report:
+  `.superpowers/sdd/task-5-report.md`.
+
 ## 2026-07-24 — GreedyTrainer wired into the 5-parametric example
 
 - **Changed** `docs/examples/1d_5-parametric_beam_PGD/1d_5-parametric_beam_deflection_PGD.py`:

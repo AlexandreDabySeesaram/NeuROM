@@ -1,7 +1,6 @@
 """Purely greedy PGD training."""
 
-import math
-
+from neurom.training import diagnostics
 from neurom.training.base import PGDTrainer
 
 
@@ -96,63 +95,23 @@ class GreedyTrainer(PGDTrainer):
         A tiny gain together with ``max_correlation`` near 1 is the greedy
         sequence rediscovering a mode it already has.
 
-        Caveat: these use raw nodal vectors, not the quadrature-weighted L2
-        inner product, so this is not the energy-norm correlation. Cheap (no
-        forward pass) and good enough to *spot* duplication, not to quantify it.
+        Only the newest mode is tested: every earlier one is frozen, so no pair
+        of them can drift together after the fact. A strategy that keeps old
+        modes trainable needs ``max_pairwise_correlation`` instead -- see
+        :class:`~neurom.training.simultaneous.SimultaneousTrainer`.
 
-        If a stage diverged, ``current``'s norms are NaN and the per-pair
-        ``correlation`` propagates that NaN; it is recorded as NaN rather than
-        silently swallowed. ``max(0.0, nan)`` would return ``0.0`` in Python
-        (``max``/``min`` prefer the first argument on a NaN comparison), which
-        would report perfect orthogonality exactly when the state is garbage
-        -- the opposite of what the diagnostic is for.
+        See :mod:`neurom.training.diagnostics` for what these measure and for
+        the nodal-vector caveat. NaN from a diverged stage is recorded as NaN
+        rather than silently swallowed.
 
         Args:
             record (StageRecord): The stage that just finished; ``diagnostics``
                 is filled in place with ``"amplitude"`` and ``"max_correlation"``.
         """
         current_mode = self.decomposition.n_modes_truncated - 1
-        current = self._monom_values(current_mode)
-
-        amplitude = 1.0
-        for values in current:
-            amplitude *= float(values.norm())
-
-        max_correlation = 0.0
-        for earlier_mode in range(current_mode):
-            earlier = self._monom_values(earlier_mode)
-            correlation = 1.0
-            for a, b in zip(current, earlier):
-                norms = a.norm() * b.norm()
-                if norms == 0.0:
-                    correlation = 0.0
-                    break
-                correlation *= float((a * b).sum() / norms)
-            correlation = abs(correlation)
-            if math.isnan(correlation) or math.isnan(max_correlation):
-                max_correlation = math.nan
-            else:
-                max_correlation = max(max_correlation, correlation)
-
-        record.diagnostics["amplitude"] = amplitude
-        record.diagnostics["max_correlation"] = max_correlation
-
-    def _monom_values(self, mode):
-        """Full nodal values of every monom of ``mode`` (constrained DOFs included).
-
-        ``full_values()`` is correct here because the space axis's Dirichlet
-        values are homogeneous (zero): every mode's constrained DOFs are zero
-        too, so including them does not bias the correlation. With
-        **inhomogeneous** Dirichlet data every mode would share the same
-        nonzero constant component on those DOFs, and ``max_correlation``
-        would be biased upward regardless of how different the free DOFs are.
-
-        Args:
-            mode (int): Index of the mode whose monoms to read.
-
-        Returns:
-            list[torch.Tensor]: One detached tensor per monom/axis of ``mode``.
-        """
-        return [
-            field.full_values().detach() for field in self.decomposition.monoms[mode]
-        ]
+        record.diagnostics["amplitude"] = diagnostics.amplitude(
+            diagnostics.monom_values(self.decomposition, current_mode)
+        )
+        record.diagnostics["max_correlation"] = diagnostics.max_correlation(
+            self.decomposition, current_mode
+        )

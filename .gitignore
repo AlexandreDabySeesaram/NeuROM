@@ -23,3 +23,7 @@ pgd_vs_analytical.png
 pgd5_convergence.png
 pgd5_vs_reference.png
 pgd5_modes.png
+
+# Trained models (regenerate: python docs/examples/1d_5-parametric_beam_PGD/1d_5-parametric_beam_deflection_PGD.py <strategy> --retrain)
+pgd5_greedy.pt
+pgd5_simultaneous.pt

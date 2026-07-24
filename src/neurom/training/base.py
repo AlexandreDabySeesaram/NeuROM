@@ -7,6 +7,7 @@ import torch
 
 from neurom.training.criteria import RelativeChange, RelativeGain
 from neurom.training.history import StageRecord, TrainingHistory
+from neurom.training.progress import ProgressReporter
 
 
 def _default_optimizer(params):
@@ -45,6 +46,10 @@ class PGDTrainer(ABC):
             Defaults to :class:`RelativeChange`.
         enrichment_criterion (EnrichmentCriterion, optional): When to stop
             starting stages. Defaults to :class:`RelativeGain`.
+        progress (ProgressReporter, optional): Watches the run. Defaults to
+            :class:`~neurom.training.progress.ProgressReporter`, which does
+            nothing -- training nobody is watching prints nothing. Pass a
+            :class:`~neurom.training.progress.ProgressBar` for a terminal bar.
 
     Attributes:
         optimizer (torch.optim.Optimizer): The current stage's optimizer, or
@@ -59,11 +64,13 @@ class PGDTrainer(ABC):
         optimizer_factory=None,
         stage_criterion=None,
         enrichment_criterion=None,
+        progress=None,
     ):
         self.model = model
         self.optimizer_factory = optimizer_factory or _default_optimizer
         self.stage_criterion = stage_criterion or RelativeChange()
         self.enrichment_criterion = enrichment_criterion or RelativeGain()
+        self.progress = progress or ProgressReporter()
         self.optimizer = None
         self.history = TrainingHistory()
 
@@ -126,6 +133,7 @@ class PGDTrainer(ABC):
             if record.diverged:
                 self.history.stop_reason = "diverged"
                 break
+        self.progress.close()
         return self.history
 
     def stage(self, stage_index):
@@ -154,13 +162,16 @@ class PGDTrainer(ABC):
             StageRecord: The stage's losses and outcome.
         """
         record = StageRecord(stage=stage_index)
+        self.progress.stage_start(stage_index, self.stage_criterion.budget())
         while True:
             loss = self.step()
             record.losses.append(loss)
+            self.progress.update(record.n_iter, loss)
             if not math.isfinite(loss):
                 record.diverged = True
                 record.stop_reason = "diverged"
                 record.final_energy = loss
+                self.progress.stage_end(record)
                 return record
             reason = self.stage_criterion.stop_reason(record.losses)
             if reason:
@@ -171,6 +182,7 @@ class PGDTrainer(ABC):
                 if not math.isfinite(record.final_energy):
                     record.diverged = True
                     record.stop_reason = "diverged"
+                self.progress.stage_end(record)
                 return record
 
     def step(self):

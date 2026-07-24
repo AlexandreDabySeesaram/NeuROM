@@ -14,9 +14,20 @@ Because ``E1, E2 > 0`` and ``tanh`` maps into (-1, 1), the modulus stays strictl
 between E1 and E2 -- positivity is structural, no clamping needed.
 
 This module builds the problem (axes, decomposition, energy, model), evaluates
-the energy once, and then trains it greedily in ``main`` -- one mode per stage,
-every earlier mode frozen -- reporting a per-stage diagnostics table. Pass
-``train=False`` for assembly only, ``plot=False`` to skip the figures.
+the energy once, and then trains it in ``main`` -- one mode per stage --
+reporting a per-stage diagnostics table. Pass ``train=False`` for assembly only,
+``plot=False`` to skip the figures.
+
+Two training schedules are selectable, both scored against the same reference::
+
+    python .../1d_5-parametric_beam_deflection_PGD.py greedy
+    python .../1d_5-parametric_beam_deflection_PGD.py simultaneous
+
+Each writes its trained model next to this file (``pgd5_<strategy>.pt``) and
+**reuses it on the next run**: re-running the command above redraws the figures
+from the checkpoint in seconds. Add ``--retrain`` to train again and overwrite
+it. Training prints a per-stage progress bar; a stage is minutes long, so a
+silent run would be indistinguishable from a hung one.
 
 Accuracy is judged against ``reference_fem_solution.py``: a direct, non-reduced
 FEM solve at a handful of parameter points, saved to ``reference_solution.pt``.
@@ -25,7 +36,9 @@ Generate it once before plotting::
     python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py
 """
 
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
@@ -43,7 +56,15 @@ from neurom.meshes import Topology
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import MidPoint1D
 from neurom.shape_functions import LinearSegment
-from neurom.training import GreedyTrainer, RelativeChange, RelativeGain
+from neurom.training import (
+    GreedyTrainer,
+    ProgressBar,
+    RelativeChange,
+    RelativeGain,
+    SimultaneousTrainer,
+    load_checkpoint,
+    save_checkpoint,
+)
 
 torch.set_default_dtype(torch.float32)
 
@@ -586,29 +607,57 @@ def plot_modes(pgd, save_path="pgd5_modes.png"):
     plt.show()
 
 
-def main(verbose=True, train=True, plot=True):
+def main(
+    verbose=True,
+    train=True,
+    plot=True,
+    trainer_cls=GreedyTrainer,
+    stage_min_iter=None,
+    checkpoint=None,
+    retrain=False,
+):
     """Assemble the 5-parametric problem, evaluate the energy once, and train it.
 
     Always builds the problem and evaluates the energy once at the initial
     (untrained) state -- this proves the whole chain (five axes -> CP-PGD ->
     shared IntegrationDomain -> separated energy) assembles and produces a
-    finite value. Unless ``train=False``, it then runs purely greedy PGD
-    training (one mode per stage, every earlier mode frozen) and returns the
-    ``Problem`` with ``history`` filled.
+    finite value. Unless ``train=False``, it then trains the decomposition with
+    ``trainer_cls`` and returns the ``Problem`` with ``history`` filled.
 
     Args:
         verbose (bool): print a short summary of the assembled problem and,
             if training, a per-stage diagnostics table.
-        train (bool): if True, train the decomposition with ``GreedyTrainer``
-            after the initial energy evaluation; if False, return the
-            untrained problem (``history`` stays ``None``).
+        train (bool): if True, train the decomposition after the initial energy
+            evaluation; if False, return the untrained problem (``history``
+            stays ``None``).
+        trainer_cls (type): the training strategy, constructed as
+            ``trainer_cls(model, stage_criterion=..., enrichment_criterion=...)``
+            -- :class:`~neurom.training.GreedyTrainer` (the default, one mode
+            per stage with every earlier mode frozen for good) or
+            :class:`~neurom.training.SimultaneousTrainer` (same enrichment, but
+            every active mode stays trainable). Both are scored against the same
+            saved FEM reference, which is the point of making this a knob.
+        stage_min_iter (int, optional): iterations a stage must run before the
+            plateau test applies. Defaults to ``STAGE_MIN_ITER[trainer_cls]``,
+            which is not the same for the two strategies -- see the comment at
+            the trainer below.
         plot (bool): if True (and training ran), draw the convergence curve, the
             PGD-vs-reference comparison and the per-axis mode factors. Requires
             matplotlib, which is imported lazily inside the plotting helpers.
+        checkpoint (str or Path, optional): where the trained model lives.
+            Defaults to ``checkpoint_path(trainer_cls)``. If the file exists and
+            ``retrain`` is False, it is **loaded instead of training** -- which
+            is the point: iterating on a figure costs seconds, retraining costs
+            minutes. Otherwise training runs and the result is written there.
+            Pass ``checkpoint=False`` to disable the mechanism entirely.
+        retrain (bool): train even if a checkpoint exists, and overwrite it.
 
     Returns:
         Problem: the assembled objects, for interactive use.
     """
+    if stage_min_iter is None:
+        stage_min_iter = STAGE_MIN_ITER.get(trainer_cls, 120)
+
     problem = build_problem(lambda layout, pgd: energy(layout, pgd, load_name="load"))
 
     field_layout = problem.model()
@@ -626,7 +675,31 @@ def main(verbose=True, train=True, plot=True):
     if not train:
         return problem
 
-    # Purely greedy: one mode per stage, every earlier mode frozen for good.
+    if checkpoint is None:
+        checkpoint = checkpoint_path(trainer_cls)
+
+    # Train once, then plot as often as you like. The checkpoint carries the
+    # monom values AND which modes are active (the `active` flags are buffers,
+    # so they ride along in the state_dict), so a loaded model evaluates exactly
+    # what the run produced. The history rides along too, which is what lets the
+    # convergence plot and the diagnostics table be redrawn without retraining.
+    if checkpoint and not retrain and Path(checkpoint).exists():
+        history, metadata = load_checkpoint(checkpoint, problem.model)
+        problem.history = history
+        if verbose:
+            print(f"loaded          : {checkpoint}")
+            print(f"  trained with  : {metadata.get('strategy', '?')}")
+            print(f"  active modes  : {problem.pgd.n_modes_truncated}")
+            if metadata.get("n_nodes") != DEFAULT_N_NODES:
+                # A shape mismatch would have raised; a *node-count* mismatch
+                # cannot, since n_nodes is baked into the shapes -- but the
+                # criteria or the strategy may still differ from what is asked
+                # for now, and the plots would silently describe the old run.
+                print(f"  WARNING: saved meshes {metadata.get('n_nodes')} differ")
+        _report(problem, history, verbose=verbose, plot=plot)
+        return problem
+
+    # One mode per stage, under whichever freeze schedule trainer_cls imposes.
     #
     # min_iter is load-bearing twice over. Adam spends a long sticky early phase
     # on this energy where the loss barely moves, which a plateau detector reads
@@ -634,14 +707,63 @@ def main(verbose=True, train=True, plot=True):
     # rediscovers mode 0 -- max_correlation reads 1.0 and the "modes" are copies
     # of each other (see CHANGELOG). The printed max corr column is what tells
     # you whether that is happening.
-    trainer = GreedyTrainer(
+    #
+    # It is also the one setting the two strategies must NOT share. A greedy
+    # stage spends its whole budget on one new mode; a simultaneous stage has to
+    # re-fit every earlier mode as well, and at 120 iterations the new mode
+    # never takes off (amplitude 3e1 against mode 0's 3e5, gain 1.7e7 against
+    # greedy's 5.6e9) -- small enough that RelativeGain calls the run converged
+    # after two stages. At 300 it does take off and overtakes greedy. See
+    # STAGE_MIN_ITER and the CHANGELOG.
+    trainer = trainer_cls(
         problem.model,
-        stage_criterion=RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
+        stage_criterion=RelativeChange(
+            tol=1e-3,
+            window=20,
+            max_iter=max(600, 2 * stage_min_iter),
+            min_iter=stage_min_iter,
+        ),
         enrichment_criterion=RelativeGain(tol=1e-3),
+        # A stage of this problem is minutes long; a silent run is
+        # indistinguishable from a hung one. Stays off when not verbose, so
+        # scripted runs and tests print nothing.
+        progress=ProgressBar() if verbose else None,
     )
     history = trainer.enrich()
     problem.history = history
 
+    if checkpoint:
+        save_checkpoint(
+            checkpoint,
+            problem.model,
+            history,
+            metadata={
+                "strategy": trainer_cls.__name__,
+                "n_nodes": DEFAULT_N_NODES,
+                "stage_min_iter": stage_min_iter,
+                "n_modes": problem.pgd.n_modes_truncated,
+            },
+        )
+        if verbose:
+            print(f"saved           : {checkpoint}")
+
+    _report(problem, history, verbose=verbose, plot=plot)
+    return problem
+
+
+def _report(problem, history, verbose=True, plot=True):
+    """Print the per-stage table and draw the figures for a finished run.
+
+    Shared by the trained and the reloaded path, so a checkpoint produces
+    exactly the same output as the run that wrote it -- otherwise the two paths
+    drift and "plot from the checkpoint" stops being a faithful shortcut.
+
+    Args:
+        problem (Problem): the assembled objects, trained.
+        history (TrainingHistory): the run to report on.
+        verbose (bool): print the diagnostics table and the error breakdown.
+        plot (bool): draw the three figures.
+    """
     if verbose:
         print()
         print(f"training stopped: {history.stop_reason}")
@@ -672,8 +794,45 @@ def main(verbose=True, train=True, plot=True):
             for label, value in per_point.items():
                 print(f"    {label:>17} (space only): {value:.3e}")
 
-    return problem
+
+#: Selectable from the command line, so the two schedules can be run back to
+#: back against the same saved FEM reference: ``python <this file> simultaneous``.
+STRATEGIES = {"greedy": GreedyTrainer, "simultaneous": SimultaneousTrainer}
+
+#: Where the trained models live, one per strategy. Untracked (see .gitignore):
+#: they are a few hundred kB of derived data, regenerated by one command.
+HERE = Path(__file__).resolve().parent
+
+
+def checkpoint_path(trainer_cls):
+    """Default checkpoint file for a strategy: one file per strategy, so the two
+    runs never overwrite each other and both stay available for plotting.
+
+    Args:
+        trainer_cls (type): the training strategy.
+
+    Returns:
+        Path: ``pgd5_<strategy>.pt`` next to this example.
+    """
+    return HERE / f"pgd5_{trainer_cls.__name__.replace('Trainer', '').lower()}.pt"
+
+
+#: Iterations per stage, per strategy. A simultaneous stage re-fits every
+#: earlier mode on top of growing the new one, so it needs the longer budget --
+#: at greedy's 120 its new modes never take off. Measured, not guessed.
+STAGE_MIN_ITER = {GreedyTrainer: 120, SimultaneousTrainer: 300}
 
 
 if __name__ == "__main__":
-    main()
+    # python <this file> [greedy|simultaneous] [--retrain]
+    #
+    # Without --retrain, an existing checkpoint is loaded and only the figures
+    # are redrawn: changing a plot must not cost a training run.
+    arguments = sys.argv[1:]
+    retrain = "--retrain" in arguments
+    positional = [a for a in arguments if not a.startswith("-")]
+    name = positional[0] if positional else "greedy"
+    if name not in STRATEGIES:
+        raise SystemExit(f"unknown strategy {name!r}; pick one of {sorted(STRATEGIES)}")
+    print(f"training strategy: {name}")
+    main(trainer_cls=STRATEGIES[name], retrain=retrain)

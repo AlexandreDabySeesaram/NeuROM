@@ -25,6 +25,16 @@ class StageCriterion(ABC):
             losses (list[float]): Every loss recorded so far in this stage.
         """
 
+    def budget(self):
+        """Iterations this criterion can run at most, or None if unbounded.
+
+        Advisory only -- nothing in the loop reads it to decide anything; it is
+        what lets a :class:`~neurom.training.progress.ProgressBar` show a
+        fraction instead of a bare counter. A criterion with no hard cap says
+        None rather than guessing, and the bar degrades to a counter.
+        """
+        return None
+
 
 class EnrichmentCriterion(ABC):
     """Decides when to stop starting new stages."""
@@ -84,6 +94,10 @@ class RelativeChange(StageCriterion):
             return "converged"
         return None
 
+    def budget(self):
+        """``max_iter`` -- the hard cap. Most stages converge well before it."""
+        return self.max_iter
+
 
 class FixedIterations(StageCriterion):
     """Run exactly ``n_iter`` iterations per stage.
@@ -100,6 +114,10 @@ class FixedIterations(StageCriterion):
 
     def stop_reason(self, losses):
         return "n_iter" if len(losses) >= self.n_iter else None
+
+    def budget(self):
+        """``n_iter`` -- exact, not a cap."""
+        return self.n_iter
 
 
 class RelativeGain(EnrichmentCriterion):

@@ -152,3 +152,62 @@ def test_max_correlation_is_one_for_a_deliberately_duplicated_mode(problem):
     trainer.on_stage_end(record)
 
     assert record.diagnostics["max_correlation"] == pytest.approx(1.0, rel=1e-6)
+
+
+EXAMPLE_2P = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "examples"
+    / "1d_2-parametric_beam_PGD"
+    / "1d_beam_deflection_PGD.py"
+)
+
+
+def load_module_2p():
+    spec = importlib.util.spec_from_file_location("beam2p", EXAMPLE_2P)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def relative_l2_error(problem):
+    """Relative L2 error of the trained PGD against the analytical deflection.
+
+    Evaluated on a dense (x, E) grid, flattened to the pointwise pairs the
+    decomposition's eval-mode forward expects.
+    """
+    problem.model.eval()
+    x = torch.linspace(problem.x_min, problem.x_max, 60)
+    energy_axis = torch.linspace(problem.E_min, problem.E_max, 40)
+    grid_x, grid_E = torch.meshgrid(x, energy_axis, indexing="ij")
+    coords = torch.stack([grid_x.reshape(-1), grid_E.reshape(-1)], dim=1)
+
+    with torch.no_grad():
+        predicted = problem.model(coords).reshape(-1)
+    exact = (
+        0.5
+        * problem.load_value
+        * (coords[:, 0] - problem.x_min)
+        * (coords[:, 0] - problem.x_max)
+        / coords[:, 1]
+    )
+    problem.model.train()
+    return float((predicted - exact).norm() / exact.norm())
+
+
+def test_greedy_trainer_recovers_the_analytical_beam():
+    # The 2-parametric beam is exactly rank-1, so greedy PGD should reproduce it.
+    # This is the only assertion in this file about the ANSWER rather than the
+    # machinery.
+    torch.manual_seed(0)
+    beam2p = load_module_2p()
+    problem = beam2p.build_problem(beam2p.energy)
+
+    trainer = GreedyTrainer(
+        problem.model,
+        stage_criterion=beam2p.DEFAULT_STAGE_CRITERION(),
+        enrichment_criterion=beam2p.DEFAULT_ENRICHMENT_CRITERION(),
+    )
+    trainer.enrich()
+
+    assert relative_l2_error(problem) < beam2p.ANALYTICAL_ERROR_TOL

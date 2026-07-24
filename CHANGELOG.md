@@ -24,15 +24,28 @@
   `manual_seed(0)` and `manual_seed(42)` — this pipeline has no randomness
   beyond the deterministic `0.5*ones` monom seed, so the run is fully
   reproducible, not a lucky draw. `ANALYTICAL_ERROR_TOL` set to `0.21`, roughly
-  double the measurement, rounded up. Compared against the hand-rolled
-  baseline in `tests/integration/test_1d_beam_deflection_PGD.py`: better than
-  its greedy figure (`final_error_tol = 15%`, no joint polish — the same
-  regime `GreedyTrainer` runs in, one persistent-mode-then-freeze pass, no
-  final all-modes polish) and, as expected, worse than its polished one
-  (`strict_error_tol = 3%`, an extra all-modes joint optimization stage that
-  `GreedyTrainer` does not perform). So the trainer replaces the loop it was
-  built to replace without a regression; a future `simultaneous`/`greedy+update`
-  strategy is the natural place to recover the 3% figure.
+  double the measurement, rounded up.
+- **Correction to the comparison below, and to an earlier version of this
+  entry: `final_error_tol` (15%) and `strict_error_tol` (3%) in
+  `tests/integration/test_1d_beam_deflection_PGD.py` are *tolerances*, not
+  *measurements* — comparing `GreedyTrainer`'s 0.1019 against them and calling
+  it "better" or "no regression" was wrong.** Rerunning that baseline test with
+  `-s` gives the actual numbers: `rel. error per mode : [0.3269, 0.1807,
+  0.09536]`, `error after polish : 0.01527`. So the hand-rolled loop's real
+  greedy-regime error is **0.0954**, not 15%, and `GreedyTrainer`'s **0.1019**
+  is **marginally worse**, by about 7% relative, under a different
+  stage-length rule (`RelativeChange` vs. the loop's fixed 150 iterations).
+  The polished baseline is **0.0153**, not 3% — an extra all-modes joint
+  optimization stage `GreedyTrainer` does not perform, so the trainer does not
+  yet close that gap either.
+- **More interesting than the 7%: the trainer's stage 0 converges much
+  better than the baseline's** (mode-0-alone error **0.1305** vs. the
+  baseline's **0.3269**), yet its final rank-3 result is still slightly worse.
+  On a truth that is exactly rank-1, a better mode 0 leaves less real signal
+  in the residual for modes 1-2 to fit — they are left fitting numerical
+  residue either way, so a stronger mode 0 does not guarantee a stronger
+  rank-3 sum. A future `simultaneous`/`greedy+update` strategy — with an
+  all-modes polish stage — is the natural place to close both gaps.
 - **What that test does and does not discriminate**, measured rather than
   assumed: an untrained model scores `1.0006` and an undertrained one (<=50
   iterations) `~1.0000`, so `0.21` is a real bound, not a vacuous one. But mode
@@ -99,6 +112,76 @@
   than a disguised `FixedIterations(120)`.
 - Full suite: 156 passed (155 baseline + 1). Full report:
   `.superpowers/sdd/task-4-report.md`.
+
+## 2026-07-23 — PGDTrainer: a base class for interchangeable PGD training strategies
+
+- **New module `src/neurom/training/`.** `PGDTrainer` (ABC, `base.py`) owns
+  the loop `enrich()` -> `stage()` -> `step()`: a run is a sequence of stages,
+  each iterating `step()` until its stage criterion fires, until an
+  enrichment criterion (or the strategy) says to stop adding stages.
+  `history.py` holds the plain-data records, `StageRecord` (one stage's
+  losses, stop reason, end-of-stage energy, gain, diagnostics) and
+  `TrainingHistory` (the ordered list plus a run-level stop reason).
+  `criteria.py` holds two protocols -- `StageCriterion` (watches a stream of
+  per-iteration losses) and `EnrichmentCriterion` (watches completed stages)
+  -- and four concrete criteria: `RelativeChange`, `FixedIterations`,
+  `RelativeGain`, `MaxStages`. `GreedyTrainer` (recorded above, 2026-07-23) is
+  the first concrete strategy built on this base.
+- **The base deliberately knows nothing about modes.** It never calls
+  `add_mode` or `mode_parameters`, and never assumes a stage index is a mode
+  index; the trainable set for each stage is read off
+  `[p for p in model.parameters() if p.requires_grad]`. All decomposition
+  manipulation -- freezing, adding a mode, building the optimizer -- lives in
+  the `prepare_stage` hook that subclasses implement. This is what is meant to
+  let the same loop drive the planned non-linear decompositions, whose
+  trainable terms are not all modes.
+- **Criteria are injected objects, not overridden methods.** Overriding would
+  need a subclass per (strategy x stopping rule) pair
+  (`GreedyWithRelTol`, `GreedyWithFixedIter`, `AlternatingWithRelTol`, ...);
+  injecting `stage_criterion`/`enrichment_criterion` keeps the strategy and
+  the stopping rule independent. Both return a reason string rather than a
+  bool, so `TrainingHistory`/`StageRecord` record *why* a run or stage ended
+  (`"converged"`, `"max_iter"`, `"n_iter"`, `"capacity"`, `"diverged"`), not
+  just that it did.
+- **`step()` is closure-based** (`self.optimizer.step(closure)`) so LBFGS
+  works with no branching, and it returns the loss *before* that iteration's
+  update -- that is the contract of `optimizer.step(closure)`. That is why
+  `StageRecord.energy` prefers a separately recorded `final_energy`
+  (`_record_final_energy`, one extra forward pass after the stage's criterion
+  fires) over `losses[-1]`: using the last recorded loss as "the stage's
+  energy" would put a one-update error into every `gain` and every
+  enrichment decision.
+- **`RelativeChange` needs `min_iter` and a denominator floor of 1.0**, both
+  carried over unchanged from the criterion calibrated by hand in
+  `tests/integration/test_1d_beam_deflection_PGD.py`. Without `min_iter`, Adam's
+  long sticky early phase on this problem (energy barely moves for ~100
+  iterations before it escapes and dives) reads as a plateau and stops mode 0
+  after ~20 iterations. Without the floor, the energy crossing zero
+  (~+2e5 to ~-1e8) makes a purely relative denominator blow up near the
+  crossing and the stage never stops.
+- **Verified**: 34 unit tests in `tests/unit/training/` (`test_base.py`,
+  `test_criteria.py`, `test_history.py`), against a synthetic model/loss, not
+  real physics. Cover: loop monotonicity, frozen parameters left bitwise
+  unchanged, every stop reason firing (`converged`, `max_iter`, `n_iter`,
+  `capacity`, `diverged`), a diverging stage stopping the whole run rather
+  than poisoning later stages, and `enrich()` being resumable (calling it
+  again continues from `len(history.stages)`).
+- **Independent confirmation from the final review's own experiment**: writing
+  a `SimultaneousTrainer` against this API needed only `prepare_stage` and
+  `should_add_stage` overrides, confirming the "the base knows nothing about
+  modes" design claim for that family of strategies. But an
+  `AlternatingTrainer` needs two seams that do not exist yet -- see "Not yet
+  done" below.
+- **Not yet done:**
+  - `CPPGD` exposes `freeze_all`/`freeze_mode`/`unfreeze_mode` but nothing
+    per-monom, so an alternating-directions strategy (sweeping one axis of one
+    mode at a time) has to reach past the public API into
+    `monoms[m][k].values_reduced` directly. A `freeze_monom(m, k)` /
+    `unfreeze_monom(m, k)` pair on `CPPGD` is the missing seam.
+  - `on_stage_end` runs *before* `history.append`, so inside that hook
+    `record.gain` is still NaN -- it is only filled in by
+    `TrainingHistory.append` afterwards. A strategy wanting the gain inside
+    `on_stage_end` currently cannot get it there.
 
 ## 2026-07-23 — GreedyTrainer, and two base.py bugs only real physics exposed
 
@@ -170,6 +253,13 @@
   the duplication itself was measured (the 15-iteration row was reproduced
   independently; the other rows are from a single run). Whether a per-mode
   seeding strategy is needed is still open, and so is the mechanism.
+  *Later, concrete evidence for the seed-symmetry mechanism*: the final review
+  measured that at `n_modes_ini=2`, stage 0 reports `max_correlation = 1.0`
+  with amplitudes matching to 4 significant digits — every initially-active
+  mode shares the same `Axis.init_values` seed and sees the same gradient, so
+  joint training keeps them parallel forever. This is the one case where the
+  mechanism is forced rather than merely plausible, since there is no freezing
+  between the two modes to even hypothetically break the symmetry.
 - Full suite: 155 passed (146 baseline + 9), no regressions. Full report:
   `.superpowers/sdd/task-3-report.md`.
 

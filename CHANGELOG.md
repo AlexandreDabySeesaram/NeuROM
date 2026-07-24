@@ -1,3 +1,33 @@
+## 2026-07-24 — GreedyTrainer wired into the 5-parametric example
+
+- **Changed** `docs/examples/1d_5-parametric_beam_PGD/1d_5-parametric_beam_deflection_PGD.py`:
+  `main(verbose=True, train=True)` now trains after the untrained energy is
+  printed, via `GreedyTrainer` with `RelativeChange(tol=1e-3, window=20,
+  max_iter=600, min_iter=120)` and `RelativeGain(tol=1e-3)`. `Problem` gained a
+  `history` field (`None` unless trained). `train=False` reproduces the old,
+  untrained behaviour so the pre-existing energy-matches-printed-value test
+  keeps its exact assertions.
+- **Verified** (`tests/integration/test_1d_5_parametric_beam_energy.py`, +1
+  test, 18 total): the trained run's concatenated losses strictly improve and
+  stay finite, `n_modes_truncated == len(history.stages)`, and the table is
+  printed.
+- **Result — `min_iter=120` keeps modes distinct on the real (non-tiny) 5-parametric
+  problem, at least in this one run.** All 8 stages before `RelativeGain`
+  stopped the run converged in exactly 120 iterations (the criterion's first
+  eligible check, at `min_iter`, already cleared `tol` every time — consistent
+  with the "Adam sticky early phase" this criterion was designed around).
+  `max_correlation` per stage: `0.000, 0.086, 0.159, 0.114, 0.145, 0.198,
+  0.433, 0.086` — well below the 1.0 seen at `FixedIterations(15)` in Task 3,
+  confirming that negative result and its fix on the full-size mesh, not just
+  the tiny test mesh. Energy fell monotonically from `-1.905e11` to
+  `-2.045e11` across the 8 stages; gains shrank from `5.6e9` to `9.1e7`, and
+  `RelativeGain(tol=1e-3)` then stopped enrichment at stage 8 with reason
+  `"converged"` (capacity, `n_modes_max=10`, was not reached). Single run, not
+  ablated across seeds — stage 6's jump to `max_correlation=0.433` is the
+  largest value seen and worth watching if this is rerun.
+- Full suite: 156 passed (155 baseline + 1). Full report:
+  `.superpowers/sdd/task-4-report.md`.
+
 ## 2026-07-23 — GreedyTrainer, and two base.py bugs only real physics exposed
 
 - **New** `src/neurom/training/greedy.py`: `GreedyTrainer(PGDTrainer)`, the

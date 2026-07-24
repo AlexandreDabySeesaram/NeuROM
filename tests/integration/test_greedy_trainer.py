@@ -130,7 +130,7 @@ def test_amplitude_is_the_frobenius_norm_of_the_mode(problem):
 
     expected = 1.0
     for field in problem.pgd.monoms[0]:
-        expected *= float(field.full_values().norm())
+        expected *= float(field.full_values().detach().norm())
 
     record = trainer.history.stages[0]
     assert record.diagnostics["amplitude"] == pytest.approx(expected, rel=1e-9)

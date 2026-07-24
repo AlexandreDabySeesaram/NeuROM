@@ -33,6 +33,17 @@
   `GreedyTrainer` does not perform). So the trainer replaces the loop it was
   built to replace without a regression; a future `simultaneous`/`greedy+update`
   strategy is the natural place to recover the 3% figure.
+- **What that test does and does not discriminate**, measured rather than
+  assumed: an untrained model scores `1.0006` and an undertrained one (<=50
+  iterations) `~1.0000`, so `0.21` is a real bound, not a vacuous one. But mode
+  0 **alone** scores `0.130`, also under the bound — the truth being exactly
+  rank-1, mode 0 is most of the answer. So this test mainly exercises stage-0
+  convergence; the enrichment machinery is pinned separately by
+  `test_max_correlation_is_one_for_a_deliberately_duplicated_mode`. The
+  answer-check and the enrichment-check are not the same check here.
+  Relatedly, `torch.manual_seed(...)` pins nothing at present: nothing under
+  `src/neurom/` draws random numbers, and monoms start from a deterministic
+  `0.5*ones`.
 - **Trained `max_correlation`: stage 0 = 0.000 (nothing to correlate against),
   stage 1 = 0.242, stage 2 = 0.161.** Both well below 1.0 — modes 1 and 2 do
   *not* duplicate mode 0 here, unlike the 5-parametric problem at short stage

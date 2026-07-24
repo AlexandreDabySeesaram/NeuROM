@@ -102,7 +102,20 @@ def make_axis(name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value=0
 
 @dataclass
 class Problem:
-    """Everything the 2-parametric beam problem needs to train and be checked."""
+    """Everything the 2-parametric beam problem needs to train and be checked.
+
+    Attributes:
+        model (NeuROMModel): The model, with the energy injected as its loss.
+        pgd (CPPGD): The separated representation.
+        field_layout (FieldLayout): Holds every field, including the load.
+        domain (IntegrationDomain): Interpolates all active fields.
+        axes (dict[str, Axis]): The axes, keyed by name.
+        x_min, x_max, E_min, E_max (float): Axis bounds. Carried on the problem
+            because this is the one case whose exact analytical solution can be
+            evaluated from them.
+        load_value (float): Constant load q, likewise needed by that solution.
+        history (TrainingHistory | None): Filled by ``main`` when it trains.
+    """
 
     model: object
     pgd: object
@@ -208,7 +221,17 @@ def build_problem(
     )
 
 
-def main(n_iter_training=150):
+def main():
+    """Build the 2-parametric beam, train it greedily, and plot the result.
+
+    Stage length is no longer a fixed iteration count -- it is decided by
+    ``DEFAULT_STAGE_CRITERION``, and enrichment by
+    ``DEFAULT_ENRICHMENT_CRITERION``. Pass different criteria to
+    :class:`~neurom.training.GreedyTrainer` to change that.
+
+    Returns:
+        Problem: The assembled problem, with ``history`` filled by training.
+    """
     problem = build_problem(energy)
 
     trainer = GreedyTrainer(
@@ -485,4 +508,4 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
 
 
 if __name__ == "__main__":
-    main(150)
+    main()

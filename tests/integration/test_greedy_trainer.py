@@ -199,6 +199,18 @@ def test_greedy_trainer_recovers_the_analytical_beam():
     # The 2-parametric beam is exactly rank-1, so greedy PGD should reproduce it.
     # This is the only assertion in this file about the ANSWER rather than the
     # machinery.
+    #
+    # What it does and does not discriminate, measured: an untrained model
+    # scores 1.0006 and an undertrained one (<=50 iterations) ~1.0000, so the
+    # 0.21 bound is a real one. But mode 0 ALONE scores 0.130, also under the
+    # bound -- because the truth is exactly rank-1, so mode 0 is most of the
+    # answer. This test therefore mostly exercises stage-0 convergence; the
+    # enrichment machinery is pinned by the other tests in this file, notably
+    # test_max_correlation_is_one_for_a_deliberately_duplicated_mode.
+    #
+    # The seed pins nothing today (nothing under src/neurom/ draws random
+    # numbers; monoms start from a deterministic 0.5*ones). Kept for the day
+    # that changes.
     torch.manual_seed(0)
     beam2p = load_module_2p()
     problem = beam2p.build_problem(beam2p.energy)

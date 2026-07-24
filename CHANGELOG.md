@@ -60,11 +60,14 @@
   Measured sweep of (energies, correlations): 5 iters -> energies RISE; 15 ->
   corr 0.0/1.0/1.0; 40 -> corr 0.0/0.999998/0.999996; 80 -> corr
   0.0/0.0092/0.176; 200 -> corr 0.0/0.066/0.135. So ~80 iterations per stage is
-  where the modes actually separate on this problem. The cause is that every
-  mode carries the same `0.5*ones` seed and, early on, the linear load term
-  dominates, so a fresh mode retraces mode 0's trajectory. **Do not read a
-  falling energy as successful enrichment** — check `max_correlation`. Whether
-  a per-mode seeding strategy is needed is still open.
+  where the modes actually separate on this problem. **Do not read a falling
+  energy as successful enrichment** — check `max_correlation`.
+  *Cause not established.* The plausible story is that every mode carries the
+  same `0.5*ones` seed and that early on the linear load term dominates, so a
+  fresh mode retraces mode 0's trajectory — but that was never ablated, only
+  the duplication itself was measured (the 15-iteration row was reproduced
+  independently; the other rows are from a single run). Whether a per-mode
+  seeding strategy is needed is still open, and so is the mechanism.
 - Full suite: 155 passed (146 baseline + 9), no regressions. Full report:
   `.superpowers/sdd/task-3-report.md`.
 

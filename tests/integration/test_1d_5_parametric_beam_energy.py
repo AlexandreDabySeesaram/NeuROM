@@ -5,6 +5,7 @@ so it cannot be imported by module name; it is loaded from its path instead.
 """
 
 import importlib.util
+import math
 import re
 from pathlib import Path
 
@@ -351,7 +352,7 @@ def test_flat_modulus_limit_matches_the_separable_only_energy(beam5p, float64):
 
 
 def test_main_builds_and_evaluates_a_finite_energy(beam5p, capsys):
-    problem = beam5p.main(verbose=True)
+    problem = beam5p.main(verbose=True, train=False)
 
     assert problem.pgd.n_modes_truncated == 1
     assert problem.pgd.n_modes_max == 10
@@ -367,3 +368,19 @@ def test_main_builds_and_evaluates_a_finite_energy(beam5p, capsys):
     printed_energy = float(match.group(1))
 
     assert printed_energy == pytest.approx(value.item(), rel=1e-6)
+
+
+def test_main_trains_and_reports_a_decreasing_energy(beam5p, capsys):
+    problem = beam5p.main(verbose=True, train=True)
+
+    assert problem.history is not None
+    assert len(problem.history.stages) >= 1
+    assert problem.pgd.n_modes_truncated == len(problem.history.stages)
+
+    # Training must have improved on where it started.
+    losses = problem.history.losses
+    assert losses[-1] < losses[0]
+    assert all(math.isfinite(value) for value in losses)
+
+    printed = capsys.readouterr().out
+    assert "stage" in printed

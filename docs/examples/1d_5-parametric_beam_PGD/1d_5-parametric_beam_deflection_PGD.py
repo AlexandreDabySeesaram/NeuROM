@@ -35,6 +35,7 @@ from neurom.meshes import Topology
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import MidPoint1D
 from neurom.shape_functions import LinearSegment
+from neurom.training import GreedyTrainer, RelativeChange, RelativeGain
 
 torch.set_default_dtype(torch.float32)
 
@@ -113,6 +114,8 @@ class Problem:
         field_layout (FieldLayout): holds the monom fields and the load.
         domain (IntegrationDomain): interpolates every active field.
         axes (dict[str, Axis]): the five axes, keyed by name.
+        history (TrainingHistory | None): Filled by ``main`` when it trains;
+            None when the problem is only assembled.
     """
 
     model: NeuROMModel
@@ -120,6 +123,7 @@ class Problem:
     field_layout: FieldLayout
     domain: IntegrationDomain
     axes: dict[str, Axis]
+    history: object = None
 
 
 def build_problem(
@@ -328,15 +332,22 @@ def energy(field_layout, decomposition, load_name="load"):
     return elastic + load
 
 
-def main(verbose=True):
-    """Assemble the 5-parametric problem and evaluate the energy once.
+def main(verbose=True, train=True):
+    """Assemble the 5-parametric problem, evaluate the energy once, and train it.
 
-    No training and no plotting yet -- this only proves the whole chain
-    (five axes -> CP-PGD -> shared IntegrationDomain -> separated energy)
-    assembles and produces a finite value.
+    Always builds the problem and evaluates the energy once at the initial
+    (untrained) state -- this proves the whole chain (five axes -> CP-PGD ->
+    shared IntegrationDomain -> separated energy) assembles and produces a
+    finite value. Unless ``train=False``, it then runs purely greedy PGD
+    training (one mode per stage, every earlier mode frozen) and returns the
+    ``Problem`` with ``history`` filled.
 
     Args:
-        verbose (bool): print a short summary of the assembled problem.
+        verbose (bool): print a short summary of the assembled problem and,
+            if training, a per-stage diagnostics table.
+        train (bool): if True, train the decomposition with ``GreedyTrainer``
+            after the initial energy evaluation; if False, return the
+            untrained problem (``history`` stays ``None``).
 
     Returns:
         Problem: the assembled objects, for interactive use.
@@ -354,6 +365,40 @@ def main(verbose=True):
         print("nodes per axis  :", n_nodes_actual)
         print("active modes    :", problem.pgd.n_modes_truncated)
         print(f"energy          : {value.item():.6e}")
+
+    if not train:
+        return problem
+
+    # Purely greedy: one mode per stage, every earlier mode frozen for good.
+    #
+    # min_iter is load-bearing twice over. Adam spends a long sticky early phase
+    # on this energy where the loss barely moves, which a plateau detector reads
+    # as convergence. And below ~80 iterations per stage the greedy step simply
+    # rediscovers mode 0 -- max_correlation reads 1.0 and the "modes" are copies
+    # of each other (see CHANGELOG). The printed max corr column is what tells
+    # you whether that is happening.
+    trainer = GreedyTrainer(
+        problem.model,
+        stage_criterion=RelativeChange(tol=1e-3, window=20, max_iter=600, min_iter=120),
+        enrichment_criterion=RelativeGain(tol=1e-3),
+    )
+    history = trainer.enrich()
+    problem.history = history
+
+    if verbose:
+        print()
+        print(f"training stopped: {history.stop_reason}")
+        print(
+            f"{'stage':>5} {'iters':>6} {'stop':>10} "
+            f"{'energy':>14} {'gain':>12} {'amplitude':>11} {'max corr':>9}"
+        )
+        for record in history.stages:
+            print(
+                f"{record.stage:5d} {record.n_iter:6d} {record.stop_reason:>10} "
+                f"{record.energy:14.6e} {record.gain:12.4e} "
+                f"{record.diagnostics['amplitude']:11.4e} "
+                f"{record.diagnostics['max_correlation']:9.3f}"
+            )
 
     return problem
 

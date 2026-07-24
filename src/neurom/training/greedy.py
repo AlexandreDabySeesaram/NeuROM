@@ -16,6 +16,13 @@ class GreedyTrainer(PGDTrainer):
     revisited, so each stage minimises the energy over the residual left by its
     predecessors.
 
+    ``n_modes_ini > 1`` buys nothing under the current constant seeding:
+    every initially-active mode starts from the same ``Axis.init_values``
+    seed and sees the same gradient throughout stage 0's joint training, so
+    they stay parallel forever (measured: `max_correlation = 1.0`, amplitudes
+    matching to 4 significant digits). Only ``n_modes_ini=1`` avoids wasting
+    parameters this way.
+
     Args:
         model (NeuROMModel): Model whose ``decomposition`` is a ``CPPGD``.
         optimizer_factory, stage_criterion, enrichment_criterion: See
@@ -49,7 +56,12 @@ class GreedyTrainer(PGDTrainer):
         """Stop at capacity or when a new mode stops paying for itself.
 
         Capacity is checked here because ``add_mode()`` raises once every mode
-        is active.
+        is active. It is checked *before* ``enrichment_criterion``, so a run
+        that would satisfy both on the same call reports ``"capacity"``, not
+        the enrichment criterion's reason. Stage 0 always returns True
+        unconditionally -- so ``MaxStages(0)``, which would otherwise stop
+        before any stage runs, still gets exactly one stage in, since stage 0
+        trains whatever modes are already active rather than adding one.
 
         Args:
             stage_index (int): Index of the stage that would run next.

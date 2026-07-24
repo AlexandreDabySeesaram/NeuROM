@@ -126,11 +126,18 @@ The modes are built **one at a time** (greedy enrichment):
    factors — which therefore fit the residual left by the previous modes;
 3. repeat up to `n_modes_max` (here 3).
 
-In the code this is `pgd_approx.freeze_mode(...)`, `pgd_approx.add_mode()` and
-`model.add_mode_to_optimizer(...)` (the optimizer wiring lives on the model, so
-the PGD stays optimizer-agnostic). Even though the exact solution here is
-rank-1 (a single mode is enough), we deliberately add several modes to exercise
-the enrichment machinery; the extra modes come out small.
+In the code this whole schedule is driven by
+`GreedyTrainer(model, stage_criterion=..., enrichment_criterion=...).enrich()`:
+one stage trains one mode, freezing every earlier mode before activating and
+training the next, until a stage's `enrichment_criterion`
+(`RelativeGain`, "did the new mode pay for itself?") says to stop or
+`n_modes_max` is reached. Each stage runs until its own `stage_criterion`
+(`RelativeChange`, a plateau detector on the loss) fires. `GreedyTrainer` is a
+concrete strategy on top of the library's `PGDTrainer` base
+(`neurom.training`), which owns the freeze/add/optimizer bookkeeping so the
+example script no longer has to. Even though the exact solution here is rank-1
+(a single mode is enough), we deliberately add several modes to exercise the
+enrichment machinery; the extra modes come out small.
 
 ## Analytical reference and results
 

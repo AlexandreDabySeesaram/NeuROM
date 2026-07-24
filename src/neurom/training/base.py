@@ -184,6 +184,19 @@ class PGDTrainer(ABC):
             ``optimizer.step(closure)`` hands back. A monotonicity check written
             without knowing this will look off by one.
         """
+        return float(self.optimizer.step(self._closure()).detach())
+
+    def _closure(self):
+        """Build the closure ``optimizer.step`` calls.
+
+        Separate from :meth:`step` so a strategy overriding ``step`` (e.g.
+        alternating directions, which sweeps axis by axis) reuses it instead of
+        copying the ``retain_graph`` subtlety below.
+
+        Returns:
+            Callable[[], torch.Tensor]: Zeroes the gradients, runs a forward,
+            evaluates the loss, backpropagates, and returns the loss.
+        """
 
         def closure():
             self.optimizer.zero_grad()
@@ -206,7 +219,7 @@ class PGDTrainer(ABC):
             loss.backward(retain_graph=True)
             return loss
 
-        return float(self.optimizer.step(closure).detach())
+        return closure
 
     def _record_final_energy(self, record):
         """Evaluate the loss of the state the stage ended in.
@@ -241,8 +254,12 @@ class PGDTrainer(ABC):
         """Set the freeze state for this stage and build its optimizer.
 
         The strategy's main variation point, and the only place the
-        decomposition is manipulated. Implementations must end by calling
-        :meth:`make_optimizer`.
+        decomposition is manipulated. The optimizer must be in place before
+        the stage's first :meth:`step` -- usually that means calling
+        :meth:`make_optimizer` here, at the end of ``prepare_stage``, but that
+        is not required: a strategy that builds a different optimizer per axis
+        (e.g. alternating directions) may instead arrange for one to exist by
+        the time :meth:`step` -- which it also overrides -- first runs.
 
         Args:
             stage_index (int): Index of the stage about to run.

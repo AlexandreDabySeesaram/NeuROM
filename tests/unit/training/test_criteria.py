@@ -1,5 +1,3 @@
-import pytest
-
 from neurom.training.criteria import (
     RelativeChange,
     FixedIterations,
@@ -57,7 +55,7 @@ class TestRelativeChange:
         )
 
         assert floored.stop_reason(losses) == "converged"  # 0.002 / 1.0
-        assert unfloored.stop_reason(losses) is None       # 0.002 / 0.001 = 2.0
+        assert unfloored.stop_reason(losses) is None  # 0.002 / 0.001 = 2.0
 
     def test_a_rising_loss_stops_the_stage(self):
         # rel_improvement is signed, so going backwards counts as no progress.
@@ -93,6 +91,7 @@ class TestMaxStages:
     def test_stops_once_the_stage_budget_is_spent(self):
         criterion = MaxStages(2)
         assert criterion.stop_reason([StageRecord(stage=0)]) is None
-        assert criterion.stop_reason(
-            [StageRecord(stage=0), StageRecord(stage=1)]
-        ) == "n_stages"
+        assert (
+            criterion.stop_reason([StageRecord(stage=0), StageRecord(stage=1)])
+            == "n_stages"
+        )

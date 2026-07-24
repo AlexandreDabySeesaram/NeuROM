@@ -21,7 +21,7 @@ def test_append_sets_gain_relative_to_previous_stage():
     history.append(StageRecord(stage=1, losses=[4.0, 1.0]))
 
     assert math.isnan(history.stages[0].gain)  # no previous stage
-    assert history.stages[1].gain == 3.0       # 4.0 -> 1.0
+    assert history.stages[1].gain == 3.0  # 4.0 -> 1.0
 
 
 def test_losses_concatenates_every_stage_in_order():

@@ -395,3 +395,9 @@ def test_main_trains_and_reports_a_decreasing_energy(beam5p, capsys):
 
     printed = capsys.readouterr().out
     assert "stage" in printed
+    # "stage" alone only matches the table header -- a broken table body
+    # (e.g. an exception mid-loop, or an empty stages list) would still pass.
+    # Also require a printed row for the last stage, so the body is checked.
+    last_stage = problem.history.stages[-1]
+    assert f"{last_stage.stage:5d}" in printed
+    assert "converged" in printed

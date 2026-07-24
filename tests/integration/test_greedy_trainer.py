@@ -67,7 +67,14 @@ def test_stage_zero_trains_the_initially_active_mode_without_enriching(problem):
 
 
 def test_converged_energy_never_rises_when_a_mode_is_added(problem):
-    # The core PGD property, and it holds between CONVERGED states only.
+    # The core PGD property -- but at FixedIterations(80) the stages are NOT
+    # actually converged (the 2026-07-24 5-parametric run shows energies still
+    # moving at 200 iterations on the real mesh), so what this test actually
+    # checks is weaker than "between CONVERGED states": it is "after 80
+    # iterations per stage on this tiny mesh". The 1e-9 * abs(previous.energy)
+    # tolerance is decorative too -- real stage-to-stage margins here are
+    # ~2%, not 1e-9 -- so it is not doing meaningful work; it is there only to
+    # allow floating-point noise, not near-misses.
     #
     # It is NOT a per-iteration property here. Unlike the zero-seeded stub in
     # tests/unit/training/test_base.py, a real PGD mode is seeded at

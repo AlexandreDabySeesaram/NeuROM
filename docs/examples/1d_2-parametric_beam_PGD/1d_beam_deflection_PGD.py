@@ -58,10 +58,16 @@ def DEFAULT_ENRICHMENT_CRITERION():
 # Calibrated in Step 6 against an actual run (deterministic -- no randomness in
 # this pipeline beyond the deterministic 0.5*ones seed, confirmed identical
 # across manual_seed(0) and manual_seed(42)): measured relative L2 error
-# 0.1019, roughly doubled and rounded up. Still well inside the hand-rolled
-# greedy baseline's 15% (tests/integration/test_1d_beam_deflection_PGD.py,
-# final_error_tol), i.e. the trainer is not converging worse than the loop it
-# replaces.
+# 0.1019, roughly doubled and rounded up.
+#
+# This is NOT a comparison against final_error_tol / strict_error_tol in
+# tests/integration/test_1d_beam_deflection_PGD.py -- those are tolerances,
+# not measurements, and an earlier version of this comment wrongly compared
+# against them. The hand-rolled loop's actual greedy-regime error (rerun with
+# -s) is 0.0954, so GreedyTrainer's 0.1019 is marginally worse (~7%
+# relative), not better; its joint-polish error is 0.0153, not 3%, and that
+# extra all-modes stage is not something GreedyTrainer performs. See
+# CHANGELOG.md (2026-07-24) for the full comparison.
 ANALYTICAL_ERROR_TOL = 0.21
 
 

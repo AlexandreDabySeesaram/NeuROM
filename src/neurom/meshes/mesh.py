@@ -47,15 +47,17 @@ class Mesh(nn.Module):
             Only works for 1D mesh for now.
         """
 
-        # List elements to which `x` belongs to.
-        ids = []
-        for x_i in x:
-            for e, conn in enumerate(self.topology.connectivity):
-                x_first = self.nodes_positions.full_values()[conn[0]]
-                x_second = self.nodes_positions.full_values()[conn[1]]
-                if x_i >= x_first and x_i <= x_second:
-                    ids.append(e)
-                    break
+        # One element per query point, first (lowest-id) match -- vectorised over
+        # both points and elements. The Python double loop this replaces was
+        # O(points x elements) and stalled at tens of thousands of query points
+        # (the 627-point parameter grid times the space samples).
+        connectivity = self.topology.connectivity
+        positions = self.nodes_positions.full_values().reshape(-1)
+        left = positions[connectivity[:, 0]]  # (E,) element left ends
+        right = positions[connectivity[:, 1]]  # (E,) element right ends
 
-        element_ids = torch.tensor(ids)
-        return element_ids
+        xf = x.reshape(-1, 1)  # (P, 1)
+        inside = (xf >= left.reshape(1, -1)) & (xf <= right.reshape(1, -1))  # (P, E)
+        # argmax returns the first True per row (== lowest element id, the old
+        # loop's `break`); shared interior nodes resolve to the lower element.
+        return inside.to(torch.uint8).argmax(dim=1)

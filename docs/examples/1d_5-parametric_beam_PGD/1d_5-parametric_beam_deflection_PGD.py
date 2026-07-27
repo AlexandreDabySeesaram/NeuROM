@@ -454,19 +454,21 @@ def relative_errors(pgd, reference=None):
 
     x_ref = reference["x"]
     u_ref = reference["u"]
+    n_points, n_x = u_ref.shape
 
-    rows = []
-    for row in reference["params"]:
-        params = dict(zip(reference["param_names"], (v.item() for v in row)))
-        # (P, 5) query matrix: the reference x grid, the parameters held constant.
-        columns = {"space": x_ref}
-        columns.update({name: torch.full_like(x_ref, v) for name, v in params.items()})
-        rows.append(
-            pgd.evaluate(
-                torch.stack([columns[name] for name in AXIS_ORDER], dim=1)
-            ).reshape(-1)
-        )
-    u_pgd = torch.stack(rows)
+    # One query matrix for *all* reference points, not one evaluate() per point:
+    # ``pgd.evaluate`` is already vectorised over its rows, so the K x P table is
+    # a single (K*P, 5) call. Looping in Python instead cost a full mesh search
+    # per point -- fine at a dozen points, but a stall at the 627-point grid.
+    columns = {"space": x_ref.unsqueeze(0).expand(n_points, n_x)}  # (K, P)
+    columns.update(
+        {
+            name: reference["params"][:, j].unsqueeze(1).expand(n_points, n_x)
+            for j, name in enumerate(reference["param_names"])
+        }
+    )
+    query = torch.stack([columns[name] for name in AXIS_ORDER], dim=2)  # (K, P, 5)
+    u_pgd = pgd.evaluate(query.reshape(-1, len(AXIS_ORDER))).reshape(n_points, n_x)
 
     per_point = {
         label: (
@@ -715,10 +717,11 @@ def main(
     # greedy's 5.6e9) -- small enough that RelativeGain calls the run converged
     # after two stages. At 300 it does take off and overtakes greedy. See
     # STAGE_MIN_ITER and the CHANGELOG.
+
     trainer = trainer_cls(
         problem.model,
         stage_criterion=RelativeChange(
-            tol=1e-3,
+            tol=1e-5,
             window=20,
             max_iter=max(600, 2 * stage_min_iter),
             min_iter=stage_min_iter,
@@ -729,6 +732,7 @@ def main(
         # scripted runs and tests print nothing.
         progress=ProgressBar() if verbose else None,
     )
+
     history = trainer.enrich()
     problem.history = history
 

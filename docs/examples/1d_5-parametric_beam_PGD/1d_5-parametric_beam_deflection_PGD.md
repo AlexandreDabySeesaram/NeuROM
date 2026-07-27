@@ -301,8 +301,13 @@ points** (no interpolation error on E). Key settings:
 * `N_NODES = 400`, `TwoPoints1D` — much finer than the PGD's 30-node space axis,
   and a two-point rule so the graded modulus is integrated properly inside each
   element (with `n = 5` the midpoint rule is visibly off).
-* 10 seeded-random parameter points + the 2 `EXTREME_POINTS` = **12**, each
-  sampled at `N_X_SAMPLES = 101` positions.
+* A full tensor grid, `N_GRID = 5` inclusive points per parameter axis
+  (`grid_parameters`), so **5×5×5×5 = 625** points — 5 in `n`, 5 in `alpha`, and
+  25 in the `E1`–`E2` plane at every `(alpha, n)` — plus the 2 `EXTREME_POINTS`
+  = **627**, each sampled at `N_X_SAMPLES = 101` positions. The grid is what
+  makes `overall` a genuine global L2 measure over the whole parameter box
+  rather than a handful of random draws. (`sample_parameters`, the old random
+  draw, is kept as a primitive but no longer feeds the reference set.)
 * `load_example()` imports the PGD script by path, so the geometry, intervals,
   load and modulus law have a **single source of truth** and cannot drift.
 
@@ -331,14 +336,16 @@ different things, because they answer different questions:
 * **`per_point[label]` is space-only**: $\|u_{PGD}(\cdot,p) - u_{ref}(\cdot,p)\| / \|u_{ref}(\cdot,p)\|$
   over the 101-point `x` grid with the parameters frozen at `p`. This is what
   one panel of `plot_solution` shows.
-* **`overall` is space and parameter points jointly**: both `(12, 101)` tables
+* **`overall` is space and parameter points jointly**: both `(627, 101)` tables
   are flattened and one ratio of norms is taken. It is dominated by the points
   with the largest deflection (the soft ones), which is the honest global
   figure — the *mean* of the per-point errors would weight a barely-loaded stiff
   bar as much as a soft one.
 
-Neither weights the parameter volume: the reference points are a handful of
-samples, not a quadrature.
+`overall` still does not weight the parameter volume — the flattened norm treats
+every grid point equally — but the `N_GRID = 5` inclusive tensor grid is a
+uniform sweep of the box, so it now reads as a global measure over all five axes
+rather than the average of a handful of random draws.
 
 ---
 
@@ -410,7 +417,7 @@ The injection points, in order of how likely you are to want them:
 | mesh sizes | `DEFAULT_N_NODES` (and regenerate the checkpoints) |
 | quadrature | `quad=` on `build_problem` |
 | the modulus law | `modulus()` **and** the tanh block in `energy()`, together |
-| the reference points | `EXTREME_POINTS` / `N_PARAM_POINTS`, then regenerate |
+| the reference points | `EXTREME_POINTS` / `N_GRID` (grid density per axis), then regenerate |
 
 Note that a change to the geometry or mesh sizes **invalidates every existing
 checkpoint** — `load_state_dict` will raise on shape, which is the intended

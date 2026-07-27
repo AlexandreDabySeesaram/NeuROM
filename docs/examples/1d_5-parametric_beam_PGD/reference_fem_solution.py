@@ -9,11 +9,13 @@ per parameter point, on a fine mesh, minimising the *same* energy
 with the modulus injected analytically at the quadrature points (no interpolation
 error on E). Each solve is an ordinary quadratic minimisation solved by LBFGS.
 
-Only a handful of parameter points are computed -- the point is not to sample the
-parameter space (that is what the PGD is for) but to have a fixed, reusable set of
-ground truths. The result is written to ``reference_solution.pt`` so that every
-decomposition strategy is compared against *the same* numbers, on the same
-``x`` grid, without re-solving.
+A structured tensor grid of parameter points is computed -- ``N_GRID`` inclusive
+values per axis (x excluded, it is the space grid), tensored over the four
+parameters, so that the ``overall`` L2 measure is a genuine global figure over
+the whole parameter box rather than a handful of random draws. The two
+``EXTREME_POINTS`` are appended for the per-point plots. The result is written to
+``reference_solution.pt`` so that every decomposition strategy is compared
+against *the same* numbers, on the same ``x`` grid, without re-solving.
 
 Run it once::
 
@@ -67,6 +69,11 @@ N_NODES = 400
 QUADRATURE = TwoPoints1D
 N_X_SAMPLES = 101
 N_PARAM_POINTS = 10
+# The reference set is a full tensor grid: N_GRID inclusive points per parameter
+# axis, so N_GRID**4 solves. Five per axis puts both interval endpoints in the
+# set (E in {10, 32.5, 55, 77.5, 100}, etc.) and gives 5x5 = 25 points in the
+# E1-E2 plane at every (alpha, n) -- 625 grid points plus the two extremes.
+N_GRID = 5
 SEED = 0
 
 # Deterministic LBFGS budget. The energy is quadratic in the nodal values, so
@@ -138,6 +145,31 @@ def sample_parameters(n_points=N_PARAM_POINTS, seed=SEED, example=None):
     highs = torch.tensor([example.AXIS_BOUNDS[name][1] for name in PARAM_NAMES])
     unit = torch.rand(n_points, len(PARAM_NAMES), generator=generator)
     return lows + unit * (highs - lows)
+
+
+def grid_parameters(n_grid=N_GRID, example=None):
+    """Full tensor grid of parameter tuples: ``n_grid`` inclusive points per axis.
+
+    Unlike :func:`sample_parameters`, this is a structured sweep rather than a
+    random draw: ``n_grid`` equally spaced values in each axis' *closed*
+    interval (both bounds are hit), tensored over the four parameters. The
+    ``n_grid**4`` points are what the ``overall`` L2 measure integrates over, so
+    a single number characterises the surrogate across the whole parameter box.
+
+    Args:
+        n_grid (int): points per axis; the grid has ``n_grid**4`` rows.
+        example (module, optional): the loaded example module (for its bounds).
+
+    Returns:
+        torch.Tensor: ``(n_grid**4, 4)``, columns ordered as ``PARAM_NAMES``,
+        rows in ``torch.cartesian_prod`` order (first axis varies slowest).
+    """
+    example = example if example is not None else load_example()
+    axes = [
+        torch.linspace(example.AXIS_BOUNDS[name][0], example.AXIS_BOUNDS[name][1], n_grid)
+        for name in PARAM_NAMES
+    ]
+    return torch.cartesian_prod(*axes)
 
 
 def solve_one(params, x_samples, *, example=None, n_nodes=N_NODES, quad=None):
@@ -235,38 +267,41 @@ def solve_one(params, x_samples, *, example=None, n_nodes=N_NODES, quad=None):
     return u_samples, energy
 
 
-def generate(n_points=N_PARAM_POINTS, n_x=N_X_SAMPLES, seed=SEED, verbose=True):
-    """Solve at every parameter point -- the random ones then ``EXTREME_POINTS``.
+def generate(n_grid=N_GRID, n_x=N_X_SAMPLES, verbose=True):
+    """Solve at every parameter point -- the tensor grid then ``EXTREME_POINTS``.
 
     Returns:
         dict: ``x`` ``(P,)``, ``params`` ``(K, 4)``, ``param_names``, ``labels``
-        (``K`` strings, ``"random-i"`` or the extreme point's name), ``u``
+        (``K`` strings, ``"grid-i"`` or the extreme point's name), ``u``
         ``(K, P)``, ``energy`` ``(K,)`` and a ``metadata`` dict describing the
         discretisation and naming the highlighted points.
     """
     example = load_example()
     with double_precision():
         x_samples = torch.linspace(example.X_MIN, example.X_MAX, n_x)
-        sampled = sample_parameters(n_points, seed=seed, example=example)
+        grid = grid_parameters(n_grid, example=example)
         extreme = torch.tensor(
             [[point[name] for name in PARAM_NAMES] for _, point in EXTREME_POINTS]
         )
-        params = torch.cat([sampled, extreme])
+        params = torch.cat([grid, extreme])
 
-    labels = [f"random-{i}" for i in range(len(sampled))]
+    labels = [f"grid-{i}" for i in range(len(grid))]
     labels += [name for name, _ in EXTREME_POINTS]
+    highlight = {name for name, _ in EXTREME_POINTS}
 
     solutions, energies = [], []
-    for label, row in zip(labels, params):
+    for i, (label, row) in enumerate(zip(labels, params)):
         point = dict(zip(PARAM_NAMES, (v.item() for v in row)))
         u_samples, energy = solve_one(point, x_samples, example=example)
         solutions.append(u_samples)
         energies.append(energy)
-        if verbose:
+        # 625 grid solves would drown the terminal one line each: report a
+        # heartbeat every 50 points, plus every highlighted (extreme) point.
+        if verbose and (label in highlight or i % 50 == 0 or i == len(labels) - 1):
             values = ", ".join(f"{k}={v:7.3f}" for k, v in point.items())
             print(
-                f"{label:>17}  {values} -> energy {energy.item():14.6e}"
-                f"  min u {u_samples.min():12.5e}"
+                f"[{i + 1:>4}/{len(labels)}] {label:>17}  {values}"
+                f" -> energy {energy.item():14.6e}  min u {u_samples.min():12.5e}"
             )
 
     return {
@@ -283,9 +318,10 @@ def generate(n_points=N_PARAM_POINTS, n_x=N_X_SAMPLES, seed=SEED, verbose=True):
             "load": example.LOAD_VALUE,
             "x_bounds": (example.X_MIN, example.X_MAX),
             "axis_bounds": dict(example.AXIS_BOUNDS),
-            "seed": seed,
-            # The points worth looking at one by one; the rest are there to be
-            # averaged over, not plotted.
+            "n_grid": n_grid,
+            "grid_shape": [n_grid] * len(PARAM_NAMES),
+            # The points worth looking at one by one; the rest are the tensor
+            # grid, there to be averaged over by ``overall``, not plotted.
             "highlight": [name for name, _ in EXTREME_POINTS],
         },
     }

@@ -1,3 +1,30 @@
+## 2026-07-27 — Dense reference grid + vectorised `mesh.elements_at`
+
+**State:** `src/neurom/meshes/mesh.py` `elements_at` rewritten (vectorised);
+example's `relative_errors` and `reference_fem_solution.py` updated. The
+5-parametric example's report runs standalone again. Reference bundle
+regenerated to a 627-point grid.
+
+- **`elements_at` was O(points × elements) Python double loop** — stalled at the
+  ~63k query points the report now issues (627 params × 101 space). Replaced by
+  a vectorised interval test: `left/right` per element, `(P, E)` inside-mask,
+  `argmax` for the first (lowest-id) match — same semantics as the old `break`.
+  **1D only, as before** (the interval test assumes a segment mesh); a 2D mesh
+  still needs a proper point-in-cell locator. Library-wide speedup: every
+  interpolation goes through this.
+- **`relative_errors` looped `evaluate()` once per reference point** — now one
+  `(K·P, 5)` call (`evaluate` was already vectorised over rows).
+- **Reference set is now a full tensor grid** — `N_GRID = 5` inclusive points
+  per axis (`grid_parameters`) → 625 grid points + 2 `EXTREME_POINTS`, so
+  `overall` is a genuine global L2 over the box, not 10 random draws.
+
+| measure (simultaneous ckpt) | value |
+|---|---|
+| `relative_errors` over 627 pts | 0.24 s (was >120 s / stalled) |
+| overall relative L2 (all axes) | 0.0746 |
+| per-point min / median / max | 0.0032 / 0.0281 / 0.3888 |
+| constant-modulus FEM check | 6.27e-06 |
+
 ## 2026-07-24 — Repo hygiene: example tests moved out of the library suite, CLAUDE.md rewritten, notes split out
 
 **State:** `CLAUDE.md` rewritten (814 → 379 words) and now carries the changelog

@@ -1,3 +1,27 @@
+## 2026-07-28 — LHS reference parameter sampling for the 5-parametric beam
+
+**State:** `docs/examples/1d_5-parametric_beam_PGD/reference/reference_fem_solution.py`
+updated; `reference_solution.pt` regenerated (302 solutions: 300 LHS + 2
+extreme points). `scipy` added as a project dependency. All 7 reference tests
+pass.
+
+- `sample_parameters` now draws points via `scipy.stats.qmc.LatinHypercube`
+  (per-axis stratified, shuffled independently per axis) instead of plain
+  uniform draws; it replaces `grid_parameters` (removed) as the source of the
+  reference set's non-extreme points.
+- `generate()` uses `N_LHS = 300` points in the 4D (E1, E2, alpha, n) box
+  instead of `N_GRID = 5`'s full tensor grid (625 solves) — about half the
+  solves, with much more even per-axis coverage than plain random draws.
+  Labels for these points changed from `"grid-i"` to `"lhs-i"`; metadata
+  keys `n_grid`/`grid_shape` replaced by `sampling`/`n_lhs`/`seed`. Checked:
+  nothing downstream reads the old label prefix or metadata keys.
+- Regenerated bundle: constant-modulus sanity check 6.27e-06 relative L2
+  error (was 6.271e-06 pre-change, i.e. unaffected — that check doesn't
+  depend on the parameter-sampling strategy). Not yet compared against a
+  PGD decomposition to see whether `overall` error moves versus the old
+  grid-based bundle.
+- Not yet regenerated or measured against the old grid-based bundle.
+
 ## 2026-07-28 — Hyperparameter sweep + config ledger for the 5-parametric beam
 
 **State:** `docs/examples/1d_5-parametric_beam_PGD/sweep.py` added;

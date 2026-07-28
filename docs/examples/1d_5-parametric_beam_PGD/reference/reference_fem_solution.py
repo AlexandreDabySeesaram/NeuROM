@@ -9,11 +9,12 @@ per parameter point, on a fine mesh, minimising the *same* energy
 with the modulus injected analytically at the quadrature points (no interpolation
 error on E). Each solve is an ordinary quadratic minimisation solved by LBFGS.
 
-A structured tensor grid of parameter points is computed -- ``N_GRID`` inclusive
-values per axis (x excluded, it is the space grid), tensored over the four
-parameters, so that the ``overall`` L2 measure is a genuine global figure over
-the whole parameter box rather than a handful of random draws. The two
-``EXTREME_POINTS`` are appended for the per-point plots. The result is written to
+A Latin Hypercube Sample of ``N_LHS`` points in the 4D parameter box (x is
+excluded, it is the space grid) is drawn so that the ``overall`` L2 measure is a
+genuine global figure over the whole parameter box, at a fraction of the cost
+of the full tensor grid it replaces (625 solves at 5 points/axis) while still
+space-filling far better than plain random draws. The two ``EXTREME_POINTS``
+are appended for the per-point plots. The result is written to
 ``reference_solution.pt`` so that every decomposition strategy is compared
 against *the same* numbers, on the same ``x`` grid, without re-solving.
 
@@ -32,6 +33,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import torch
+from scipy.stats import qmc
 
 from neurom.constraints import Dirichlet
 from neurom.fem_model import FEMModel
@@ -69,11 +71,11 @@ N_NODES = 400
 QUADRATURE = TwoPoints1D
 N_X_SAMPLES = 101
 N_PARAM_POINTS = 10
-# The reference set is a full tensor grid: N_GRID inclusive points per parameter
-# axis, so N_GRID**4 solves. Five per axis puts both interval endpoints in the
-# set (E in {10, 32.5, 55, 77.5, 100}, etc.) and gives 5x5 = 25 points in the
-# E1-E2 plane at every (alpha, n) -- 625 grid points plus the two extremes.
-N_GRID = 5
+# The reference set is a Latin Hypercube Sample: N_LHS points in the 4D
+# parameter box, one per stratum per axis, independently shuffled across axes.
+# 300 trades the full grid's 625 solves for roughly half the cost while still
+# covering every axis far more evenly than 300 plain random draws would.
+N_LHS = 300
 SEED = 0
 
 # Deterministic LBFGS budget. The energy is quadratic in the nodal values, so
@@ -126,7 +128,15 @@ def load_example(path=EXAMPLE_PATH):
 
 
 def sample_parameters(n_points=N_PARAM_POINTS, seed=SEED, example=None):
-    """Draw ``n_points`` parameter tuples uniformly in the example's intervals.
+    """Draw ``n_points`` parameter tuples by Latin Hypercube Sampling.
+
+    Delegates the stratified draw to ``scipy.stats.qmc.LatinHypercube``: each
+    axis is cut into ``n_points`` equal strata, every stratum is used exactly
+    once per axis, and the stratum order is an independent random permutation
+    per axis (no ``scramble``/``optimization`` beyond that default). That gives
+    even coverage of each axis on its own -- unlike plain uniform draws, which
+    can clump or leave gaps -- without the ``n_points**4`` cost of a full
+    tensor grid.
 
     Seeded, so the reference set is reproducible: regenerating the file gives
     the same parameter points and therefore stays comparable to older runs.
@@ -140,36 +150,13 @@ def sample_parameters(n_points=N_PARAM_POINTS, seed=SEED, example=None):
         torch.Tensor: ``(n_points, 4)``, columns ordered as ``PARAM_NAMES``.
     """
     example = example if example is not None else load_example()
-    generator = torch.Generator().manual_seed(seed)
-    lows = torch.tensor([example.AXIS_BOUNDS[name][0] for name in PARAM_NAMES])
-    highs = torch.tensor([example.AXIS_BOUNDS[name][1] for name in PARAM_NAMES])
-    unit = torch.rand(n_points, len(PARAM_NAMES), generator=generator)
-    return lows + unit * (highs - lows)
+    lows = [example.AXIS_BOUNDS[name][0] for name in PARAM_NAMES]
+    highs = [example.AXIS_BOUNDS[name][1] for name in PARAM_NAMES]
 
-
-def grid_parameters(n_grid=N_GRID, example=None):
-    """Full tensor grid of parameter tuples: ``n_grid`` inclusive points per axis.
-
-    Unlike :func:`sample_parameters`, this is a structured sweep rather than a
-    random draw: ``n_grid`` equally spaced values in each axis' *closed*
-    interval (both bounds are hit), tensored over the four parameters. The
-    ``n_grid**4`` points are what the ``overall`` L2 measure integrates over, so
-    a single number characterises the surrogate across the whole parameter box.
-
-    Args:
-        n_grid (int): points per axis; the grid has ``n_grid**4`` rows.
-        example (module, optional): the loaded example module (for its bounds).
-
-    Returns:
-        torch.Tensor: ``(n_grid**4, 4)``, columns ordered as ``PARAM_NAMES``,
-        rows in ``torch.cartesian_prod`` order (first axis varies slowest).
-    """
-    example = example if example is not None else load_example()
-    axes = [
-        torch.linspace(example.AXIS_BOUNDS[name][0], example.AXIS_BOUNDS[name][1], n_grid)
-        for name in PARAM_NAMES
-    ]
-    return torch.cartesian_prod(*axes)
+    sampler = qmc.LatinHypercube(d=len(PARAM_NAMES), seed=seed)
+    unit = sampler.random(n=n_points)
+    scaled = qmc.scale(unit, lows, highs)
+    return torch.as_tensor(scaled, dtype=torch.get_default_dtype())
 
 
 def solve_one(params, x_samples, *, example=None, n_nodes=N_NODES, quad=None):
@@ -267,25 +254,25 @@ def solve_one(params, x_samples, *, example=None, n_nodes=N_NODES, quad=None):
     return u_samples, energy
 
 
-def generate(n_grid=N_GRID, n_x=N_X_SAMPLES, verbose=True):
-    """Solve at every parameter point -- the tensor grid then ``EXTREME_POINTS``.
+def generate(n_lhs=N_LHS, n_x=N_X_SAMPLES, verbose=True):
+    """Solve at every parameter point -- the LHS set then ``EXTREME_POINTS``.
 
     Returns:
         dict: ``x`` ``(P,)``, ``params`` ``(K, 4)``, ``param_names``, ``labels``
-        (``K`` strings, ``"grid-i"`` or the extreme point's name), ``u``
+        (``K`` strings, ``"lhs-i"`` or the extreme point's name), ``u``
         ``(K, P)``, ``energy`` ``(K,)`` and a ``metadata`` dict describing the
         discretisation and naming the highlighted points.
     """
     example = load_example()
     with double_precision():
         x_samples = torch.linspace(example.X_MIN, example.X_MAX, n_x)
-        grid = grid_parameters(n_grid, example=example)
+        lhs = sample_parameters(n_lhs, seed=SEED, example=example)
         extreme = torch.tensor(
             [[point[name] for name in PARAM_NAMES] for _, point in EXTREME_POINTS]
         )
-        params = torch.cat([grid, extreme])
+        params = torch.cat([lhs, extreme])
 
-    labels = [f"grid-{i}" for i in range(len(grid))]
+    labels = [f"lhs-{i}" for i in range(len(lhs))]
     labels += [name for name, _ in EXTREME_POINTS]
     highlight = {name for name, _ in EXTREME_POINTS}
 
@@ -295,7 +282,7 @@ def generate(n_grid=N_GRID, n_x=N_X_SAMPLES, verbose=True):
         u_samples, energy = solve_one(point, x_samples, example=example)
         solutions.append(u_samples)
         energies.append(energy)
-        # 625 grid solves would drown the terminal one line each: report a
+        # 300 LHS solves would drown the terminal one line each: report a
         # heartbeat every 50 points, plus every highlighted (extreme) point.
         if verbose and (label in highlight or i % 50 == 0 or i == len(labels) - 1):
             values = ", ".join(f"{k}={v:7.3f}" for k, v in point.items())
@@ -318,10 +305,11 @@ def generate(n_grid=N_GRID, n_x=N_X_SAMPLES, verbose=True):
             "load": example.LOAD_VALUE,
             "x_bounds": (example.X_MIN, example.X_MAX),
             "axis_bounds": dict(example.AXIS_BOUNDS),
-            "n_grid": n_grid,
-            "grid_shape": [n_grid] * len(PARAM_NAMES),
-            # The points worth looking at one by one; the rest are the tensor
-            # grid, there to be averaged over by ``overall``, not plotted.
+            "sampling": "lhs",
+            "n_lhs": n_lhs,
+            "seed": SEED,
+            # The points worth looking at one by one; the rest are the LHS
+            # set, there to be averaged over by ``overall``, not plotted.
             "highlight": [name for name, _ in EXTREME_POINTS],
         },
     }

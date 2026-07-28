@@ -75,6 +75,25 @@ def upsert_row(path, row):
     os.replace(tmp, path)
 
 
+def delete_row(path, config_id):
+    """Drop the row with ``config_id`` from the ledger; return True if removed.
+
+    Same write-temp-then-replace as :func:`upsert_row`. Handy to prune a stale
+    experiment without hand-editing the JSONL.
+    """
+    path = Path(path)
+    rows = load_ledger(path)
+    kept = [r for r in rows if r.get("config_id") != config_id]
+    if len(kept) == len(rows):
+        return False
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w") as handle:
+        for r in kept:
+            handle.write(json.dumps(r) + "\n")
+    os.replace(tmp, path)
+    return True
+
+
 def show_ledger(path):
     """Print every ledger row, sorted by overall error (best first)."""
     rows = load_ledger(path)
@@ -148,7 +167,7 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
         verbose (bool): print per-config progress and the training tables.
         plot (bool): draw the example's figures for each trained config.
         checkpoint_dir (str or Path, optional): where ``pgd5_sweep_<id>.pt``
-            live; defaults next to this script.
+            live; defaults to the example's ``PARAM_SWEEP_DIR``.
 
     Returns:
         list[dict]: every ledger row after the run.
@@ -157,7 +176,7 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
     ledger = Path(ledger)
     if not ledger.is_absolute():
         ledger = HERE / ledger
-    checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else HERE
+    checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else ex.PARAM_SWEEP_DIR
 
     known = {r["config_id"] for r in load_ledger(ledger)}
     for cfg in configs:
@@ -196,6 +215,106 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
                   f"overall={row['result']['overall_error']:.3e}")
 
     return load_ledger(ledger)
+
+
+def load_run(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None):
+    """Reload a sweep row's trained ``Problem`` from its checkpoint.
+
+    Looks up ``config_id`` in ``ledger``, rebuilds its ``RunConfig`` from the
+    stored row, and loads the matching checkpoint -- no retraining, seconds not
+    minutes, same mechanism ``run_sweep`` relies on.
+
+    Args:
+        config_id (str): the row's ``config_id``, e.g. from ``show_ledger``.
+        ledger (str or Path): JSONL file; relative paths resolve next to this
+            script.
+        checkpoint_dir (str or Path, optional): where ``pgd5_sweep_<id>.pt``
+            live; defaults to the example's ``PARAM_SWEEP_DIR``, matching
+            ``run_sweep``.
+
+    Returns:
+        Problem: with ``.pgd`` and ``.history`` filled from the checkpoint.
+    """
+    ex = _example()
+    ledger = Path(ledger)
+    if not ledger.is_absolute():
+        ledger = HERE / ledger
+    checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else ex.PARAM_SWEEP_DIR
+
+    rows = load_ledger(ledger)
+    row = next((r for r in rows if r["config_id"] == config_id), None)
+    if row is None:
+        raise KeyError(f"no row with config_id {config_id!r} in {ledger}")
+
+    cfg = ex.RunConfig(**row["config"])
+    trainer_cls = ex.STRATEGIES[cfg.strategy]
+    checkpoint = checkpoint_dir / row["meta"]["checkpoint"]
+    return ex.main(
+        verbose=False,
+        plot=False,
+        trainer_cls=trainer_cls,
+        config=cfg,
+        checkpoint=checkpoint,
+        retrain=False,
+    )
+
+
+def plot_losses(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None,
+                 save_path=None):
+    """Redraw the convergence curve (energy vs. iteration) for one sweep row.
+
+    Thin wrapper around the example's ``plot_convergence``, fed by a checkpoint
+    reload instead of a live training run.
+
+    Args:
+        config_id (str): the row's ``config_id``.
+        ledger (str or Path): JSONL file the row lives in.
+        checkpoint_dir (str or Path, optional): passed through to
+            :func:`load_run`.
+        save_path (str or Path, optional): where to write the PNG; defaults to
+            ``PLOT_DIR / "pgd5_sweep_<config_id>_convergence.png"``.
+    """
+    ex = _example()
+    kwargs = {"ledger": ledger}
+    if checkpoint_dir is not None:
+        kwargs["checkpoint_dir"] = checkpoint_dir
+    problem = load_run(config_id, **kwargs)
+    ex.plot_convergence(
+        problem.history,
+        save_path=save_path or ex.PLOT_DIR / f"pgd5_sweep_{config_id}_convergence.png",
+    )
+
+
+def plot_extremes(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None,
+                    labels=None, save_path=None):
+    """Redraw the two-hardest-points comparison for one sweep row.
+
+    Thin wrapper around the example's ``plot_solution``, fed by a checkpoint
+    reload instead of a live training run.
+
+    Args:
+        config_id (str): the row's ``config_id``.
+        ledger (str or Path): JSONL file the row lives in.
+        checkpoint_dir (str or Path, optional): passed through to
+            :func:`load_run`.
+        labels (list[str], optional): which reference points to draw; defaults
+            to the reference bundle's highlighted pair.
+        save_path (str or Path, optional): where to write the PNG; defaults to
+            ``PLOT_DIR / "pgd5_sweep_<config_id>_vs_reference.png"``.
+
+    Returns:
+        dict: the ``relative_errors`` result, as ``plot_solution`` returns.
+    """
+    ex = _example()
+    kwargs = {"ledger": ledger}
+    if checkpoint_dir is not None:
+        kwargs["checkpoint_dir"] = checkpoint_dir
+    problem = load_run(config_id, **kwargs)
+    return ex.plot_solution(
+        problem.pgd,
+        labels=labels,
+        save_path=save_path or ex.PLOT_DIR / f"pgd5_sweep_{config_id}_vs_reference.png",
+    )
 
 
 def _configs():

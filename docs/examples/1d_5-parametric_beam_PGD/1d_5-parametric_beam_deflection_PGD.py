@@ -23,17 +23,18 @@ Two training schedules are selectable, both scored against the same reference::
     python .../1d_5-parametric_beam_deflection_PGD.py greedy
     python .../1d_5-parametric_beam_deflection_PGD.py simultaneous
 
-Each writes its trained model next to this file (``pgd5_<strategy>.pt``) and
+Each writes its trained model to ``param_sweep/pgd5_<strategy>.pt`` and
 **reuses it on the next run**: re-running the command above redraws the figures
 from the checkpoint in seconds. Add ``--retrain`` to train again and overwrite
 it. Training prints a per-stage progress bar; a stage is minutes long, so a
-silent run would be indistinguishable from a hung one.
+silent run would be indistinguishable from a hung one. Figures are written to
+``plots/``.
 
-Accuracy is judged against ``reference_fem_solution.py``: a direct, non-reduced
-FEM solve at a handful of parameter points, saved to ``reference_solution.pt``.
-Generate it once before plotting::
+Accuracy is judged against ``reference/reference_fem_solution.py``: a direct,
+non-reduced FEM solve at a handful of parameter points, saved to
+``reference/reference_solution.pt``. Generate it once before plotting::
 
-    python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py
+    python docs/examples/1d_5-parametric_beam_PGD/reference/reference_fem_solution.py
 """
 
 import dataclasses
@@ -71,6 +72,15 @@ from neurom.training import (
 
 torch.set_default_dtype(torch.float32)
 
+#: Where trained models, figures and the FEM reference live, one directory
+#: each so the top level of the example stays to scripts and docs.
+HERE = Path(__file__).resolve().parent
+PLOT_DIR = HERE / "plots"
+PARAM_SWEEP_DIR = HERE / "param_sweep"
+REFERENCE_DIR = HERE / "reference"
+PLOT_DIR.mkdir(exist_ok=True)
+PARAM_SWEEP_DIR.mkdir(exist_ok=True)
+
 # --- domain and parameter intervals ---------------------------------------
 X_MIN, X_MAX = 0.0, 10.0
 E1_MIN, E1_MAX = 10.0, 100.0
@@ -101,7 +111,9 @@ AXIS_BOUNDS = {
 }
 
 
-def make_axis(name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value=0.5):
+def make_axis(
+    name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value, init_value_rest=None
+):
     """Build one Axis on a uniform 1-D mesh of ``n_nodes`` nodes over [lo, hi].
 
     Wraps the Topology / Field / Axis boilerplate so the five axes are not five
@@ -113,7 +125,11 @@ def make_axis(name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value=0
         n_nodes (int): Number of mesh nodes (so ``n_nodes - 1`` linear elements).
         constraint (Constraint): Dirichlet or NoConstraint for the monoms.
         sf (ShapeFunction), quad (QuadratureRule), mapping: shared discretisation.
-        init_value (float): Constant seed for every new monom's nodal values.
+        init_value (float): Constant seed for mode 0's nodal values (and every
+            mode, if ``init_value_rest`` is left ``None``).
+        init_value_rest (float, optional): Constant seed for every mode after
+            the first. Defaults to ``None``, which reuses ``init_value`` for
+            all modes.
 
     Returns:
         Axis: ready to be handed to CPPGD.
@@ -133,6 +149,11 @@ def make_axis(name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value=0
         quad=quad,
         constraint=constraint,
         init_values=init_value * torch.ones(n_nodes, 1),
+        init_values_rest=(
+            init_value_rest * torch.ones(n_nodes, 1)
+            if init_value_rest is not None
+            else None
+        ),
     )
 
 
@@ -153,7 +174,7 @@ class RunConfig:
     max_iter: int = 600
     min_iter: int = 120
     stage_floor: float = 1.0
-    enrichment_tol: float = 1e-3
+    enrichment_tol: float = 1e-5
     enrichment_floor: float = 1.0
     lr: float = 0.1
     n_modes_max: int = 10
@@ -251,6 +272,14 @@ def build_problem(
         "alpha": NoConstraint(),
         "n": NoConstraint(),
     }
+    init_values = {
+        "space": 0.5,
+        "E1": 0.5,
+        "E2": 0.5,
+        "alpha": 0.5,
+        "n": 0.5,
+    }
+    init_values_rest = {"space": 0.5}
     axes = [
         make_axis(
             name,
@@ -260,6 +289,8 @@ def build_problem(
             sf,
             quad,
             mapping,
+            init_values[name],
+            init_values_rest.get(name),
         )
         for name in AXIS_ORDER
     ]
@@ -443,22 +474,24 @@ def load_reference_bundle():
     import importlib.util
     from pathlib import Path
 
-    path = Path(__file__).resolve().parent / "reference_fem_solution.py"
+    path = REFERENCE_DIR / "reference_fem_solution.py"
     spec = importlib.util.spec_from_file_location("reference_fem_solution", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.load_reference()
 
 
-def plot_convergence(history, save_path="pgd5_convergence.png"):
+def plot_convergence(history, save_path=None):
     """Plot the energy against the training iteration, with the stage boundaries.
 
     Args:
         history (TrainingHistory): filled by ``GreedyTrainer.enrich``.
-        save_path (str): where to write the PNG.
+        save_path (str or Path, optional): where to write the PNG; defaults to
+            ``PLOT_DIR / "pgd5_convergence.png"``.
     """
     import matplotlib.pyplot as plt
 
+    save_path = save_path or PLOT_DIR / "pgd5_convergence.png"
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(range(len(history.losses)), history.losses, "b-")
 
@@ -535,7 +568,7 @@ def relative_errors(pgd, reference=None):
     return {"per_point": per_point, "overall": overall, "u_pgd": u_pgd}
 
 
-def plot_solution(pgd, reference=None, labels=None, save_path="pgd5_vs_reference.png"):
+def plot_solution(pgd, reference=None, labels=None, save_path=None):
     """Compare the PGD to the FEM reference at the two hardest parameter points.
 
     Ten superposed near-parabolas say very little; two well-chosen points say a
@@ -554,7 +587,8 @@ def plot_solution(pgd, reference=None, labels=None, save_path="pgd5_vs_reference
             one on disk next to this script.
         labels (list[str], optional): which reference points to draw; defaults
             to the bundle's highlighted ones.
-        save_path (str): where to write the PNG.
+        save_path (str or Path, optional): where to write the PNG; defaults to
+            ``PLOT_DIR / "pgd5_vs_reference.png"``.
 
     Returns:
         dict: the ``relative_errors`` result, computed over *all* the reference
@@ -562,6 +596,7 @@ def plot_solution(pgd, reference=None, labels=None, save_path="pgd5_vs_reference
     """
     import matplotlib.pyplot as plt
 
+    save_path = save_path or PLOT_DIR / "pgd5_vs_reference.png"
     if reference is None:
         reference = load_reference_bundle()
     if labels is None:
@@ -622,7 +657,7 @@ def plot_solution(pgd, reference=None, labels=None, save_path="pgd5_vs_reference
     return errors
 
 
-def plot_modes(pgd, save_path="pgd5_modes.png"):
+def plot_modes(pgd, save_path=None):
     """Plot every mode's factor on every axis, normalised by its max modulus.
 
     A CP mode is defined up to a per-axis scale (multiply one factor by ``c``,
@@ -633,11 +668,14 @@ def plot_modes(pgd, save_path="pgd5_modes.png"):
 
     Args:
         pgd (CPPGD): the trained decomposition.
-        save_path (str): where to write the PNG.
+        save_path (str or Path, optional): where to write the PNG; defaults to
+            ``PLOT_DIR / "pgd5_modes.png"``.
     """
     import matplotlib.pyplot as plt
 
     from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+
+    save_path = save_path or PLOT_DIR / "pgd5_modes.png"
 
     def factor(m, k, pts):
         axis = pgd.axes[k]
@@ -877,11 +915,6 @@ def _report(problem, history, verbose=True, plot=True):
 #: back against the same saved FEM reference: ``python <this file> simultaneous``.
 STRATEGIES = {"greedy": GreedyTrainer, "simultaneous": SimultaneousTrainer}
 
-#: Where the trained models live, one per strategy. Untracked (see .gitignore):
-#: they are a few hundred kB of derived data, regenerated by one command.
-HERE = Path(__file__).resolve().parent
-
-
 def checkpoint_path(trainer_cls):
     """Default checkpoint file for a strategy: one file per strategy, so the two
     runs never overwrite each other and both stay available for plotting.
@@ -890,9 +923,9 @@ def checkpoint_path(trainer_cls):
         trainer_cls (type): the training strategy.
 
     Returns:
-        Path: ``pgd5_<strategy>.pt`` next to this example.
+        Path: ``pgd5_<strategy>.pt`` in ``PARAM_SWEEP_DIR``.
     """
-    return HERE / f"pgd5_{trainer_cls.__name__.replace('Trainer', '').lower()}.pt"
+    return PARAM_SWEEP_DIR / f"pgd5_{trainer_cls.__name__.replace('Trainer', '').lower()}.pt"
 
 
 #: Iterations per stage, per strategy. A simultaneous stage re-fits every

@@ -19,7 +19,7 @@ against *the same* numbers, on the same ``x`` grid, without re-solving.
 
 Run it once::
 
-    python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py
+    python docs/examples/1d_5-parametric_beam_PGD/reference/reference_fem_solution.py
 
 then load it from anywhere::
 
@@ -59,7 +59,7 @@ from neurom.shape_functions import LinearSegment
 DTYPE = torch.float64
 
 HERE = Path(__file__).resolve().parent
-EXAMPLE_PATH = HERE / "1d_5-parametric_beam_deflection_PGD.py"
+EXAMPLE_PATH = HERE.parent / "1d_5-parametric_beam_deflection_PGD.py"
 REFERENCE_PATH = HERE / "reference_solution.pt"
 
 # Reference discretisation: much finer than any PGD space axis (30 nodes), and a
@@ -347,7 +347,7 @@ def load_reference(path=REFERENCE_PATH):
     if not path.exists():
         raise FileNotFoundError(
             f"No reference solution at {path}. Generate it with:\n"
-            f"    python {EXAMPLE_PATH.parent / 'reference_fem_solution.py'}"
+            f"    python {HERE / 'reference_fem_solution.py'}"
         )
     bundle = torch.load(path, weights_only=False)
     dtype = torch.get_default_dtype()

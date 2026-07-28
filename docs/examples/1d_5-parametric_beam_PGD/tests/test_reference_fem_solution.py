@@ -12,7 +12,7 @@ import pytest
 import torch
 
 EXAMPLE_DIR = Path(__file__).resolve().parents[1]
-REFERENCE_PATH = EXAMPLE_DIR / "reference_fem_solution.py"
+REFERENCE_PATH = EXAMPLE_DIR / "reference" / "reference_fem_solution.py"
 
 
 def load_module(path=REFERENCE_PATH, name="reference_fem_solution"):

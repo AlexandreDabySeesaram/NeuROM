@@ -22,6 +22,8 @@ def _load(path, name):
 
 
 ex = _load(EXAMPLE, "beam5")
+SWEEP = EXAMPLE.parent / "sweep.py"
+sw = _load(SWEEP, "beam5_sweep")
 
 
 def test_config_id_is_stable_and_order_independent():
@@ -60,3 +62,20 @@ def test_build_optimizer_factory_uses_lr():
     opt = factory(p)
     assert isinstance(opt, torch.optim.Adam)
     assert opt.param_groups[0]["lr"] == 0.05
+
+
+def test_load_ledger_missing_file_is_empty(tmp_path):
+    assert sw.load_ledger(tmp_path / "none.jsonl") == []
+
+
+def test_upsert_appends_then_replaces(tmp_path):
+    ledger = tmp_path / "l.jsonl"
+    sw.upsert_row(ledger, {"config_id": "aaaa", "result": {"overall_error": 0.2}})
+    sw.upsert_row(ledger, {"config_id": "bbbb", "result": {"overall_error": 0.1}})
+    assert len(sw.load_ledger(ledger)) == 2
+    # same id replaces, does not duplicate
+    sw.upsert_row(ledger, {"config_id": "aaaa", "result": {"overall_error": 0.05}})
+    rows = sw.load_ledger(ledger)
+    assert len(rows) == 2
+    a = next(r for r in rows if r["config_id"] == "aaaa")
+    assert a["result"]["overall_error"] == 0.05

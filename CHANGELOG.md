@@ -1,3 +1,25 @@
+## 2026-07-28 — Hyperparameter sweep + config ledger for the 5-parametric beam
+
+**State:** `docs/examples/1d_5-parametric_beam_PGD/sweep.py` added;
+`1d_5-parametric_beam_deflection_PGD.py` refactored to route training through a
+`RunConfig`; `tests/test_sweep.py` added (8 tests). Both scripts run standalone.
+No measured sweep results yet — this is the harness only (assembly + tests).
+
+- **`RunConfig`** carries every training knob explicit and flat: strategy,
+  `stage_tol/window/max_iter/min_iter/stage_floor` (RelativeChange),
+  `enrichment_tol/enrichment_floor` (RelativeGain), `lr`, `n_modes_max`,
+  `n_nodes`. `build_criteria`/`build_optimizer_factory` turn it into live
+  objects; `main()` uses the same builders, so CLI and sweep cannot drift.
+- **Identity is a content hash** (`config_id`, sha256 of the sorted fields):
+  same knobs → same id (idempotent), any knob change → new id. `name` is a
+  label only. Ledger rows and checkpoints (`pgd5_sweep_<id>.pt`) key off it.
+- **Ledger** is JSONL, path is a `run_sweep` argument (a bigger, non-parameter
+  change targets a fresh file). One row per config: full `config` + `result`
+  (overall/worst/per-point L2, final energy, n_modes/stages, stop reason,
+  total iters, and per-stage `amplitude`/`max_correlation`). `upsert_row`
+  replaces by id, so editing `CONFIGS` never loses past results.
+- **Committed to git** (the experiment record); `pgd5_sweep_*.pt` is ignored.
+
 ## 2026-07-27 — Dense reference grid + vectorised `mesh.elements_at`
 
 **State:** `src/neurom/meshes/mesh.py` `elements_at` rewritten (vectorised);

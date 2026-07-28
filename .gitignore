@@ -27,3 +27,6 @@ pgd5_modes.png
 # Trained models (regenerate: python docs/examples/1d_5-parametric_beam_PGD/1d_5-parametric_beam_deflection_PGD.py <strategy> --retrain)
 pgd5_greedy.pt
 pgd5_simultaneous.pt
+# Sweep checkpoints, one per config id (regenerate: python .../sweep.py). The
+# sweep_results.jsonl ledger is deliberately NOT ignored -- it is the record.
+pgd5_sweep_*.pt

@@ -79,3 +79,55 @@ def test_upsert_appends_then_replaces(tmp_path):
     assert len(rows) == 2
     a = next(r for r in rows if r["config_id"] == "aaaa")
     assert a["result"]["overall_error"] == 0.05
+
+
+def _tiny(name, **over):
+    base = dict(
+        name=name, strategy="greedy",
+        stage_tol=1e-3, window=5, max_iter=8, min_iter=4,
+        enrichment_tol=1e-1, n_modes_max=2,
+        n_nodes={"space": 6, "E1": 4, "E2": 4, "alpha": 4, "n": 4},
+    )
+    base.update(over)
+    return ex.RunConfig(**base)
+
+
+def test_run_sweep_writes_one_row_per_config_and_caches(tmp_path, monkeypatch):
+    # avoid needing the FEM reference file: stub relative_errors on the exact
+    # example-module instance the runner uses (memoised by sweep._example()).
+    monkeypatch.setattr(
+        sw._example(), "relative_errors",
+        lambda pgd, reference=None: {
+            "overall": 0.5, "per_point": {"pA": 0.5, "pB": 0.9}, "u_pgd": None,
+        },
+    )
+    ledger = tmp_path / "res.jsonl"
+    configs = [_tiny("a"), _tiny("b", stage_tol=1e-4)]
+
+    rows = sw.run_sweep(configs, ledger=ledger, verbose=False, plot=False,
+                        checkpoint_dir=tmp_path)
+    assert len(rows) == 2
+    ids = {r["config_id"] for r in rows}
+    assert len(ids) == 2
+    for r in rows:
+        assert set(r["config"]) >= {"name", "strategy", "stage_tol", "n_nodes"}
+        res = r["result"]
+        assert res["overall_error"] == 0.5
+        assert res["worst_point_error"] == 0.9
+        assert res["worst_point_label"] == "pB"
+        assert res["per_point_error"] == {"pA": 0.5, "pB": 0.9}
+        assert res["n_modes"] >= 1
+        assert res["n_stages"] >= 1
+        assert isinstance(res["stages"], list) and res["stages"]
+        assert {"amplitude", "max_correlation"} <= set(res["stages"][0])
+
+    # re-run: cached, no new rows
+    rows2 = sw.run_sweep(configs, ledger=ledger, verbose=False, plot=False,
+                         checkpoint_dir=tmp_path)
+    assert len(rows2) == 2
+
+    # change a knob on "a": a third row, first two untouched
+    configs2 = [_tiny("a", min_iter=5)] + configs
+    rows3 = sw.run_sweep(configs2, ledger=ledger, verbose=False, plot=False,
+                         checkpoint_dir=tmp_path)
+    assert len(rows3) == 3

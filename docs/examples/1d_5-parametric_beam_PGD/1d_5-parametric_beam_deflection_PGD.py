@@ -36,6 +36,9 @@ Generate it once before plotting::
     python docs/examples/1d_5-parametric_beam_PGD/reference_fem_solution.py
 """
 
+import dataclasses
+import hashlib
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,6 +134,58 @@ def make_axis(name, lo, hi, n_nodes, constraint, sf, quad, mapping, init_value=0
         constraint=constraint,
         init_values=init_value * torch.ones(n_nodes, 1),
     )
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    """One training-hyperparameter configuration for the sweep.
+
+    Every knob explicit and flat. ``name`` is a human label only; identity is
+    the content hash (see :func:`config_id`), so renaming does not change which
+    ledger row / checkpoint a config maps to. ``n_nodes=None`` means
+    ``DEFAULT_N_NODES``.
+    """
+
+    name: str
+    strategy: str = "greedy"
+    stage_tol: float = 1e-5
+    window: int = 20
+    max_iter: int = 600
+    min_iter: int = 120
+    stage_floor: float = 1.0
+    enrichment_tol: float = 1e-3
+    enrichment_floor: float = 1.0
+    lr: float = 0.1
+    n_modes_max: int = 10
+    n_nodes: dict = None
+
+
+def config_id(cfg):
+    """Stable 8-hex-char identity of a config's *contents*.
+
+    Hash over every field with sorted keys, so field order is irrelevant and
+    any knob change yields a new id (hence a new ledger row and checkpoint).
+    """
+    payload = json.dumps(dataclasses.asdict(cfg), sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()[:8]
+
+
+def build_criteria(cfg):
+    """Turn a ``RunConfig`` into its (stage, enrichment) criteria."""
+    stage = RelativeChange(
+        tol=cfg.stage_tol,
+        window=cfg.window,
+        max_iter=cfg.max_iter,
+        min_iter=cfg.min_iter,
+        floor=cfg.stage_floor,
+    )
+    enrichment = RelativeGain(tol=cfg.enrichment_tol, floor=cfg.enrichment_floor)
+    return stage, enrichment
+
+
+def build_optimizer_factory(cfg):
+    """Adam factory at ``cfg.lr`` -- one optimizer per stage, per the base trainer."""
+    return lambda params: torch.optim.Adam(params, lr=cfg.lr)
 
 
 @dataclass
@@ -617,6 +672,7 @@ def main(
     stage_min_iter=None,
     checkpoint=None,
     retrain=False,
+    config=None,
 ):
     """Assemble the 5-parametric problem, evaluate the energy once, and train it.
 
@@ -660,7 +716,27 @@ def main(
     if stage_min_iter is None:
         stage_min_iter = STAGE_MIN_ITER.get(trainer_cls, 120)
 
-    problem = build_problem(lambda layout, pgd: energy(layout, pgd, load_name="load"))
+    # A RunConfig is the single source of every training knob. When none is
+    # given, synthesise the one that reproduces this example's historical
+    # defaults, so the CLI and the sweep drive identical machinery.
+    strategy_name = {v: k for k, v in STRATEGIES.items()}.get(trainer_cls, "greedy")
+    if config is None:
+        config = RunConfig(
+            name=strategy_name,
+            strategy=strategy_name,
+            stage_tol=1e-5,
+            window=20,
+            max_iter=max(600, 2 * stage_min_iter),
+            min_iter=stage_min_iter,
+            enrichment_tol=1e-3,
+            n_nodes=DEFAULT_N_NODES,
+        )
+
+    problem = build_problem(
+        lambda layout, pgd: energy(layout, pgd, load_name="load"),
+        n_modes_max=config.n_modes_max,
+        n_nodes=config.n_nodes,
+    )
 
     field_layout = problem.model()
     value = problem.model.loss(field_layout)
@@ -718,15 +794,12 @@ def main(
     # after two stages. At 300 it does take off and overtakes greedy. See
     # STAGE_MIN_ITER and the CHANGELOG.
 
+    stage_criterion, enrichment_criterion = build_criteria(config)
     trainer = trainer_cls(
         problem.model,
-        stage_criterion=RelativeChange(
-            tol=1e-5,
-            window=20,
-            max_iter=max(600, 2 * stage_min_iter),
-            min_iter=stage_min_iter,
-        ),
-        enrichment_criterion=RelativeGain(tol=1e-3),
+        optimizer_factory=build_optimizer_factory(config),
+        stage_criterion=stage_criterion,
+        enrichment_criterion=enrichment_criterion,
         # A stage of this problem is minutes long; a silent run is
         # indistinguishable from a hung one. Stays off when not verbose, so
         # scripted runs and tests print nothing.
@@ -743,9 +816,10 @@ def main(
             history,
             metadata={
                 "strategy": trainer_cls.__name__,
-                "n_nodes": DEFAULT_N_NODES,
-                "stage_min_iter": stage_min_iter,
+                "n_nodes": config.n_nodes or DEFAULT_N_NODES,
+                "stage_min_iter": config.min_iter,
                 "n_modes": problem.pgd.n_modes_truncated,
+                "config": dataclasses.asdict(config),
             },
         )
         if verbose:

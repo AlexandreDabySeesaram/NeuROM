@@ -3,8 +3,25 @@ import itertools
 import torch
 import torch.nn as nn
 
+from neurom.constraints.no_constraint import NoConstraint
 from neurom.decompositions.pgd import CPPGD
+from neurom.integrate import integrate
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
+
+
+def _is_homogeneous(constraint):
+    """Whether rescaling a field's free DOFs rescales the whole field.
+
+    True when the constraint imposes nothing (``NoConstraint``) or imposes only
+    zeros; false when it pins a DOF to a non-zero value, since that DOF would
+    not follow the rescaling.
+    """
+    if isinstance(constraint, NoConstraint):
+        return True
+    imposed = getattr(constraint, "values_imposed", None)
+    if imposed is None:
+        return True
+    return bool(torch.all(imposed == 0))
 
 
 def uniform_exponents(n_axes, max_power):
@@ -117,12 +134,8 @@ class PolynomialNLPGD(CPPGD):
         directions per mode remain.
 
         Consequence: the Hessian is singular in ``d - 1`` directions per mode,
-        and the monom/coefficient split is not identifiable. Nothing here
-        corrects it. A gauge fix would impose ``d - 1`` conditions per mode --
-        e.g. normalising ``w_ij`` for ``j < d`` to unit quadrature norm and
-        letting the last axis absorb the scale, with ``C`` transformed by the
-        rule above -- applied at stage boundaries where the optimizer is rebuilt
-        anyway.
+        and the monom/coefficient split is not identifiable. :meth:`renormalise`
+        fixes the gauge by imposing exactly those ``d - 1`` conditions; see there.
 
     Writing an energy against this class
         Read the monom *names* from the inherited :meth:`directory` and the
@@ -140,9 +153,22 @@ class PolynomialNLPGD(CPPGD):
             equal ``(1, ..., 1)``.
         name (str): Prefix for the monom field names.
         n_modes_ini (int): Number of initially active (trainable) modes.
+        renormalise (bool): Whether :meth:`renormalise` fixes the gauge or is a
+            no-op. Defaults to ``True``. Set ``False`` to train the raw,
+            degenerate parameterisation (e.g. to measure what the gauge fix
+            buys). When ``True`` every axis' constraint must be homogeneous,
+            checked at construction.
     """
 
-    def __init__(self, axes, n_modes_max, exponents, name="poly_pgd", n_modes_ini=1):
+    def __init__(
+        self,
+        axes,
+        n_modes_max,
+        exponents,
+        name="poly_pgd",
+        n_modes_ini=1,
+        renormalise=True,
+    ):
         axes = list(axes)
         for a in axes:
             if a.init_values.shape[1] > 1:
@@ -151,9 +177,21 @@ class PolynomialNLPGD(CPPGD):
                     f"dim {a.init_values.shape[1]}. A power of a vector-valued "
                     "monom has no defined meaning here."
                 )
+        if renormalise:
+            for a in axes:
+                if not _is_homogeneous(a.constraint):
+                    raise ValueError(
+                        f"renormalise=True needs homogeneous constraints, but "
+                        f"axis '{a.name}' imposes non-zero values. Rescaling a "
+                        "monom scales its free DOFs but leaves the imposed ones "
+                        "fixed, so the field would change. Pass "
+                        "renormalise=False to train the degenerate "
+                        "parameterisation instead."
+                    )
         super().__init__(
             axes=axes, n_modes_max=n_modes_max, name=name, n_modes_ini=n_modes_ini
         )
+        self.renormalise_enabled = bool(renormalise)
 
         exponents = self._validate_exponents(exponents, len(axes))
         # Buffer, not a plain attribute, so the exponent set rides along in
@@ -263,6 +301,87 @@ class PolynomialNLPGD(CPPGD):
                 f"Mode index {m} out of range for {n_active} active mode(s)."
             )
         return m
+
+    # -- gauge fixing ----------------------------------------------------------
+
+    def monom_norms(self, m):
+        """Quadrature L2 norms ``sqrt(int w_ij^2 dx_j)`` of mode ``m``'s monoms.
+
+        The *quadrature* norm, not ``values_reduced.norm()``: the nodal norm is
+        mesh-dependent, so a gauge fix built on it would shift whenever a mesh
+        changes.
+
+        Returns:
+            list[torch.Tensor]: one 0-dim tensor per axis, detached.
+        """
+        norms = []
+        with torch.no_grad():
+            for k in range(len(self.axes)):
+                r = self._assemblies[m][k].interpolate()
+                norms.append(integrate(r.u * r.u * r.measure).sqrt())
+        return norms
+
+    def renormalise(self):
+        """Fix the gauge on every active mode, leaving the field unchanged.
+
+        The representation has ``d - 1`` flat directions per mode (see the class
+        docstring). This imposes exactly ``d - 1`` conditions: the **last**
+        ``d - 1`` monoms are scaled to unit quadrature norm and the **first**
+        axis absorbs the scale, so the amplitude ends up on axis 0 (for the beam
+        examples, the space factor -- matching the ``seed_amplitude``
+        convention) and the parametric factors carry pure shape.
+
+        Concretely, per mode ``i``::
+
+            s_j = 1 / ||w_ij||   for j >= 1
+            s_0 = prod_{j>=1} ||w_ij||
+            w_ij       -> s_j w_ij
+            C_{i lambda} -> C_{i lambda} prod_j s_j^(-lambda_j)
+
+        ``prod_j s_j = 1`` holds by construction, which is exactly the condition
+        the gauge orbit requires -- so this is an *exact*, energy-preserving
+        reparameterisation, not a regularisation. There is no hyperparameter and
+        no bias on the minimiser.
+
+        Applied to every active mode, including frozen ones: the transformation
+        preserves the field, so a frozen mode's contribution is untouched even
+        though its stored parameters change.
+
+        No-op when the decomposition was built with ``renormalise=False``. A mode
+        whose monoms are not all finite and non-zero is skipped -- an unseeded or
+        collapsed monom has no scale to normalise.
+
+        Call it at a stage boundary, not mid-stage: it rescales parameters, so
+        any optimizer state referring to them (Adam moments) goes stale.
+        ``GreedyTrainer.prepare_stage`` calls it just before ``make_optimizer``,
+        which rebuilds the optimizer anyway.
+        """
+        if not self.renormalise_enabled:
+            return
+        for m in range(self.n_modes_truncated):
+            self.renormalise_mode(m)
+
+    def renormalise_mode(self, m):
+        """Apply the gauge fix of :meth:`renormalise` to mode ``m`` alone."""
+        if not self.renormalise_enabled:
+            return
+        norms = self.monom_norms(m)
+        if not all(bool(torch.isfinite(n)) and float(n) > 0.0 for n in norms):
+            return
+
+        scales = [torch.ones_like(norms[0]) for _ in norms]
+        for k in range(1, len(norms)):
+            scales[k] = 1.0 / norms[k]
+            scales[0] = scales[0] * norms[k]
+
+        with torch.no_grad():
+            for k, s in enumerate(scales):
+                self.monoms[m][k].values_reduced.mul_(s)
+            for t in range(self.n_terms):
+                factor = torch.ones_like(norms[0])
+                for k, s in enumerate(scales):
+                    factor = factor * s ** (-int(self.exponents[t, k]))
+                self.coefficients[m][t] *= factor
 
     # -- structure readback ----------------------------------------------------
 

@@ -613,3 +613,160 @@ def test_energy_is_not_invariant_when_the_scales_do_not_multiply_to_one():
     before = energy_of(poly)
     apply_gauge(poly, [1.7, 1.7])  # prod = 2.89 != 1
     assert energy_of(poly) != pytest.approx(before, rel=1e-3)
+
+
+# --------------------------------------------------------------------------
+# 9. Gauge fixing (renormalise)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "exponents", [uniform_exponents(2, 3), total_degree_exponents(2, 4)]
+)
+def test_renormalise_preserves_the_field(exponents):
+    """The gauge fix is an exact reparameterisation, not a regularisation."""
+    poly = build_seeded(exponents)
+    before_energy = energy_of(poly)
+    before_grid = poly.assemble([QUERY_X, QUERY_E])
+
+    poly.renormalise()
+
+    assert energy_of(poly) == pytest.approx(before_energy, rel=1e-5)
+    assert torch.allclose(poly.assemble([QUERY_X, QUERY_E]), before_grid, atol=1e-4)
+
+
+def test_renormalise_puts_unit_norm_on_the_last_axes():
+    """The last d - 1 monoms end at unit quadrature norm; axis 0 takes the scale."""
+    poly = build_seeded(uniform_exponents(2, 3))
+    before = [float(n) for n in poly.monom_norms(0)]
+    poly.renormalise()
+
+    norms = [float(n) for n in poly.monom_norms(0)]
+    for k in range(1, len(norms)):
+        assert norms[k] == pytest.approx(1.0, rel=1e-5)
+    # Axis 0 absorbed the scale: ||w_0|| ends at the product of all the
+    # original norms (s_0 = prod_{j>=1} ||w_j||, applied to ||w_0||).
+    expected = 1.0
+    for n in before:
+        expected *= n
+    assert norms[0] == pytest.approx(expected, rel=1e-5)
+
+
+def test_renormalise_is_idempotent():
+    poly = build_seeded(total_degree_exponents(2, 4))
+    poly.renormalise()
+    once = [f.values_reduced.detach().clone() for f in poly.monoms[0]]
+    once_c = poly.coefficients[0].detach().clone()
+
+    poly.renormalise()
+
+    for f, b in zip(poly.monoms[0], once):
+        assert torch.allclose(f.values_reduced, b, atol=1e-6)
+    assert torch.allclose(poly.coefficients[0], once_c, atol=1e-6)
+
+
+def test_renormalise_flag_disables_it():
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=1,
+        renormalise=False,
+    )
+    seed_monoms(poly, 1)
+    before = [f.values_reduced.detach().clone() for f in poly.monoms[0]]
+
+    poly.renormalise()
+    poly.renormalise_mode(0)
+
+    for f, b in zip(poly.monoms[0], before):
+        assert torch.equal(f.values_reduced, b)
+    # ... and the norms are left un-normalised.
+    assert float(poly.monom_norms(0)[1]) != pytest.approx(1.0, rel=1e-3)
+
+
+def test_renormalise_covers_every_active_mode_including_frozen_ones():
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=3,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=2,
+    )
+    seed_monoms(poly, 2)
+    poly.freeze_mode(0)
+    before = poly.assemble([QUERY_X, QUERY_E])
+
+    poly.renormalise()
+
+    for m in range(2):
+        assert float(poly.monom_norms(m)[1]) == pytest.approx(1.0, rel=1e-5)
+    # Frozen mode 0 was rescaled but its contribution to the field is unchanged.
+    assert torch.allclose(poly.assemble([QUERY_X, QUERY_E]), before, atol=1e-4)
+
+
+def test_renormalise_skips_a_mode_with_a_zero_monom():
+    """An unseeded monom has no scale to normalise; leave it alone, do not divide by 0."""
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=1,
+    )  # init_values are all zero
+    poly.renormalise()
+    for f in poly.monoms[0]:
+        assert torch.all(torch.isfinite(f.values_reduced))
+        assert torch.equal(f.values_reduced, torch.zeros_like(f.values_reduced))
+
+
+def test_renormalise_rejects_non_homogeneous_constraints_at_construction():
+    from neurom.constraints import Dirichlet
+
+    axes = make_two_axes()
+    axes[0] = Axis(
+        name="space",
+        nodes_positions=axes[0].nodes_positions,
+        sf=axes[0].sf,
+        mapping=axes[0].mapping,
+        quad=axes[0].quad,
+        constraint=Dirichlet(
+            nodes=torch.tensor([0]), values_imposed=torch.tensor([[2.0]])
+        ),
+        init_values=torch.zeros(5, 1),
+    )
+    with pytest.raises(ValueError, match="homogeneous constraints"):
+        PolynomialNLPGD(axes=axes, n_modes_max=1, exponents=uniform_exponents(2, 3))
+    # ... but it is fine with the gauge fix switched off.
+    PolynomialNLPGD(
+        axes=axes,
+        n_modes_max=1,
+        exponents=uniform_exponents(2, 3),
+        renormalise=False,
+    )
+
+
+def test_homogeneous_dirichlet_is_accepted():
+    from neurom.constraints import Dirichlet
+
+    axes = make_two_axes()
+    axes[0] = Axis(
+        name="space",
+        nodes_positions=axes[0].nodes_positions,
+        sf=axes[0].sf,
+        mapping=axes[0].mapping,
+        quad=axes[0].quad,
+        constraint=Dirichlet(
+            nodes=torch.tensor([0]), values_imposed=torch.tensor([[0.0]])
+        ),
+        init_values=torch.zeros(5, 1),
+    )
+    PolynomialNLPGD(axes=axes, n_modes_max=1, exponents=uniform_exponents(2, 3))
+
+
+def test_cppgd_renormalise_is_a_no_op():
+    """The trainer calls renormalise() unconditionally, so CPPGD must accept it."""
+    cp = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    seed_monoms(cp, 1)
+    before = [f.values_reduced.detach().clone() for f in cp.monoms[0]]
+    cp.renormalise()
+    for f, b in zip(cp.monoms[0], before):
+        assert torch.equal(f.values_reduced, b)

@@ -49,6 +49,10 @@ class GreedyTrainer(PGDTrainer):
         if stage_index > 0:
             self.decomposition.freeze_all()
             self.decomposition.add_mode()
+        # Fix the scale gauge before the optimizer is built: renormalising
+        # rescales parameters, which would invalidate any carried-over optimizer
+        # state (Adam moments). No-op unless the decomposition implements one.
+        self.decomposition.renormalise()
         self.make_optimizer()
 
     def should_add_stage(self, stage_index):

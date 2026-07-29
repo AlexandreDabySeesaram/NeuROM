@@ -33,8 +33,8 @@ class StubCP(nn.Module):
     """CP decomposition of an order-3 tensor, with the CPPGD lifecycle.
 
     Reproduces exactly the API the trainers use: ``monoms``, ``add_mode``,
-    ``freeze_mode``/``unfreeze_mode``/``freeze_all``, ``n_modes_truncated`` and
-    ``n_modes_max``. A mode is *active* (contributes to the reconstruction) and
+    ``freeze_mode``/``unfreeze_mode``/``freeze_all``, ``renormalise``,
+    ``n_modes_truncated`` and ``n_modes_max``. A mode is *active* (contributes to the reconstruction) and
     separately *frozen* (contributes but does not move), the same two
     independent flags as the real decomposition.
     """
@@ -86,6 +86,14 @@ class StubCP(nn.Module):
     def unfreeze_mode(self, m):
         for field in self.monoms[m]:
             field.values_reduced.requires_grad_(True)
+
+    def renormalise(self):
+        """Gauge-fixing hook the trainers call at stage boundaries.
+
+        A no-op here, as it is on ``CPPGD``: this stub has the same scale
+        degeneracy, but the trainer tests are about the mode lifecycle, not the
+        gauge.
+        """
 
     def add_mode(self):
         m = self.n_modes_truncated

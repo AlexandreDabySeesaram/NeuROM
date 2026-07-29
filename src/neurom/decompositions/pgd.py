@@ -33,8 +33,12 @@ class Axis:
         mapping: Reference/physical mapping (e.g. IsoparametricMapping1D).
         quad (QuadratureRule): Quadrature rule for integration on this axis.
         constraint (Constraint): Constraint (boundary conditions) on this axis.
-        init_values (torch.Tensor): Initial nodal values for each new monom,
-            shape (n_nodes, dim).
+        init_values (torch.Tensor): Initial nodal values for mode 0 (and every
+            mode, if ``init_values_rest`` is left ``None``), shape (n_nodes, dim).
+        init_values_rest (torch.Tensor, optional): Initial nodal values for
+            every mode after the first (``m >= 1``), same shape as
+            ``init_values``. Defaults to ``None``, which reuses ``init_values``
+            for all modes -- the previous, uniform behaviour.
     """
 
     name: str
@@ -44,6 +48,7 @@ class Axis:
     quad: QuadratureRule
     constraint: Constraint
     init_values: torch.Tensor
+    init_values_rest: torch.Tensor = None
 
     @property
     def topology(self) -> Topology:
@@ -118,7 +123,11 @@ class CPPGD(TensorDecomposition):
                         TrainableField(
                             name=f"{self.name}_dim{a.name}_mode{m}",
                             topology=a.topology,
-                            init_values=a.init_values,
+                            init_values=(
+                                a.init_values
+                                if m == 0 or a.init_values_rest is None
+                                else a.init_values_rest
+                            ),
                             constraint=a.constraint,
                         )
                         for a in self.axes
@@ -212,6 +221,18 @@ class CPPGD(TensorDecomposition):
             assembly.activate()
         self.unfreeze_mode(m)
         return m
+
+    def renormalise(self):
+        """Fix the representation's scale gauge in place. No-op for CP-PGD.
+
+        The seam a trainer calls at a stage boundary. ``CPPGD`` has the same
+        ``d - 1``-dimensional scale degeneracy per mode as its subclasses (the
+        product ``prod_k w_m^k`` is unchanged by any per-axis rescaling with
+        ``prod_k s_k = 1``), but correcting it here would change every existing
+        CP-PGD result, so this deliberately does nothing.
+        :class:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD` overrides
+        it.
+        """
 
     def mode_parameters(self, m=None):
         """Return mode ``m``'s trainable monom parameters (optimizer-agnostic).

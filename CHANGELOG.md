@@ -44,11 +44,30 @@ unchanged by this work.
   not d — pinning the leading term's coefficient at 1 already fixes one. The
   Hessian is correspondingly singular in `d-1` directions per mode, which is the
   practical concern for a curvature-based optimiser.
-- **Not** measured: that this drifts in practice. `test_report_gauge_drift`
-  prints `||w||`/`max|C|` over 20 SGD steps, but that run does not demonstrate
-  drift — with uniform exponents `lambda_x = lambda_E`, so `C` is *invariant*
-  along the flat direction and its growth there is ordinary training from 0.
-  Treat the degeneracy as proven and its practical cost as unmeasured.
+- **Not** measured: that this drifts in practice, or what the gauge fix buys.
+  The degeneracy is proven; its practical cost is not. `renormalise=False`
+  exists precisely so the two can be compared — that ablation has not been run.
+- `renormalise()` fixes the gauge: per mode, the **last `d-1`** monoms are
+  scaled to unit quadrature L2 norm and **axis 0 absorbs the scale**, with
+  `C_lambda *= prod_j s_j^(-lambda_j)`. `prod_j s_j = 1` holds by construction,
+  so it is an *exact* reparameterisation — no hyperparameter, no bias on the
+  minimiser (tested: energy and assembled grid unchanged, idempotent).
+  Amplitude-on-axis-0 matches the example's existing `seed_amplitude`
+  convention.
+  - Gated by the `renormalise=True` constructor flag.
+  - Uses the **quadrature** norm, not `values_reduced.norm()`; the nodal norm is
+    mesh-dependent and would make the gauge fix drift with the mesh.
+  - Requires **homogeneous constraints** (checked at construction, raises):
+    rescaling free DOFs leaves imposed ones fixed, so a non-zero Dirichlet value
+    would change the field. `renormalise=False` bypasses the check.
+  - Applies to every active mode, frozen ones included — field-preserving, so a
+    frozen mode's contribution is untouched though its parameters change.
+  - Skips a mode with a zero/non-finite monom (nothing to normalise).
+- `GreedyTrainer.prepare_stage` calls `decomposition.renormalise()` **before**
+  `make_optimizer()`, so rescaled parameters never carry stale Adam moments.
+  `CPPGD.renormalise()` is a documented **no-op**: CP-PGD has the same `d-1`
+  degeneracy per mode, but fixing it there would move every existing CP result.
+  `StubCP` in `tests/unit/training/test_simultaneous.py` gained the same no-op.
 - Vector-valued axes are **rejected** (`dim > 1` raises): `w^lambda` for a vector
   monom has no defined meaning here. Tightens `CPPGD`'s "at most one".
 - `evaluate`/`assemble` stay detached (inherited `PointWiseInterpolator`

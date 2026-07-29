@@ -33,6 +33,14 @@ class Axis:
         mapping: Reference/physical mapping (e.g. IsoparametricMapping1D).
         quad (QuadratureRule): Quadrature rule for integration on this axis.
         constraint (Constraint): Constraint (boundary conditions) on this axis.
+            **Must impose zero.** The same constraint object is handed to every
+            mode (see :class:`CPPGD`), so a non-zero imposed value ``u_0`` gives
+            ``u(x_0) = u_0 * sum_m prod_{k>=1} w_m^k``, which equals ``u_0``
+            only if that parametric sum happens to be 1 -- nothing enforces it,
+            and no training can fix it since the imposed DOFs are not trainable.
+            Rank 1 with unit parametric factors is the only case that works by
+            accident. Impose a non-zero BC by *lifting* instead (see the
+            ``Non-zero Dirichlet`` note on :class:`CPPGD`).
         init_values (torch.Tensor): Initial nodal values for mode 0 (and every
             mode, if ``init_values_rest`` is left ``None``), shape (n_nodes, dim).
         init_values_rest (torch.Tensor, optional): Initial nodal values for
@@ -74,6 +82,24 @@ class CPPGD(TensorDecomposition):
     (:meth:`directory`), matched-pointwise
     inference (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`). It
     computes no energy and owns no training loop.
+
+    Non-zero Dirichlet: NOT supported, use a lift
+        Every mode shares its axis' ``constraint`` object, so a non-zero imposed
+        value is written into *every* mode's monom and the reconstruction at that
+        node is ``u_0 * sum_m prod_{k>=1} w_m^k``, not ``u_0``. The boundary
+        value is therefore wrong at rank > 1 and drifts as the greedy loop
+        enriches. It is silent: the constrained DOFs are excluded from
+        ``values_reduced``, so nothing in training or in the diagnostics ever
+        looks at them.
+
+        The fix is the standard one -- split ``u = u_lift + u_tilde`` with
+        ``u_lift`` a fixed field carrying the boundary data and ``u_tilde``
+        decomposed under strictly homogeneous constraints. Not implemented:
+        ``Axis`` exposes one constraint for all modes, so "mode 0 inhomogeneous,
+        modes >= 1 homogeneous" is not expressible yet.
+
+        This is also the root of the restriction on
+        :meth:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD.renormalise`.
 
     Evaluation: diagonal (:meth:`evaluate`) vs grid (:meth:`assemble`)
         Two ways to sample the trained field, with **different input formats and

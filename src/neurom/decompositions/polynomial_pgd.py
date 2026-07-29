@@ -15,6 +15,11 @@ def _is_homogeneous(constraint):
     True when the constraint imposes nothing (``NoConstraint``) or imposes only
     zeros; false when it pins a DOF to a non-zero value, since that DOF would
     not follow the rescaling.
+
+    A false here is worth reading as a warning about the *model*, not just about
+    :func:`PolynomialNLPGD.renormalise`: a non-zero imposed value is not
+    correctly imposed by a separated representation in the first place. See the
+    ``Non-zero Dirichlet`` note on :class:`~neurom.decompositions.pgd.CPPGD`.
     """
     if isinstance(constraint, NoConstraint):
         return True
@@ -330,6 +335,16 @@ class PolynomialNLPGD(CPPGD):
         this, just before ``make_optimizer``; whether it runs is the trainer's
         ``renormalise`` flag, not the decomposition's business.
 
+        WARNING -- the constraint check below is a symptom, not the disease.
+        ``renormalise`` scales ``values_reduced``, but the field is
+        ``constraint.expand(values_reduced, dofs_free)``, which writes the
+        imposed DOFs from a buffer no scaling reaches: with a non-zero imposed
+        value the gauge fix silently stops being field-preserving. Turning it
+        off with ``renormalise=False`` makes the error go away but leaves the
+        deeper problem, which is that a non-zero Dirichlet is not correctly
+        imposed by *any* separated representation here -- see the ``Non-zero
+        Dirichlet`` note on :class:`~neurom.decompositions.pgd.CPPGD`. Lift.
+
         Raises:
             ValueError: if any axis carries a non-homogeneous constraint.
                 Rescaling a monom scales its free DOFs but leaves the imposed
@@ -341,9 +356,10 @@ class PolynomialNLPGD(CPPGD):
                     f"renormalise() needs homogeneous constraints, but axis "
                     f"'{a.name}' imposes non-zero values. Rescaling a monom "
                     "scales its free DOFs but leaves the imposed ones fixed, so "
-                    "the field would change. Train with "
-                    "`PGDTrainer(..., renormalise=False)` to keep the degenerate "
-                    "parameterisation instead."
+                    "the field would change. `PGDTrainer(..., renormalise=False)` "
+                    "silences this, but a non-zero Dirichlet is not correctly "
+                    "imposed by the separated representation either (every mode "
+                    "gets the same imposed value): lift the BC instead."
                 )
         for m in range(self.n_modes_truncated):
             self.renormalise_mode(m)

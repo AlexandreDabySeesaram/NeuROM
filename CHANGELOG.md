@@ -58,7 +58,13 @@ unchanged by this work.
     mesh-dependent and would make the gauge fix drift with the mesh.
   - Requires **homogeneous constraints** — raises from `renormalise()` itself,
     not at construction: rescaling free DOFs leaves imposed ones fixed, so a
-    non-zero Dirichlet value would change the field.
+    non-zero Dirichlet value would change the field. **Root cause is upstream
+    and pre-existing:** every mode shares its `Axis.constraint`, so a non-zero
+    imposed `u_0` reconstructs as `u_0 * sum_m prod_{k>=1} w_m^k` — wrong at
+    rank > 1, silent (the imposed DOFs are outside `values_reduced`), and
+    unfixable by training. Non-zero Dirichlet is **unsupported**, in `CPPGD` as
+    much as here; the fix is lifting, not `renormalise=False`. Documented on
+    `Axis.constraint` and in a `Non-zero Dirichlet` note on `CPPGD`.
   - Applies to every active mode, frozen ones included — field-preserving, so a
     frozen mode's contribution is untouched though its parameters change.
   - Skips a mode with a zero/non-finite monom (nothing to normalise).

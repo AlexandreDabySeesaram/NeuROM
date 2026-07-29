@@ -50,6 +50,14 @@ class PGDTrainer(ABC):
             :class:`~neurom.training.progress.ProgressReporter`, which does
             nothing -- training nobody is watching prints nothing. Pass a
             :class:`~neurom.training.progress.ProgressBar` for a terminal bar.
+        renormalise (bool, optional): Whether :meth:`prepare_stage` fixes the
+            decomposition's scale gauge at each stage boundary. Defaults to
+            ``True``. It lives here rather than on the decomposition because it
+            is a *training* choice: the gauge fix is an exact reparameterisation,
+            so it changes the optimisation path, never the represented field.
+            Set ``False`` to train the raw, degenerate parameterisation -- the
+            ablation that measures what the fix buys. No-op for a decomposition
+            whose ``renormalise()`` does nothing (``CPPGD``).
 
     Attributes:
         optimizer (torch.optim.Optimizer): The current stage's optimizer, or
@@ -65,14 +73,26 @@ class PGDTrainer(ABC):
         stage_criterion=None,
         enrichment_criterion=None,
         progress=None,
+        renormalise=True,
     ):
         self.model = model
         self.optimizer_factory = optimizer_factory or _default_optimizer
         self.stage_criterion = stage_criterion or RelativeChange()
         self.enrichment_criterion = enrichment_criterion or RelativeGain()
         self.progress = progress or ProgressReporter()
+        self.renormalise = bool(renormalise)
         self.optimizer = None
         self.history = TrainingHistory()
+
+    def fix_gauge(self):
+        """Fix the decomposition's scale gauge, unless ``renormalise`` is off.
+
+        Call from :meth:`prepare_stage` *before* :meth:`make_optimizer`: the
+        gauge fix rescales parameters, so any optimizer state referring to them
+        (Adam's moments) must be discarded rather than carried over.
+        """
+        if self.renormalise:
+            self.model.decomposition.renormalise()
 
     def trainable_parameters(self):
         """The parameters the current freeze state leaves trainable.

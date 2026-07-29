@@ -665,26 +665,6 @@ def test_renormalise_is_idempotent():
     assert torch.allclose(poly.coefficients[0], once_c, atol=1e-6)
 
 
-def test_renormalise_flag_disables_it():
-    poly = PolynomialNLPGD(
-        axes=make_two_axes(),
-        n_modes_max=1,
-        exponents=uniform_exponents(2, 3),
-        n_modes_ini=1,
-        renormalise=False,
-    )
-    seed_monoms(poly, 1)
-    before = [f.values_reduced.detach().clone() for f in poly.monoms[0]]
-
-    poly.renormalise()
-    poly.renormalise_mode(0)
-
-    for f, b in zip(poly.monoms[0], before):
-        assert torch.equal(f.values_reduced, b)
-    # ... and the norms are left un-normalised.
-    assert float(poly.monom_norms(0)[1]) != pytest.approx(1.0, rel=1e-3)
-
-
 def test_renormalise_covers_every_active_mode_including_frozen_ones():
     poly = PolynomialNLPGD(
         axes=make_two_axes(),
@@ -718,7 +698,7 @@ def test_renormalise_skips_a_mode_with_a_zero_monom():
         assert torch.equal(f.values_reduced, torch.zeros_like(f.values_reduced))
 
 
-def test_renormalise_rejects_non_homogeneous_constraints_at_construction():
+def constrained_axes(imposed):
     from neurom.constraints import Dirichlet
 
     axes = make_two_axes()
@@ -729,37 +709,27 @@ def test_renormalise_rejects_non_homogeneous_constraints_at_construction():
         mapping=axes[0].mapping,
         quad=axes[0].quad,
         constraint=Dirichlet(
-            nodes=torch.tensor([0]), values_imposed=torch.tensor([[2.0]])
+            nodes=torch.tensor([0]), values_imposed=torch.tensor([[imposed]])
         ),
         init_values=torch.zeros(5, 1),
+    )
+    return axes
+
+
+def test_renormalise_rejects_non_homogeneous_constraints():
+    """Construction is fine; only the gauge fix itself is illegal."""
+    poly = PolynomialNLPGD(
+        axes=constrained_axes(2.0), n_modes_max=1, exponents=uniform_exponents(2, 3)
     )
     with pytest.raises(ValueError, match="homogeneous constraints"):
-        PolynomialNLPGD(axes=axes, n_modes_max=1, exponents=uniform_exponents(2, 3))
-    # ... but it is fine with the gauge fix switched off.
-    PolynomialNLPGD(
-        axes=axes,
-        n_modes_max=1,
-        exponents=uniform_exponents(2, 3),
-        renormalise=False,
+        poly.renormalise()
+
+
+def test_renormalise_accepts_homogeneous_dirichlet():
+    poly = PolynomialNLPGD(
+        axes=constrained_axes(0.0), n_modes_max=1, exponents=uniform_exponents(2, 3)
     )
-
-
-def test_homogeneous_dirichlet_is_accepted():
-    from neurom.constraints import Dirichlet
-
-    axes = make_two_axes()
-    axes[0] = Axis(
-        name="space",
-        nodes_positions=axes[0].nodes_positions,
-        sf=axes[0].sf,
-        mapping=axes[0].mapping,
-        quad=axes[0].quad,
-        constraint=Dirichlet(
-            nodes=torch.tensor([0]), values_imposed=torch.tensor([[0.0]])
-        ),
-        init_values=torch.zeros(5, 1),
-    )
-    PolynomialNLPGD(axes=axes, n_modes_max=1, exponents=uniform_exponents(2, 3))
+    poly.renormalise()  # must not raise
 
 
 def test_cppgd_renormalise_is_a_no_op():

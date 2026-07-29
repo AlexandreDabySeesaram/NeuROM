@@ -54,20 +54,25 @@ unchanged by this work.
   minimiser (tested: energy and assembled grid unchanged, idempotent).
   Amplitude-on-axis-0 matches the example's existing `seed_amplitude`
   convention.
-  - Gated by the `renormalise=True` constructor flag.
   - Uses the **quadrature** norm, not `values_reduced.norm()`; the nodal norm is
     mesh-dependent and would make the gauge fix drift with the mesh.
-  - Requires **homogeneous constraints** (checked at construction, raises):
-    rescaling free DOFs leaves imposed ones fixed, so a non-zero Dirichlet value
-    would change the field. `renormalise=False` bypasses the check.
+  - Requires **homogeneous constraints** — raises from `renormalise()` itself,
+    not at construction: rescaling free DOFs leaves imposed ones fixed, so a
+    non-zero Dirichlet value would change the field.
   - Applies to every active mode, frozen ones included — field-preserving, so a
     frozen mode's contribution is untouched though its parameters change.
   - Skips a mode with a zero/non-finite monom (nothing to normalise).
-- `GreedyTrainer.prepare_stage` calls `decomposition.renormalise()` **before**
-  `make_optimizer()`, so rescaled parameters never carry stale Adam moments.
-  `CPPGD.renormalise()` is a documented **no-op**: CP-PGD has the same `d-1`
-  degeneracy per mode, but fixing it there would move every existing CP result.
-  `StubCP` in `tests/unit/training/test_simultaneous.py` gained the same no-op.
+- **The flag is `PGDTrainer(..., renormalise=True)`, on the trainer, not the
+  decomposition.** The gauge fix is an exact reparameterisation: it changes the
+  optimisation path, never the represented field — so it is a training choice.
+  `PGDTrainer.fix_gauge()` is the guarded seam; `GreedyTrainer.prepare_stage`
+  calls it **before** `make_optimizer()` so rescaled parameters never carry Adam
+  moments accumulated against the old scaling.
+- `CPPGD.renormalise()` is a documented **no-op**, which keeps the trainer
+  depending on an interface rather than sniffing for the method. CP-PGD has the
+  same `d-1` degeneracy per mode, but fixing it there would move every existing
+  CP result. `StubCP` in `tests/unit/training/test_simultaneous.py` gained the
+  same method, counting calls so the trainer-side flag is testable.
 - Vector-valued axes are **rejected** (`dim > 1` raises): `w^lambda` for a vector
   monom has no defined meaning here. Tightens `CPPGD`'s "at most one".
 - `evaluate`/`assemble` stay detached (inherited `PointWiseInterpolator`

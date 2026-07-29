@@ -153,22 +153,9 @@ class PolynomialNLPGD(CPPGD):
             equal ``(1, ..., 1)``.
         name (str): Prefix for the monom field names.
         n_modes_ini (int): Number of initially active (trainable) modes.
-        renormalise (bool): Whether :meth:`renormalise` fixes the gauge or is a
-            no-op. Defaults to ``True``. Set ``False`` to train the raw,
-            degenerate parameterisation (e.g. to measure what the gauge fix
-            buys). When ``True`` every axis' constraint must be homogeneous,
-            checked at construction.
     """
 
-    def __init__(
-        self,
-        axes,
-        n_modes_max,
-        exponents,
-        name="poly_pgd",
-        n_modes_ini=1,
-        renormalise=True,
-    ):
+    def __init__(self, axes, n_modes_max, exponents, name="poly_pgd", n_modes_ini=1):
         axes = list(axes)
         for a in axes:
             if a.init_values.shape[1] > 1:
@@ -177,21 +164,9 @@ class PolynomialNLPGD(CPPGD):
                     f"dim {a.init_values.shape[1]}. A power of a vector-valued "
                     "monom has no defined meaning here."
                 )
-        if renormalise:
-            for a in axes:
-                if not _is_homogeneous(a.constraint):
-                    raise ValueError(
-                        f"renormalise=True needs homogeneous constraints, but "
-                        f"axis '{a.name}' imposes non-zero values. Rescaling a "
-                        "monom scales its free DOFs but leaves the imposed ones "
-                        "fixed, so the field would change. Pass "
-                        "renormalise=False to train the degenerate "
-                        "parameterisation instead."
-                    )
         super().__init__(
             axes=axes, n_modes_max=n_modes_max, name=name, n_modes_ini=n_modes_ini
         )
-        self.renormalise_enabled = bool(renormalise)
 
         exponents = self._validate_exponents(exponents, len(axes))
         # Buffer, not a plain attribute, so the exponent set rides along in
@@ -345,26 +320,40 @@ class PolynomialNLPGD(CPPGD):
 
         Applied to every active mode, including frozen ones: the transformation
         preserves the field, so a frozen mode's contribution is untouched even
-        though its stored parameters change.
-
-        No-op when the decomposition was built with ``renormalise=False``. A mode
-        whose monoms are not all finite and non-zero is skipped -- an unseeded or
-        collapsed monom has no scale to normalise.
+        though its stored parameters change. A mode whose monoms are not all
+        finite and non-zero is skipped -- an unseeded or collapsed monom has no
+        scale to normalise.
 
         Call it at a stage boundary, not mid-stage: it rescales parameters, so
         any optimizer state referring to them (Adam moments) goes stale.
-        ``GreedyTrainer.prepare_stage`` calls it just before ``make_optimizer``,
-        which rebuilds the optimizer anyway.
+        :meth:`~neurom.training.base.PGDTrainer.fix_gauge` is the seam that does
+        this, just before ``make_optimizer``; whether it runs is the trainer's
+        ``renormalise`` flag, not the decomposition's business.
+
+        Raises:
+            ValueError: if any axis carries a non-homogeneous constraint.
+                Rescaling a monom scales its free DOFs but leaves the imposed
+                ones fixed, so a non-zero imposed value would change the field.
         """
-        if not self.renormalise_enabled:
-            return
+        for a in self.axes:
+            if not _is_homogeneous(a.constraint):
+                raise ValueError(
+                    f"renormalise() needs homogeneous constraints, but axis "
+                    f"'{a.name}' imposes non-zero values. Rescaling a monom "
+                    "scales its free DOFs but leaves the imposed ones fixed, so "
+                    "the field would change. Train with "
+                    "`PGDTrainer(..., renormalise=False)` to keep the degenerate "
+                    "parameterisation instead."
+                )
         for m in range(self.n_modes_truncated):
             self.renormalise_mode(m)
 
     def renormalise_mode(self, m):
-        """Apply the gauge fix of :meth:`renormalise` to mode ``m`` alone."""
-        if not self.renormalise_enabled:
-            return
+        """Apply the gauge fix of :meth:`renormalise` to mode ``m`` alone.
+
+        Does not re-check the constraints; :meth:`renormalise` is the guarded
+        entry point.
+        """
         norms = self.monom_norms(m)
         if not all(bool(torch.isfinite(n)) and float(n) > 0.0 for n in norms):
             return

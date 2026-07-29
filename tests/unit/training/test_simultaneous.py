@@ -53,6 +53,7 @@ class StubCP(nn.Module):
         # modes are active must ride along in the state_dict, or a reloaded
         # checkpoint would silently evaluate mode 0 only.
         self.register_buffer("active", torch.zeros(n_modes_max, dtype=torch.bool))
+        self.renormalise_calls = 0
         self.reset()
 
     def reset(self):
@@ -90,10 +91,12 @@ class StubCP(nn.Module):
     def renormalise(self):
         """Gauge-fixing hook the trainers call at stage boundaries.
 
-        A no-op here, as it is on ``CPPGD``: this stub has the same scale
-        degeneracy, but the trainer tests are about the mode lifecycle, not the
-        gauge.
+        Changes nothing, as ``CPPGD.renormalise`` does not: this stub has the
+        same scale degeneracy, but the trainer tests are about the mode
+        lifecycle, not the gauge. Counts its calls so a test can assert *when*
+        the trainer reaches for it.
         """
+        self.renormalise_calls += 1
 
     def add_mode(self):
         m = self.n_modes_truncated
@@ -250,3 +253,21 @@ def test_each_stage_gets_a_fresh_optimizer():
     trainer.prepare_stage(1)
 
     assert trainer.optimizer is not first
+
+
+def test_greedy_fixes_the_gauge_once_per_stage():
+    # The gauge fix must run before make_optimizer, so the rescaled parameters
+    # never carry Adam moments accumulated against the old scaling.
+    trainer = make_trainer(cls=GreedyTrainer, n_modes_max=3, n_iter=5)
+    trainer.enrich()
+
+    assert trainer.model.decomposition.renormalise_calls == 3
+
+
+def test_renormalise_false_skips_the_gauge_fix():
+    trainer = make_trainer(
+        cls=GreedyTrainer, n_modes_max=3, n_iter=5, renormalise=False
+    )
+    trainer.enrich()
+
+    assert trainer.model.decomposition.renormalise_calls == 0

@@ -237,3 +237,37 @@ def test_each_stage_gets_a_fresh_optimizer():
     trainer.prepare_stage(1)
 
     assert trainer.optimizer is not first
+
+
+class CountingDecomposition(nn.Module):
+    """The one method `fix_gauge` reaches for, with a call counter."""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def renormalise(self):
+        self.calls += 1
+
+
+def test_renormalise_defaults_to_on():
+    assert make_trainer().renormalise is True
+
+
+def test_fix_gauge_renormalises_the_decomposition():
+    trainer = make_trainer()
+    trainer.model.decomposition = CountingDecomposition()
+    trainer.fix_gauge()
+
+    assert trainer.model.decomposition.calls == 1
+
+
+def test_fix_gauge_is_a_no_op_when_renormalise_is_off():
+    # The flag lives on the trainer, not the decomposition: fixing the gauge is
+    # an exact reparameterisation, so it changes the optimisation path and
+    # never the represented field -- a training choice, not a model one.
+    trainer = make_trainer(renormalise=False)
+    trainer.model.decomposition = CountingDecomposition()
+    trainer.fix_gauge()
+
+    assert trainer.model.decomposition.calls == 0

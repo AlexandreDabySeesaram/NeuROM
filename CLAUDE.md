@@ -16,8 +16,10 @@ Part I), not alternating-direction power iterations. Implemented in
    adding one. Match the surrounding code's idiom.
 2. **Inject dependencies** (energies, criteria, factories) rather than
    subclassing or hard-coding.
-3. **New decompositions go in `src/neurom/decompositions/pgd.py`**, beside
-   `CPPGD` — not in new modules.
+3. **New decompositions go in `src/neurom/decompositions/`** — `pgd.py` beside
+   `CPPGD`, or a sibling module when the format warrants it
+   (`polynomial_pgd.py` holds `PolynomialNLPGD`). Export from
+   `decompositions/__init__.py`.
 4. **The user runs work files**, unless asked to run a campaign.
 5. **Never add Claude as co-author**, and no "Generated with Claude Code" or 🤖
    in commits or PR descriptions.
@@ -58,5 +60,5 @@ mechanisms vs. established ones.
 
 ## Pointers
 
-- NL PGD spec: `~/Library/CloudStorage/GoogleDrive-solal21a@gmail.com/Mon Drive/Solal_PhD/PhD_Solal_vault/5_Projects/NL PGD/premiers_tests/NL_PGD_rundown_4_claude.md`
 - References (Ammar 2006, Nouy 2010, FENNI I & II): `docs/notes/references.md`
+- the plan for the non-linear PGD implementation `/Users/solal/Library/CloudStorage/GoogleDrive-solal21a@gmail.com/Mon Drive/Solal_PhD/PhD_Solal_vault/5_Projects/NL PGD/nl_pgd/non-linear_pgd_list.md`

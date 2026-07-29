@@ -1,3 +1,90 @@
+## 2026-07-29 — `PolynomialNLPGD`: first non-linear PGD decomposition
+
+**State:** new `src/neurom/decompositions/polynomial_pgd.py` +
+`tests/unit/decompositions/test_polynomial_pgd.py` (28 tests, all pass).
+Exported from `decompositions/__init__.py`. **No example uses it yet** — the
+5-parametric beam still runs `CPPGD`; rewiring its `energy()` to consume
+`polynomial_directory()` is the missing piece. The 2 pre-existing failures in
+`test_1d_5_parametric_beam_energy.py` (stale checkpoint, modes 10–11) are
+unchanged by this work.
+
+- `u = sum_i ( prod_j w_ij + sum_{lambda in I} C_{i lambda} prod_j w_ij^lambda_j )`.
+  Subclasses `CPPGD`: monom grid, assemblies and greedy lifecycle inherited
+  untouched. `I` excludes `(1,...,1)` — that is the leading term, fixed weight 1.
+- **Nothing new is assembled.** Each term is still a product over axes, so
+  separability survives: powers are elementwise on the interpolated values, one
+  `QuadratureAssembly` per monom as before, and `C` never reaches one.
+- Exponent-set builders: `uniform_exponents(d, n)` = `{(p,..,p) : p in 2..n}`;
+  `total_degree_exponents(d, p)` = `{lambda_j >= 1, sum <= p}`. Zero exponents
+  are **forbidden** — `w^0 = 1` cannot satisfy an axis' essential BC — which
+  makes the total-degree set empty unless `p > d` (raises, naming the bound).
+  For the 5-parametric beam that means `p >= 6`.
+- Coefficients are per-mode `nn.Parameter` rows controlled by `requires_grad`
+  alone — **no `active` flag**. Justified: `C` is zero-init and
+  `d/dw [C prod w^lambda] ∝ C`, so a frozen `C = 0` perturbs neither the energy
+  nor the monom gradients. Verified, not assumed: `test_zero_coefficients_do_not
+  _perturb_monom_gradients` compares monom gradients against `CPPGD` on the real
+  (layout) path and finds them equal.
+- Consequence: the two-stage protocol needs no new machinery —
+  `add_mode()` (unchanged, never releases `C`) → train as pure CP →
+  `unfreeze_mode_coefficients(m)` → train the correction. Covered end to end.
+- `polynomial_directory()` is the new seam for a non-linear energy: a flat list
+  of `(mode, exponents, coefficient_or_None)`, read alongside the unchanged
+  `directory()`. **The consuming double loop is quadratic in the term count**
+  `n_modes*(1+|I|)` — 5 modes with `|I|=5` is 900 pairs where `CPPGD` has 25.
+- **Negative result, measured:** the gauge degeneracy is real and shows up
+  immediately. `C prod w^lambda` is invariant under
+  `w -> s w, C -> C s^{-sum lambda}`, and 20 SGD steps on a toy separable energy
+  already drift:
+
+  | step | loss | ‖w_space‖ | ‖w_E‖ | max\|C\| |
+  |---|---|---|---|---|
+  | 0 | 2520.0 | 2.1897 | 0.7314 | 0.0010 |
+  | 15 | 2264.4 | 2.1734 | 0.6812 | 0.0146 |
+
+  `‖w_E‖` shrinks while `\|C\|` grows, on a single unregularised run. No
+  normalisation is applied; `test_report_gauge_drift` prints these numbers
+  rather than asserting on them. Expect this to need fixing before a real
+  training campaign.
+- Vector-valued axes are **rejected** (`dim > 1` raises): `w^lambda` for a vector
+  monom has no defined meaning here. Tightens `CPPGD`'s "at most one".
+- `evaluate`/`assemble` stay detached (inherited `PointWiseInterpolator`
+  behaviour), so gradient tests must go through the `FieldLayout`, and
+  `backward(retain_graph=True)` is required as in `PGDTrainer._closure`.
+
+## 2026-07-28 — amplitude/shape seed for new modes (5-parametric beam)
+
+**State:** `docs/examples/1d_5-parametric_beam_PGD/` only —
+`1d_5-parametric_beam_deflection_PGD.py` (seeding + `RunConfig`/`build_problem`
+knob) and `sweep.py` (`show_ledger` seed column). No `src/` change: the
+mechanism (`Axis.init_values_rest`) already exists. Not yet run/measured.
+
+- New modes (`m >= 1`) now seed as an amplitude/shape split: parametric factors
+  at unit shape (1.0), the product's small initial amplitude carried by the
+  space factor (`seed_amplitude`, default 0.05). Mode 0 keeps the 0.5 seed.
+- Replaces the uniform 0.5-on-every-factor seed, which spiked the loss on
+  enrichment. Tutor's "seed the space mode at 0" collapses instead: an all-zero
+  factor is a stationary point (`CPPGD.add_mode`); small-but-nonzero avoids both.
+- `RunConfig.seed_amplitude` added → new `config_id`s, so every existing ledger
+  row is stale (to be rerun). The knob rides into the ledger via `asdict`; old
+  rows without it fall back in `show_ledger`.
+- Untested claim: whether 0.05 is the right amplitude — a `seed_amplitude` sweep
+  is the intended next step; watch `max_correlation`, not just the energy.
+
+## 2026-07-28 — `Axis.init_values_rest`: distinct seed for modes after the first
+
+**State:** `src/neurom/decompositions/pgd.py` changed only (`Axis` gains one
+optional field, `CPPGD.__post_init__` reads it). No test or caller passes it
+yet, so behaviour is unchanged unless an axis opts in.
+
+- `init_values_rest`, defaults `None` (reuses `init_values` for every mode —
+  the old, uniform behaviour). When set, mode 0 seeds from `init_values` and
+  modes `m >= 1` seed from `init_values_rest` instead.
+- Motivated by [pgd-greedy-degenerates-with-short-stages]: initially-active
+  modes sharing one seed see the same gradient and can start correlated.
+  Giving later modes a different starting point is untested here — no run
+  measured yet with it actually set to a different value.
+
 ## 2026-07-28 — LHS reference parameter sampling for the 5-parametric beam
 
 **State:** `docs/examples/1d_5-parametric_beam_PGD/reference/reference_fem_solution.py`

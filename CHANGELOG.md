@@ -32,20 +32,23 @@ unchanged by this work.
   of `(mode, exponents, coefficient_or_None)`, read alongside the unchanged
   `directory()`. **The consuming double loop is quadratic in the term count**
   `n_modes*(1+|I|)` — 5 modes with `|I|=5` is 900 pairs where `CPPGD` has 25.
-- **Negative result, measured:** the gauge degeneracy is real and shows up
-  immediately. `C prod w^lambda` is invariant under
-  `w -> s w, C -> C s^{-sum lambda}`, and 20 SGD steps on a toy separable energy
-  already drift:
+- **Gauge degeneracy — exact, verified, not corrected.** The energy is invariant
+  under the *per-axis* rescaling
 
-  | step | loss | ‖w_space‖ | ‖w_E‖ | max\|C\| |
-  |---|---|---|---|---|
-  | 0 | 2520.0 | 2.1897 | 0.7314 | 0.0010 |
-  | 15 | 2264.4 | 2.1734 | 0.6812 | 0.0146 |
+      w_ij -> s_j w_ij,  C_{i lambda} -> C_{i lambda} prod_j s_j^(-lambda_j),
+      subject to prod_j s_j = 1
 
-  `‖w_E‖` shrinks while `\|C\|` grows, on a single unregularised run. No
-  normalisation is applied; `test_report_gauge_drift` prints these numbers
-  rather than asserting on them. Expect this to need fixing before a real
-  training campaign.
+  Verified numerically: the energy is bit-identical along it (rel. diff `0.00e+00`
+  for both exponent sets), while dropping the `prod_j s_j = 1` constraint does
+  change it (3193.69 -> 7956.49). So the orbit has **d-1** dimensions per mode,
+  not d — pinning the leading term's coefficient at 1 already fixes one. The
+  Hessian is correspondingly singular in `d-1` directions per mode, which is the
+  practical concern for a curvature-based optimiser.
+- **Not** measured: that this drifts in practice. `test_report_gauge_drift`
+  prints `||w||`/`max|C|` over 20 SGD steps, but that run does not demonstrate
+  drift — with uniform exponents `lambda_x = lambda_E`, so `C` is *invariant*
+  along the flat direction and its growth there is ordinary training from 0.
+  Treat the degeneracy as proven and its practical cost as unmeasured.
 - Vector-valued axes are **rejected** (`dim > 1` raises): `w^lambda` for a vector
   monom has no defined meaning here. Tightens `CPPGD`'s "at most one".
 - `evaluate`/`assemble` stay detached (inherited `PointWiseInterpolator`

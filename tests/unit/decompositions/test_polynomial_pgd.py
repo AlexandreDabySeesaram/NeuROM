@@ -555,36 +555,61 @@ def test_state_dict_round_trip_preserves_coefficients_and_exponents():
 # --------------------------------------------------------------------------
 
 
-def test_report_gauge_drift(capsys):
-    """C_{i lambda} prod w^lambda is invariant under w -> s w, C -> C s^{-sum lambda}.
+def apply_gauge(poly, scales):
+    """Apply ``w_j -> s_j w_j``, ``C_lambda -> C_lambda prod_j s_j^(-lambda_j)``."""
+    with torch.no_grad():
+        for k, s in enumerate(scales):
+            poly.monoms[0][k].values_reduced.mul_(s)
+        for t in range(poly.n_terms):
+            factor = 1.0
+            for k, s in enumerate(scales):
+                factor *= s ** (-int(poly.exponents[t, k]))
+            poly.coefficients[0][t] *= factor
 
-    No assertion on the magnitudes -- this only surfaces ||w|| and max|C| so the
-    non-identifiability is observable when the numbers start to diverge.
-    """
+
+def build_seeded(exponents):
     poly = PolynomialNLPGD(
-        axes=make_two_axes(),
-        n_modes_max=1,
-        exponents=uniform_exponents(2, 3),
-        n_modes_ini=1,
+        axes=make_two_axes(), n_modes_max=1, exponents=exponents, n_modes_ini=1
     )
     seed_monoms(poly, 1)
-    poly.unfreeze_mode_coefficients(0)
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.linspace(0.3, 0.8, poly.n_terms))
+    return poly
 
-    opt = torch.optim.SGD([p for p in poly.parameters() if p.requires_grad], lr=1e-6)
-    for step in range(20):
-        opt.zero_grad()
-        loss = separable_energy(
+
+def energy_of(poly):
+    return float(
+        separable_energy(
             fill_layout(poly), poly.directory(), poly.polynomial_directory()
-        )
-        loss.backward(retain_graph=True)
-        opt.step()
-        if step % 5 == 0:
-            norms = " ".join(
-                f"|w{k}|={float(f.values_reduced.detach().norm()):.4f}"
-                for k, f in enumerate(poly.monoms[0])
-            )
-            print(
-                f"step {step:2d} loss={float(loss.detach()):.6f} {norms} "
-                f"max|C|={float(poly.coefficients[0].detach().abs().max()):.4f}"
-            )
-    assert torch.isfinite(poly.coefficients[0]).all()
+        ).detach()
+    )
+
+
+@pytest.mark.parametrize(
+    "exponents", [uniform_exponents(2, 3), total_degree_exponents(2, 4)]
+)
+def test_energy_is_invariant_along_the_gauge_orbit(exponents):
+    """The degeneracy is exact: prod_j s_j = 1 leaves the energy untouched.
+
+    Documents *which* transformation is the symmetry. The `prod_j s_j = 1`
+    constraint comes from the leading term's coefficient being pinned at 1, so
+    the orbit has d - 1 dimensions per mode, not d.
+    """
+    poly = build_seeded(exponents)
+    before = energy_of(poly)
+    s = 1.7
+    apply_gauge(poly, [s, 1.0 / s])  # prod = 1
+    assert energy_of(poly) == pytest.approx(before, rel=1e-6)
+
+
+def test_energy_is_not_invariant_when_the_scales_do_not_multiply_to_one():
+    """The counterpart: free rescaling is *not* a symmetry.
+
+    Guards against restating the degeneracy as `w -> s w, C -> C s^{-sum lambda}`,
+    which is a symmetry of one term in isolation but not of the mode -- the
+    leading term is not scale-free.
+    """
+    poly = build_seeded(uniform_exponents(2, 3))
+    before = energy_of(poly)
+    apply_gauge(poly, [1.7, 1.7])  # prod = 2.89 != 1
+    assert energy_of(poly) != pytest.approx(before, rel=1e-3)

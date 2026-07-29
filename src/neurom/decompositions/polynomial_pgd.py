@@ -106,11 +106,23 @@ class PolynomialNLPGD(CPPGD):
         that is always an explicit call.
 
     Gauge degeneracy (known, not corrected)
-        ``C_{i lambda} prod_j w_ij^lambda_j`` is invariant under
-        ``w_ij -> s w_ij``, ``C_{i lambda} -> C_{i lambda} s^(-sum lambda)``, so
-        the coefficients are not identifiable and can grow without bound while
-        the monoms shrink. No normalisation is applied here; watch ``|C|``
-        against ``||w||`` when training.
+        The representation is invariant under the *per-axis* rescaling
+
+            w_ij -> s_j w_ij,  C_{i lambda} -> C_{i lambda} prod_j s_j^(-lambda_j)
+
+        **subject to ``prod_j s_j = 1``**. The constraint is there because the
+        leading term carries a fixed unit coefficient: rescaling every axis
+        freely would scale ``prod_j w_ij`` and change the field. So pinning that
+        coefficient already gauge-fixes one direction, and ``d - 1`` flat
+        directions per mode remain.
+
+        Consequence: the Hessian is singular in ``d - 1`` directions per mode,
+        and the monom/coefficient split is not identifiable. Nothing here
+        corrects it. A gauge fix would impose ``d - 1`` conditions per mode --
+        e.g. normalising ``w_ij`` for ``j < d`` to unit quadrature norm and
+        letting the last axis absorb the scale, with ``C`` transformed by the
+        rule above -- applied at stage boundaries where the optimizer is rebuilt
+        anyway.
 
     Writing an energy against this class
         Read the monom *names* from the inherited :meth:`directory` and the

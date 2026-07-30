@@ -96,3 +96,46 @@ def test_the_checkpoint_path_is_one_file_per_strategy(beam5p):
     # And must not collide with the CP example's, which shares PARAM_SWEEP_DIR's
     # basename one directory over.
     assert paths["joint"].parent.parent.name == "NLPGD"
+
+
+def test_a_leading_coefficient_survives_a_round_trip(beam5p, tmp_path):
+    """``c_i`` is a parameter like any other -- but only when it exists.
+
+    ``leading_coefficients`` adds state_dict keys, so a checkpoint written with
+    it and reloaded into a problem built without it must *fail loudly* on the
+    missing keys rather than reload a decomposition whose leading weights have
+    silently reverted to 1. That failure mode would be invisible in the figures:
+    the modes are all still there, only mis-weighted.
+    """
+    torch.manual_seed(0)
+    problem = beam5p.build_problem(
+        beam5p.energy, n_modes_max=3, n_nodes=TINY, leading_coefficients=True
+    )
+    history = beam5p.SupportNLGreedyTrainer(
+        problem.model,
+        stage_criterion=FixedIterations(10),
+        enrichment_criterion=MaxStages(2),
+        leading_coefficient=True,
+    ).enrich()
+
+    coefficients = [c.detach().clone() for c in problem.pgd.leading_coefficients]
+    assert any(float(c) != 1.0 for c in coefficients), "nothing to round-trip"
+    query = query_points(beam5p)
+    before = problem.pgd.evaluate(query).detach().clone()
+
+    path = tmp_path / "with_c.pt"
+    save_checkpoint(path, problem.model, history)
+
+    torch.manual_seed(1)  # a different seed, so a no-op load cannot pass
+    reloaded = beam5p.build_problem(
+        beam5p.energy, n_modes_max=3, n_nodes=TINY, leading_coefficients=True
+    )
+    load_checkpoint(path, reloaded.model)
+
+    assert torch.equal(reloaded.pgd.evaluate(query), before)
+    for got, want in zip(reloaded.pgd.leading_coefficients, coefficients):
+        assert torch.equal(got.detach(), want)
+
+    # ... and the mismatch raises rather than silently dropping c.
+    with pytest.raises(RuntimeError, match="leading_coefficients"):
+        load_checkpoint(path, build(beam5p).model)

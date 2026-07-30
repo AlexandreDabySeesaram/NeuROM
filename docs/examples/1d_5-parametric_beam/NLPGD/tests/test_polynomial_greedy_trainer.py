@@ -25,8 +25,9 @@ EXAMPLE = EXAMPLE_DIR / "1d_5-parametric_beam_deflection_NLPGD.py"
 
 TINY = {"space": 5, "E1": 4, "E2": 6, "alpha": 7, "n": 3}
 
-#: The two schedules the example exists to compare, plus the intermediate.
-NL_SCHEDULES = ["joint", "staged", "refine"]
+#: The two schedules the example exists to compare, the intermediate, and the
+#: frozen-support one. Every parametrised test below runs over all four.
+NL_SCHEDULES = ["joint", "staged", "refine", "support"]
 
 
 def load_module():
@@ -67,6 +68,7 @@ def make_trainer(beam5nl, problem, schedule="joint", **kwargs):
         ("joint", ["joint"]),
         ("staged", ["cp", "corr"]),
         ("refine", ["cp", "joint"]),
+        ("support", ["cp", "support"]),
     ],
 )
 def test_each_schedule_runs_its_declared_stages_per_mode(
@@ -92,7 +94,7 @@ def test_max_stages_counts_modes_not_stages(beam5nl, problem, schedule):
 # --- what each stage is allowed to move ------------------------------------
 
 
-@pytest.mark.parametrize("schedule", ["staged", "refine"])
+@pytest.mark.parametrize("schedule", ["staged", "refine", "support"])
 def test_the_cp_stage_leaves_the_coefficients_frozen_at_zero(
     beam5nl, problem, schedule
 ):
@@ -286,3 +288,278 @@ def test_a_cp_baseline_trainer_leaves_every_coefficient_at_zero(beam5nl, problem
     for row in problem.pgd.coefficients:
         assert not row.requires_grad
         assert torch.equal(row, torch.zeros_like(row))
+
+
+# --- the `support` schedule: the space monom is a fixed support -------------
+
+
+def test_support_freezes_the_space_monom_and_frees_the_parametric_ones(
+    beam5nl, problem
+):
+    # The identity of the schedule. `space` is axis 0 of AXIS_ORDER; the other
+    # four are the parameters, which must stay live -- freezing the whole mode
+    # (as `corr` does) would make this `staged` with extra steps.
+    trainer = make_trainer(beam5nl, problem, "support")
+    trainer.prepare_stage(0)
+    trainer.stage(0)
+    trainer.prepare_stage(1)
+
+    space = beam5nl.AXIS_ORDER.index("space")
+    assert not problem.pgd.monoms[0][space].values_reduced.requires_grad
+    for k, name in enumerate(beam5nl.AXIS_ORDER):
+        if k != space:
+            assert problem.pgd.monoms[0][k].values_reduced.requires_grad, name
+    assert problem.pgd.coefficients[0].requires_grad
+
+
+def test_support_leaves_the_space_monom_unmoved_over_its_stage(beam5nl, problem):
+    # The value-level counterpart. renormalise=False because the gauge fix
+    # rescales every monom at a stage boundary, field-preservingly -- which would
+    # make a bitwise comparison fail for a reason that is not "the optimizer
+    # moved it".
+    trainer = make_trainer(beam5nl, problem, "support", renormalise=False)
+    trainer.prepare_stage(0)
+    trainer.stage(0)
+
+    space = beam5nl.AXIS_ORDER.index("space")
+    before = problem.pgd.monoms[0][space].values_reduced.detach().clone()
+    parametric_before = [
+        problem.pgd.monoms[0][k].values_reduced.detach().clone()
+        for k in range(len(beam5nl.AXIS_ORDER))
+        if k != space
+    ]
+
+    trainer.prepare_stage(1)
+    trainer.stage(1)
+
+    assert torch.equal(before, problem.pgd.monoms[0][space].values_reduced)
+    # ... and the stage did something: the parametric factors moved.
+    parametric_after = [
+        problem.pgd.monoms[0][k].values_reduced.detach()
+        for k in range(len(beam5nl.AXIS_ORDER))
+        if k != space
+    ]
+    assert any(
+        not torch.equal(a, b) for a, b in zip(parametric_before, parametric_after)
+    )
+
+
+# --- the linear phase (n_linear_modes) --------------------------------------
+
+
+@pytest.mark.parametrize("schedule", NL_SCHEDULES)
+def test_the_linear_phase_costs_one_cp_stage_per_mode(beam5nl, problem, schedule):
+    # The stage->mode map is no longer arithmetic: modes 0 and 1 cost one stage
+    # each whatever the schedule, and only mode 2 pays the schedule's price.
+    trainer = make_trainer(
+        beam5nl, problem, schedule, n_linear_modes=2, enrichment_criterion=MaxStages(3)
+    )
+    history = trainer.enrich()
+    spm = trainer.stages_per_mode
+
+    assert problem.pgd.n_modes_truncated == 3
+    assert len(history.stages) == 2 + spm
+    assert [r.diagnostics["kind"] for r in history.stages] == [
+        "cp",
+        "cp",
+        *beam5nl.SCHEDULES[schedule],
+    ]
+    assert [r.diagnostics["mode"] for r in history.stages] == [0, 1] + [2] * spm
+
+
+@pytest.mark.parametrize("schedule", NL_SCHEDULES)
+def test_the_linear_phase_leaves_its_modes_purely_cp(beam5nl, problem, schedule):
+    # What "linear" has to mean: a mode inside the phase must end with its
+    # coefficient row still at exactly zero, whatever the schedule would have
+    # done to it.
+    trainer = make_trainer(
+        beam5nl, problem, schedule, n_linear_modes=2, enrichment_criterion=MaxStages(3)
+    )
+    trainer.enrich()
+
+    for m in (0, 1):
+        row = problem.pgd.coefficients[m]
+        assert torch.equal(row, torch.zeros_like(row)), f"mode {m} is not linear"
+    assert problem.pgd.coefficients[2].abs().max() > 0.0
+
+
+def test_a_linear_phase_covering_every_mode_is_exactly_cp(beam5nl, problem):
+    # The degenerate end of the knob, worth pinning: with l >= rank the run is
+    # the CP baseline, and must be bit-identical to it rather than merely close.
+    torch.manual_seed(0)
+    reference = beam5nl.build_problem(beam5nl.energy, n_modes_max=3, n_nodes=TINY)
+    GreedyTrainer(
+        reference.model,
+        stage_criterion=FixedIterations(10),
+        enrichment_criterion=MaxStages(3),
+        renormalise=False,
+    ).enrich()
+
+    torch.manual_seed(0)
+    problem = beam5nl.build_problem(beam5nl.energy, n_modes_max=3, n_nodes=TINY)
+    make_trainer(
+        beam5nl, problem, "joint",
+        n_linear_modes=3, enrichment_criterion=MaxStages(3), renormalise=False,
+    ).enrich()
+
+    for m in range(3):
+        for k in range(len(beam5nl.AXIS_ORDER)):
+            assert torch.equal(
+                reference.pgd.monoms[m][k].values_reduced,
+                problem.pgd.monoms[m][k].values_reduced,
+            ), f"mode {m}, axis {k}"
+
+
+def test_the_linear_phase_can_run_a_coarser_stage_criterion(beam5nl, problem):
+    # The "tol de stagnation coarse" half. FixedIterations makes the difference
+    # observable as an iteration count rather than as a convergence judgement.
+    trainer = make_trainer(
+        beam5nl, problem, "joint",
+        n_linear_modes=1,
+        stage_criterion=FixedIterations(12),
+        linear_stage_criterion=FixedIterations(3),
+        enrichment_criterion=MaxStages(2),
+    )
+    history = trainer.enrich()
+
+    assert [r.n_iter for r in history.stages] == [3, 12]
+    # The swap must not leak: the fine criterion is back in place afterwards.
+    assert trainer.stage_criterion.n_iter == 12
+
+
+def test_enrichment_gains_are_mode_to_mode_across_a_linear_phase(beam5nl, problem):
+    # The bookkeeping under a ragged plan. With l = 1 and a two-stage schedule
+    # the mode-final stages are 0, 2, 4 -- not any fixed stride -- so the old
+    # `stages[spm - 1 :: spm]` slice would feed the criterion stages 1 and 3,
+    # i.e. correction stages compared against nothing meaningful.
+    trainer = make_trainer(
+        beam5nl, problem, "staged", n_linear_modes=1,
+        enrichment_criterion=RelativeGain(tol=1e-12),
+    )
+    history = trainer.enrich()
+
+    assert problem.pgd.n_modes_truncated == 3
+    assert history.stop_reason == "capacity"
+    assert [r.diagnostics["mode"] for r in history.stages] == [0, 1, 1, 2, 2]
+    assert trainer.mode_final_stages(len(history.stages)) == [0, 2, 4]
+
+
+# --- the leading coefficient c_i --------------------------------------------
+
+
+@pytest.fixture
+def problem_with_c(beam5nl):
+    torch.manual_seed(0)
+    return beam5nl.build_problem(
+        beam5nl.energy, n_modes_max=3, n_nodes=TINY, leading_coefficients=True
+    )
+
+
+def test_leading_coefficient_requires_a_decomposition_that_has_one(beam5nl, problem):
+    with pytest.raises(ValueError, match="leading_coefficients=True"):
+        make_trainer(beam5nl, problem, "joint", leading_coefficient=True)
+
+
+@pytest.mark.parametrize("schedule", NL_SCHEDULES)
+def test_a_released_leading_coefficient_moves(beam5nl, problem_with_c, schedule):
+    # renormalise=False is essential here: the all-axes gauge fix parks the
+    # mode's amplitude on c, so under it c changes at every stage boundary
+    # whether or not the optimizer ever touched it. Turning it off is what makes
+    # this a test of the release rather than of the gauge fix.
+    trainer = make_trainer(
+        beam5nl, problem_with_c, schedule,
+        leading_coefficient=True, enrichment_criterion=MaxStages(1),
+        renormalise=False,
+    )
+    trainer.enrich()
+
+    c = problem_with_c.pgd.leading_coefficients[0]
+    assert c.requires_grad
+    assert float(c.detach()) != 1.0
+    assert torch.isfinite(c)
+
+
+def test_the_linear_phase_never_releases_a_leading_coefficient(
+    beam5nl, problem_with_c
+):
+    trainer = make_trainer(
+        beam5nl, problem_with_c, "joint",
+        n_linear_modes=2, leading_coefficient=True,
+        enrichment_criterion=MaxStages(3), renormalise=False,
+    )
+    trainer.enrich()
+
+    for m in (0, 1):
+        assert float(problem_with_c.pgd.leading_coefficients[m]) == 1.0
+    assert float(problem_with_c.pgd.leading_coefficients[2].detach()) != 1.0
+
+
+def test_a_finished_modes_leading_coefficient_is_refrozen(beam5nl, problem_with_c):
+    trainer = make_trainer(
+        beam5nl, problem_with_c, "joint", leading_coefficient=True,
+        enrichment_criterion=MaxStages(1),
+    )
+    trainer.enrich()
+    assert problem_with_c.pgd.leading_coefficients[0].requires_grad
+
+    trainer.prepare_stage(1)  # mode 1 arrives
+
+    assert not problem_with_c.pgd.leading_coefficients[0].requires_grad
+
+
+def test_the_leading_coefficient_is_reported_per_stage(beam5nl, problem_with_c):
+    history = make_trainer(
+        beam5nl, problem_with_c, "joint", leading_coefficient=True,
+        enrichment_criterion=MaxStages(2),
+    ).enrich()
+
+    assert all("leading_coefficient" in r.diagnostics for r in history.stages)
+
+
+def test_the_optimizer_puts_the_leading_coefficient_with_the_other_coefficients(
+    beam5nl, problem_with_c
+):
+    # Two param groups, not three: under the all-axes gauge fix c and C share a
+    # scale, so a separate lr would undo the reason for releasing c at all.
+    cfg = beam5nl.RunConfig(
+        name="t", strategy="joint", lr=0.1, coefficient_lr=1e-4,
+        leading_coefficient=True,
+    )
+    factory = beam5nl.build_optimizer_factory(cfg, problem_with_c.pgd)
+    problem_with_c.pgd.unfreeze_mode_coefficients(0)
+    problem_with_c.pgd.unfreeze_mode_leading_coefficient(0)
+
+    optimizer = factory([p for p in problem_with_c.model.parameters() if p.requires_grad])
+
+    assert len(optimizer.param_groups) == 2
+    coefficient_group = next(g for g in optimizer.param_groups if g["lr"] == 1e-4)
+    # `is`, not `in`: `in` compares tensors elementwise.
+    grouped = coefficient_group["params"]
+    assert any(p is problem_with_c.pgd.leading_coefficients[0] for p in grouped)
+    assert any(p is problem_with_c.pgd.coefficients[0] for p in grouped)
+
+
+# --- the fusion: a linear phase then frozen-support corrections -------------
+
+
+def test_the_fusion_composes_without_extra_machinery(beam5nl, problem_with_c):
+    # The combination the plan settles on. Nothing here is new code -- it is the
+    # two knobs and the `support` schedule together -- which is exactly the claim
+    # worth pinning with a test.
+    trainer = make_trainer(
+        beam5nl, problem_with_c, "support",
+        n_linear_modes=1, leading_coefficient=True,
+        enrichment_criterion=MaxStages(2),
+    )
+    history = trainer.enrich()
+
+    assert problem_with_c.pgd.n_modes_truncated == 2
+    assert [r.diagnostics["kind"] for r in history.stages] == ["cp", "cp", "support"]
+    assert [r.diagnostics["mode"] for r in history.stages] == [0, 1, 1]
+    # Mode 0 stayed linear; mode 1 got both the correction and its own c.
+    assert torch.equal(
+        problem_with_c.pgd.coefficients[0],
+        torch.zeros_like(problem_with_c.pgd.coefficients[0]),
+    )
+    assert problem_with_c.pgd.coefficients[1].abs().max() > 0.0
+    assert problem_with_c.pgd.leading_coefficients[1].requires_grad

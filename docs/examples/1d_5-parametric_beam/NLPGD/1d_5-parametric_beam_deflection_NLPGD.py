@@ -35,11 +35,12 @@ the energy once, and then trains it in ``main``, reporting a per-stage
 diagnostics table. Pass ``train=False`` for assembly only, ``plot=False`` to skip
 the figures.
 
-Five training strategies are selectable, all scored against the same reference::
+Six training strategies are selectable, all scored against the same reference::
 
     python .../1d_5-parametric_beam_deflection_NLPGD.py joint
     python .../1d_5-parametric_beam_deflection_NLPGD.py staged
     python .../1d_5-parametric_beam_deflection_NLPGD.py refine
+    python .../1d_5-parametric_beam_deflection_NLPGD.py support
     python .../1d_5-parametric_beam_deflection_NLPGD.py greedy
     python .../1d_5-parametric_beam_deflection_NLPGD.py simultaneous
 
@@ -51,15 +52,33 @@ freeze (see :data:`SCHEDULES`):
 ``joint``        one stage: the monoms and ``C`` descend together throughout
 ``staged``       two stages: CP mode first, then ``C`` alone, monoms frozen
 ``refine``       two stages: CP mode first, then monoms and ``C`` together
+``support``      two stages: CP mode first, then the **space monom frozen**
+                 as a support, parametric monoms and ``C`` fitted over it
 ``greedy``       CP baseline -- ``C`` never released
 ``simultaneous`` CP baseline, every mode retrained at each enrichment
 ===============  ===========================================================
 
-``joint`` and ``staged`` are the pair this example was built to compare. The two
-library trainers never call ``unfreeze_mode_coefficients``, so ``C`` stays at its
-zero-initialisation and their runs are by construction **bit-identical to
-CP-PGD** -- that is the point: they are the controlled baseline, run through
-exactly the same energy and the same reference.
+``joint`` and ``staged`` are the pair this example was first built to compare.
+The two library trainers never call ``unfreeze_mode_coefficients``, so ``C``
+stays at its zero-initialisation and their runs are by construction
+**bit-identical to CP-PGD** -- that is the point: they are the controlled
+baseline, run through exactly the same energy and the same reference.
+
+Two further knobs cut across the schedules, both off by default and both
+``RunConfig`` fields rather than strategies, so they compose with any of them:
+
+``n_linear_modes``
+    How many leading modes are trained as plain CP before the schedule starts.
+    The non-linearity then never acts from a mode's seed -- it corrects a linear
+    decomposition that already exists.
+``leading_coefficient``
+    Gives each non-linear mode a trainable weight ``c_i`` on its own linear
+    term, so a late mode may carry almost no linear part at all. It also
+    switches the gauge fix to normalise every axis, which is what puts ``c_i``
+    and every row of ``C_i`` on one scale.
+
+``n_linear_modes`` with ``support`` is the combination the plan settles on: a
+few linear modes, then frozen-support corrections.
 
 Each writes its trained model to ``param_sweep/nlpgd5_<strategy>.pt`` and
 **reuses it on the next run**: re-running the command above redraws the figures
@@ -90,6 +109,7 @@ from neurom.constraints import Dirichlet, NoConstraint
 from neurom.decompositions import (
     Axis,
     PolynomialNLPGD,
+    pin_axis,
     total_degree_exponents,
     uniform_exponents,
 )
@@ -272,6 +292,34 @@ class RunConfig:
     #: every factor does. Must stay > 0: an all-zero factor is a stationary point
     #: of the energy and the mode never takes off (see ``CPPGD.add_mode``).
     seed_amplitude: float = 0.05
+    #: How many leading modes are trained as **pure CP**, one stage each, before
+    #: the polynomial schedule starts. The "curve a space that a linear PGD has
+    #: already laid out" idea: the non-linearity does not act directly, it
+    #: corrects a linear decomposition that already exists. ``0`` (the default)
+    #: applies the schedule from mode 0 and reproduces the historical behaviour.
+    #:
+    #: A fixed count rather than a coarse stagnation tolerance, deliberately: it
+    #: keeps the rank split inside ``config_id``, so two rows at the same ``l``
+    #: are comparable. ``linear_stage_tol`` supplies the "coarse" half.
+    n_linear_modes: int = 0
+    #: Release each non-linear mode's leading coefficient ``c_i``, so a mode may
+    #: carry little or no linear part at all. Also switches ``renormalise`` to
+    #: the all-``d``-axes gauge fix, which is what puts ``c_i`` and every row of
+    #: ``C_i`` on one scale -- see
+    #: :meth:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD.renormalise_mode`.
+    #: Only the modes at or after ``n_linear_modes`` get one released; the linear
+    #: phase stays pure CP.
+    leading_coefficient: bool = False
+    #: Pin the **space** exponent to 1 via
+    #: :func:`~neurom.decompositions.pin_axis`, so the correction terms are
+    #: non-linear in the parameters only and the space factor stays a plain
+    #: support. The natural companion of the ``support`` schedule, but
+    #: independent of it so the sweep can separate the two.
+    pin_space_exponent: bool = False
+    #: Stage tolerance during the linear phase only -- the "tol de stagnation
+    #: coarse". ``None`` reuses ``stage_tol``, so the phase split costs nothing
+    #: unless it is asked for.
+    linear_stage_tol: float = None
 
 
 def config_id(cfg):
@@ -301,8 +349,16 @@ def build_exponents(cfg, n_axes=len(AXIS_ORDER)):
     ``"total_degree"`` needs ``max_power > n_axes``, so ``>= 6`` for this
     example's five axes.
 
+    With ``cfg.pin_space_exponent`` the result is passed through
+    :func:`~neurom.decompositions.pin_axis` on axis 0, which is ``space`` (see
+    ``AXIS_ORDER``): the corrections then curve the *parameter* directions only
+    and leave the space factor entering linearly, as a support. Pinning can
+    shrink the set -- ``pin_axis`` deduplicates and drops the leading term -- so
+    ``|I|`` is not a function of ``max_power`` alone once it is on.
+
     Args:
-        cfg (RunConfig): supplies ``exponent_set`` and ``max_power``.
+        cfg (RunConfig): supplies ``exponent_set``, ``max_power`` and
+            ``pin_space_exponent``.
         n_axes (int): number of axes; defaults to the five of this problem.
 
     Returns:
@@ -315,20 +371,50 @@ def build_exponents(cfg, n_axes=len(AXIS_ORDER)):
             f"unknown exponent_set {cfg.exponent_set!r}; "
             f"pick one of {sorted(EXPONENT_SETS)}"
         ) from None
-    return builder(n_axes, cfg.max_power)
+    exponents = builder(n_axes, cfg.max_power)
+    if cfg.pin_space_exponent:
+        exponents = pin_axis(exponents, axis=AXIS_ORDER.index("space"), power=1)
+    return exponents
 
 
 def build_criteria(cfg):
     """Turn a ``RunConfig`` into its (stage, enrichment) criteria."""
-    stage = RelativeChange(
-        tol=cfg.stage_tol,
+    stage = _stage_criterion(cfg, cfg.stage_tol)
+    enrichment = RelativeGain(tol=cfg.enrichment_tol, floor=cfg.enrichment_floor)
+    return stage, enrichment
+
+
+def build_linear_stage_criterion(cfg):
+    """The coarser stage criterion for the linear phase, or ``None``.
+
+    Strategy 1 asks for a *coarse* linear PGD before the corrections start: the
+    linear modes only have to lay out the space that the polynomial terms will
+    then curve, so spending a fine tolerance on them is spending it in the wrong
+    place. Returns ``None`` when ``linear_stage_tol`` is unset, which is the
+    signal to reuse the single criterion for every stage.
+
+    Only the tolerance changes; the window, the iteration bounds and the floor
+    are shared, so a run cannot end up comparing two differently-budgeted phases.
+
+    Args:
+        cfg (RunConfig): supplies ``linear_stage_tol`` and the shared bounds.
+
+    Returns:
+        RelativeChange | None
+    """
+    if cfg.linear_stage_tol is None:
+        return None
+    return _stage_criterion(cfg, cfg.linear_stage_tol)
+
+
+def _stage_criterion(cfg, tol):
+    return RelativeChange(
+        tol=tol,
         window=cfg.window,
         max_iter=cfg.max_iter,
         min_iter=cfg.min_iter,
         floor=cfg.stage_floor,
     )
-    enrichment = RelativeGain(tol=cfg.enrichment_tol, floor=cfg.enrichment_floor)
-    return stage, enrichment
 
 
 def build_optimizer_factory(cfg, decomposition=None):
@@ -367,6 +453,15 @@ def build_optimizer_factory(cfg, decomposition=None):
     by the mode's physical amplitude, and the proper fix is to reparameterise
     ``C`` against it inside ``PolynomialNLPGD`` -- not done, see the CHANGELOG.
 
+    The leading coefficients ``c_i``, when the decomposition has them, join the
+    **same** group as ``C`` rather than getting a third ``lr``. That is not
+    laziness: they are only ever released alongside the all-``d``-axes gauge fix,
+    under which every monom has unit norm and therefore every term -- leading
+    included -- has natural size 1. The whole point of releasing ``c_i`` is that
+    the two families stop living on different scales, so giving them different
+    rates would undo it. If a measurement ever shows they need separate rates,
+    that is evidence against the gauge argument and belongs in the CHANGELOG.
+
     Args:
         cfg (RunConfig): supplies ``lr`` and ``coefficient_lr``.
         decomposition (PolynomialNLPGD, optional): needed to tell a coefficient
@@ -380,6 +475,8 @@ def build_optimizer_factory(cfg, decomposition=None):
         return lambda params: torch.optim.Adam(params, lr=cfg.lr)
 
     coefficient_ids = {id(row) for row in decomposition.coefficients}
+    if decomposition.has_leading_coefficients:
+        coefficient_ids |= {id(c) for c in decomposition.leading_coefficients}
 
     def factory(params):
         monoms = [p for p in params if id(p) not in coefficient_ids]
@@ -420,7 +517,7 @@ class Problem:
 
 def build_problem(
     loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None,
-    seed_amplitude=0.05, exponents=None,
+    seed_amplitude=0.05, exponents=None, leading_coefficients=False,
 ):
     """Assemble the five axes, the polynomial NL-PGD, the load and the model.
 
@@ -442,6 +539,9 @@ def build_problem(
             catch broadcasting bugs that a single quadrature point hides.
         seed_amplitude (float): Initial amplitude of every mode after the first,
             realised as an amplitude/shape split of the CP seed (see below).
+        leading_coefficients (bool): Give each mode a trainable weight ``c_i`` on
+            its own linear term. Built frozen at 1, so this alone changes
+            nothing; a trainer has to release it. See ``RunConfig``.
 
     Returns:
         Problem: the assembled objects.
@@ -505,6 +605,7 @@ def build_problem(
         exponents=exponents,
         name="pgd",
         n_modes_ini=n_modes_ini,
+        leading_coefficients=leading_coefficients,
     )
 
     # The load is a *field* f(x), interpolated on the SAME quadrature as the
@@ -725,7 +826,16 @@ SCHEDULES = {
     "staged": ("cp", "corr"),
     # Two stages. CP first, then monoms AND C together.
     "refine": ("cp", "joint"),
+    # Two stages. CP first, then the SPACE monom is frozen as a fixed support
+    # and only the parametric monoms and C are fitted on top. The non-linearity
+    # curves the parameter directions of a space the linear mode has laid out,
+    # rather than acting on the space factor itself.
+    "support": ("cp", "support"),
 }
+
+#: A mode in the linear phase (``RunConfig.n_linear_modes``) costs one pure-CP
+#: stage whatever the schedule -- that is what "linear phase" means.
+LINEAR_SCHEDULE = ("cp",)
 
 
 class PolynomialGreedyTrainer(GreedyTrainer):
@@ -774,19 +884,51 @@ class PolynomialGreedyTrainer(GreedyTrainer):
         protocol :class:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD`
         documents.
 
-        Note that ``staged``'s frozen monoms are still *rescaled* by the gauge
-        fix, which runs before the optimizer is built and is field-preserving.
-        What "frozen" promises is that the optimizer does not touch them.
+        ``support`` -- two stages: CP first, then the **space monom is frozen**
+        and only the parametric monoms and ``C`` are fitted on top. The linear
+        mode fixes a support; the correction curves the parameter directions over
+        it, rather than reshaping the space factor. Its natural companion is
+        ``RunConfig.pin_space_exponent``, which keeps the space exponent at 1 so
+        the corrections are non-linear in the parameters alone -- but the two are
+        independent knobs, so the sweep can tell which of them does the work.
+
+        Note that ``staged``'s and ``support``'s frozen monoms are still
+        *rescaled* by the gauge fix, which runs before the optimizer is built and
+        is field-preserving. What "frozen" promises is that the optimizer does
+        not touch them.
+
+    The linear phase (``n_linear_modes``)
+        Orthogonal to the schedule. The first ``l`` modes are trained as pure CP,
+        one stage each, and only the modes after them run the schedule above.
+        This is the "curve a space a linear PGD has already laid out" reading:
+        the non-linearity never acts from a mode's seed, only on top of an
+        existing linear decomposition. With ``linear_stage_criterion`` that phase
+        can also run coarser.
+
+        Combined with ``support`` it is the fusion the plan settles on -- a few
+        linear modes, then frozen-support corrections -- and it needs no
+        additional code, which is the point of keeping the two independent.
+
+    The leading coefficient (``leading_coefficient``)
+        When on, a non-linear mode's own linear term carries a trainable weight
+        ``c_i``, released alongside its ``C`` row, so a late mode may have little
+        or no linear part at all. Requires a decomposition built with
+        ``leading_coefficients=True``. Modes inside the linear phase never get
+        one. Note this is a *reparameterisation*, not extra expressivity -- see
+        :class:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD`.
 
     Enrichment bookkeeping
-        The enrichment criterion is fed the **end-of-mode** records only --
-        ``history.stages[spm - 1 :: spm]`` for ``spm`` stages per mode. Handed
-        the raw list under a two-stage schedule, a ``RelativeGain`` would compare
-        a correction stage against the CP stage of the *same* mode and read the
-        (small) correction gain as convergence after one mode. Consequently
-        ``MaxStages(n)`` handed to this trainer means **n modes**, not n stages,
-        under every schedule -- which is also what makes the schedules
-        comparable at equal rank.
+        The enrichment criterion is fed the **end-of-mode** records only, via
+        :meth:`mode_final_stages`. Handed the raw list under a two-stage
+        schedule, a ``RelativeGain`` would compare a correction stage against the
+        CP stage of the *same* mode and read the (small) correction gain as
+        convergence after one mode. Consequently ``MaxStages(n)`` handed to this
+        trainer means **n modes**, not n stages, under every schedule -- which is
+        also what makes the schedules comparable at equal rank.
+
+        This is a *lookup*, not the arithmetic slice it replaces: with a linear
+        phase, modes no longer all cost the same number of stages, so
+        ``stages[spm - 1 :: spm]`` would silently pick the wrong records.
 
     Diagnostics
         Inherited unchanged, and therefore CP-only: ``amplitude`` and
@@ -799,6 +941,12 @@ class PolynomialGreedyTrainer(GreedyTrainer):
             :class:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD`.
         schedule (str): a key of :data:`SCHEDULES`. Defaults to the class
             attribute, which the concrete subclasses below pin.
+        n_linear_modes (int): how many leading modes are pure CP, one stage each,
+            before the schedule starts. Defaults to 0.
+        leading_coefficient (bool): release ``c_i`` on the non-linear modes.
+            Defaults to False; raises if the decomposition has none.
+        linear_stage_criterion (StageCriterion, optional): stage criterion for
+            the linear phase only. ``None`` reuses ``stage_criterion``.
         **kwargs: as :class:`~neurom.training.base.PGDTrainer`.
     """
 
@@ -806,7 +954,15 @@ class PolynomialGreedyTrainer(GreedyTrainer):
     #: map a CLI name to a class whose ``__name__`` names a checkpoint file.
     schedule = "joint"
 
-    def __init__(self, model, schedule=None, **kwargs):
+    def __init__(
+        self,
+        model,
+        schedule=None,
+        n_linear_modes=0,
+        leading_coefficient=False,
+        linear_stage_criterion=None,
+        **kwargs,
+    ):
         super().__init__(model, **kwargs)
         if schedule is not None:
             self.schedule = schedule
@@ -815,24 +971,99 @@ class PolynomialGreedyTrainer(GreedyTrainer):
                 f"unknown schedule {self.schedule!r}; "
                 f"pick one of {sorted(SCHEDULES)}"
             )
+        self.n_linear_modes = int(n_linear_modes)
+        self.leading_coefficient = bool(leading_coefficient)
+        self.linear_stage_criterion = linear_stage_criterion
+        if self.leading_coefficient and not self.decomposition.has_leading_coefficients:
+            raise ValueError(
+                "leading_coefficient=True needs a decomposition built with "
+                "PolynomialNLPGD(..., leading_coefficients=True); this one has a "
+                "fixed leading weight of 1."
+            )
+        # Stage index -> (mode, kind). Built one whole mode at a time by
+        # `_ensure_plan`, so the plan always ends on a mode boundary.
+        self._plan = []
 
     @property
     def stages_per_mode(self):
-        """How many stages one mode costs under the current schedule (1 or 2)."""
+        """How many stages one *non-linear* mode costs (1 or 2).
+
+        The schedule's own length. With a linear phase this is no longer the
+        stage-to-mode ratio of the run -- linear modes cost one stage each
+        whatever the schedule -- so index arithmetic must go through
+        :meth:`mode_of_stage`, not through this.
+        """
         return len(SCHEDULES[self.schedule])
 
-    def stage_kind(self, stage_index):
-        """What stage ``stage_index`` trains: ``"cp"``, ``"corr"`` or ``"joint"``.
+    # -- the stage plan --------------------------------------------------------
 
-        * ``cp`` -- the new mode's monoms, coefficients frozen at 0.
-        * ``corr`` -- the coefficient row alone, monoms frozen.
-        * ``joint`` -- both.
+    def _schedule_for_mode(self, mode):
+        """The stage kinds mode ``mode`` costs: linear phase, then the schedule."""
+        if mode < self.n_linear_modes:
+            return LINEAR_SCHEDULE
+        return SCHEDULES[self.schedule]
+
+    def _ensure_plan(self, stage_index):
+        """Extend the plan, a whole mode at a time, to cover ``stage_index``.
+
+        Modes do **not** all cost the same number of stages once a linear phase
+        is in play, so the stage -> mode map cannot be arithmetic. Appending
+        entire modes keeps the invariant every consumer relies on: the plan never
+        ends part-way through a mode, so its last entry is always mode-final.
         """
-        return SCHEDULES[self.schedule][stage_index % self.stages_per_mode]
+        while len(self._plan) <= stage_index:
+            mode = self._plan[-1][0] + 1 if self._plan else 0
+            for kind in self._schedule_for_mode(mode):
+                self._plan.append((mode, kind))
+
+    def mode_of_stage(self, stage_index):
+        """Which mode stage ``stage_index`` belongs to."""
+        self._ensure_plan(stage_index)
+        return self._plan[stage_index][0]
+
+    def stage_kind(self, stage_index):
+        """What stage ``stage_index`` trains.
+
+        * ``cp`` -- the mode's monoms, coefficients frozen at 0.
+        * ``corr`` -- the coefficient row alone, every monom frozen.
+        * ``joint`` -- monoms and coefficients together.
+        * ``support`` -- the *parametric* monoms and the coefficients, with the
+          space monom frozen as a fixed support.
+        """
+        self._ensure_plan(stage_index)
+        return self._plan[stage_index][1]
 
     def adds_a_mode(self, stage_index):
         """Whether this stage is a mode's first (and so calls ``add_mode``)."""
-        return stage_index % self.stages_per_mode == 0
+        self._ensure_plan(stage_index)
+        return stage_index == 0 or self._plan[stage_index - 1][0] != self._plan[stage_index][0]
+
+    def mode_final_stages(self, before):
+        """Indices of the stages that *finish* a mode, among those before ``before``.
+
+        What the enrichment criterion must be fed. Handed the raw stage list, a
+        ``RelativeGain`` under a two-stage schedule would compare a mode's
+        correction stage against its own CP stage and read the (small) correction
+        gain as convergence after one mode. This replaces the old
+        ``[spm - 1 :: spm]`` slice, which assumed every mode costs the same.
+        """
+        self._ensure_plan(max(before - 1, 0))
+        return [
+            i
+            for i in range(min(before, len(self._plan)))
+            if i + 1 >= len(self._plan) or self._plan[i + 1][0] != self._plan[i][0]
+        ]
+
+    # -- the trainer hooks -----------------------------------------------------
+
+    def releases_the_leading_coefficient(self, mode):
+        """Whether mode ``mode`` gets its ``c_i`` released.
+
+        Only outside the linear phase: the linear modes are meant to be plain CP,
+        and releasing ``c`` there would let one of them absorb an amplitude that
+        the gauge fix already handles.
+        """
+        return self.leading_coefficient and mode >= self.n_linear_modes
 
     def prepare_stage(self, stage_index):
         """Set the freeze state this stage's kind calls for, then build the optimizer.
@@ -840,7 +1071,7 @@ class PolynomialGreedyTrainer(GreedyTrainer):
         Args:
             stage_index (int): index of the stage about to run.
         """
-        mode = stage_index // self.stages_per_mode
+        mode = self.mode_of_stage(stage_index)
         kind = self.stage_kind(stage_index)
 
         if self.adds_a_mode(stage_index):
@@ -853,13 +1084,53 @@ class PolynomialGreedyTrainer(GreedyTrainer):
                 self.decomposition.add_mode()
         if kind == "corr":
             self.decomposition.freeze_mode(mode)
-        if kind in ("corr", "joint"):
+        if kind == "support":
+            # The space factor is the support: fixed, with the correction free to
+            # curve the parameter directions on top of it. Unfreeze first, so a
+            # `support` stage reached from a frozen state still releases the
+            # parametric monoms.
+            self.decomposition.unfreeze_mode(mode)
+            self.decomposition.freeze_monom(mode, AXIS_ORDER.index("space"))
+        if kind in ("corr", "joint", "support"):
             self.decomposition.unfreeze_mode_coefficients(mode)
+            if self.releases_the_leading_coefficient(mode):
+                self.decomposition.unfreeze_mode_leading_coefficient(mode)
 
         # Before make_optimizer, never after: the gauge fix rescales parameters,
         # so Adam's moments would refer to a state that no longer exists.
         self.fix_gauge()
         self.make_optimizer()
+
+    def stage_criterion_for(self, stage_index):
+        """The stage criterion this stage runs under.
+
+        The linear phase may run coarser (see
+        :func:`build_linear_stage_criterion`); everything else uses the single
+        injected criterion.
+        """
+        if (
+            self.linear_stage_criterion is not None
+            and self.mode_of_stage(stage_index) < self.n_linear_modes
+        ):
+            return self.linear_stage_criterion
+        return self.stage_criterion
+
+    def stage(self, stage_index):
+        """Run one stage under whichever criterion its phase calls for.
+
+        The base class reads ``self.stage_criterion`` directly, so the phase
+        switch is done by swapping it around the call rather than by duplicating
+        the loop. Restored in a ``finally`` so a diverged stage cannot leave the
+        coarse criterion in place for the rest of the run.
+        """
+        criterion = self.stage_criterion_for(stage_index)
+        if criterion is self.stage_criterion:
+            return super().stage(stage_index)
+        saved, self.stage_criterion = self.stage_criterion, criterion
+        try:
+            return super().stage(stage_index)
+        finally:
+            self.stage_criterion = saved
 
     def should_add_stage(self, stage_index):
         """Run every stage of each mode; enrich until capacity or a small gain.
@@ -881,8 +1152,10 @@ class PolynomialGreedyTrainer(GreedyTrainer):
         if self.decomposition.n_modes_truncated >= self.decomposition.n_modes_max:
             self.history.stop_reason = "capacity"
             return False
-        spm = self.stages_per_mode
-        reason = self.enrichment_criterion.stop_reason(self.history.stages[spm - 1 :: spm])
+        finals = self.mode_final_stages(stage_index)
+        reason = self.enrichment_criterion.stop_reason(
+            [self.history.stages[i] for i in finals]
+        )
         if reason:
             self.history.stop_reason = reason
             return False
@@ -916,10 +1189,15 @@ class PolynomialGreedyTrainer(GreedyTrainer):
         """
         super().on_stage_end(record)
         record.diagnostics["kind"] = self.stage_kind(record.stage)
-        mode = record.stage // self.stages_per_mode
+        mode = self.mode_of_stage(record.stage)
+        record.diagnostics["mode"] = mode
         record.diagnostics["coefficient_norm"] = float(
             self.decomposition.coefficients[mode].detach().abs().sum()
         )
+        if self.decomposition.has_leading_coefficients:
+            record.diagnostics["leading_coefficient"] = float(
+                self.decomposition.leading_coefficients[mode].detach()
+            )
 
 
 class JointNLGreedyTrainer(PolynomialGreedyTrainer):
@@ -938,6 +1216,17 @@ class RefineNLGreedyTrainer(PolynomialGreedyTrainer):
     """Greedy; CP mode first, then monoms and coefficients together."""
 
     schedule = "refine"
+
+
+class SupportNLGreedyTrainer(PolynomialGreedyTrainer):
+    """Greedy; CP mode first, then its space monom is frozen as a fixed support.
+
+    The second stage fits the parametric monoms and the coefficient row over a
+    space factor that no longer moves -- the non-linearity curves the parameter
+    directions of a support the linear stage laid out.
+    """
+
+    schedule = "support"
 
 
 ## Reference solution and plotting helpers
@@ -1290,6 +1579,7 @@ def main(
         n_nodes=config.n_nodes,
         seed_amplitude=config.seed_amplitude,
         exponents=build_exponents(config),
+        leading_coefficients=config.leading_coefficient,
     )
 
     field_layout = problem.model()
@@ -1352,8 +1642,7 @@ def main(
     # STAGE_MIN_ITER and the CHANGELOG.
 
     stage_criterion, enrichment_criterion = build_criteria(config)
-    trainer = trainer_cls(
-        problem.model,
+    kwargs = dict(
         optimizer_factory=build_optimizer_factory(config, problem.pgd),
         stage_criterion=stage_criterion,
         enrichment_criterion=enrichment_criterion,
@@ -1362,6 +1651,22 @@ def main(
         # scripted runs and tests print nothing.
         progress=ProgressBar() if verbose else None,
     )
+    # The two library trainers are the CP baseline and know none of these; a
+    # config that asks for them under `greedy` is a config error, not something
+    # to drop on the floor.
+    if issubclass(trainer_cls, POLYNOMIAL_TRAINERS):
+        kwargs.update(
+            n_linear_modes=config.n_linear_modes,
+            leading_coefficient=config.leading_coefficient,
+            linear_stage_criterion=build_linear_stage_criterion(config),
+        )
+    elif config.n_linear_modes or config.leading_coefficient or config.linear_stage_tol:
+        raise ValueError(
+            f"{trainer_cls.__name__} is a CP baseline and ignores n_linear_modes, "
+            "leading_coefficient and linear_stage_tol. Leave them at their "
+            "defaults, or pick a polynomial strategy."
+        )
+    trainer = trainer_cls(problem.model, **kwargs)
 
     history = trainer.enrich()
     problem.history = history
@@ -1413,22 +1718,34 @@ def _report(problem, history, verbose=True, plot=True):
         # column that looks at C at all, since `amplitude` and `max corr` are
         # computed from the monoms and are CP-only under every schedule. A run
         # whose `|C|` column is all zeros released nothing.
+        # `c` is the mode's leading coefficient; blank under a decomposition that
+        # pins it at 1, which is every run without `leading_coefficient`. Note it
+        # moves under `renormalise` even when frozen -- the gauge fix parks the
+        # mode's amplitude there -- so "c changed" is not by itself evidence that
+        # the optimizer touched it. `mode` is printed because with a linear phase
+        # the stage index is no longer the mode index.
+        has_c = any("leading_coefficient" in r.diagnostics for r in history.stages)
         print(
-            f"{'stage':>5} {'kind':>6} {'iters':>6} {'stop':>10} "
+            f"{'stage':>5} {'mode':>4} {'kind':>7} {'iters':>6} {'stop':>10} "
             f"{'energy':>14} {'gain':>12} {'amplitude':>11} {'max corr':>9} "
-            f"{'|C|':>11}"
+            f"{'|C|':>11}" + (f" {'c':>11}" if has_c else "")
         )
         for record in history.stages:
             kind = record.diagnostics.get("kind", "cp")
+            mode = record.diagnostics.get("mode", record.stage)
             coefficient_norm = record.diagnostics.get("coefficient_norm", 0.0)
-            print(
-                f"{record.stage:5d} {kind:>6} {record.n_iter:6d} "
+            row = (
+                f"{record.stage:5d} {mode:4d} {kind:>7} {record.n_iter:6d} "
                 f"{record.stop_reason:>10} "
                 f"{record.energy:14.6e} {record.gain:12.4e} "
                 f"{record.diagnostics['amplitude']:11.4e} "
                 f"{record.diagnostics['max_correlation']:9.3f} "
                 f"{coefficient_norm:11.4e}"
             )
+            if has_c:
+                c = record.diagnostics.get("leading_coefficient")
+                row += f" {c:11.4e}" if c is not None else f" {'':>11}"
+            print(row)
 
         if isinstance(problem.pgd, PolynomialNLPGD):
             # The coefficients are the whole point of this example, and no
@@ -1439,7 +1756,11 @@ def _report(problem, history, verbose=True, plot=True):
             print("  exponents:", [tuple(int(v) for v in r) for r in problem.pgd.exponents])
             for m in range(problem.pgd.n_modes_truncated):
                 row = problem.pgd.coefficients[m].detach()
-                print(f"  mode {m:2d}: " + "  ".join(f"{v:11.4e}" for v in row))
+                line = f"  mode {m:2d}: " + "  ".join(f"{v:11.4e}" for v in row)
+                if problem.pgd.has_leading_coefficients:
+                    c = float(problem.pgd.leading_coefficients[m].detach())
+                    line += f"   (c = {c:11.4e})"
+                print(line)
 
     if plot:
         plot_convergence(history)
@@ -1465,9 +1786,17 @@ STRATEGIES = {
     "joint": JointNLGreedyTrainer,
     "staged": StagedNLGreedyTrainer,
     "refine": RefineNLGreedyTrainer,
+    "support": SupportNLGreedyTrainer,
     "greedy": GreedyTrainer,
     "simultaneous": SimultaneousTrainer,
 }
+
+#: Which trainers accept the polynomial-only knobs (``n_linear_modes``,
+#: ``leading_coefficient``, ``linear_stage_criterion``). The two library
+#: trainers are the CP baseline and take none of them, so ``main`` must not
+#: forward them -- hence a membership test rather than a ``try: except TypeError``
+#: that would also swallow a real signature mistake.
+POLYNOMIAL_TRAINERS = (PolynomialGreedyTrainer,)
 
 
 def checkpoint_path(trainer_cls):
@@ -1493,13 +1822,14 @@ STAGE_MIN_ITER = {
     JointNLGreedyTrainer: 120,
     StagedNLGreedyTrainer: 120,
     RefineNLGreedyTrainer: 120,
+    SupportNLGreedyTrainer: 120,
     GreedyTrainer: 120,
     SimultaneousTrainer: 300,
 }
 
 
 if __name__ == "__main__":
-    # python <this file> [joint|staged|refine|greedy|simultaneous] [--retrain]
+    # python <this file> [joint|staged|refine|support|greedy|simultaneous] [--retrain]
     #
     # Without --retrain, an existing checkpoint is loaded and only the figures
     # are redrawn: changing a plot must not cost a training run.

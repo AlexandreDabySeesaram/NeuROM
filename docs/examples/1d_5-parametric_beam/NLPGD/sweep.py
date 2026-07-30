@@ -198,6 +198,7 @@ def show_ledger(path, energy_tol=0.20):
         ("secs", 7, ">"),
         ("seed", 6, ">"),
         ("I", 14, "<"),
+        ("l/c", 5, "<"),
         ("stop", 10, "<"),
     ]
     header = "  ".join(f"{title:{align}{width}}" for title, width, align in columns)
@@ -228,8 +229,19 @@ def show_ledger(path, energy_tol=0.20):
         # A CP-baseline row still carries it (the decomposition is built with it)
         # but never uses it, so it is shown parenthesised for those strategies.
         exponents = f"{cfg.get('exponent_set', '-')}{cfg.get('max_power', '')}"
+        if cfg.get("pin_space_exponent"):
+            # The space exponent pinned to 1: same builder, fewer/other rows, so
+            # the bare `uniform3` label would name two different sets.
+            exponents += "|x=1"
         if cfg.get("strategy") in ("greedy", "simultaneous"):
             exponents = f"({exponents})"
+        # The two knobs that cut across the strategies: the linear-phase length
+        # and whether the non-linear modes carry their own leading coefficient.
+        # "-" for rows written before either existed; those rows ran with both
+        # off, which is what the default reproduces.
+        linear = cfg.get("n_linear_modes")
+        phase = "-" if linear is None else str(linear)
+        phase += "/c" if cfg.get("leading_coefficient") else "/-"
         print(
             "  ".join(
                 [
@@ -244,6 +256,7 @@ def show_ledger(path, energy_tol=0.20):
                     secs_str,
                     seed_str,
                     f"{exponents:<14}",
+                    f"{phase:<5}",
                     f"{res['stop_reason']:<10}",
                 ]
             )
@@ -713,6 +726,80 @@ def screen_configs(ex, strategy, n_modes_max=10, max_iter=400, min_iter=350):
     return configs
 
 
+#: The linear-phase lengths to try. 0 is the control -- the schedule from mode 0,
+#: i.e. what every existing row ran -- so a difference at l > 0 is attributable.
+SCREEN_LINEAR_MODES = [0, 2]
+
+
+def strategy_screen_configs(ex, n_modes_max=10, max_iter=400, min_iter=350):
+    """The new strategies' arm of the screen, at the best-known index set.
+
+    Deliberately **not** a full factorial with the index-set/lr grid of
+    :func:`screen_configs`. The two new knobs are what is being screened here;
+    crossing them with everything else would be ~10x the rows for a comparison
+    that ``joint``'s arm already answers. The index set and rates are pinned to
+    one setting so the l/c/pin contrasts are read against a fixed background.
+
+    Six rows, three contrasts, each one knob apart from a neighbour:
+
+    ===========================  ==================================================
+    ``joint``, l = 0             the control -- identical to the existing arm
+    ``joint``, l = 2             does a linear phase help at all?
+    ``joint``, l = 2, ``c``      does the leading coefficient help on top?
+    ``support``, l = 0           frozen support alone
+    ``support``, l = 2           the fusion the plan settles on
+    ``support``, l = 2, pinned   ... with the space exponent held at 1
+    ===========================  ==================================================
+
+    Args:
+        ex (module): the loaded example module.
+        n_modes_max (int): rank; the run is nested, so `rank_curve` recovers
+            every lower rank from it for free.
+        max_iter, min_iter (int): per **stage**, not per run. A two-stage
+            schedule therefore spends 2x per mode -- which `support` does and
+            `joint` does not, so read `iters` alongside `modes`.
+
+    Returns:
+        list: six ``RunConfig``s.
+    """
+    def cfg(strategy, linear=0, leading=False, pinned=False):
+        label = f"{strategy}-l{linear}" + ("-c" if leading else "") + ("-pin" if pinned else "")
+        return ex.RunConfig(
+            name=f"strat-{label}-r{n_modes_max}",
+            strategy=strategy,
+            n_linear_modes=linear,
+            leading_coefficient=leading,
+            pin_space_exponent=pinned,
+            exponent_set=STRATEGY_SCREEN_INDEX_SET[0],
+            max_power=STRATEGY_SCREEN_INDEX_SET[1],
+            lr=STRATEGY_SCREEN_LR,
+            coefficient_lr=STRATEGY_SCREEN_COEFFICIENT_LR,
+            n_modes_max=n_modes_max,
+            max_iter=max_iter,
+            min_iter=min_iter,
+            stage_tol=1e-5,
+            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,
+        )
+
+    return [
+        cfg("joint"),
+        cfg("joint", linear=2),
+        cfg("joint", linear=2, leading=True),
+        cfg("support"),
+        cfg("support", linear=2),
+        cfg("support", linear=2, pinned=True),
+    ]
+
+
+#: Background for the strategy screen, held fixed so the l/c/pin contrasts are
+#: read against one setting rather than confounded with the index set. Chosen as
+#: the cheapest of SCREEN_INDEX_SETS; **not** claimed to be the best -- the
+#: index-set screen has not been read yet.
+STRATEGY_SCREEN_INDEX_SET = ("uniform", 3)
+STRATEGY_SCREEN_LR = 1e-1
+STRATEGY_SCREEN_COEFFICIENT_LR = 1e-3
+
+
 def _configs():
     """The run queue -- edit this to enter configurations.
 
@@ -720,13 +807,13 @@ def _configs():
     row beside the old one. Built lazily so the example module loads only when
     the sweep actually runs.
 
-    Currently: the ``joint`` half of the screening grid, 30 rows. The ``refine``
-    half is the same call with ``strategy="refine"`` and goes in once these have
-    landed -- ``joint`` is the arm with 13 exploratory rows behind it, so it is
-    the one that can be sanity-checked against something.
+    Currently: the six-row strategy screen for the two new schedules
+    (:func:`strategy_screen_configs`). The ``joint`` index-set grid
+    (:func:`screen_configs`) is already in the ledger; re-add it here to extend
+    it to ``refine``.
     """
     ex = _example()
-    return screen_configs(ex, "joint")
+    return strategy_screen_configs(ex)
 
 
 if __name__ == "__main__":

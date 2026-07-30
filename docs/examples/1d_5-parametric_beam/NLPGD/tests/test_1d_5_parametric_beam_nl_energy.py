@@ -605,3 +605,96 @@ def test_main_trains_and_reports_a_decreasing_energy(beam5p, capsys):
     assert f"{last_stage.stage:5d}" in printed
     # The coefficient table is the one piece of output no CP run produces.
     assert "polynomial coefficients C" in printed
+
+
+# --- the leading coefficient and the pinned space exponent ------------------
+
+
+@pytest.mark.parametrize("quad_cls", [MidPoint1D, TwoPoints1D])
+@pytest.mark.parametrize("n_modes_ini", [1, 2])
+def test_energy_matches_brute_force_with_a_non_unit_leading_coefficient(
+    beam5p, float64, n_modes_ini, quad_cls
+):
+    """``c != 1`` is a path nothing else reaches.
+
+    ``energy`` folds each term's weight into **two** hoisted quantities -- the
+    chain-rule prefactor ``gpref`` and the value ``xval`` -- and a leading term
+    has always carried ``weight = 1.0``, so a bug in either (a dropped factor, a
+    factor applied twice) is invisible while the weight is 1. Against the same
+    brute-force 5-D quadrature, which reads the weight generically from
+    ``polynomial_directory()``.
+    """
+    quad = quad_cls()
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=3,
+        n_modes_ini=n_modes_ini,
+        n_nodes=TINY,
+        quad=quad,
+        leading_coefficients=True,
+    )
+    _randomise_monoms(problem.pgd)
+    _randomise_coefficients(problem.pgd)
+    with torch.no_grad():
+        for m in range(problem.pgd.n_modes_truncated):
+            problem.pgd.leading_coefficients[m].fill_(0.7 + 0.5 * m)
+
+    layout = problem.model()
+    separated = beam5p.energy(layout, problem.pgd)
+    reference = brute_force_energy(layout, problem.pgd)
+
+    assert torch.isfinite(separated)
+    assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
+
+
+def test_a_unit_leading_coefficient_reproduces_the_fixed_weight_energy(
+    beam5p, float64
+):
+    """c = 1 must be bitwise the fixed-weight energy, not merely close."""
+    energies = []
+    for leading in (False, True):
+        problem = beam5p.build_problem(
+            lambda layout, decomposition: beam5p.energy(layout, decomposition),
+            n_modes_max=2,
+            n_nodes=TINY,
+            leading_coefficients=leading,
+        )
+        _randomise_monoms(problem.pgd)
+        _randomise_coefficients(problem.pgd)
+        energies.append(beam5p.energy(problem.model(), problem.pgd))
+
+    assert energies[0].item() == energies[1].item()
+
+
+@pytest.mark.parametrize("quad_cls", [MidPoint1D, TwoPoints1D])
+def test_energy_matches_brute_force_with_the_space_exponent_pinned(
+    beam5p, float64, quad_cls
+):
+    """A pinned space exponent drives ``p = 1``, so ``gpref`` becomes ``X ** 0``.
+
+    Every other exponent set in this file has ``p >= 2`` on every correction
+    term, so the ``p - 1 == 0`` branch of the chain-rule prefactor is otherwise
+    never taken -- and it is the one where a wrong power silently evaluates to
+    an array of ones instead of erroring.
+    """
+    cfg = beam5p.RunConfig(name="pinned", pin_space_exponent=True)
+    exponents = beam5p.build_exponents(cfg)
+    assert all(int(row[0]) == 1 for row in exponents)
+
+    quad = quad_cls()
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=2,
+        n_nodes=TINY,
+        quad=quad,
+        exponents=exponents,
+    )
+    _randomise_monoms(problem.pgd)
+    _randomise_coefficients(problem.pgd)
+
+    layout = problem.model()
+    separated = beam5p.energy(layout, problem.pgd)
+    reference = brute_force_energy(layout, problem.pgd)
+
+    assert torch.isfinite(separated)
+    assert separated.item() == pytest.approx(reference.item(), rel=1e-9)

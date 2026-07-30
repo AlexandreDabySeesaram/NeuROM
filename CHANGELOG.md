@@ -1,3 +1,82 @@
+## 2026-07-30 — two new NL-PGD strategies: linear-then-NL, and frozen support
+
+**State:** `src/` gains three seams (`CPPGD.freeze_monom`, `PolynomialNLPGD`'s
+optional leading coefficient, `pin_axis`), all off by default. `NLPGD/` gains a
+`support` schedule, four `RunConfig` knobs and a 6-row sweep queue. 422 pass
+(was 363); the 2 failures are the pre-existing stale `pgd5_greedy.pt`. **No
+production run** — every number below is tiny mesh, 60 iters/stage, single run.
+
+New framing (`non-linear_pgd_list.md`): the non-linearity should curve a space a
+linear PGD has already laid out, not act from a mode's seed.
+
+- **Two independent `RunConfig` knobs, not two strategies.** `n_linear_modes`
+  (leading modes trained as pure CP, one stage each) and `leading_coefficient`
+  (release `c_i` on the linear term of the non-linear modes) cut across the
+  schedules. Strategy 1 is therefore `joint` + two knobs and needed **no new
+  schedule**; only strategy 2 added one (`support`: CP, then the space monom
+  frozen while the parametric monoms and `C` fit over it). The doc's "fusion des
+  deux" then costs nothing — `support` with `n_linear_modes=2` — which is the
+  reason for splitting it this way.
+- **`c_i` adds no expressivity, and this is proved, not assumed.** Rescaling
+  `w_ij -> s_j w_ij` with `prod_j s_j = c` reproduces any `c` exactly, so `c_i`
+  *is* the gauge direction the fixed unit weight pins. It buys two
+  parameterisation properties: a mode with no linear part becomes an interior
+  point rather than a limit point, and `renormalise()` can impose `d` conditions
+  instead of `d - 1`.
+- **The scale consequence, measured both ways.** With `c` live every monom goes
+  to unit norm, so a term's natural size `prod_j ||w_ij||^lambda_j` is 1 for
+  *every* `lambda` — `c_i` and all rows of `C_i` share one scale. Without it,
+  axis 0 keeps amplitude `A` and the same quantity is `A^p`. Both sides asserted
+  in `test_renormalise_..._puts_every_term_on_one_scale`. This is the mechanism
+  behind the recorded "`staged` has no working `coefficient_lr`" — but **whether
+  it makes `staged` converge is not measured.** Do not read it as fixed.
+- Measured side effect: the monom norms move with it. After a 3-mode run,
+  per-axis quadrature norms
+
+  | `leading_coefficient` | axis 0 | the four parametric axes |
+  |---|---|---|
+  | off | 2.907e+05 | 6.8e-1, 6.8e-1, 1.2e-1, 5.6e-1 |
+  | on | 1.000e+00 | 2.6e+0, 2.6e+0, 3.8e-1, 3.8e-1 |
+
+- **A hypothesis that did not survive.** Monoms at `O(1)` instead of `O(1e5)`
+  should make a shared `lr` far more aggressive. A 3-point probe says otherwise:
+  `lr=1e-1` is the best of `{1e-1, 1e-2, 1e-3}` in **both** regimes (final
+  energy, `support`, rank 3, 60 iters/stage):
+
+  | `lr` | `c` off | `c` on |
+  |---|---|---|
+  | 1e-1 | -7.574e10 | **-1.923e11** |
+  | 1e-2 | +3.6e01 | -1.109e08 |
+  | 1e-3 | +2.793e06 | +2.525e06 |
+
+  Not an `lr` ablation: 60 iterations is too short for the smaller rates to
+  converge at all, which is what dominates the column. Recorded so it is not
+  re-derived as fact.
+- `pin_axis(exponents, axis, power)` is a **transform**, not a third builder, so
+  it composes with both existing sets. Deduplicates and drops `(1,...,1)`, which
+  `total_degree`'s `(2,1,1,1,1)` pins onto. `|I|` therefore stops being a
+  function of `max_power` alone once `pin_space_exponent` is on.
+- **`PolynomialGreedyTrainer`'s index arithmetic is gone.** `stages_per_mode`,
+  `adds_a_mode` and the enrichment slice `stages[spm-1::spm]` all assumed every
+  mode costs the same number of stages; a linear phase makes that false. Now a
+  lazily-extended `(mode, kind)` plan, extended one *whole mode* at a time so it
+  never ends mid-mode, with `mode_final_stages()` replacing the slice.
+  `MaxStages(n)` still means **n modes** under every schedule.
+- `energy()` needed **no change** for either strategy: it already read the
+  leading weight as `1.0 if coefficient is None else coefficient` and indexed
+  each axis' exponent separately. Verified rather than assumed — the brute-force
+  5-D quadrature test now covers `c != 1` and a pinned space exponent (the
+  `p - 1 == 0` branch of the chain-rule prefactor, otherwise never taken).
+  Bug injection confirmed it bites: dropping the leading weight fails those 4
+  cases and **only** those.
+- Checkpoints: `leading_coefficients=False` creates no parameter, so
+  `state_dict` is unchanged and every existing checkpoint still loads. Enabled,
+  it adds keys — and a checkpoint written with it, loaded into a problem built
+  without, **raises** rather than silently reverting `c` to 1. Tested.
+- `.gitignore` now ignores `*.pt`/`*.png` wholesale with the reference bundle
+  un-ignored, instead of listing filenames that the directory split had already
+  outgrown. The sweep ledgers stay tracked.
+
 ## 2026-07-30 — energy-band flag on the NLPGD ledger
 
 **State:** `NLPGD/sweep.py` gains `energy_bands()` / `_energy_flag()` and an `E`

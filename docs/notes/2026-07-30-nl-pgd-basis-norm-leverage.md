@@ -75,8 +75,42 @@ only state in which the format is more expressive than CP. Single run.
 `uniform2` is unchanged in error, with the leading share rising from 0.4–4 % to
 5–19 %. Rebalanced, not improved.
 
-Addressed by `orthogonal_corrections` (deflate each correction against its
-mode's leading term), which is the next control.
+## Deflation — decisive at `|I| = 1`, nearly inert at `|I| = 2`
+
+`orthogonal_corrections` on, `renormalise=True` on both sides, everything else
+identical. Default mesh, single runs.
+
+| run | `\|I\|` | renorm | renorm+orth | Δ |
+|---|---|---|---|---|
+| uniform2 r10 — overall | 1 | 4.232e-02 | **3.864e-02** | −8.7 % |
+| uniform2 r10 — worst point | | 1.523e-01 | **1.140e-01** | −25 % |
+| uniform3 r6 — overall | 2 | 8.811e-02 | 8.685e-02 | −1.4 % |
+| uniform3 r6 — worst point | | 2.283e-01 | 2.260e-01 | −1.0 % |
+
+Leading-term share per mode:
+
+| | renorm | renorm+orth |
+|---|---|---|
+| uniform2, m3..m9 | 2.3 – 18.8 % | **18.4 – 55.7 %** |
+| uniform3, m3..m5 | 0.0 – 2.9 % | 0.1 – 0.7 % |
+
+**The split is structural, not noise.** `uniform2` has one correction row, so
+*all* of its redundancy is leading-vs-correction — exactly what deflation
+removes, and the linear term stops collapsing. `uniform3` has two rows whose
+mutual overlap deflation does not touch, and `(3,3,3,3,3)` still takes 98–100 %
+of every mode. Worse: the one mode that had split its amplitude healthily under
+renorm alone (m4, 68.8 %/28.3 %) collapsed to 97.8 % in the deflated run.
+
+Conditioning improved in both regardless — uniform3's mode 5 total magnitude
+fell from 3.84e8 to 1.61e7 — so the error is not limited by conditioning here.
+
+Cost, measured: 149.7 → 288.2 s (1.92×) and 46.9 → 93.3 s (1.99×), against the
+2.25× / 2.8× the term ratio predicts.
+
+**Open:** mutual orthogonalisation of the corrections (Gram–Schmidt over the
+`1 + |I|` terms) is the untested continuation, and it is what `uniform3` needs.
+Cost grows with `|I|`, so it is not obviously worth it against simply using
+`|I| = 1`.
 
 ## Prediction under test (superseded — see above)
 

@@ -31,9 +31,23 @@ recap. 435 pass, 2 fail (pre-existing, sibling `PGD/` example, `n_modes_max`
   reached that (m4: 68.8 %/28.3 %).
 - **`orthogonal_corrections` (opt-in) deflates it away.** `wⱼ^p → wⱼ^p − βwⱼ`
   on one axis; the inner product factorises so one axis suffices. Exact, no
-  hyperparameter. Costs `1 + 2|I|` terms against `1 + |I|` in a quadratic loop
-  (2.8× at `|I| = 2`). **Only leading-vs-correction overlap goes; corrections
-  still overlap each other, and its effect on the error is not yet measured.**
+  hyperparameter. Costs `1 + 2|I|` terms in a quadratic loop — measured 1.92×
+  and 1.99×, against the 2.25×/2.8× predicted.
+- **It is decisive at `|I| = 1` and nearly inert at `|I| = 2`.** Single-knob
+  controls, `renormalise=True` both sides:
+
+  | run | `\|I\|` | renorm | +orth |
+  |---|---|---|---|
+  | uniform2 r10 overall | 1 | 4.232e-02 | **3.864e-02** |
+  | uniform2 r10 worst | | 1.523e-01 | **1.140e-01** |
+  | uniform3 r6 overall | 2 | 8.811e-02 | 8.685e-02 |
+
+  `uniform2` is the best row in the ledger, and its leading share rises from
+  2–19 % to 18–56 % — the linear term stops collapsing. Structural: with one
+  correction row *all* redundancy is leading-vs-correction. `uniform3` has two
+  rows whose mutual overlap deflation does not touch, `(3,3,3,3,3)` still takes
+  98–100 %, and the one healthily-split mode (68.8/28.3) collapsed to 97.8 %.
+  Mutual (Gram–Schmidt) orthogonalisation is the untested continuation.
 - `_term_rows` is now the single term-structure seam — the energy reads
   `polynomial_directory`, `evaluate`/`assemble` read `_mode_from_columns`, and
   deflation reaching only one would train one field and report another.

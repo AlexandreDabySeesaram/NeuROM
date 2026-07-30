@@ -61,7 +61,11 @@ from neurom.shape_functions import LinearSegment
 DTYPE = torch.float64
 
 HERE = Path(__file__).resolve().parent
-EXAMPLE_PATH = HERE.parent / "1d_5-parametric_beam_deflection_PGD.py"
+# The reference is shared by every decomposition format under this example, so
+# it reads the problem definition (bounds, the modulus law) from the CP script by
+# convention. Any sibling would do -- they agree on all of it, which is precisely
+# what makes one reference legitimate for all of them.
+EXAMPLE_PATH = HERE.parent / "PGD" / "1d_5-parametric_beam_deflection_PGD.py"
 REFERENCE_PATH = HERE / "reference_solution.pt"
 
 # Reference discretisation: much finer than any PGD space axis (30 nodes), and a

@@ -48,6 +48,21 @@ class QuadratureAssembly(nn.Module):
         """Mark this assembly for interpolation (in place; keeps buffer identity)."""
         self.active.fill_(True)
 
+    def deactivate(self) -> None:
+        """Unmark this assembly for interpolation (in place; keeps buffer identity).
+
+        **Inspection only.** The PGD mode lifecycle is monotone -- a mode, once
+        activated, is never deactivated during training, and
+        ``CPPGD.n_modes_truncated`` relies on the active blocks staying
+        contiguous. This exists so a *finished* decomposition can be evaluated
+        at a lower rank than it was trained at; use it through
+        ``CPPGD.truncated``, which restores the previous state on exit. Calling
+        it directly on a training decomposition will silently drop modes, and
+        because ``active`` is a registered buffer, a checkpoint saved while
+        deactivated comes back truncated.
+        """
+        self.active.fill_(False)
+
     def interpolate(self) -> QuadratureAssemblyResult:
         """The main interpolation method
 

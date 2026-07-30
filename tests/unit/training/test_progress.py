@@ -18,7 +18,7 @@ class RecordingProgress(ProgressReporter):
     def __init__(self):
         self.calls = []
 
-    def stage_start(self, stage_index, budget=None):
+    def stage_start(self, stage_index, budget=None, label=None):
         self.calls.append(("start", stage_index, budget))
 
     def update(self, iteration, loss):

@@ -30,11 +30,13 @@ it. Training prints a per-stage progress bar; a stage is minutes long, so a
 silent run would be indistinguishable from a hung one. Figures are written to
 ``plots/``.
 
-Accuracy is judged against ``reference/reference_fem_solution.py``: a direct,
-non-reduced FEM solve at a handful of parameter points, saved to
-``reference/reference_solution.pt``. Generate it once before plotting::
+Accuracy is judged against ``../reference/reference_fem_solution.py`` -- shared
+with the sibling ``NLPGD/`` example one directory up, so both formats are scored
+against the very same numbers. It is a direct, non-reduced FEM solve at a handful
+of parameter points, saved to ``../reference/reference_solution.pt``. Generate it
+once before plotting::
 
-    python docs/examples/1d_5-parametric_beam_PGD/reference/reference_fem_solution.py
+    python docs/examples/1d_5-parametric_beam/reference/reference_fem_solution.py
 """
 
 import dataclasses
@@ -77,7 +79,7 @@ torch.set_default_dtype(torch.float32)
 HERE = Path(__file__).resolve().parent
 PLOT_DIR = HERE / "plots"
 PARAM_SWEEP_DIR = HERE / "param_sweep"
-REFERENCE_DIR = HERE / "reference"
+REFERENCE_DIR = HERE.parent / "reference"
 PLOT_DIR.mkdir(exist_ok=True)
 PARAM_SWEEP_DIR.mkdir(exist_ok=True)
 
@@ -177,8 +179,15 @@ class RunConfig:
     enrichment_tol: float = 1e-5
     enrichment_floor: float = 1.0
     lr: float = 0.1
-    n_modes_max: int = 10
+    n_modes_max: int = 15
     n_nodes: dict = None
+    #: Amplitude/shape seed for every mode after the first (see
+    #: :func:`build_problem`). A fresh mode enters with its parametric factors at
+    #: unit shape and the whole product's small initial amplitude carried by the
+    #: space factor, so enrichment does not spike the loss the way a 0.5 seed on
+    #: every factor does. Must stay > 0: an all-zero factor is a stationary point
+    #: of the energy and the mode never takes off (see ``CPPGD.add_mode``).
+    seed_amplitude: float = 0.05
 
 
 def config_id(cfg):
@@ -232,7 +241,8 @@ class Problem:
 
 
 def build_problem(
-    loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None
+    loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None,
+    seed_amplitude=0.05,
 ):
     """Assemble the five axes, the CP-PGD, the load and the model.
 
@@ -250,6 +260,8 @@ def build_problem(
             defaults to ``MidPoint1D()`` (one point per element). Injectable so
             tests can exercise ``N_q > 1`` rules (e.g. ``TwoPoints1D``), which
             catch broadcasting bugs that a single quadrature point hides.
+        seed_amplitude (float): Initial amplitude of every mode after the first,
+            realised as an amplitude/shape split of the CP seed (see below).
 
     Returns:
         Problem: the assembled objects.
@@ -272,14 +284,20 @@ def build_problem(
         "alpha": NoConstraint(),
         "n": NoConstraint(),
     }
-    init_values = {
-        "space": 0.5,
-        "E1": 0.5,
-        "E2": 0.5,
-        "alpha": 0.5,
-        "n": 0.5,
-    }
-    init_values_rest = {"space": 0.5}
+    # Mode 0 carries the bulk of the solution, so it keeps the plain 0.5 seed on
+    # every factor. Every *later* mode is seeded as an amplitude/shape split: its
+    # parametric factors start at unit shape (1.0) and the whole product's small
+    # initial amplitude is carried by the space factor (`seed_amplitude`). This
+    # lets a new mode enter near zero -- no loss spike on enrichment -- while
+    # keeping every factor strictly non-zero, so no gradient is locked at the
+    # all-zero stationary point (cf. CPPGD.add_mode). Folding the amplitude into
+    # a single factor exploits the CP scale degeneracy (see plot_modes); the
+    # space factor is chosen because that is where the tutor's "seed the space
+    # mode small" intuition lives, minus the collapse that seeding it at exactly
+    # 0 causes.
+    init_values = {name: 0.5 for name in AXIS_ORDER}
+    init_values_rest = {name: 0.5 for name in AXIS_ORDER}
+    init_values_rest["space"] = seed_amplitude
     axes = [
         make_axis(
             name,
@@ -502,7 +520,8 @@ def plot_convergence(history, save_path=None):
         boundary += record.n_iter
         ax.axvline(boundary, color="grey", ls=":", lw=1)
 
-    ax.set_title("Greedy training convergence")
+    ax.set_title("" \
+    "Training convergence")
     ax.set_xlabel("iteration")
     ax.set_ylabel("energy (loss)")
     ax.grid(True, alpha=0.3)
@@ -774,6 +793,7 @@ def main(
         lambda layout, pgd: energy(layout, pgd, load_name="load"),
         n_modes_max=config.n_modes_max,
         n_nodes=config.n_nodes,
+        seed_amplitude=config.seed_amplitude,
     )
 
     field_layout = problem.model()

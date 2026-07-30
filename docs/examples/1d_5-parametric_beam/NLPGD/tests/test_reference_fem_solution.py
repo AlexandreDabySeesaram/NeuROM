@@ -12,7 +12,9 @@ import pytest
 import torch
 
 EXAMPLE_DIR = Path(__file__).resolve().parents[1]
-REFERENCE_PATH = EXAMPLE_DIR / "reference" / "reference_fem_solution.py"
+# One level up: the reference is shared with the sibling PGD example, which is
+# the point -- both formats are scored against the same numbers.
+REFERENCE_PATH = EXAMPLE_DIR.parent / "reference" / "reference_fem_solution.py"
 
 
 def load_module(path=REFERENCE_PATH, name="reference_fem_solution"):

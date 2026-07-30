@@ -58,7 +58,11 @@ where = ["src"]
 #Path to the tests folder. Example-specific tests live next to the example they
 #exercise rather than under tests/, to keep work-in-progress out of the
 #library's own suite; they still run with a bare `pytest`.
-testpaths = ["tests", "docs/examples/1d_5-parametric_beam_PGD/tests"]
+testpaths = [
+    "tests",
+    "docs/examples/1d_5-parametric_beam/PGD/tests",
+    "docs/examples/1d_5-parametric_beam/NLPGD/tests",
+]
 #Recommended for new projects: https://docs.pytest.org/en/stable/explanation/goodpractices.html
 addopts = ["--import-mode=importlib"]
 

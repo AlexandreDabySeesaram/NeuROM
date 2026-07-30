@@ -21,7 +21,7 @@ class ProgressReporter:
     nobody is watching should print nothing.
     """
 
-    def stage_start(self, stage_index, budget=None):
+    def stage_start(self, stage_index, budget=None, label=None):
         """A stage is about to run.
 
         Args:
@@ -29,6 +29,9 @@ class ProgressReporter:
             budget (int, optional): Iterations the stage criterion allows, if it
                 can say -- see :meth:`~neurom.training.criteria.StageCriterion.budget`.
                 None when the stage's length is not known in advance.
+            label (str, optional): What the stage trains, from
+                :meth:`~neurom.training.base.PGDTrainer.stage_label`. None when
+                the strategy's stages are all alike.
         """
 
     def update(self, iteration, loss):
@@ -61,6 +64,13 @@ class ProgressBar(ProgressReporter):
         stage 2 |=========------| 180/600  E=-2.017e+11  12.4s
         stage 2 |===============| 203  converged  E=-2.017e+11  14.0s
 
+    A strategy that implements
+    :meth:`~neurom.training.base.PGDTrainer.stage_label` gets it beside the
+    index, so a schedule with several kinds of stage per mode is readable live
+    rather than only in the final table::
+
+        stage 3 corr |====-----------| 41/600  E=-2.017e+11   3.1s
+
     With no ``budget`` (a criterion that cannot say how long it will run) the
     bar degrades to a spinner-less counter rather than lying about the fraction.
 
@@ -79,12 +89,14 @@ class ProgressBar(ProgressReporter):
         self.width = width
         self.every = every
         self.stage_index = None
+        self.label = None
         self.budget = None
         self.started = None
         self.last_drawn = 0.0
 
-    def stage_start(self, stage_index, budget=None):
+    def stage_start(self, stage_index, budget=None, label=None):
         self.stage_index = stage_index
+        self.label = label
         self.budget = budget
         self.started = time.monotonic()
         self.last_drawn = 0.0
@@ -120,8 +132,9 @@ class ProgressBar(ProgressReporter):
         else:
             bar = ""
             counter = str(iteration)
+        label = f" {self.label}" if self.label else ""
         return (
-            f"stage {self.stage_index} {bar} {counter:>9}"
+            f"stage {self.stage_index}{label} {bar} {counter:>9}"
             f"  E={loss: .4e}  {elapsed:5.1f}s"
         )
 

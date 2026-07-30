@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 import string
 
@@ -247,6 +248,58 @@ class CPPGD(TensorDecomposition):
             assembly.activate()
         self.unfreeze_mode(m)
         return m
+
+    @contextmanager
+    def truncated(self, n_modes):
+        """Temporarily evaluate this decomposition at rank ``n_modes``.
+
+        Greedy enrichment is nested: a rank-``N`` decomposition contains its own
+        rank-1..``N`` approximations, since mode ``m`` was trained against the
+        residual of the ``m`` before it. This is the seam that lets a *finished*
+        run be scored at every intermediate rank without retraining -- the whole
+        error-vs-rank curve from one training run.
+
+        Deactivates the trailing mode-blocks on entry and restores exactly the
+        previous active set on exit, including when the body raises. Nothing
+        else is touched: the monoms, the coefficient rows and their
+        ``requires_grad`` flags are left alone, so this changes what is
+        *evaluated*, never what was trained.
+
+        Not for use during training -- the mode lifecycle is monotone, and
+        ``add_mode`` appends at ``n_modes_truncated``, so a stage entered inside
+        this block would overwrite a trained mode. Read-only inspection only::
+
+            with problem.pgd.truncated(3):
+                errors = relative_errors(problem.pgd)
+
+        Args:
+            n_modes (int): rank to evaluate at, in ``1..n_modes_truncated``.
+                Asking for the current rank is a no-op.
+
+        Yields:
+            CPPGD: self, at the requested rank.
+
+        Raises:
+            ValueError: if ``n_modes`` is outside ``1..n_modes_truncated``.
+                Truncation cannot *add* modes -- a rank above what was trained
+                does not exist, and silently returning the trained rank would
+                put a mislabelled point on the curve.
+        """
+        n_active = self.n_modes_truncated
+        if not 1 <= n_modes <= n_active:
+            raise ValueError(
+                f"cannot evaluate at rank {n_modes}: this decomposition has "
+                f"{n_active} active mode(s), and truncation only removes them."
+            )
+        for m in range(n_modes, n_active):
+            for assembly in self._assemblies[m]:
+                assembly.deactivate()
+        try:
+            yield self
+        finally:
+            for m in range(n_modes, n_active):
+                for assembly in self._assemblies[m]:
+                    assembly.activate()
 
     def renormalise(self):
         """Fix the representation's scale gauge in place. No-op for CP-PGD.

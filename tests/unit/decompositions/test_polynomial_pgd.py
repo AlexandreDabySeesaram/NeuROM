@@ -740,3 +740,37 @@ def test_cppgd_renormalise_is_a_no_op():
     cp.renormalise()
     for f, b in zip(cp.monoms[0], before):
         assert torch.equal(f.values_reduced, b)
+
+
+def test_truncated_drops_the_trailing_mode_including_its_coefficients():
+    """Truncation must remove a polynomial mode whole -- monoms *and* its ``C``.
+
+    Worth its own test beyond the CPPGD one: a polynomial mode carries a second
+    parameter family, and a truncation that dropped only the monoms would leave
+    the coefficient row contributing and put a wrong point on the rank curve.
+    """
+    axes = make_two_axes()
+    exps = total_degree_exponents(2, 4)
+    poly = PolynomialNLPGD(axes=axes, n_modes_max=2, exponents=exps, n_modes_ini=2)
+    seed_monoms(poly, 2)
+    coeffs = [
+        torch.linspace(0.5, 1.5, poly.n_terms),
+        torch.linspace(-1.0, 1.0, poly.n_terms),
+    ]
+    with torch.no_grad():
+        for m in range(2):
+            poly.coefficients[m].copy_(coeffs[m])
+
+    query = torch.stack([QUERY_X, torch.tensor([400.0, 700.0, 900.0])], dim=1)
+    full = poly.evaluate(query).reshape(-1)
+
+    with poly.truncated(1):
+        got = poly.evaluate(query).reshape(-1)
+        expected = brute_force_evaluate(
+            poly, axes, exps, coeffs[:1], QUERY_X,
+            torch.tensor([400.0, 700.0, 900.0]),
+        )
+        assert torch.allclose(got, expected, atol=1e-5)
+        assert not torch.allclose(got, full)
+
+    assert torch.allclose(poly.evaluate(query).reshape(-1), full)

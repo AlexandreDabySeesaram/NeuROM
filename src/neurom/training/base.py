@@ -182,7 +182,11 @@ class PGDTrainer(ABC):
             StageRecord: The stage's losses and outcome.
         """
         record = StageRecord(stage=stage_index)
-        self.progress.stage_start(stage_index, self.stage_criterion.budget())
+        self.progress.stage_start(
+            stage_index,
+            self.stage_criterion.budget(),
+            label=self.stage_label(stage_index),
+        )
         while True:
             loss = self.step()
             record.losses.append(loss)
@@ -310,6 +314,24 @@ class PGDTrainer(ABC):
         Returns:
             bool: True to run the stage, False to stop the run.
         """
+
+    def stage_label(self, stage_index):
+        """Short name for what this stage trains, for the progress reporter.
+
+        Default None: a strategy whose stages are all alike has nothing to add
+        to the index the bar already prints. A multi-stage-per-mode strategy
+        overrides it so the live bar says which half of the schedule is running
+        -- the same string it will later put in ``record.diagnostics``, derived
+        here once rather than re-derived by the reporter from an index parity it
+        does not own.
+
+        Args:
+            stage_index (int): Index of the stage about to run.
+
+        Returns:
+            str or None: The label, or None for no label.
+        """
+        return None
 
     def on_stage_end(self, record):
         """Hook called after each stage, before it enters the history.

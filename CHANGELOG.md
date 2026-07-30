@@ -1,3 +1,93 @@
+## 2026-07-30 — energy-band flag on the NLPGD ledger
+
+**State:** `NLPGD/sweep.py` gains `energy_bands()` / `_energy_flag()` and an `E`
+column in `show_ledger`; 4 tests added (13 pass in `tests/test_sweep.py`). No
+training code touched, no rerun — the flag is computed from the existing ledger.
+
+- The band is the **median** final energy over rows at the same `n_nodes`,
+  ±20%. Median, not mean: the blowups are what would drag a mean out to meet
+  them. Fewer than 3 finite rows at a mesh ⇒ no band, printed `?`.
+- **Separates the current 15-row ledger exactly**: the 5 flagged rows are the 5
+  worst by `overall_error`, the 10 unflagged are the 10 best. No overlap.
+
+  | flagged | energy | overall | stop |
+  |---|---|---|---|
+  | `4ff789e3` | −2.65e10 | 3.88e-1 | converged |
+  | `5fc95671` | −3.60e11 | 6.63e-1 | converged |
+  | `9965499c` | −2.67e11 | 8.51e-1 | **capacity** |
+  | `a009f9c5` | nan | nan | diverged |
+  | `cd51c034` | −2.86e13 | 5.88e+1 | converged |
+
+  Healthy rows span −2.01e11…−2.12e11 (10 rows, one mesh).
+- Value over `stop_reason` alone is the `9965499c` row: it ran to capacity and
+  reported nothing wrong, but sat 30% below the band. Energy below the cluster
+  cannot be a better minimum — it is the coefficient/gauge blowup signature.
+- Single ledger, one mesh, one seed (0.05). Band `[-2.45e11, -1.63e11]`, median
+  `-2.04e11`. The same 5/10 split holds for any width in **±3.9% … ±30.6%** —
+  the furthest healthy row is 3.84% out (9 of 10 are under 1.6%), the nearest
+  blowup 30.66% out, then 76%, 87%, 1.4e4%. So ±20% is a centred choice in a
+  wide gap, not a fitted threshold. Calibrated on
+  centred choice inside a wide margin, not a fitted threshold. Calibrated on
+  this ledger only.
+- **Not fixed:** `RelativeGain` still stops on one flat stage (no patience), so
+  3 of the 5 bad rows are false convergences. Diagnosed, deliberately left.
+
+## 2026-07-29 — NL-PGD on the 5-parametric beam: `joint` trains, `staged` does not
+
+**State:** example split into `docs/examples/1d_5-parametric_beam/{PGD,NLPGD,reference}`,
+`reference/` shared. New `NLPGD/` (script, `sweep.py`, `show_results.py`, 7 test
+files, 95 tests pass); `pyproject.toml` `testpaths` updated. **No production-size
+run yet** — everything below is tiny-mesh, 3 modes, single runs.
+
+- `energy()` rewritten from mode pairs to **term pairs** via `polynomial_directory()`.
+  Moments gain exponents; tanh block, einsum and load structurally unchanged. The
+  trap: `d/dx[C X^p ...] = C p X^(p-1) X' ...` needs **both** `result.u` and
+  `jacobian_field`, applied as a scalar prefactor after `inner()` contracts.
+- **Verified against brute-force 5-D quadrature**, parametrised over `C = 0` and
+  random `C != 0` x 2 quadrature rules x 2 initial modes, `rel=1e-9` in float64.
+  Plus: `C = 0` reproduces the leading-term-only energy *bitwise*.
+- `PolynomialGreedyTrainer` (in the example, not `src/`) with three schedules,
+  all purely greedy — a finished mode is frozen, coefficients included:
+  `joint` (1 stage/mode, monoms+C together), `staged` (CP, then C alone with
+  monoms frozen), `refine` (CP, then monoms+C). Enrichment criterion is fed the
+  end-of-mode records only, so `MaxStages(n)` means n *modes* under all three.
+- **`GreedyTrainer`/`SimultaneousTrainer` on a `PolynomialNLPGD` are exactly
+  CP-PGD** — neither releases a coefficient row. Kept as the controlled baseline.
+  A trap worth remembering: driving NL-PGD with a library trainer is a null
+  experiment with no error and no warning.
+- **The coefficients need their own learning rate.** `C_p ~ A^(1-p)` for mode
+  amplitude `A`; after a converged CP stage `A ~ 1.5e4`, so the two rows of
+  `uniform(5,3)` want `7e-5` and `5e-9`. Adam steps by `~lr` whatever the
+  gradient, so a shared `lr=0.1` overshoots by 5-10 orders. Hence
+  `RunConfig.coefficient_lr` (default `1e-3`) and a two-param-group factory.
+- **Not a gauge artefact.** A uniform exponent row is *exactly* gauge-invariant
+  (`prod_j s_j = 1` forces `prod_j (s_j w_j)^p = prod_j w_j^p`), so `renormalise`
+  cannot fix it. `A` is physical.
+- **Negative result — `staged` has no working `lr_C`.** Final energy, 3 modes,
+  CP baseline `-1.914e11` (lower is better):
+
+  | `lr_C` | `staged` | `joint` |
+  |---|---|---|
+  | 1e-3 | `+2.65e20` diverged | **`-1.271e12`** |
+  | 1e-5 | `-1.888e11` ~ CP | `-2.054e11` |
+  | 1e-7 … 1e-11 | ~ CP | ~ CP |
+
+  One step too big and the `p=3` row explodes; smaller and the `p=2` row never
+  leaves zero. `joint` escapes it by releasing `C` at the mode's *seed*, where
+  `A` is small and both rows are within reach of one `lr`.
+- Fix, **not done**: reparameterise `C_lambda = C~_lambda * A^(1 - sum lambda/d)`
+  inside `PolynomialNLPGD`. Changes state_dict semantics, so it needs a format
+  version. Full derivation and tables:
+  [docs/notes/2026-07-29-nl-pgd-coefficient-scale.md](docs/notes/2026-07-29-nl-pgd-coefficient-scale.md)
+- `renormalise()` is real now, so `GreedyTrainer`'s frozen modes are **no longer
+  bitwise frozen** (field-preserving rescale at each stage boundary); the bitwise
+  test needs `renormalise=False`.
+- Exponent set is a `RunConfig` knob (`exponent_set`, `max_power`), stored as
+  strings so `config_id`'s JSON hash works. `total_degree` needs `max_power >= 6`
+  here. Term-pair cost measured: 6 / 42 / 110 ms per iteration at 1 / 3 / 5
+  modes; `N_MODES_MAX = 5`. Pairs go as `(1+|I|)^2`, so `max_power` is the
+  expensive knob.
+
 ## 2026-07-29 — `PolynomialNLPGD`: first non-linear PGD decomposition
 
 **State:** new `src/neurom/decompositions/polynomial_pgd.py` +

@@ -159,7 +159,7 @@ def test_max_correlation_is_one_for_a_deliberately_duplicated_mode(problem):
 # The only cross-example reference here: the 2-parametric beam is the one
 # problem with a closed-form solution, so the accuracy check below borrows it.
 EXAMPLE_2P = (
-    EXAMPLE_DIR.parent / "1d_2-parametric_beam_PGD" / "1d_beam_deflection_PGD.py"
+    EXAMPLE_DIR.parents[1] / "1d_2-parametric_beam_PGD" / "1d_beam_deflection_PGD.py"
 )
 
 

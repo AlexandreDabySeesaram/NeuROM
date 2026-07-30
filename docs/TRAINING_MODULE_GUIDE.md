@@ -383,7 +383,7 @@ dependency — the bar is thirty lines and writes to **`sys.stderr`**, so a
 redirected stdout carries only results.
 
 * `ProgressReporter` — the no-op default and the interface:
-  `stage_start(i, budget)`, `update(iteration, loss)`, `stage_end(record)`,
+  `stage_start(i, budget, label)`, `update(iteration, loss)`, `stage_end(record)`,
   `close()`.
 * `ProgressBar(stream=None, width=None, every=0.1)` — one line per stage,
   redrawn in place, finalised on `stage_end` with the stop reason so finished

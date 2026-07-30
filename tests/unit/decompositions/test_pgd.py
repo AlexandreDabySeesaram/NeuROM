@@ -527,3 +527,82 @@ def test_two_axes_have_distinct_contexts():
     space, para = make_two_axes()
     assert space.context is not para.context
     assert space.mesh is not para.mesh
+
+
+def _fill_two_modes(model):
+    """Two modes with distinct, known nodal values."""
+    with torch.no_grad():
+        model.monoms[0][0].values_reduced.copy_(
+            torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
+        )
+        model.monoms[0][1].values_reduced.copy_(
+            torch.tensor([2.0, 3.0, 4.0, 5.0]).unsqueeze(-1)
+        )
+        model.monoms[1][0].values_reduced.copy_(
+            torch.tensor([1.0, -1.0, 2.0, 0.5, -0.5]).unsqueeze(-1)
+        )
+        model.monoms[1][1].values_reduced.copy_(
+            torch.tensor([-2.0, 1.0, 0.0, 3.0]).unsqueeze(-1)
+        )
+
+
+def test_truncated_evaluates_at_lower_rank_and_restores():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
+    _fill_two_modes(model)
+
+    points = [torch.tensor([2.5, 5.0]), torch.tensor([400.0, 700.0])]
+    full = model.assemble(points)
+
+    # Rank 1 is the leading mode alone -- the nested-approximation property the
+    # rank curve is read from.
+    rank1 = CPPGD(axes=axes, n_modes_max=1, n_modes_ini=1)
+    with torch.no_grad():
+        rank1.monoms[0][0].values_reduced.copy_(model.monoms[0][0].values_reduced)
+        rank1.monoms[0][1].values_reduced.copy_(model.monoms[0][1].values_reduced)
+
+    with model.truncated(1) as truncated:
+        assert int(truncated.n_modes_truncated) == 1
+        assert torch.allclose(truncated.assemble(points), rank1.assemble(points))
+
+    # Restored: same rank and the same values as before the block.
+    assert int(model.n_modes_truncated) == 2
+    assert torch.allclose(model.assemble(points), full)
+
+
+def test_truncated_restores_on_exception():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with model.truncated(1):
+            raise RuntimeError("boom")
+
+    assert int(model.n_modes_truncated) == 2
+
+
+def test_truncated_rejects_a_rank_that_was_never_trained():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=3, n_modes_ini=2)
+
+    # Above the trained rank: mode 2 exists as a block but holds no solution.
+    with pytest.raises(ValueError, match="only removes"):
+        with model.truncated(3):
+            pass
+    with pytest.raises(ValueError, match="only removes"):
+        with model.truncated(0):
+            pass
+
+    assert int(model.n_modes_truncated) == 2
+
+
+def test_truncated_leaves_freeze_state_untouched():
+    axes = make_two_axes()
+    model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=2)
+    before = [f.values_reduced.requires_grad for mode in model.monoms for f in mode]
+
+    with model.truncated(1):
+        pass
+
+    after = [f.values_reduced.requires_grad for mode in model.monoms for f in mode]
+    assert after == before

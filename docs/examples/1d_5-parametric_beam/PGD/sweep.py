@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import time as _time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -98,16 +99,61 @@ def show_ledger(path):
     """Print every ledger row, sorted by overall error (best first)."""
     rows = load_ledger(path)
     rows.sort(key=lambda r: r["result"]["overall_error"])
-    print(
-        f"{'name':>24} {'config_id':>10} {'overall':>10} {'worst':>10} "
-        f"{'modes':>6} {'iters':>7} {'stop':>10}"
-    )
+    name_width = max([len("name")] + [len(r["config"]["name"]) for r in rows])
+
+    def _clip(name):
+        if len(name) <= name_width:
+            return name
+        return name[: name_width - 1] + "…"
+
+    columns = [
+        ("name", name_width, "<"),
+        ("config_id", 9, ">"),
+        ("overall", 10, ">"),
+        ("worst", 10, ">"),
+        ("energy", 12, ">"),
+        ("modes", 5, ">"),
+        ("iters", 6, ">"),
+        ("secs", 7, ">"),
+        ("seed", 6, ">"),
+        ("stop", 10, "<"),
+    ]
+    header = "  ".join(f"{title:{align}{width}}" for title, width, align in columns)
+    print(header)
+    print("-" * len(header))
     for r in rows:
         res, cfg = r["result"], r["config"]
+        # Wall clock of the training run. Rows written before it was recorded
+        # show "-"; it is machine- and load-dependent, so read it as a cost
+        # signal next to `iters`, never as a benchmark between rows measured
+        # on different days.
+        secs = r.get("meta", {}).get("train_seconds")
+        secs_str = f"{secs:7.1f}" if secs is not None else f"{'-':>7}"
+        # Older rows predate the seed_amplitude knob; fall back so a mixed ledger
+        # still prints (the row is stale anyway and will be rerun).
+        seed = cfg.get("seed_amplitude")
+        seed_str = f"{seed:6.3g}" if seed is not None else f"{'-':>6}"
+        # The last stage's energy -- the quantity the training actually
+        # minimises, where `overall` is measured against the FEM reference.
+        # Comparable across rows only at equal mesh: the energy is an integral
+        # over the discretisation, so a refined `n_nodes` moves it on its own.
+        energy = res.get("final_energy")
+        energy_str = f"{energy:12.4e}" if energy is not None else f"{'-':>12}"
         print(
-            f"{cfg['name']:>24} {r['config_id']:>10} "
-            f"{res['overall_error']:10.3e} {res['worst_point_error']:10.3e} "
-            f"{res['n_modes']:6d} {res['total_iters']:7d} {res['stop_reason']:>10}"
+            "  ".join(
+                [
+                    f"{_clip(cfg['name']):<{name_width}}",
+                    f"{r['config_id']:>9}",
+                    f"{res['overall_error']:10.3e}",
+                    f"{res['worst_point_error']:10.3e}",
+                    energy_str,
+                    f"{res['n_modes']:5d}",
+                    f"{res['total_iters']:6d}",
+                    secs_str,
+                    seed_str,
+                    f"{res['stop_reason']:<10}",
+                ]
+            )
         )
 
 
@@ -188,6 +234,7 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
 
         trainer_cls = ex.STRATEGIES[cfg.strategy]
         checkpoint = checkpoint_dir / f"pgd5_sweep_{cid}.pt"
+        started = _time.monotonic()
         problem = ex.main(
             verbose=verbose,
             plot=plot,
@@ -203,6 +250,10 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
             "result": extract_result(problem, errors),
             "meta": {
                 "timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
+                # Wall clock, this machine, including the error evaluation. A
+                # cost figure to read beside `total_iters`, not a benchmark:
+                # it is not comparable across machines or across a busy one.
+                "train_seconds": round(_time.monotonic() - started, 1),
                 "checkpoint": checkpoint.name,
                 "git_commit": _git_commit(),
                 "ledger_schema": 1,
@@ -212,7 +263,8 @@ def run_sweep(configs, ledger="sweep_results.jsonl", retrain=False,
         known.add(cid)
         if verbose:
             print(f"recorded: {cfg.name} ({cid}) "
-                  f"overall={row['result']['overall_error']:.3e}")
+                  f"overall={row['result']['overall_error']:.3e} "
+                  f"in {row['meta']['train_seconds']:.1f}s")
 
     return load_ledger(ledger)
 
@@ -257,6 +309,33 @@ def load_run(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None):
         checkpoint=checkpoint,
         retrain=False,
     )
+
+
+def show_run(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None):
+    """Reprint one row's full training log -- the per-stage table.
+
+    The same output the run itself printed, regenerated from its checkpoint
+    rather than from a retrain, because the ``TrainingHistory`` rides along in
+    the checkpoint. Use it when the ledger's one-line summary is not enough:
+    the per-stage table is where ``max corr`` lives, and a run whose modes are
+    copies of each other reads 1.0 there while its energy looks perfectly fine.
+
+    Args:
+        config_id (str): the row's ``config_id``, e.g. from :func:`show_ledger`.
+        ledger (str or Path): JSONL file the row lives in.
+        checkpoint_dir (str or Path, optional): passed through to
+            :func:`load_run`.
+
+    Returns:
+        Problem: the reloaded run, for further poking.
+    """
+    ex = _example()
+    kwargs = {"ledger": ledger}
+    if checkpoint_dir is not None:
+        kwargs["checkpoint_dir"] = checkpoint_dir
+    problem = load_run(config_id, **kwargs)
+    ex._report(problem, problem.history, verbose=True, plot=False)
+    return problem
 
 
 def plot_losses(config_id, ledger="sweep_results.jsonl", checkpoint_dir=None,
@@ -326,10 +405,18 @@ def _configs():
     """
     ex = _example()
     return [
-        ex.RunConfig(name="baseline-greedy"),
         ex.RunConfig(
-            name="baseline-simultaneous", strategy="simultaneous", min_iter=300
+            name="simultaneous-stage_tol1e-6-enrichment_tol1e=5-seed5", strategy="simultaneous",
+            min_iter=300, max_iter = 700, stage_tol=1e-6, enrichment_tol=1e-5, seed_amplitude=5.0,
         ),
+        # ex.RunConfig(
+        #     name="simultaneous-tol1e-5-seed0.05", strategy="simultaneous",
+        #     min_iter=300, stage_tol=1e-5, enrichment_tol=1e-5, seed_amplitude=0.05,
+        # ),
+        # ex.RunConfig(
+        #     name="simultaneous-tol1e-5-seed0.05", strategy="simultaneous",
+        #     min_iter=300, stage_tol=1e-5, enrichment_tol=1e-5, seed_amplitude=0.05,
+        # ),
     ]
 
 

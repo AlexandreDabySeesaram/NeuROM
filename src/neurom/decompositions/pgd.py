@@ -218,13 +218,35 @@ class CPPGD(TensorDecomposition):
 
     def freeze_mode(self, m):
         """Freeze the monoms of mode ``m``."""
-        for field in self.monoms[m]:
-            field.values_reduced.requires_grad_(False)
+        for k in range(len(self.axes)):
+            self.freeze_monom(m, k)
 
     def unfreeze_mode(self, m):
         """Unfreeze the monoms of mode ``m``."""
-        for field in self.monoms[m]:
-            field.values_reduced.requires_grad_(True)
+        for k in range(len(self.axes)):
+            self.unfreeze_monom(m, k)
+
+    def freeze_monom(self, m, k):
+        """Freeze mode ``m``'s monom on axis ``k`` alone.
+
+        The per-axis seam, of which :meth:`freeze_mode` is the loop over every
+        axis. A strategy that holds one direction fixed while fitting the others
+        -- alternating directions, or a schedule that pins the space factor as a
+        fixed *support* and retrains only the parametric ones -- goes through
+        here rather than reaching into ``monoms[m][k].values_reduced`` itself.
+
+        Args:
+            m (int): Mode index.
+            k (int): Axis index, in ``self.axes`` order.
+        """
+        self.monoms[m][k].values_reduced.requires_grad_(False)
+
+    def unfreeze_monom(self, m, k):
+        """Unfreeze mode ``m``'s monom on axis ``k`` alone.
+
+        See :meth:`freeze_monom`.
+        """
+        self.monoms[m][k].values_reduced.requires_grad_(True)
 
     def add_mode(self):
         """Enrich the decomposition with one new mode (greedy PGD).

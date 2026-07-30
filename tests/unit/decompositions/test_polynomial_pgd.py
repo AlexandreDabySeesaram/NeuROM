@@ -5,6 +5,7 @@ from neurom.decompositions import (
     Axis,
     CPPGD,
     PolynomialNLPGD,
+    pin_axis,
     total_degree_exponents,
     uniform_exponents,
 )
@@ -774,3 +775,247 @@ def test_truncated_drops_the_trailing_mode_including_its_coefficients():
         assert not torch.allclose(got, full)
 
     assert torch.allclose(poly.evaluate(query).reshape(-1), full)
+
+
+# --------------------------------------------------------------------------
+# 11. pin_axis
+# --------------------------------------------------------------------------
+
+
+def test_pin_axis_forces_the_column_and_leaves_the_rest():
+    pinned = pin_axis(uniform_exponents(5, 3), axis=0, power=1)
+    assert [tuple(int(v) for v in r) for r in pinned] == [
+        (1, 2, 2, 2, 2),
+        (1, 3, 3, 3, 3),
+    ]
+
+
+def test_pin_axis_deduplicates_and_drops_the_leading_term():
+    """total_degree collapses onto itself once a column is pinned."""
+    full = total_degree_exponents(3, 5)
+    pinned = pin_axis(full, axis=0, power=1)
+    rows = [tuple(int(v) for v in r) for r in pinned]
+
+    assert len(rows) == len(set(rows)), "rows must be unique"
+    assert (1, 1, 1) not in rows, "the leading term is carried separately"
+    assert all(r[0] == 1 for r in rows)
+    assert len(rows) < len(full), "this set really does collapse"
+    # (2,1,1) pins to (1,1,1) and must be dropped, not kept as a duplicate
+    # leading term -- that is the case that would silently double the mode.
+    assert (2, 1, 1) in [tuple(int(v) for v in r) for r in full]
+
+
+def test_pin_axis_result_is_a_valid_exponent_set():
+    """Whatever it returns must survive PolynomialNLPGD's own validation."""
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=pin_axis(uniform_exponents(2, 4), axis=0, power=1),
+    )
+    assert poly.n_terms == 3  # (1,2), (1,3), (1,4)
+
+
+def test_pin_axis_accepts_a_negative_axis():
+    pinned = pin_axis(uniform_exponents(3, 3), axis=-1, power=1)
+    assert all(int(r[-1]) == 1 for r in pinned)
+
+
+def test_pin_axis_rejects_a_zero_power():
+    with pytest.raises(ValueError, match="power must be >= 1"):
+        pin_axis(uniform_exponents(2, 3), axis=0, power=0)
+
+
+def test_pin_axis_rejects_an_out_of_range_axis():
+    with pytest.raises(ValueError, match="out of range"):
+        pin_axis(uniform_exponents(2, 3), axis=5, power=1)
+
+
+def test_pin_axis_rejects_a_set_that_collapses_to_nothing():
+    """uniform(2, 3) = {(2,2), (3,3)}; pinning BOTH columns leaves only (1,1)."""
+    with pytest.raises(ValueError, match="left the exponent set empty"):
+        pin_axis(pin_axis(uniform_exponents(2, 3), 0, 1), 1, 1)
+
+
+# --------------------------------------------------------------------------
+# 12. Optional leading coefficient
+# --------------------------------------------------------------------------
+
+
+def build_seeded_leading(exponents=None, n_modes_max=1):
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=n_modes_max,
+        exponents=exponents if exponents is not None else uniform_exponents(2, 3),
+        n_modes_ini=1,
+        leading_coefficients=True,
+    )
+    seed_monoms(poly, 1)
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.linspace(0.3, 0.8, poly.n_terms))
+    return poly
+
+
+def test_leading_coefficients_off_by_default_and_add_no_state():
+    """The flag must be free: no parameter, no state_dict key, no behaviour change."""
+    plain = PolynomialNLPGD(
+        axes=make_two_axes(), n_modes_max=2, exponents=uniform_exponents(2, 3)
+    )
+    assert plain.has_leading_coefficients is False
+    assert plain.leading_coefficients is None
+    assert not any("leading" in k for k in plain.state_dict())
+
+    with pytest.raises(RuntimeError, match="no leading coefficients"):
+        plain.unfreeze_mode_leading_coefficient(0)
+
+
+def test_leading_coefficients_on_adds_exactly_the_expected_state():
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=2,
+        exponents=uniform_exponents(2, 3),
+        leading_coefficients=True,
+    )
+    keys = [k for k in poly.state_dict() if "leading_coefficients" in k]
+    assert len(keys) == 2  # one scalar per mode
+    assert all(float(c) == 1.0 for c in poly.leading_coefficients)
+    assert all(not c.requires_grad for c in poly.leading_coefficients)
+
+
+def test_a_unit_leading_coefficient_is_bitwise_the_fixed_weight():
+    """c = 1 must reproduce the fixed-weight decomposition exactly, not nearly."""
+    exponents = uniform_exponents(2, 3)
+    plain = build_seeded(exponents)
+    lead = build_seeded_leading(exponents)
+
+    query = torch.stack(
+        [QUERY_X.repeat_interleave(len(QUERY_E)), QUERY_E.repeat(len(QUERY_X))], dim=1
+    )
+    assert torch.equal(plain.evaluate(query), lead.evaluate(query))
+    assert torch.equal(
+        plain.assemble([QUERY_X, QUERY_E]), lead.assemble([QUERY_X, QUERY_E])
+    )
+
+
+def test_the_leading_coefficient_scales_only_the_leading_term():
+    poly = build_seeded_leading()
+    grid = poly.assemble([QUERY_X, QUERY_E])
+
+    with torch.no_grad():
+        poly.coefficients[0].zero_()  # corrections off: only the leading term left
+    leading_only = poly.assemble([QUERY_X, QUERY_E])
+
+    with torch.no_grad():
+        poly.leading_coefficients[0].fill_(3.0)
+    assert torch.allclose(
+        poly.assemble([QUERY_X, QUERY_E]), 3.0 * leading_only, atol=1e-5
+    )
+    assert not torch.allclose(leading_only, grid)
+
+
+def test_polynomial_directory_reports_the_leading_coefficient():
+    poly = build_seeded_leading()
+    terms = poly.polynomial_directory()
+
+    mode, exponents, coefficient = terms[0]
+    assert (mode, exponents) == (0, (1, 1))
+    assert coefficient is poly.leading_coefficients[0]
+
+    # ... and still None when the weight is fixed, so existing consumers of the
+    # `1.0 if coefficient is None else coefficient` idiom are unaffected.
+    assert build_seeded(uniform_exponents(2, 3)).polynomial_directory()[0][2] is None
+
+
+def test_leading_coefficient_lifecycle():
+    poly = build_seeded_leading()
+    assert not poly.leading_coefficients[0].requires_grad
+
+    poly.unfreeze_mode_leading_coefficient(0)
+    assert poly.leading_coefficients[0].requires_grad
+    assert poly.mode_coefficient_parameters(0) == [
+        poly.leading_coefficients[0],
+        poly.coefficients[0],
+    ]
+    assert poly.mode_parameters(0)[-2] is poly.leading_coefficients[0]
+
+    poly.freeze_all()
+    assert not poly.leading_coefficients[0].requires_grad
+
+
+@pytest.mark.parametrize(
+    "exponents", [uniform_exponents(2, 3), total_degree_exponents(2, 4)]
+)
+def test_renormalise_with_a_leading_coefficient_preserves_the_field(exponents):
+    poly = build_seeded_leading(exponents)
+    with torch.no_grad():
+        poly.leading_coefficients[0].fill_(2.5)  # not 1, so the c-path is exercised
+    before_energy = energy_of(poly)
+    before_grid = poly.assemble([QUERY_X, QUERY_E])
+
+    poly.renormalise()
+
+    assert energy_of(poly) == pytest.approx(before_energy, rel=1e-5)
+    assert torch.allclose(poly.assemble([QUERY_X, QUERY_E]), before_grid, atol=1e-4)
+
+
+def test_renormalise_with_a_leading_coefficient_normalises_every_axis():
+    """d conditions, not d - 1: the amplitude moves onto c, not onto axis 0."""
+    poly = build_seeded_leading()
+    before = [float(n) for n in poly.monom_norms(0)]
+    assert not all(n == pytest.approx(1.0, rel=1e-4) for n in before)
+
+    poly.renormalise()
+
+    after = [float(n) for n in poly.monom_norms(0)]
+    assert all(n == pytest.approx(1.0, rel=1e-4) for n in after)
+    # The scale went to c, which started at 1.
+    assert float(poly.leading_coefficients[0]) == pytest.approx(
+        before[0] * before[1], rel=1e-4
+    )
+
+
+def test_renormalise_with_a_leading_coefficient_puts_every_term_on_one_scale():
+    """The claim the whole option exists for.
+
+    With every monom at unit norm, a term's natural size
+    ``prod_j ||w_ij||^lambda_j`` is 1 for EVERY exponent row -- so the leading
+    coefficient and every row of C share a scale. Under the d-1 fix the same
+    quantity is ``A^p``, which is what forces one Adam ``coefficient_lr`` to
+    serve rows orders of magnitude apart.
+    """
+    poly = build_seeded_leading(uniform_exponents(2, 4))
+    poly.renormalise()
+    norms = poly.monom_norms(0)
+
+    for row in poly.exponents:
+        natural_size = 1.0
+        for k, power in enumerate(row):
+            natural_size *= float(norms[k]) ** int(power)
+        assert natural_size == pytest.approx(1.0, rel=1e-3)
+
+    # ... and the contrast: without the leading coefficient, axis 0 keeps the
+    # amplitude A and the p-th row's natural size is A^p, not 1.
+    plain = build_seeded(uniform_exponents(2, 4))
+    plain.renormalise()
+    plain_norms = plain.monom_norms(0)
+    amplitude = float(plain_norms[0])
+    assert amplitude != pytest.approx(1.0, rel=1e-2)
+    for row in plain.exponents:
+        natural_size = 1.0
+        for k, power in enumerate(row):
+            natural_size *= float(plain_norms[k]) ** int(power)
+        assert natural_size == pytest.approx(amplitude ** int(row[0]), rel=1e-3)
+
+
+def test_renormalise_with_a_leading_coefficient_is_idempotent():
+    poly = build_seeded_leading(total_degree_exponents(2, 4))
+    poly.renormalise()
+    once = [f.values_reduced.detach().clone() for f in poly.monoms[0]]
+    once_c = poly.leading_coefficients[0].detach().clone()
+
+    poly.renormalise()
+
+    assert all(
+        torch.allclose(f.values_reduced, b, atol=1e-6)
+        for f, b in zip(poly.monoms[0], once)
+    )
+    assert torch.allclose(poly.leading_coefficients[0], once_c, atol=1e-6)

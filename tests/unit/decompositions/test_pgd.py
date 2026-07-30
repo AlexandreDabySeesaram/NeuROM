@@ -198,6 +198,34 @@ def test_add_mode_raises_at_max():
         model.add_mode()
 
 
+def test_freeze_monom_freezes_exactly_one_axis():
+    """The per-axis seam: hold the space factor, keep the parametric one live."""
+    model = CPPGD(axes=make_two_axes(), n_modes_max=2, n_modes_ini=2)
+    assert all(f.values_reduced.requires_grad for f in model.monoms[1])
+
+    model.freeze_monom(1, 0)
+
+    assert not model.monoms[1][0].values_reduced.requires_grad
+    assert model.monoms[1][1].values_reduced.requires_grad
+    # ... and mode 0 is untouched.
+    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
+
+    model.unfreeze_monom(1, 0)
+    assert all(f.values_reduced.requires_grad for f in model.monoms[1])
+
+
+def test_freeze_mode_is_freeze_monom_over_every_axis():
+    model = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    model.freeze_mode(0)
+    assert all(not f.values_reduced.requires_grad for f in model.monoms[0])
+
+    # A single frozen axis must not be mistaken for a frozen mode: unfreezing
+    # the mode releases every axis, including the one frozen on its own.
+    model.freeze_monom(0, 1)
+    model.unfreeze_mode(0)
+    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
+
+
 def test_mode_parameters_returns_one_param_per_axis():
     axes = make_two_axes()
     model = CPPGD(axes=axes, n_modes_max=2, n_modes_ini=1)

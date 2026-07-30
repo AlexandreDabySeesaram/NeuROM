@@ -87,6 +87,70 @@ def total_degree_exponents(n_axes, max_total):
     return torch.tensor(rows, dtype=torch.long)
 
 
+def pin_axis(exponents, axis=0, power=1):
+    """Force one axis' column of an exponent set to a fixed power.
+
+    A *transform*, not a third builder, so it composes with both
+    :func:`uniform_exponents` and :func:`total_degree_exponents` rather than
+    duplicating either. The motivating case is the "frozen support" schedule:
+    with the space monom held fixed as a mere support for the parametric
+    factors, its exponent should stay at 1 and the non-linearity should live in
+    the parameters alone -- ``pin_axis(uniform_exponents(5, 3), 0, 1)`` turns
+    ``{(2,2,2,2,2), (3,3,3,3,3)}`` into ``{(1,2,2,2,2), (1,3,3,3,3)}``.
+
+    Pinning can collapse distinct rows onto each other and can manufacture the
+    leading term (``total_degree``'s ``(2,1,1,1,1)`` pins to ``(1,1,1,1,1)``), so
+    the result is deduplicated and the leading term dropped. Row order is
+    otherwise preserved, first occurrence winning.
+
+    Args:
+        exponents (torch.Tensor): ``(T, d)`` integer exponent set.
+        axis (int): Which column to pin, in the decomposition's axis order.
+        power (int): The value to pin it to; must be ``>= 1``, since a zero
+            exponent cannot satisfy the axis' essential boundary condition.
+
+    Returns:
+        torch.Tensor: ``(T', d)`` long tensor with ``T' <= T``.
+
+    Raises:
+        ValueError: if ``power < 1``, if ``axis`` is out of range, or if pinning
+            leaves the set empty (every row was the leading term).
+    """
+    if not torch.is_tensor(exponents):
+        exponents = torch.as_tensor(exponents)
+    if exponents.dim() != 2:
+        raise ValueError(
+            f"exponents must be a (T, d) tensor; got shape {tuple(exponents.shape)}."
+        )
+    n_axes = exponents.shape[1]
+    if not -n_axes <= axis < n_axes:
+        raise ValueError(f"axis {axis} out of range for {n_axes} axes.")
+    if power < 1:
+        raise ValueError(
+            f"power must be >= 1 (a zero exponent makes the term constant along "
+            f"that axis, which cannot satisfy its essential boundary condition); "
+            f"got {power}."
+        )
+
+    pinned = exponents.clone().to(torch.long)
+    pinned[:, axis] = power
+
+    kept, seen = [], set()
+    for row in pinned:
+        key = tuple(int(v) for v in row)
+        if key in seen or all(v == 1 for v in key):
+            continue
+        seen.add(key)
+        kept.append(key)
+    if not kept:
+        raise ValueError(
+            f"pin_axis(..., axis={axis}, power={power}) left the exponent set "
+            "empty: every row pinned onto the leading term (1, ..., 1), which is "
+            "carried separately. Raise the bound of the underlying set."
+        )
+    return torch.tensor(kept, dtype=torch.long)
+
+
 class PolynomialNLPGD(CPPGD):
     """Non-linear PGD whose modes are polynomials in their own monoms.
 
@@ -127,6 +191,27 @@ class PolynomialNLPGD(CPPGD):
         :meth:`add_mode` is inherited untouched and never releases coefficients;
         that is always an explicit call.
 
+    Optional leading coefficient ``c_i``
+        With ``leading_coefficients=True`` the leading term's fixed weight 1
+        becomes a trainable scalar per mode,
+
+            u = sum_i ( c_i prod_j w_ij + sum_lambda C_{i lambda} prod_j w_ij^lambda_j ).
+
+        **This adds no expressivity.** Rescaling ``w_ij -> s_j w_ij`` with
+        ``prod_j s_j = c`` reproduces any ``c`` exactly -- it *is* the gauge
+        direction the fixed weight pins (see below). It is worth having anyway,
+        for two reasons that are about the parameterisation, not the model:
+
+        * *Reachability.* A mode with no linear part at all (``c_i -> 0``) is
+          only a limit point of the fixed-weight parameterisation -- monoms to 0
+          with ``C_lambda`` to infinity. Here it is an ordinary interior point.
+        * *Scale.* Releasing ``c_i`` lets :meth:`renormalise` normalise all
+          ``d`` monoms instead of ``d - 1``, which puts ``c_i`` and every row of
+          ``C_i`` on one scale. See :meth:`renormalise_mode`.
+
+        Off by default, and then no parameter is created at all, so ``state_dict``
+        is unchanged and checkpoints written without it still load.
+
     Gauge degeneracy (known, not corrected)
         The representation is invariant under the *per-axis* rescaling
 
@@ -137,6 +222,11 @@ class PolynomialNLPGD(CPPGD):
         freely would scale ``prod_j w_ij`` and change the field. So pinning that
         coefficient already gauge-fixes one direction, and ``d - 1`` flat
         directions per mode remain.
+
+        With ``leading_coefficients=True`` the constraint lifts (``c_i`` absorbs
+        ``prod_j s_j``, and the leading term's exponent row ``(1, ..., 1)`` obeys
+        the same rule as every other), so the orbit is ``d``-dimensional per mode
+        and :meth:`renormalise` imposes ``d`` conditions instead of ``d - 1``.
 
         Consequence: the Hessian is singular in ``d - 1`` directions per mode,
         and the monom/coefficient split is not identifiable. :meth:`renormalise`
@@ -158,9 +248,21 @@ class PolynomialNLPGD(CPPGD):
             equal ``(1, ..., 1)``.
         name (str): Prefix for the monom field names.
         n_modes_ini (int): Number of initially active (trainable) modes.
+        leading_coefficients (bool): Make each mode's leading weight ``c_i`` a
+            trainable scalar instead of a fixed 1. Defaults to False, which
+            creates no parameter and leaves ``state_dict`` untouched. See the
+            ``Optional leading coefficient`` section above.
     """
 
-    def __init__(self, axes, n_modes_max, exponents, name="poly_pgd", n_modes_ini=1):
+    def __init__(
+        self,
+        axes,
+        n_modes_max,
+        exponents,
+        name="poly_pgd",
+        n_modes_ini=1,
+        leading_coefficients=False,
+    ):
         axes = list(axes)
         for a in axes:
             if a.init_values.shape[1] > 1:
@@ -191,6 +293,22 @@ class PolynomialNLPGD(CPPGD):
         # exactly CPPGD until a coefficient row is explicitly released.
         for c in self.coefficients:
             c.requires_grad_(False)
+
+        # The leading term's weight. Off by default, and then it is not a
+        # parameter at all -- no ParameterList is built, so `state_dict` is
+        # byte-for-byte what it was before this option existed and every
+        # checkpoint written without it still loads. On, it is one scalar per
+        # mode, initialised at 1 (the fixed weight it replaces) and frozen, so
+        # even an enabled-but-unreleased decomposition evaluates identically.
+        self.has_leading_coefficients = bool(leading_coefficients)
+        if self.has_leading_coefficients:
+            self.leading_coefficients = nn.ParameterList(
+                [torch.nn.Parameter(torch.ones(())) for _ in range(self.n_modes_max)]
+            )
+            for c in self.leading_coefficients:
+                c.requires_grad_(False)
+        else:
+            self.leading_coefficients = None
 
     @staticmethod
     def _validate_exponents(exponents, n_axes):
@@ -238,8 +356,36 @@ class PolynomialNLPGD(CPPGD):
         """Unfreeze mode ``m``'s coefficient row (the monoms are untouched)."""
         self.coefficients[m].requires_grad_(True)
 
+    def freeze_mode_leading_coefficient(self, m):
+        """Freeze mode ``m``'s leading coefficient ``c_m``.
+
+        Raises:
+            RuntimeError: if the decomposition was built without
+                ``leading_coefficients``, in which case the leading weight is a
+                fixed 1 and there is nothing to freeze.
+        """
+        self._require_leading_coefficients()
+        self.leading_coefficients[m].requires_grad_(False)
+
+    def unfreeze_mode_leading_coefficient(self, m):
+        """Unfreeze mode ``m``'s leading coefficient ``c_m``.
+
+        See :meth:`freeze_mode_leading_coefficient`.
+        """
+        self._require_leading_coefficients()
+        self.leading_coefficients[m].requires_grad_(True)
+
+    def _require_leading_coefficients(self):
+        if not self.has_leading_coefficients:
+            raise RuntimeError(
+                "this PolynomialNLPGD has no leading coefficients: the leading "
+                "term's weight is a fixed 1. Build it with "
+                "PolynomialNLPGD(..., leading_coefficients=True) to make it "
+                "trainable."
+            )
+
     def freeze_all(self):
-        """Freeze every mode's monoms *and* coefficients."""
+        """Freeze every mode's monoms *and* coefficients, leading ones included."""
         super().freeze_all()
         # CPPGD.__init__ calls freeze_all() before this subclass has built its
         # coefficients; nothing to freeze on that first pass.
@@ -247,6 +393,9 @@ class PolynomialNLPGD(CPPGD):
             return
         for m in range(self.n_modes_max):
             self.freeze_mode_coefficients(m)
+        if getattr(self, "leading_coefficients", None) is not None:
+            for m in range(self.n_modes_max):
+                self.freeze_mode_leading_coefficient(m)
 
     def mode_coefficient_parameters(self, m=None):
         """Mode ``m``'s coefficient row alone, for a correction-only stage.
@@ -256,18 +405,22 @@ class PolynomialNLPGD(CPPGD):
                 supported. Defaults to the last-activated mode.
 
         Returns:
-            list[torch.Tensor]: a single-element list holding the ``(T,)``
-            coefficient parameter.
+            list[torch.Tensor]: the ``(T,)`` coefficient parameter, preceded by
+            the scalar leading coefficient when the decomposition has one.
         """
-        return [self.coefficients[self._resolve_mode(m)]]
+        m = self._resolve_mode(m)
+        if self.has_leading_coefficients:
+            return [self.leading_coefficients[m], self.coefficients[m]]
+        return [self.coefficients[m]]
 
     def mode_parameters(self, m=None):
-        """Mode ``m``'s monom parameters plus its coefficient row.
+        """Mode ``m``'s monom parameters plus its coefficients.
 
         See :meth:`~neurom.decompositions.pgd.CPPGD.mode_parameters`; this adds
-        the ``(T,)`` coefficient tensor as the trailing entry.
+        the ``(T,)`` coefficient tensor, and the scalar leading coefficient
+        before it when the decomposition has one, as the trailing entries.
         """
-        return [*super().mode_parameters(m), self.coefficients[self._resolve_mode(m)]]
+        return [*super().mode_parameters(m), *self.mode_coefficient_parameters(m)]
 
     def _resolve_mode(self, m):
         """Normalise a (possibly negative or ``None``) mode index against actives."""
@@ -369,19 +522,44 @@ class PolynomialNLPGD(CPPGD):
 
         Does not re-check the constraints; :meth:`renormalise` is the guarded
         entry point.
+
+        Two regimes, according to whether the leading weight is a free parameter:
+
+        * **Fixed leading weight** (the default). ``prod_j s_j = 1`` is forced,
+          so only ``d - 1`` conditions are available: the last ``d - 1`` monoms
+          go to unit norm and axis 0 absorbs the amplitude ``A``.
+        * **Leading coefficient live.** The constraint lifts -- any overall
+          scale can be absorbed by ``c_m`` -- so **all ``d``** monoms go to unit
+          norm and ``c_m`` takes the amplitude. This is the regime worth having:
+          with every ``||w_ij|| = 1``, every term's natural size
+          ``prod_j ||w_ij||^lambda_j`` is 1 whatever ``lambda``, so ``c_m`` and
+          every row of ``C_m`` sit on the *same* scale. Under the ``d - 1`` fix
+          they sit at ``A^(1 - p)``, orders apart, which is what makes a single
+          Adam ``coefficient_lr`` unable to serve them all.
         """
         norms = self.monom_norms(m)
         if not all(bool(torch.isfinite(n)) and float(n) > 0.0 for n in norms):
             return
 
         scales = [torch.ones_like(norms[0]) for _ in norms]
-        for k in range(1, len(norms)):
-            scales[k] = 1.0 / norms[k]
-            scales[0] = scales[0] * norms[k]
+        if self.has_leading_coefficients:
+            for k in range(len(norms)):
+                scales[k] = 1.0 / norms[k]
+        else:
+            for k in range(1, len(norms)):
+                scales[k] = 1.0 / norms[k]
+                scales[0] = scales[0] * norms[k]
 
         with torch.no_grad():
             for k, s in enumerate(scales):
                 self.monoms[m][k].values_reduced.mul_(s)
+            if self.has_leading_coefficients:
+                # The leading term's exponent row is (1, ..., 1), so it takes
+                # the same prod_j s_j^(-lambda_j) rule as every other term.
+                leading = torch.ones_like(norms[0])
+                for s in scales:
+                    leading = leading / s
+                self.leading_coefficients[m] *= leading
             for t in range(self.n_terms):
                 factor = torch.ones_like(norms[0])
                 for k, s in enumerate(scales):
@@ -404,9 +582,13 @@ class PolynomialNLPGD(CPPGD):
 
             * ``exponents`` -- one power per axis, in ``self.axes`` order, all
               ``>= 1``.
-            * ``coefficient`` -- ``None`` for the leading term of each mode
-              (fixed weight 1, not a parameter), otherwise the matching element
-              of ``self.coefficients[mode]``.
+            * ``coefficient`` -- for a correction term, the matching element of
+              ``self.coefficients[mode]``. For a mode's **leading** term,
+              ``None`` when the leading weight is a fixed 1 (the default), or
+              ``self.leading_coefficients[mode]`` when the decomposition was
+              built with ``leading_coefficients=True``. A consumer that reads it
+              as ``1.0 if coefficient is None else coefficient`` therefore needs
+              no change to support either.
 
             Ordered mode-major: for each active mode, its leading term
             (``exponents = (1,) * n_axes``) then its ``|I|`` correction terms.
@@ -420,7 +602,8 @@ class PolynomialNLPGD(CPPGD):
         rows = [tuple(int(v) for v in lam) for lam in self.exponents]
         out = []
         for m in range(self.n_modes_truncated):
-            out.append((m, leading, None))
+            c = self.leading_coefficients[m] if self.has_leading_coefficients else None
+            out.append((m, leading, c))
             for t, lam in enumerate(rows):
                 out.append((m, lam, self.coefficients[m][t]))
         return out
@@ -436,11 +619,15 @@ class PolynomialNLPGD(CPPGD):
             m (int): mode index, selecting the coefficient row.
 
         Returns:
-            torch.Tensor: ``prod_k cols[k] + sum_t C[m, t] prod_k cols[k]**lam[t, k]``.
+            torch.Tensor: ``c_m prod_k cols[k] + sum_t C[m, t] prod_k
+            cols[k]**lam[t, k]``, with ``c_m`` a fixed 1 unless the
+            decomposition carries leading coefficients.
         """
         total = cols[0]
         for c in cols[1:]:
             total = total * c
+        if self.has_leading_coefficients:
+            total = self.leading_coefficients[m] * total
         for t in range(self.n_terms):
             term = cols[0] ** int(self.exponents[t, 0])
             for k, c in enumerate(cols[1:], start=1):

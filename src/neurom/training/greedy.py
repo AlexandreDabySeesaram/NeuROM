@@ -52,6 +52,20 @@ class GreedyTrainer(PGDTrainer):
         self.fix_gauge()
         self.make_optimizer()
 
+    def on_run_end(self):
+        """Fix the gauge one last time, so the last mode is normalised too.
+
+        :meth:`prepare_stage` fixes it *before* each stage, which leaves the
+        final stage's own drift in place. Measured on
+        ``l3-lead_coeffTrue-uniform3-r6-renorm``: every mode came out at unit
+        monom norms except the last, at ``||w||`` up to ``1.6e1`` -- and that was
+        the one mode whose highest-degree term took 100% of the amplitude, two
+        orders above its neighbours. The fix is field-preserving, so this moves
+        only coefficients; what it buys is that a checkpoint's ``c`` and ``C``
+        are comparable across *every* mode rather than all but one.
+        """
+        self.fix_gauge()
+
     def should_add_stage(self, stage_index):
         """Stop at capacity or when a new mode stops paying for itself.
 

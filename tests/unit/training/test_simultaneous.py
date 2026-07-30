@@ -255,13 +255,29 @@ def test_each_stage_gets_a_fresh_optimizer():
     assert trainer.optimizer is not first
 
 
-def test_greedy_fixes_the_gauge_once_per_stage():
+def test_greedy_fixes_the_gauge_once_per_stage_and_once_at_the_end():
     # The gauge fix must run before make_optimizer, so the rescaled parameters
-    # never carry Adam moments accumulated against the old scaling.
+    # never carry Adam moments accumulated against the old scaling. That leaves
+    # the final stage's own drift unfixed, hence the extra call from
+    # `on_run_end` -- without it the last mode is the only one the checkpoint
+    # holds at a non-unit scale, which is exactly where a real run's
+    # highest-degree term ran away.
     trainer = make_trainer(cls=GreedyTrainer, n_modes_max=3, n_iter=5)
     trainer.enrich()
 
-    assert trainer.model.decomposition.renormalise_calls == 3
+    assert trainer.model.decomposition.renormalise_calls == 3 + 1
+
+
+def test_a_diverged_run_does_not_fix_the_gauge_at_the_end():
+    # The parameters are NaN by then, and `renormalise` raises on a non-finite
+    # norm -- which would bury the divergence under an unrelated exception.
+    trainer = make_trainer(cls=GreedyTrainer, n_modes_max=3, n_iter=5)
+    trainer.model.loss = lambda output: output.sum() * float("nan")
+    trainer.enrich()
+
+    assert trainer.history.stop_reason == "diverged"
+    # One call only: `prepare_stage(0)`, before the stage that diverged.
+    assert trainer.model.decomposition.renormalise_calls == 1
 
 
 def test_renormalise_false_skips_the_gauge_fix():

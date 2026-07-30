@@ -153,8 +153,24 @@ class PGDTrainer(ABC):
             if record.diverged:
                 self.history.stop_reason = "diverged"
                 break
+        else:
+            # `while ... else`: reached only when the loop ran out of stages, not
+            # when it broke on divergence -- where the parameters are NaN and
+            # anything the hook does to them would pile onto the real failure.
+            self.on_run_end()
         self.progress.close()
         return self.history
+
+    def on_run_end(self):
+        """Hook for whatever a strategy owes the final state. Default: nothing.
+
+        Called once, after the last stage, and **only** when the run ended
+        normally. The base has nothing to do here -- it knows nothing about
+        modes -- so this exists for the subclasses that fix a gauge in
+        :meth:`prepare_stage`: that is *before* a stage, so the last stage of the
+        run is never followed by one, and without this hook a run ends holding
+        whatever scale it happened to drift to.
+        """
 
     def stage(self, stage_index):
         """Iterate :meth:`step` until the stage criterion fires.

@@ -172,7 +172,12 @@ def test_amplitude_is_the_frobenius_norm_of_the_mode(problem):
         expected *= float(field.full_values().detach().norm())
 
     record = trainer.history.stages[0]
-    assert record.diagnostics["amplitude"] == pytest.approx(expected, rel=1e-9)
+    # `rel` is not 1e-9 because the two sides are no longer the same state:
+    # `amplitude` is recorded in `on_stage_end`, and `on_run_end` then fixes the
+    # gauge once more. `prod_j ||w_j||` is invariant under that fix (it imposes
+    # `prod_j s_j = 1`), so the comparison still pins the value -- and now also
+    # asserts the invariance -- but only to the float error of a rescaling.
+    assert record.diagnostics["amplitude"] == pytest.approx(expected, rel=1e-6)
 
 
 def test_max_correlation_is_one_for_a_deliberately_duplicated_mode(problem):

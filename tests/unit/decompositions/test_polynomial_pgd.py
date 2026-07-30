@@ -4,6 +4,8 @@ import torch
 from neurom.decompositions import (
     Axis,
     CPPGD,
+    LegendreBasis,
+    MonomialBasis,
     PolynomialNLPGD,
     pin_axis,
     total_degree_exponents,
@@ -1302,3 +1304,187 @@ def test_the_deflation_factor_carries_a_gradient():
     beta = poly.deflation_factor(0, 0, 2)
 
     assert beta.requires_grad
+
+
+# --------------------------------------------------------------------------
+# 9. Injected term bases
+# --------------------------------------------------------------------------
+
+
+def build_with_bases(exponents, bases, leading=False):
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=exponents,
+        n_modes_ini=1,
+        leading_coefficients=leading,
+        bases=bases,
+    )
+    seed_monoms(poly, 1)
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.linspace(0.3, 0.8, poly.n_terms))
+    return poly
+
+
+def legendre_on_the_second_axis():
+    """Monomial on axis 0, Legendre on axis 1 -- the beam's arrangement in small.
+
+    Axis 0 stands for `space`, which must keep the monomials because its
+    Dirichlet condition makes the monom vanish at both ends and `P_2(0) != 0`.
+    """
+    return [MonomialBasis(), LegendreBasis()]
+
+
+def test_no_bases_is_the_monomial_family_and_changes_nothing():
+    # The guard on every existing checkpoint and every number in the ledger.
+    exponents = uniform_exponents(2, 3)
+    coords = torch.stack([QUERY_X, torch.tensor([400.0, 700.0, 1000.0])], dim=1)
+
+    implicit = build_seeded(exponents)
+    explicit = build_with_bases(exponents, [MonomialBasis(), MonomialBasis()])
+
+    assert set(implicit.state_dict()) == set(explicit.state_dict())
+    assert torch.equal(implicit.evaluate(coords), explicit.evaluate(coords))
+    assert implicit.has_uniform_monomial_basis
+
+
+def test_bases_must_have_one_entry_per_axis():
+    with pytest.raises(ValueError, match="one family per axis"):
+        PolynomialNLPGD(
+            axes=make_two_axes(),
+            n_modes_max=1,
+            exponents=uniform_exponents(2, 2),
+            bases=[MonomialBasis()],
+        )
+
+
+def test_orthogonal_corrections_and_a_non_monomial_basis_are_exclusive():
+    # Both attack the leading-vs-correction overlap; deflating an already
+    # orthogonal family subtracts ~0 and only doubles the term count.
+    with pytest.raises(ValueError, match="same overlap"):
+        PolynomialNLPGD(
+            axes=make_two_axes(),
+            n_modes_max=1,
+            exponents=uniform_exponents(2, 2),
+            orthogonal_corrections=True,
+            bases=legendre_on_the_second_axis(),
+        )
+
+
+def test_the_normalised_argument_stays_inside_the_unit_interval():
+    # The whole point of the sup norm rather than the L2 one: Legendre is only
+    # orthogonal on [-1, 1], and an L2 normalisation leaves the peaks outside.
+    poly = build_with_bases(uniform_exponents(2, 2), legendre_on_the_second_axis())
+    fill_layout(poly)
+    r = poly._assemblies[0][1].interpolate()
+    scaled = r.u / poly.monom_scale(0, 1)
+
+    assert float(scaled.abs().max()) == pytest.approx(1.0)
+    # ... and the monomial axis is left alone, at a plain 1.0.
+    assert poly.monom_scale(0, 0) == 1.0
+
+
+def test_basis_derivative_carries_the_normalising_scale():
+    # The silent-failure test. On the monomial path scale == 1, so a dropped or
+    # doubled 1/scale is invisible; under Legendre it is a quietly wrong energy
+    # gradient. Checked against autograd through the whole seam.
+    poly = build_with_bases(uniform_exponents(2, 2), legendre_on_the_second_axis())
+    fill_layout(poly)
+    values = torch.tensor([-0.4, 0.1, 0.6], requires_grad=True)
+
+    poly.basis_value(0, 1, 2, values).sum().backward()
+
+    assert torch.allclose(poly.basis_derivative(0, 1, 2, values.detach()), values.grad)
+
+
+def test_a_legendre_factor_is_invariant_when_its_monom_is_rescaled():
+    # psi_p(w / ||w||_inf) does not move with w's scale -- for the corrections
+    # AND for the leading term, since psi_1 is the identity of the same
+    # normalised argument. That is why renormalise_mode must skip such an axis.
+    poly = build_with_bases(uniform_exponents(2, 2), legendre_on_the_second_axis())
+    fill_layout(poly)
+    before = poly.basis_value(0, 1, 2, poly._assemblies[0][1].interpolate().u).clone()
+
+    with torch.no_grad():
+        poly.monoms[0][1].values_reduced.mul_(3.0)
+    fill_layout(poly)
+    after = poly.basis_value(0, 1, 2, poly._assemblies[0][1].interpolate().u)
+
+    assert torch.allclose(before, after, atol=1e-10)
+
+
+def test_renormalise_is_field_preserving_with_a_legendre_axis():
+    # renormalise_mode acts on the homogeneous axes only. If it applied the
+    # s^(-lambda) rule to the Legendre axis too it would change the field, which
+    # is exactly what this compares.
+    poly = build_with_bases(
+        uniform_exponents(2, 2), legendre_on_the_second_axis(), leading=True
+    )
+    with torch.no_grad():
+        poly.leading_coefficients[0].fill_(1.3)
+    grid = [QUERY_X, torch.tensor([400.0, 700.0])]
+    before = poly.assemble(grid).clone()
+    coefficient_before = poly.coefficients[0].detach().clone()
+
+    poly.renormalise()
+
+    assert torch.allclose(poly.assemble(grid), before, atol=1e-6)
+    # The Legendre axis contributes no factor, so C moves only by the monomial
+    # axis' scale -- and here axis 0 is the only gauged one.
+    assert not torch.allclose(poly.coefficients[0], coefficient_before)
+
+
+def test_factor_norm_is_the_norm_of_the_factor_not_the_powered_norm():
+    # The bug this replaced: ||w^p|| != ||w||^p, and the two agree only at p = 1.
+    poly = build_seeded(uniform_exponents(2, 2))
+    fill_layout(poly)
+
+    for k in range(2):
+        assert float(poly.factor_norm(0, k, 1)) == pytest.approx(
+            float(poly.monom_norms(0)[k]), rel=1e-9
+        )
+
+    powered = float(poly.monom_norms(0)[0]) ** 2
+    assert float(poly.factor_norm(0, 0, 2)) != pytest.approx(powered, rel=1e-3)
+
+
+def test_legendre_leaves_less_overlap_with_the_leading_term_than_the_monomials():
+    # THE measurement the basis choice rests on. Legendre is orthogonal for the
+    # uniform measure, but <psi_a(w), psi_b(w)> integrates against the law of
+    # w's VALUES, which is not uniform -- so orthogonality here is approximate
+    # and its quality is a number, not an assumption. Asserted as a ratio
+    # against the monomial family rather than against a fixed threshold.
+    def overlap(poly):
+        # <prod_j psi_{lam_j}(w_j), prod_j w_j> factorises into per-axis
+        # integrals; normalised by each factor's own norm so the result is a
+        # cosine and cannot be made small by shrinking the term.
+        fill_layout(poly)
+        lam = [int(v) for v in poly.exponents[0]]
+        cosine = 1.0
+        for k in range(2):
+            r = poly._assemblies[0][k].interpolate()
+            f = poly.basis_value(0, k, lam[k], r.u)
+            g = poly.basis_value(0, k, 1, r.u)
+            num = float(integrate(f * g * r.measure))
+            den = float(poly.factor_norm(0, k, lam[k])) * float(
+                poly.factor_norm(0, k, 1)
+            )
+            cosine *= num / den
+        return abs(cosine)
+
+    exponents = uniform_exponents(2, 2)
+    monomial = overlap(build_seeded(exponents))
+    legendre = overlap(build_with_bases(exponents, [LegendreBasis(), LegendreBasis()]))
+
+    # MEASURED on this fixture: monomial 0.949, Legendre 0.476 -- a factor 2, not
+    # the orthogonality the family is named for. That is the expected shape of
+    # the answer, not a failure: <psi_a(w), psi_b(w)> integrates against the law
+    # of w's values, and Legendre is orthogonal for the *uniform* law. How far
+    # the two laws are apart is exactly what this number reports.
+    #
+    # The bound is loose on purpose. It pins the direction (Legendre reduces the
+    # overlap, and substantially) without pretending to a precision the fixture
+    # cannot support: 4 and 5 nodes with hand-written monom values, so the value
+    # distribution is whatever `MONOM_VALUES` happens to be. The number that
+    # decides whether the basis is good enough is the one on the real problem.
+    assert legendre < 0.6 * monomial

@@ -198,12 +198,22 @@ def _flat(result_attr):
     return result_attr.reshape(-1)
 
 
-def brute_force_energy(layout, decomposition, load_name="load", include_tanh=True):
+def brute_force_energy(
+    layout, decomposition, load_name="load", include_tanh=True, basis=None
+):
     """Reference energy by direct 5-D tensor-product quadrature.
 
     ``include_tanh=False`` drops the tanh term from the modulus, leaving the
     constant modulus (E1 + E2) / 2 -- used to check the coupled block cancels
     when it must.
+
+    ``basis`` overrides how a factor is evaluated, as ``(value, derivative)``
+    callables of ``(mode, axis, power, values)``. It defaults to the
+    decomposition's own seam, which is right for checking the **separation** --
+    the point of this reference -- but means a bug inside that seam cancels
+    between the two sides and cannot be seen here. Passing an independent
+    implementation is what makes the basis itself testable; see
+    ``test_energy_matches_brute_force_with_a_legendre_basis``.
     """
     directory = decomposition.directory()
 
@@ -226,26 +236,35 @@ def brute_force_energy(layout, decomposition, load_name="load", include_tanh=Tru
     shape = (xq.numel(), e1q.numel(), e2q.numel(), aq.numel(), nq.numel())
     grad_u = torch.zeros(shape, dtype=xq.dtype)
     u_full = torch.zeros(shape, dtype=xq.dtype)
+    # The factors go through the decomposition's basis seam, as `energy` does.
+    # That is not a shortcut: the reference's job is to check the *separation*
+    # (one 5-D quadrature against a product of 1-D ones), not to re-derive which
+    # univariate family the exponent rows index. Hard-coding `**` here would make
+    # this cross-check silently vacuous for any basis but the monomial one -- it
+    # would then compare two different fields and pass only by accident.
+    value, derivative = basis or (
+        decomposition.basis_value,
+        decomposition.basis_derivative,
+    )
     for i, lamb, coefficient in decomposition.polynomial_directory():
         weight = 1.0 if coefficient is None else coefficient
-        p = lamb[0]
-        # d/dx [ X^p ] = p X^(p-1) X' -- the chain-rule factor the CP version
-        # has no need of (p == 1 there, so the factor is 1).
-        grad_u = grad_u + weight * p * torch.einsum(
+        # d/dx [ psi_p(X) ] = psi_p'(X) X' -- the chain-rule factor the CP
+        # version has no need of (p == 1 there, so the factor is 1).
+        grad_u = grad_u + weight * torch.einsum(
             "v,w,x,y,z->vwxyz",
-            Xf[i] ** (p - 1) * gX[i],
-            lam[i] ** lamb[1],
-            mu[i] ** lamb[2],
-            A[i] ** lamb[3],
-            N[i] ** lamb[4],
+            derivative(i, 0, lamb[0], Xf[i]) * gX[i],
+            value(i, 1, lamb[1], lam[i]),
+            value(i, 2, lamb[2], mu[i]),
+            value(i, 3, lamb[3], A[i]),
+            value(i, 4, lamb[4], N[i]),
         )
         u_full = u_full + weight * torch.einsum(
             "v,w,x,y,z->vwxyz",
-            Xf[i] ** p,
-            lam[i] ** lamb[1],
-            mu[i] ** lamb[2],
-            A[i] ** lamb[3],
-            N[i] ** lamb[4],
+            value(i, 0, lamb[0], Xf[i]),
+            value(i, 1, lamb[1], lam[i]),
+            value(i, 2, lamb[2], mu[i]),
+            value(i, 3, lamb[3], A[i]),
+            value(i, 4, lamb[4], N[i]),
         )
 
     xv = xq.view(-1, 1, 1, 1, 1)
@@ -487,6 +506,16 @@ def test_zero_coefficients_reproduce_the_cp_energy_exactly(beam5p, float64):
         def directory(self):
             return self._pgd.directory()
 
+        # Forwarded rather than reimplemented as `**`: these two are how `energy`
+        # evaluates every factor, so a stub that hard-coded powers would stop
+        # testing the decomposition it stands in for the moment the basis is not
+        # the monomial one.
+        def basis_value(self, m, k, power, values):
+            return self._pgd.basis_value(m, k, power, values)
+
+        def basis_derivative(self, m, k, power, values):
+            return self._pgd.basis_derivative(m, k, power, values)
+
         def polynomial_directory(self, skip_inert=False):
             # Accepts (and ignores) `skip_inert`: this stub already keeps only
             # the leading terms, which the real one never skips, so the filtered
@@ -704,3 +733,101 @@ def test_energy_matches_brute_force_with_the_space_exponent_pinned(
 
     assert torch.isfinite(separated)
     assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
+
+
+def _legendre_bases(beam5p):
+    """Monomial on space, Legendre on the four parametric axes.
+
+    Built through the example's own `build_bases`, so this exercises the mapping
+    a sweep row actually goes through rather than a parallel copy of it. Space
+    keeps the monomials because its Dirichlet condition makes every space monom
+    vanish at both ends, which `w ** p` inherits and `P_2(0) = -1/2` does not.
+    """
+    return beam5p.build_bases(
+        beam5p.RunConfig(name="x", term_basis="legendre_params")
+    )
+
+
+@pytest.mark.parametrize("n_modes_ini", [1, 2])
+def test_energy_matches_brute_force_with_a_legendre_basis(beam5p, float64, n_modes_ini):
+    # The separated energy and the 5-D reference must agree for a NON-monomial
+    # family too. Everything below the seam -- the term pairing, the tanh block,
+    # the load -- is re-checked for free.
+    #
+    # Scope, established by injecting the bugs rather than assumed: dropping the
+    # normalisation inside `basis_value` fails this test. Dropping the `1/scale`
+    # inside `basis_derivative` does NOT, and cannot -- this energy differentiates
+    # the SPACE factor alone (the elastic term is the integral of (du/dx)^2), and
+    # space is the one axis that must stay monomial for the Dirichlet condition,
+    # where the scale is 1. `basis_derivative` on a normalised axis is therefore
+    # unreachable from here; its guard is
+    # `test_basis_derivative_carries_the_normalising_scale`, against autograd.
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=3,
+        n_modes_ini=n_modes_ini,
+        n_nodes=TINY,
+        quad=TwoPoints1D(),
+        bases=_legendre_bases(beam5p),
+    )
+    _randomise_monoms(problem.pgd)
+    _randomise_coefficients(problem.pgd)
+
+    layout = problem.model()
+    separated = beam5p.energy(layout, problem.pgd)
+    reference = brute_force_energy(
+        layout, problem.pgd, basis=_independent_legendre(problem.pgd)
+    )
+
+    assert torch.isfinite(separated)
+    assert separated.item() == pytest.approx(reference.item(), rel=1e-9)
+
+
+def _independent_legendre(pgd, space=0):
+    """``(value, derivative)`` written out here, not read off the decomposition.
+
+    The reference's whole purpose is to share no code with what it checks. Left
+    on the decomposition's own seam, a wrong ``basis_derivative`` -- a dropped
+    ``1/||w||_inf``, say -- appears identically on both sides and cancels;
+    verified by injecting exactly that bug, which the seam-sharing version did
+    not catch and this does.
+
+    ``space`` (axis 0 of ``AXIS_ORDER``) keeps the monomials, matching
+    ``TERM_BASES["legendre_params"]``. The normalising scale is still read from
+    the decomposition: it is a property of the monom, not of the family, and
+    recomputing ``amax`` here would test nothing.
+    """
+
+    def value(m, k, power, values):
+        if k == space:
+            return values**power
+        v = values / pgd.monom_scale(m, k)
+        return {1: v, 2: (3 * v**2 - 1) / 2, 3: (5 * v**3 - 3 * v) / 2}[power]
+
+    def derivative(m, k, power, values):
+        if k == space:
+            return power * values ** (power - 1)
+        scale = pgd.monom_scale(m, k)
+        v = values / scale
+        return {1: torch.ones_like(v), 2: 3 * v, 3: (15 * v**2 - 3) / 2}[power] / scale
+
+    return value, derivative
+
+
+def test_a_legendre_correction_still_respects_the_dirichlet_condition(beam5p, float64):
+    # Why space stays monomial. With Legendre on space the correction would be
+    # `P_2(0) = -1/2` at both ends and the beam would no longer be clamped, with
+    # nothing raising. Evaluated at the boundary, u must be exactly 0.
+    problem = beam5p.build_problem(
+        lambda layout, decomposition: beam5p.energy(layout, decomposition),
+        n_modes_max=2,
+        n_nodes=TINY,
+        bases=_legendre_bases(beam5p),
+    )
+    _randomise_monoms(problem.pgd)
+    _randomise_coefficients(problem.pgd)
+
+    lo, hi = beam5p.AXIS_BOUNDS["space"]
+    ends = torch.tensor([[lo, 500.0, 500.0, 0.5, 5.0], [hi, 500.0, 500.0, 0.5, 5.0]])
+
+    assert torch.allclose(problem.pgd.evaluate(ends), torch.zeros(2, 1), atol=1e-12)

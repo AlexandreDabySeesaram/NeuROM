@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from neurom.constraints.no_constraint import NoConstraint
 from neurom.decompositions.pgd import CPPGD
+from neurom.decompositions.term_basis import MonomialBasis
 from neurom.integrate import integrate
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 
@@ -263,6 +264,7 @@ class PolynomialNLPGD(CPPGD):
         n_modes_ini=1,
         leading_coefficients=False,
         orthogonal_corrections=False,
+        bases=None,
     ):
         axes = list(axes)
         for a in axes:
@@ -311,6 +313,25 @@ class PolynomialNLPGD(CPPGD):
         else:
             self.leading_coefficients = None
 
+        # Which univariate family the exponent rows index, one per axis. `None`
+        # is `MonomialBasis()` everywhere, which is what every run before this
+        # option did -- and the bases hold no state, so `state_dict` is unchanged
+        # either way and every checkpoint still loads. What a *stored* `C` means
+        # does move with the family, so a checkpoint must be reloaded with the
+        # bases it was written with.
+        if bases is None:
+            bases = [MonomialBasis() for _ in axes]
+        bases = list(bases)
+        if len(bases) != len(axes):
+            raise ValueError(
+                f"bases has {len(bases)} entries for {len(axes)} axes; it is one "
+                "family per axis, in `axes` order."
+            )
+        self.bases = bases
+        self.has_uniform_monomial_basis = all(
+            isinstance(b, MonomialBasis) for b in bases
+        )
+
         # Deflate each correction against the leading term (see
         # `_deflation_axis`). No parameters, so `state_dict` is unchanged and
         # every checkpoint still loads -- but the *meaning* of a stored `C` moves,
@@ -319,6 +340,13 @@ class PolynomialNLPGD(CPPGD):
         # to what it was before this option existed.
         self.orthogonal_corrections = bool(orthogonal_corrections)
         self._deflation_axes = None
+        if self.orthogonal_corrections and not self.has_uniform_monomial_basis:
+            raise ValueError(
+                "orthogonal_corrections and a non-monomial basis attack the same "
+                "overlap: deflating a family that is already orthogonal to the "
+                "leading term subtracts a projection that is ~0 and only adds "
+                "terms. Pick one."
+            )
         if self.orthogonal_corrections:
             self._deflation_axes = [
                 self._deflation_axis(tuple(int(v) for v in lam))
@@ -376,6 +404,87 @@ class PolynomialNLPGD(CPPGD):
         numerator = integrate(r.u**power * r.u * r.measure)
         denominator = integrate(r.u * r.u * r.measure)
         return numerator / denominator
+
+    def monom_scale(self, m, k):
+        """``||w_mk||_inf`` on the quadrature, or ``1.0`` if the axis needs none.
+
+        The map that brings a monom into the interval its family is orthogonal
+        on. The **sup** norm, not the L2 one :meth:`monom_norms` returns: the
+        requirement is that the argument *stays inside* ``[-1, 1]``, which only a
+        bound on the values gives -- an L2 normalisation leaves the peaks outside
+        and evaluates the polynomial where it grows without bound.
+
+        **Differentiable, deliberately**, unlike :meth:`monom_norms`, which runs
+        under ``no_grad`` because the gauge fix is applied *to* the parameters.
+        Here the scale is composed *into* the field the energy sees, so a
+        gradient that ignored it would be the gradient of a different model.
+
+        Returns:
+            torch.Tensor or float: 0-dim tensor, or the float ``1.0`` when the
+            axis' basis does not need a normalised argument -- so the monomial
+            path multiplies by a Python 1.0 and builds no graph at all.
+        """
+        if not self.bases[k].needs_normalised_argument:
+            return 1.0
+        r = self._assemblies[m][k].interpolate()
+        return r.u.abs().amax()
+
+    def monom_scales(self, m):
+        """:meth:`monom_scale` for every axis of mode ``m``, in ``axes`` order."""
+        return [self.monom_scale(m, k) for k in range(len(self.axes))]
+
+    def basis_value(self, m, k, power, values):
+        """``psi_power(w_mk / scale)`` for axis ``k`` of mode ``m``.
+
+        The single seam every consumer goes through -- the energy's hoisting
+        loop, :meth:`_mode_from_columns`, and the diagnostics -- so the format
+        cannot be evaluated two different ways.
+
+        Args:
+            m (int): mode index.
+            k (int): axis index.
+            power (int): the exponent this axis carries in the term's row.
+            values (torch.Tensor): the interpolated monom, any shape.
+        """
+        basis = self.bases[k]
+        if not basis.needs_normalised_argument:
+            return basis.value(power, values)
+        return basis.value(power, values / self.monom_scale(m, k))
+
+    def basis_derivative(self, m, k, power, values):
+        """``d/dw psi_power(w_mk / scale)`` -- **including** the ``1/scale``.
+
+        The chain rule the caller still owes is only the argument's own spatial
+        derivative: for the space axis the energy multiplies this by
+        ``jacobian_field(...)``. The ``1/scale`` is folded in here rather than
+        left to the caller because it is invisible in the monomial path (where
+        ``scale`` is 1) and would therefore be a silent error on the Legendre one
+        -- hence the autograd cross-check in the unit tests.
+        """
+        basis = self.bases[k]
+        if not basis.needs_normalised_argument:
+            return basis.derivative(power, values)
+        scale = self.monom_scale(m, k)
+        return basis.derivative(power, values / scale) / scale
+
+    def factor_norm(self, m, k, power):
+        """``||psi_power(w_mk)||`` on the quadrature -- the factor's true size.
+
+        What :meth:`monom_norms` gives raised to a power is *not* this: for the
+        monomials ``||w^p|| != ||w||^p`` (the quadrature does not commute with
+        the power), and for a non-monomial family ``||psi_p(w)||`` has no
+        relation to ``||w||`` at all. Term diagnostics that multiply per-axis
+        norms therefore need this, not the powered norm.
+
+        Gauge behaviour follows the basis: monomial axes scale as ``s^p``, and a
+        normalised axis does not move at all, which is exactly how the matching
+        coefficient behaves -- so a term magnitude built from these stays
+        gauge-invariant either way.
+        """
+        with torch.no_grad():
+            r = self._assemblies[m][k].interpolate()
+            f = self.basis_value(m, k, power, r.u)
+            return integrate(f * f * r.measure).sqrt()
 
     def deflation_shrinkage(self, m, t):
         """How much deflation shrinks correction ``t`` of mode ``m``.
@@ -631,34 +740,55 @@ class PolynomialNLPGD(CPPGD):
           every row of ``C_m`` sit on the *same* scale. Under the ``d - 1`` fix
           they sit at ``A^(1 - p)``, orders apart, which is what makes a single
           Adam ``coefficient_lr`` unable to serve them all.
+
+        **Axes on a normalised basis are skipped entirely.** Their factor is
+        ``psi_p(w / ||w||_inf)``, which does not move when ``w`` is rescaled --
+        for the corrections *and* for the leading term, since ``psi_1`` is the
+        identity of the same normalised argument. Such an axis has no scale for a
+        coefficient to absorb, so there is nothing to fix and, more to the point,
+        applying the ``s^(-lambda)`` rule to it would change the field. The
+        gauge fix therefore acts on the homogeneous (monomial) axes only, and
+        ``prod_j s_j = 1`` is imposed over those.
         """
         norms = self.monom_norms(m)
         if not all(bool(torch.isfinite(n)) and float(n) > 0.0 for n in norms):
             return
 
+        # Axes whose basis is scale-invariant contribute no gauge direction.
+        gauged = [
+            k
+            for k in range(len(norms))
+            if not self.bases[k].needs_normalised_argument
+        ]
+        if not gauged:
+            return
+
         scales = [torch.ones_like(norms[0]) for _ in norms]
         if self.has_leading_coefficients:
-            for k in range(len(norms)):
+            for k in gauged:
                 scales[k] = 1.0 / norms[k]
         else:
-            for k in range(1, len(norms)):
+            # The first gauged axis absorbs the amplitude, so `prod s = 1` holds
+            # over the gauged axes and the leading term is untouched.
+            absorber = gauged[0]
+            for k in gauged[1:]:
                 scales[k] = 1.0 / norms[k]
-                scales[0] = scales[0] * norms[k]
+                scales[absorber] = scales[absorber] * norms[k]
 
         with torch.no_grad():
-            for k, s in enumerate(scales):
-                self.monoms[m][k].values_reduced.mul_(s)
+            for k in gauged:
+                self.monoms[m][k].values_reduced.mul_(scales[k])
             if self.has_leading_coefficients:
                 # The leading term's exponent row is (1, ..., 1), so it takes
                 # the same prod_j s_j^(-lambda_j) rule as every other term.
                 leading = torch.ones_like(norms[0])
-                for s in scales:
-                    leading = leading / s
+                for k in gauged:
+                    leading = leading / scales[k]
                 self.leading_coefficients[m] *= leading
             for t in range(self.n_terms):
                 factor = torch.ones_like(norms[0])
-                for k, s in enumerate(scales):
-                    factor = factor * s ** (-int(self.exponents[t, k]))
+                for k in gauged:
+                    factor = factor * scales[k] ** (-int(self.exponents[t, k]))
                 self.coefficients[m][t] *= factor
 
     # -- structure readback ----------------------------------------------------
@@ -800,9 +930,9 @@ class PolynomialNLPGD(CPPGD):
         """
         total = None
         for lam, coefficient in self._term_rows(m):
-            term = cols[0] ** lam[0]
+            term = self.basis_value(m, 0, lam[0], cols[0])
             for k, c in enumerate(cols[1:], start=1):
-                term = term * c ** lam[k]
+                term = term * self.basis_value(m, k, lam[k], c)
             if coefficient is not None:
                 term = coefficient * term
             total = term if total is None else total + term

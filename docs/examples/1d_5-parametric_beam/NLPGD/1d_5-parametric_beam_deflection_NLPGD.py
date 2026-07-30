@@ -108,6 +108,8 @@ import torch
 from neurom.constraints import Dirichlet, NoConstraint
 from neurom.decompositions import (
     Axis,
+    LegendreBasis,
+    MonomialBasis,
     PolynomialNLPGD,
     pin_axis,
     total_degree_exponents,
@@ -345,6 +347,30 @@ class RunConfig:
     #: overlap each other; ``uniform3``'s ``(2,2,2,2,2)`` vs ``(3,3,3,3,3)``
     #: contest is untouched, and whether it matters is unmeasured.
     orthogonal_corrections: bool = False
+    #: Which univariate family the exponent rows index (see :data:`TERM_BASES`).
+    #:
+    #: ``"monomial"`` is ``psi_p(w) = w ** p``, what every run before this knob
+    #: used. ``"legendre_params"`` puts Legendre on the four parametric axes and
+    #: keeps space monomial, because space carries a homogeneous Dirichlet
+    #: condition that ``w ** p`` respects and ``P_2`` does not.
+    #:
+    #: Aimed at the redundancy ``orthogonal_corrections`` could not reach.
+    #: Deflation orthogonalises each correction against the *leading* term only,
+    #: which is why it was decisive at ``|I| = 1`` (uniform2 r10: 4.232e-02 ->
+    #: 3.864e-02) and nearly inert at ``|I| = 2`` (uniform3 r6: 8.811e-02 ->
+    #: 8.685e-02, ``(3,3,3,3,3)`` still holding 98-100% of every mode). An
+    #: orthogonal family orthogonalises **every pair at once**, corrections
+    #: included, because the inner product factorises and the leading term is
+    #: ``psi_1``.
+    #:
+    #: Orthogonality here is *approximate*: ``<psi_a(w), psi_b(w)>`` integrates
+    #: against the law of ``w``'s values, and Legendre is orthogonal for the
+    #: uniform law, not that one. The residual overlap is measured rather than
+    #: assumed -- see ``term_overlaps``.
+    #:
+    #: Mutually exclusive with ``orthogonal_corrections``: the constructor
+    #: raises. Both attack the same overlap.
+    term_basis: str = "monomial"
     #: Stage tolerance during the linear phase only -- the "tol de stagnation
     #: coarse". ``None`` reuses ``stage_tol``, so the phase split costs nothing
     #: unless it is asked for.
@@ -389,6 +415,39 @@ EXPONENT_SETS = {
     "uniform": uniform_exponents,
     "total_degree": total_degree_exponents,
 }
+
+
+#: Which univariate family each axis' exponent indexes, keyed by
+#: ``RunConfig.term_basis``. Injected like ``EXPONENT_SETS`` and ``STRATEGIES``.
+#:
+#: **The space axis is not negotiable here.** It carries a homogeneous Dirichlet
+#: condition, so every space monom vanishes at both ends -- and ``w ** p``
+#: inherits that for free, while a Legendre polynomial does not (``P_2(0) =
+#: -1/2``). A correction built on Legendre in space would be non-zero on the
+#: boundary and the constraint would be violated with nothing raising. Space
+#: therefore stays monomial in every entry below.
+#:
+#: Nothing is lost by that. The quadrature inner product factorises over the
+#: axes, so a single orthogonal axis makes the whole product orthogonal to the
+#: leading term; the four parametric axes supply it. It also puts the change
+#: exactly where the redundancy was measured -- the ``(3,3,3,3,3)`` row taking
+#: 98-100% of its mode was a contest between *parametric* shapes.
+TERM_BASES = {
+    "monomial": lambda: None,  # `None` -> MonomialBasis on every axis
+    "legendre_params": lambda: [
+        MonomialBasis() if name == "space" else LegendreBasis() for name in AXIS_ORDER
+    ],
+}
+
+
+def build_bases(cfg):
+    """Turn a ``RunConfig``'s ``term_basis`` into one ``TermBasis`` per axis."""
+    try:
+        return TERM_BASES[cfg.term_basis]()
+    except KeyError:
+        raise ValueError(
+            f"unknown term_basis {cfg.term_basis!r}; pick one of {sorted(TERM_BASES)}"
+        ) from None
 
 
 def build_exponents(cfg, n_axes=len(AXIS_ORDER)):
@@ -569,7 +628,7 @@ class Problem:
 def build_problem(
     loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None,
     seed_amplitude=0.05, exponents=None, leading_coefficients=False,
-    orthogonal_corrections=False,
+    orthogonal_corrections=False, bases=None,
 ):
     """Assemble the five axes, the polynomial NL-PGD, the load and the model.
 
@@ -659,6 +718,7 @@ def build_problem(
         n_modes_ini=n_modes_ini,
         leading_coefficients=leading_coefficients,
         orthogonal_corrections=orthogonal_corrections,
+        bases=bases,
     )
 
     # The load is a *field* f(x), interpolated on the SAME quadrature as the
@@ -778,22 +838,33 @@ def energy(field_layout, decomposition, load_name="load"):
     A, Ja = [r.u for r in alp], [r.measure for r in alp]
     N, Jn = [r.u for r in slp], [r.measure for r in slp]
 
-    # Per-term quantities, hoisted out of the quadratic loop: every power is
-    # raised ONCE here rather than O(n_terms) times inside it. `gpref` is the
-    # scalar C p X^(p-1) of the chain rule above; the jacobian itself stays
+    # Per-term quantities, hoisted out of the quadratic loop: every factor is
+    # evaluated ONCE here rather than O(n_terms) times inside it. `gpref` is the
+    # scalar C psi_p'(X) of the chain rule above; the jacobian itself stays
     # separate so that inner() still does the contraction.
+    #
+    # The factors go through `basis_value` / `basis_derivative` rather than `**`
+    # so that the exponent rows can index a family other than the monomials -- an
+    # ORTHOGONAL one, which is what stops a correction from simply replacing its
+    # mode's linear term. With the default monomial basis these are exactly
+    # `X ** p` and `p * X ** (p-1)`. Crucially the same seam feeds
+    # `_mode_from_columns`, hence `evaluate` and `assemble`: reaching for `**`
+    # here would train one field and report another.
+    #
+    # `basis_derivative` already carries the 1/||w||_inf of a normalised
+    # argument; what is still owed here is only the argument's own spatial
+    # derivative, which is the `gX` factor inside the loop below.
     mode_of = []
     gpref, xval, lval, mval, aval, nval = [], [], [], [], [], []
     for m, lamb, coefficient in terms:
         weight = 1.0 if coefficient is None else coefficient
-        p = lamb[0]
         mode_of.append(m)
-        gpref.append(weight * p * X[m] ** (p - 1))
-        xval.append(weight * X[m] ** p)
-        lval.append(lam[m] ** lamb[1])
-        mval.append(mu[m] ** lamb[2])
-        aval.append(A[m] ** lamb[3])
-        nval.append(N[m] ** lamb[4])
+        gpref.append(weight * decomposition.basis_derivative(m, 0, lamb[0], X[m]))
+        xval.append(weight * decomposition.basis_value(m, 0, lamb[0], X[m]))
+        lval.append(decomposition.basis_value(m, 1, lamb[1], lam[m]))
+        mval.append(decomposition.basis_value(m, 2, lamb[2], mu[m]))
+        aval.append(decomposition.basis_value(m, 3, lamb[3], A[m]))
+        nval.append(decomposition.basis_value(m, 4, lamb[4], N[m]))
 
     # NB: as in the CP example, the cross terms assume the two terms' modes share
     # a mesh per axis (the measure and coordinates of the first are used for
@@ -1651,6 +1722,7 @@ def main(
         exponents=build_exponents(config),
         leading_coefficients=config.leading_coefficient,
         orthogonal_corrections=config.orthogonal_corrections,
+        bases=build_bases(config),
     )
 
     field_layout = problem.model()
@@ -1771,16 +1843,28 @@ def main(
 
 
 def term_magnitudes(pgd, m):
-    """Size of each of mode ``m``'s terms: ``|coeff| * prod_j ||w_mj||^lambda_j``.
+    """Size of each of mode ``m``'s terms: ``|coeff| * prod_j ||psi_lambda_j(w_mj)||``.
 
     The quantity to read, rather than the raw ``c`` and ``C``, because it is
     **gauge-invariant**: rescaling ``w_mj -> s_j w_mj`` divides the coefficients
-    by exactly the factor it multiplies the norms by, so these numbers do not
-    move while ``c`` and ``C`` individually do. Raw coefficients are only
+    by exactly the factor it multiplies the factor norms by, so these numbers do
+    not move while ``c`` and ``C`` individually do. Raw coefficients are only
     comparable to each other after ``renormalise`` with a live leading
     coefficient, which puts every ``||w_mj||`` at 1 -- so under
     ``renormalise=False``, or under the ``d-1`` gauge fix, reading ``c`` against
     ``C`` compares numbers in different units.
+
+    CORRECTED. This used ``prod_j ||w_mj||^lambda_j``, which is **not** the
+    term's size: the quadrature does not commute with the power, so
+    ``||w^p|| != ||w||^p``. Measured on ``3f5a4afe`` with every monom at unit
+    norm, ``||w^2||`` runs 0.13 to 0.86 across the five axes where ``||w||^2``
+    is 1 -- a factor ~130 on the product, all of it inflating the correction.
+    Every share reported before this fix overstated the non-linear terms; mode
+    3's leading share was 32.2%, and is 88.0%. The powered-norm form was only
+    ever exact for the leading term, where every power is 1.
+    :meth:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD.factor_norm`
+    integrates the factor itself, which is also the only form that means
+    anything once the exponents index a non-monomial family.
 
     That makes it the pair of answers worth having:
 
@@ -1800,20 +1884,19 @@ def term_magnitudes(pgd, m):
         tuple: ``(leading, corrections)`` -- a float, and one float per row of
         ``pgd.exponents``, in the same order.
     """
-    norms = [float(n) for n in pgd.monom_norms(m)]
-    weight = 1.0
+    n_axes = len(pgd.axes)
+    leading = 1.0
     if pgd.has_leading_coefficients:
-        weight = abs(float(pgd.leading_coefficients[m].detach()))
-    leading = weight
-    for value in norms:
-        leading *= value
+        leading = abs(float(pgd.leading_coefficients[m].detach()))
+    for k in range(n_axes):
+        leading *= float(pgd.factor_norm(m, k, 1))
 
     corrections = []
     row = pgd.coefficients[m].detach()
     for t in range(pgd.n_terms):
         size = abs(float(row[t]))
-        for k, value in enumerate(norms):
-            size *= value ** int(pgd.exponents[t, k])
+        for k in range(n_axes):
+            size *= float(pgd.factor_norm(m, k, int(pgd.exponents[t, k])))
         # 1.0 unless `orthogonal_corrections` is on, where the deflated factor is
         # genuinely smaller than the power it replaces and the product above
         # would report the term the decomposition no longer holds.

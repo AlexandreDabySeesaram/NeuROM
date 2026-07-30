@@ -1,3 +1,60 @@
+## 2026-07-30 — the term-share diagnostic was wrong; an injectable term basis
+
+**State:** `src/` gains `term_basis.py` (`MonomialBasis`, `LegendreBasis`) and,
+on `PolynomialNLPGD`, `bases=`, `monom_scale`, `basis_value`,
+`basis_derivative`, `factor_norm`, plus a `renormalise_mode` override. Default
+is the monomial family, bit-identical to before. `NLPGD/` gains `TERM_BASES`,
+`RunConfig.term_basis` and one queued row. 464 pass, 2 fail (pre-existing,
+sibling `PGD/` example). **No production run** with the new basis — the only
+numbers below are one tiny-mesh smoke run.
+
+- **`term_magnitudes` was wrong, and every share reported before today
+  overstated the non-linear terms.** It computed
+  `|coeff|·∏ⱼ‖wⱼ‖^λⱼ`, but the quadrature does not commute with the power:
+  `‖w^p‖ ≠ ‖w‖^p`. The two agree only for the leading term, where every
+  exponent is 1 — which is why it survived. Measured on `3f5a4afe` with every
+  monom at unit norm, `‖w²‖` runs 0.13–0.86 across the five axes where `‖w‖²`
+  is 1: a factor ~130 on the product. Leading-term share, reported → exact:
+
+  | run | reported | exact |
+  |---|---|---|
+  | uniform2 r10 renorm | 2.3–18.8 % | **80.6–98.2 %** |
+  | uniform2 r10 renorm+orth | 18.4–55.7 % | **97.1–99.9 %** |
+  | uniform3 r6 renorm | 0.0–2.9 % | **81.9–93.4 %** |
+  | uniform3 r6 renorm+orth | 0.1–0.7 % | **97.3–99.6 %** |
+
+  Falsified by this: "the linear term collapses", "`(3,3,3,3,3)` holds 98–100 %
+  of every mode", and the *evidence* for correction↔correction redundancy. The
+  reparameterisation argument for redundancy is independent of any measurement
+  and stands; the observation that supported it does not. Everything measured
+  through the error or energy is untouched. Full record:
+  `docs/notes/2026-07-30-term-magnitude-was-wrong.md`.
+- **`PolynomialNLPGD` takes an injected `bases`**, one `TermBasis` per axis, so
+  the exponent rows can index an orthogonal family. The inner product
+  factorises, so terms differing on one axis are orthogonal, and the leading
+  term is `ψ₁` — a member of the family. No new `state_dict` key.
+- **Space must keep the monomials.** It carries a homogeneous Dirichlet
+  condition, `w^p` inherits it and `P₂(0) = −1/2` does not; a Legendre space
+  factor breaks the clamp with nothing raising. Pinned by a boundary-evaluation
+  test. Nothing is lost — four orthogonal parametric axes already orthogonalise
+  the product.
+- `renormalise_mode` **skips normalised axes**: `ψ_p(w/‖w‖_∞)` does not move
+  when `w` is rescaled, for the corrections *and* the leading term, so such an
+  axis carries no gauge direction and applying `s^(−λ)` to it would change the
+  field rather than preserve it.
+- **Legendre's orthogonality here is approximate, and now measured.**
+  `⟨ψ_a(w), ψ_b(w)⟩` integrates against the law of `w`'s *values*, not the
+  uniform law. On the unit fixture the leading-correction cosine is 0.476
+  against the monomials' 0.949 — a factor 2, not orthogonality.
+- Smoke run only (tiny mesh 8/5/5/4/4, rank 3, 60 iters/stage, single run):
+  trains, energy monotone to −7.6e9, and the correction takes 64–68 % of its
+  mode — far more than the monomial rows' 0.1–3 %. Not a result.
+- Test scope, established by bug injection rather than assumed: dropping the
+  normalisation in `basis_value` fails the 5-D brute-force cross-check;
+  dropping the `1/scale` in `basis_derivative` **cannot** be seen there, because
+  this energy differentiates the space factor alone and space is monomial. Its
+  guard is the autograd unit test.
+
 ## 2026-07-30 — the gauge fix explains the divergence, not the absorption
 
 **State:** `src/` gains `polynomial_directory(skip_inert=)`, an

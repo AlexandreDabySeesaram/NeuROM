@@ -982,13 +982,13 @@ def _configs():
             n_linear_modes=3,           # pure-CP modes before the NL schedule
             leading_coefficient=True,  # release c_i on the NL modes
             pin_space_exponent=True,   # pin_axis(I, space, 1)
-            renormalise=False,           # fix the scale gauge each stage
+            renormalise=True,           # fix the scale gauge each stage
 
             # --- the polynomial correction ------------------------------------
-            exponent_set="uniform",     # "uniform" | "total_degree"
-            max_power=4,                # largest power (uniform) / total degree
+            exponent_set="total_degree",     # "uniform" | "total_degree"
+            max_power=6,                # largest power (uniform) / total degree
             # --- rank and mesh -------------------------------------------------
-            n_modes_max=10,             # per mode (rank), not per stage
+            n_modes_max=6,             # per mode (rank), not per stage
             n_nodes=None,               # None -> ex.DEFAULT_N_NODES
             seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
             # --- stage schedule (all per STAGE, not per run) -----x`--------------
@@ -1063,6 +1063,84 @@ def _configs():
         #     lr=1e-1,
         #     coefficient_lr=1e-4,
         # ),
+        # Single-knob controls against the two `-renorm` rows above (e1850154
+        # and 944186d3): same everything, `orthogonal_corrections` on.
+        #
+        # `renormalise` removed the *leverage* -- uniform3 stopped diverging,
+        # 209% -> 8.81% overall -- but not the *redundancy*: the (3,3,3,3,3) row
+        # still holds 99.5% of mode 3 and 100% of mode 5, because with the monoms
+        # free it spans the same rank-1 set as the leading term and can replace
+        # it at no cost in energy. Deflation removes that overlap outright.
+        #
+        # What to read, in this order:
+        #   1. the term shares in the final recap -- does the leading term keep a
+        #      non-trivial share, or does one correction still take the mode?
+        #   2. `overall`, against 4.232e-02 (uniform2) and 8.811e-02 (uniform3).
+        # A row that only rebalances the shares without moving the error says the
+        # redundancy was real but harmless, which is itself worth knowing.
+        #
+        # Expect these to be slower: 1 + 2|I| terms instead of 1 + |I|, and the
+        # energy's double loop is quadratic -- 2.8x at |I| = 2, 2.25x at |I| = 1.
+        ex.RunConfig(
+            name="l3-lead_coeffTrue-uniform2-r10-renorm-orth",
+            # --- what is trained, and in what order ---------------------------
+            strategy="joint",
+            n_linear_modes=3,           # pure-CP modes before the NL schedule
+            leading_coefficient=True,   # release c_i on the NL modes
+            pin_space_exponent=False,   # pin_axis(I, space, 1)
+            renormalise=True,           # fix the scale gauge each stage
+            orthogonal_corrections=True,  # THE knob under test
+            # --- the polynomial correction ------------------------------------
+            exponent_set="uniform",     # "uniform" | "total_degree"
+            max_power=2,                # largest power (uniform) / total degree
+            # --- rank and mesh -------------------------------------------------
+            n_modes_max=10,             # per mode (rank), not per stage
+            n_nodes=None,               # None -> ex.DEFAULT_N_NODES
+            seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
+            # --- stage schedule (all per STAGE, not per run) -------------------
+            min_iter=300,               # >= ~300 or a fresh mode never launches
+            max_iter=600,
+            stage_tol=1e-5,             # inert at max_iter=400; check if a row
+            stage_floor=1.0,            #   reports otherwise before comparing it
+            window=20,
+            linear_stage_tol=1e-3,      # None -> reuse stage_tol
+            # --- enrichment ----------------------------------------------------
+            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
+            enrichment_floor=1.0,
+            # --- optimiser ------------------------------------------------------
+            lr=1e-1,
+            coefficient_lr=1e-4,
+        ),
+        ex.RunConfig(
+            name="l3-lead_coeffTrue-uniform3-r6-renorm-orth",
+            # --- what is trained, and in what order ---------------------------
+            strategy="joint",
+            n_linear_modes=3,           # pure-CP modes before the NL schedule
+            leading_coefficient=True,   # release c_i on the NL modes
+            pin_space_exponent=False,   # pin_axis(I, space, 1)
+            renormalise=True,           # fix the scale gauge each stage
+            orthogonal_corrections=True,  # THE knob under test
+            # --- the polynomial correction ------------------------------------
+            exponent_set="uniform",     # "uniform" | "total_degree"
+            max_power=3,                # largest power (uniform) / total degree
+            # --- rank and mesh -------------------------------------------------
+            n_modes_max=6,              # per mode (rank), not per stage
+            n_nodes=None,               # None -> ex.DEFAULT_N_NODES
+            seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
+            # --- stage schedule (all per STAGE, not per run) -------------------
+            min_iter=300,               # >= ~300 or a fresh mode never launches
+            max_iter=600,
+            stage_tol=1e-5,             # inert at max_iter=400; check if a row
+            stage_floor=1.0,            #   reports otherwise before comparing it
+            window=20,
+            linear_stage_tol=1e-3,      # None -> reuse stage_tol
+            # --- enrichment ----------------------------------------------------
+            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
+            enrichment_floor=1.0,
+            # --- optimiser ------------------------------------------------------
+            lr=1e-1,
+            coefficient_lr=1e-4,
+        ),
     ]
 
 

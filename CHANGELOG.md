@@ -1,3 +1,56 @@
+## 2026-07-30 — the gauge fix explains the divergence, not the absorption
+
+**State:** `src/` gains `polynomial_directory(skip_inert=)`, an
+`on_run_end` hook, and an opt-in `orthogonal_corrections`; the last two are
+new decomposition/trainer behaviour, the first is pure cost. `NLPGD/` gains
+`renormalise` and `orthogonal_corrections` knobs plus a `term_magnitudes`
+recap. 435 pass, 2 fail (pre-existing, sibling `PGD/` example, `n_modes_max`
+15 vs 10 — untouched here). 12 ledger rows, default mesh, single runs.
+
+- **Term shares are set by the basis, not the fit.** Splitting a term as
+  `|C_λ| · L_λ` with `L_λ = ∏ⱼ‖wⱼ‖^λⱼ`, the coefficients all sit at 5e-4..8e-2
+  across every exponent set while `L_λ` spans eight orders. Adam normalises the
+  gradient, so each `C` row steps by ~`lr` and the *field* moves by `lr·L_λ`:
+  with `‖wⱼ‖ ∈ [3,30]` the highest-degree row wins by construction. Adding
+  gradient normalisation would be the wrong fix — it is the cause.
+- **`renormalise=True` kills the divergence.** Single-knob controls:
+
+  | run | `renormalise` off | on |
+  |---|---|---|
+  | uniform2 r10 | 4.244e-02 | 4.232e-02 |
+  | uniform3 r6 | 2.092e+00 | **8.811e-02** |
+
+  `uniform3`'s energy returns from −5.16e11 to −2.039e11, inside the band.
+- **...but not the absorption. Prediction falsified.** Shares did *not*
+  equalise: `(3,3,3,3,3)` still holds 99.5 % of mode 3 and 100 % of mode 5.
+  `L_λ` is the instability mechanism; a second, distinct one survives.
+- **That second one is redundancy.** With the monoms free, `∏ⱼwⱼ^p` spans the
+  same rank-1 set as `∏ⱼwⱼ` (`wⱼ → wⱼ^{1/p}`), so a lone correction *replaces*
+  the leading term instead of complementing it — a mode at 99 % in one term is
+  CP again. Expressivity needs ≥2 terms live; exactly one mode in the ledger
+  reached that (m4: 68.8 %/28.3 %).
+- **`orthogonal_corrections` (opt-in) deflates it away.** `wⱼ^p → wⱼ^p − βwⱼ`
+  on one axis; the inner product factorises so one axis suffices. Exact, no
+  hyperparameter. Costs `1 + 2|I|` terms against `1 + |I|` in a quadratic loop
+  (2.8× at `|I| = 2`). **Only leading-vs-correction overlap goes; corrections
+  still overlap each other, and its effect on the error is not yet measured.**
+- `_term_rows` is now the single term-structure seam — the energy reads
+  `polynomial_directory`, `evaluate`/`assemble` read `_mode_from_columns`, and
+  deflation reaching only one would train one field and report another.
+- **`skip_inert` drops correction terms frozen at exactly zero.** Linear phase,
+  `total_degree6`, 3 modes, 300 iters/stage: **0.6/1.2/2.1 s** against
+  **5.6/21.2/49.3 s**. Field identical; only what is assembled moves.
+- **`fix_gauge` never ran after the last stage** (it runs in `prepare_stage`),
+  so the final mode alone ended un-normalised — `‖w‖` to 1.6e1 where every
+  other mode was at 1.0000. Fixed via `on_run_end`. Field-preserving, so **no
+  result moved**: same 8.811e-02, same shares. It buys comparability of `c` and
+  `C` across modes, nothing else. The earlier reading — "the lever returns on
+  the un-normalised mode" — was wrong: term magnitudes are gauge-invariant, so
+  the missing fix cannot explain that mode's 100 %.
+
+Derivation and the full per-term tables:
+`docs/notes/2026-07-30-nl-pgd-basis-norm-leverage.md`.
+
 ## 2026-07-30 — two new NL-PGD strategies: linear-then-NL, and frozen support
 
 **State:** `src/` gains three seams (`CPPGD.freeze_monom`, `PolynomialNLPGD`'s

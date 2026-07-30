@@ -316,10 +316,61 @@ class RunConfig:
     #: support. The natural companion of the ``support`` schedule, but
     #: independent of it so the sweep can separate the two.
     pin_space_exponent: bool = False
+    #: Make every correction term **orthogonal to its mode's leading term**, by
+    #: deflating one axis' factor:
+    #: ``w_j^p -> w_j^p - (<w_j^p, w_j>/<w_j, w_j>) w_j``.
+    #:
+    #: Aimed at a different failure from ``renormalise``, and the two are
+    #: independent. ``renormalise`` removes the *leverage* that let the
+    #: highest-degree row move the field fastest per Adam step -- it stopped
+    #: ``uniform3`` diverging (209% -> 8.8% overall error) but left the
+    #: amplitudes where they were: measured on ``944186d3``, the ``(3,3,3,3,3)``
+    #: row still holds 99.5% of mode 3 and 100% of mode 5.
+    #:
+    #: What is left is *redundancy*. With the monoms free, ``prod_j w_j^p``
+    #: spans exactly the same rank-1 set as ``prod_j w_j`` (take
+    #: ``w_j -> w_j^(1/p)``), so a lone correction can **replace** the leading
+    #: term rather than complement it -- and a mode with 99% in one term is CP
+    #: again, re-expressed with a tiny coefficient against a huge basis. Nothing
+    #: in the energy distinguishes the two, so nothing pushes back. Deflation
+    #: removes the overlap outright, and it is *exact*: no penalty, no
+    #: hyperparameter, no bias on the minimiser.
+    #:
+    #: Costs one extra term row per correction (deflation is linear, so the
+    #: deflated product expands into two ordinary ones), and the energy's double
+    #: loop is quadratic in the term count: ``1 + 2|I|`` against ``1 + |I|``, so
+    #: 2.8x at ``|I| = 2``.
+    #:
+    #: **Only leading-vs-correction overlap is removed.** Two corrections still
+    #: overlap each other; ``uniform3``'s ``(2,2,2,2,2)`` vs ``(3,3,3,3,3)``
+    #: contest is untouched, and whether it matters is unmeasured.
+    orthogonal_corrections: bool = False
     #: Stage tolerance during the linear phase only -- the "tol de stagnation
     #: coarse". ``None`` reuses ``stage_tol``, so the phase split costs nothing
     #: unless it is asked for.
     linear_stage_tol: float = None
+    #: Fix the scale gauge at the start of every stage
+    #: (:meth:`~neurom.training.base.PGDTrainer.fix_gauge`). Exposed as a knob so
+    #: the gauge fix can be *measured* rather than assumed: it is the default
+    #: because the decomposition has flat directions without it, but nothing in
+    #: the ledger has yet compared a run with and without.
+    #:
+    #: The invariance is ``w_ij -> s_j w_ij`` with the coefficients absorbing the
+    #: factor. Writing ``L`` for the exponent rows whose coefficient is *fixed*,
+    #: the flat directions per mode number ``d - rank(L)``: ``d - 1`` here
+    #: (``L`` is the leading row alone), or ``d`` with ``leading_coefficient``,
+    #: which is why the two knobs are coupled --
+    #: :meth:`~neurom.decompositions.polynomial_pgd.PolynomialNLPGD.renormalise_mode`
+    #: imposes exactly as many conditions as there are directions.
+    #:
+    #: Turning it **off with** ``leading_coefficient=True`` leaves the full
+    #: ``d``-dimensional orbit unfixed -- more degeneracy than the historical
+    #: default, not less. That combination is a deliberate control, not a
+    #: recommendation.
+    #:
+    #: A no-op for the CP baselines: ``CPPGD.renormalise()`` does nothing, so
+    #: ``greedy``/``simultaneous`` rows are unaffected either way.
+    renormalise: bool = True
 
 
 def config_id(cfg):
@@ -518,6 +569,7 @@ class Problem:
 def build_problem(
     loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None,
     seed_amplitude=0.05, exponents=None, leading_coefficients=False,
+    orthogonal_corrections=False,
 ):
     """Assemble the five axes, the polynomial NL-PGD, the load and the model.
 
@@ -606,6 +658,7 @@ def build_problem(
         name="pgd",
         n_modes_ini=n_modes_ini,
         leading_coefficients=leading_coefficients,
+        orthogonal_corrections=orthogonal_corrections,
     )
 
     # The load is a *field* f(x), interpolated on the SAME quadrature as the
@@ -694,7 +747,14 @@ def energy(field_layout, decomposition, load_name="load"):
         torch.Tensor: 0-dim energy.
     """
     directory = decomposition.directory()
-    terms = decomposition.polynomial_directory()
+    # `skip_inert`: drop correction terms frozen at exactly zero. The double loop
+    # below is quadratic in `len(terms)`, and it has no zero-test of its own -- a
+    # zero coefficient builds its whole product and then multiplies it by 0. So a
+    # linear-phase stage (every `C` frozen at 0) was paying the full
+    # `(n_modes * (1 + |I|))^2`: measured at |I| = 5, three linear modes cost
+    # 5.6/21.2/49.3 s against 1.8/5.4/11.5 s at |I| = 2, the 4x the term ratio
+    # predicts. The field is identical either way; only what is assembled moves.
+    terms = decomposition.polynomial_directory(skip_inert=True)
 
     spc = [field_layout[name] for name in directory["space"]]
     e1 = [field_layout[name] for name in directory["E1"]]
@@ -1198,6 +1258,16 @@ class PolynomialGreedyTrainer(GreedyTrainer):
             record.diagnostics["leading_coefficient"] = float(
                 self.decomposition.leading_coefficients[mode].detach()
             )
+            # Every active mode's `c`, not just this stage's. A greedy stage only
+            # trains one mode, but `fix_gauge` runs over all of them, so an
+            # earlier mode's `c` keeps moving long after its own stage ended --
+            # that drift is invisible in the scalar above, which reports the
+            # active mode alone. This is the column to read to see whether a `c`
+            # settled or is still climbing (see `sweep.show_leading_coefficients`).
+            record.diagnostics["leading_coefficients"] = [
+                float(self.decomposition.leading_coefficients[m].detach())
+                for m in range(int(self.decomposition.n_modes_truncated))
+            ]
 
 
 class JointNLGreedyTrainer(PolynomialGreedyTrainer):
@@ -1580,6 +1650,7 @@ def main(
         seed_amplitude=config.seed_amplitude,
         exponents=build_exponents(config),
         leading_coefficients=config.leading_coefficient,
+        orthogonal_corrections=config.orthogonal_corrections,
     )
 
     field_layout = problem.model()
@@ -1650,6 +1721,9 @@ def main(
         # indistinguishable from a hung one. Stays off when not verbose, so
         # scripted runs and tests print nothing.
         progress=ProgressBar() if verbose else None,
+        # Base-trainer knob, so it applies to the CP baselines too -- where it is
+        # a no-op, `CPPGD.renormalise()` being empty.
+        renormalise=config.renormalise,
     )
     # The two library trainers are the CP baseline and know none of these; a
     # config that asks for them under `greedy` is a config error, not something
@@ -1694,6 +1768,87 @@ def main(
 
     _report(problem, history, verbose=verbose, plot=plot)
     return problem
+
+
+def term_magnitudes(pgd, m):
+    """Size of each of mode ``m``'s terms: ``|coeff| * prod_j ||w_mj||^lambda_j``.
+
+    The quantity to read, rather than the raw ``c`` and ``C``, because it is
+    **gauge-invariant**: rescaling ``w_mj -> s_j w_mj`` divides the coefficients
+    by exactly the factor it multiplies the norms by, so these numbers do not
+    move while ``c`` and ``C`` individually do. Raw coefficients are only
+    comparable to each other after ``renormalise`` with a live leading
+    coefficient, which puts every ``||w_mj||`` at 1 -- so under
+    ``renormalise=False``, or under the ``d-1`` gauge fix, reading ``c`` against
+    ``C`` compares numbers in different units.
+
+    That makes it the pair of answers worth having:
+
+    * **Did the non-linear correction activate?** Some correction term holds a
+      non-negligible share. A ``|C|`` that is merely non-zero proves nothing --
+      it can sit against monom norms that make its term irrelevant.
+    * **Did the linear part collapse?** The leading share goes to ~0, i.e. the
+      mode became essentially purely non-linear. That is a *reachable* state
+      only with ``leading_coefficient=True``; with ``c`` pinned at 1 it is a
+      limit point (monoms -> 0, ``C`` -> infinity), not an interior one.
+
+    Args:
+        pgd (PolynomialNLPGD): a decomposition, trained.
+        m (int): mode index.
+
+    Returns:
+        tuple: ``(leading, corrections)`` -- a float, and one float per row of
+        ``pgd.exponents``, in the same order.
+    """
+    norms = [float(n) for n in pgd.monom_norms(m)]
+    weight = 1.0
+    if pgd.has_leading_coefficients:
+        weight = abs(float(pgd.leading_coefficients[m].detach()))
+    leading = weight
+    for value in norms:
+        leading *= value
+
+    corrections = []
+    row = pgd.coefficients[m].detach()
+    for t in range(pgd.n_terms):
+        size = abs(float(row[t]))
+        for k, value in enumerate(norms):
+            size *= value ** int(pgd.exponents[t, k])
+        # 1.0 unless `orthogonal_corrections` is on, where the deflated factor is
+        # genuinely smaller than the power it replaces and the product above
+        # would report the term the decomposition no longer holds.
+        size *= pgd.deflation_shrinkage(m, t)
+        corrections.append(size)
+    return leading, corrections
+
+
+def _print_term_magnitudes(pgd):
+    """Print :func:`term_magnitudes` per mode, with each term's share of the mode.
+
+    The share is what makes the table readable at a glance: the magnitudes span
+    orders, so "is the correction doing anything" is a percentage question, not
+    a magnitude one. ``lin`` is the leading (linear) term.
+    """
+    print()
+    print("term magnitudes |coeff| * prod_j ||w_j||^lambda_j  (gauge-invariant, "
+          "share of the mode)")
+    for m in range(pgd.n_modes_truncated):
+        leading, corrections = term_magnitudes(pgd, m)
+        total = leading + sum(corrections)
+        # A mode seeded but never trained can sit at exactly zero; dividing
+        # would print nan for every share and hide that it is the *mode* that is
+        # empty, which is itself the diagnosis.
+        if total <= 0.0:
+            print(f"  mode {m:2d}: (all terms zero -- this mode is empty)")
+            continue
+        cells = [f"lin {leading:10.3e} ({100.0 * leading / total:5.1f}%)"]
+        for t in range(pgd.n_terms):
+            lam = tuple(int(v) for v in pgd.exponents[t])
+            cells.append(
+                f"{lam} {corrections[t]:10.3e} "
+                f"({100.0 * corrections[t] / total:5.1f}%)"
+            )
+        print(f"  mode {m:2d}: " + "   ".join(cells))
 
 
 def _report(problem, history, verbose=True, plot=True):
@@ -1761,6 +1916,8 @@ def _report(problem, history, verbose=True, plot=True):
                     c = float(problem.pgd.leading_coefficients[m].detach())
                     line += f"   (c = {c:11.4e})"
                 print(line)
+
+            _print_term_magnitudes(problem.pgd)
 
     if plot:
         plot_convergence(history)

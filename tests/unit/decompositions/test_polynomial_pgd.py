@@ -484,6 +484,121 @@ def test_polynomial_directory_layout():
     assert len(poly2.directory()["space"]) == 1
 
 
+def test_term_is_inert_needs_both_frozen_and_zero():
+    """The full truth table. Frozen-and-zero only; every other cell is live.
+
+    The `zero but trainable` cell is the one that matters: it is the ordinary
+    state of a fresh mode at the start of a `joint` stage, and calling it inert
+    would drop it from the graph, starve it of gradient and freeze it at zero
+    for good -- a correction that silently never activates.
+    """
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=1,
+    )
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.tensor([0.0, 0.25]))
+
+    # Frozen (construction default): zero is inert, non-zero is not.
+    assert poly.coefficients[0].requires_grad is False
+    assert poly.term_is_inert(0, 0) is True
+    assert poly.term_is_inert(0, 1) is False
+
+    # Trainable: neither is inert, the zero one least of all.
+    poly.unfreeze_mode_coefficients(0)
+    assert poly.term_is_inert(0, 0) is False
+    assert poly.term_is_inert(0, 1) is False
+
+
+def test_skip_inert_drops_only_the_frozen_zero_terms():
+    """Counts, per mode, against a mixed decomposition.
+
+    Mode 0 frozen with one zero and one non-zero coefficient -- the state
+    ``staged`` leaves behind -- and mode 1 trainable at zero, the state a fresh
+    mode starts in.
+    """
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=2,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=2,
+    )
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.tensor([0.0, 0.25]))
+    poly.unfreeze_mode_coefficients(1)
+
+    assert len(poly.polynomial_directory()) == 2 * (1 + 2)
+    entries = poly.polynomial_directory(skip_inert=True)
+
+    # Mode 0 loses its zero frozen term; mode 1 keeps both, being trainable.
+    assert [e[0] for e in entries] == [0, 0, 1, 1, 1]
+    assert [e[1] for e in entries] == [(1, 1), (3, 3), (1, 1), (2, 2), (3, 3)]
+
+    # Leading terms are never skipped, whatever the coefficients do.
+    assert sum(1 for e in entries if e[1] == (1, 1)) == 2
+
+
+def test_skip_inert_leaves_the_energy_unchanged():
+    """Same number, fewer terms. The point is cost, never the field."""
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=2,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=2,
+    )
+    seed_monoms(poly, 2)
+    with torch.no_grad():
+        poly.coefficients[0].copy_(torch.tensor([0.0, 0.25]))
+        poly.coefficients[1].copy_(torch.tensor([0.0, 0.0]))
+
+    layout, directory = fill_layout(poly), poly.directory()
+    full = separable_energy(layout, directory, poly.polynomial_directory())
+    lean = separable_energy(
+        layout, directory, poly.polynomial_directory(skip_inert=True)
+    )
+    assert float(lean) == pytest.approx(float(full), rel=1e-12)
+    # And it did actually drop something, or the equality above proves nothing.
+    # 6 -> 3: mode 0 keeps its leading term and its non-zero correction, mode 1
+    # is frozen at zero throughout so it is down to its leading term alone.
+    assert len(poly.polynomial_directory()) == 6
+    assert len(poly.polynomial_directory(skip_inert=True)) == 3
+
+
+def test_skip_inert_keeps_the_gradient_of_a_trainable_zero_coefficient():
+    """The guard that makes `skip_inert` safe, checked on the real gradient path.
+
+    A fresh mode's ``C`` is zero *and* trainable. Under a naive ``C == 0`` test
+    it would be skipped, get no gradient, and never leave zero. Here it must
+    receive the same gradient it does without ``skip_inert``.
+    """
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=uniform_exponents(2, 3),
+        n_modes_ini=1,
+    )
+    seed_monoms(poly, 1)
+    poly.unfreeze_mode_coefficients(0)
+    assert float(poly.coefficients[0].abs().max()) == 0.0
+
+    # `retain_graph`: the two energies share the interpolation graph under the
+    # layout, so the first backward would free what the second needs.
+    separable_energy(
+        fill_layout(poly), poly.directory(),
+        poly.polynomial_directory(skip_inert=True),
+    ).backward(retain_graph=True)
+    lean_grad = poly.coefficients[0].grad.clone()
+    assert float(lean_grad.abs().min()) > 0.0, "a skipped term would show 0 here"
+
+    poly.coefficients[0].grad = None
+    separable_energy(
+        fill_layout(poly), poly.directory(), poly.polynomial_directory()
+    ).backward()
+    assert torch.allclose(lean_grad, poly.coefficients[0].grad, atol=1e-12)
+
+
 # --------------------------------------------------------------------------
 # 6. Guards
 # --------------------------------------------------------------------------
@@ -1019,3 +1134,171 @@ def test_renormalise_with_a_leading_coefficient_is_idempotent():
         for f, b in zip(poly.monoms[0], once)
     )
     assert torch.allclose(poly.leading_coefficients[0], once_c, atol=1e-6)
+
+
+# --------------------------------------------------------------------------
+# 8. Orthogonal corrections
+# --------------------------------------------------------------------------
+
+
+def build_orthogonal(exponents, n_modes=1, leading=False):
+    poly = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=n_modes,
+        exponents=exponents,
+        n_modes_ini=n_modes,
+        leading_coefficients=leading,
+        orthogonal_corrections=True,
+    )
+    seed_monoms(poly, n_modes)
+    with torch.no_grad():
+        for m in range(n_modes):
+            poly.coefficients[m].copy_(torch.linspace(0.3, 0.8, poly.n_terms))
+    return poly
+
+
+def test_orthogonal_corrections_off_changes_nothing():
+    # The guard on every existing checkpoint: the flag adds no parameter, so the
+    # state_dict must be identical, and so must the field.
+    exponents = uniform_exponents(2, 3)
+    plain = build_seeded(exponents)
+    flagged = PolynomialNLPGD(
+        axes=make_two_axes(),
+        n_modes_max=1,
+        exponents=exponents,
+        n_modes_ini=1,
+        orthogonal_corrections=True,
+    )
+
+    assert set(plain.state_dict()) == set(flagged.state_dict())
+
+    coords = torch.stack(
+        [QUERY_X, torch.tensor([400.0, 700.0, 1000.0])], dim=1
+    )
+    on = build_orthogonal(exponents)
+    assert not torch.allclose(plain.evaluate(coords), on.evaluate(coords))
+
+
+def test_the_deflation_axis_is_the_first_non_unit_power():
+    # lambda_j = 1 would deflate the factor to exactly zero and annihilate the
+    # whole term, so the axis must be one whose power is not 1.
+    assert PolynomialNLPGD._deflation_axis((1, 2, 1)) == 1
+    assert PolynomialNLPGD._deflation_axis((3, 3)) == 0
+    assert PolynomialNLPGD._deflation_axis((1, 1, 4)) == 2
+    with pytest.raises(ValueError, match="leading term"):
+        PolynomialNLPGD._deflation_axis((1, 1))
+
+
+def leading_inner_products(poly, m, layout):
+    """``int w_ij^p w_ij dmu_j`` per axis, for every power the rows use."""
+    directory = poly.directory()
+    axis_names = list(directory)
+
+    def moment(k, power):
+        r = layout[directory[axis_names[k]][m]]
+        return float(integrate(r.u**power * r.u * r.measure))
+
+    return moment
+
+
+def test_a_deflated_correction_is_orthogonal_to_the_leading_term():
+    # The claim the whole option rests on. <prod_j f_j, prod_j w_j> factorises
+    # into per-axis integrals, so the correction's overlap with the leading term
+    # is the sum, over the two rows it expands into, of the product of those
+    # integrals -- and it must vanish.
+    poly = build_orthogonal(uniform_exponents(2, 3))
+    layout = fill_layout(poly)
+    moment = leading_inner_products(poly, 0, layout)
+
+    rows = poly._term_rows(0)
+    leading, corrections = rows[0], rows[1:]
+    assert leading[0] == (1, 1)
+
+    # Rows come in (lam, C), (shadow, -beta C) pairs, one pair per correction.
+    assert len(corrections) == 2 * poly.n_terms
+    for i in range(poly.n_terms):
+        overlap = 0.0
+        for lam, coefficient in corrections[2 * i : 2 * i + 2]:
+            contribution = float(coefficient)
+            for k, power in enumerate(lam):
+                contribution *= moment(k, power)
+            overlap += contribution
+        # Scale-free: compare against the size of either row on its own, or a
+        # cancellation between two large numbers would pass trivially.
+        alone = abs(float(corrections[2 * i][1]))
+        for k, power in enumerate(corrections[2 * i][0]):
+            alone *= abs(moment(k, power))
+        assert abs(overlap) < 1e-5 * alone
+
+
+def test_the_undeflated_correction_is_not_orthogonal():
+    # The contrast, so the test above cannot pass by the overlap being zero for
+    # some unrelated reason (an odd monom, say).
+    poly = build_seeded(uniform_exponents(2, 3))
+    layout = fill_layout(poly)
+    moment = leading_inner_products(poly, 0, layout)
+
+    lam, coefficient = poly._term_rows(0)[1]
+    overlap = float(coefficient)
+    for k, power in enumerate(lam):
+        overlap *= moment(k, power)
+
+    assert abs(overlap) > 1e-3
+
+
+def test_evaluate_and_the_directory_describe_the_same_field():
+    # The consistency that matters most: `energy` reads `polynomial_directory`
+    # while `evaluate`/`assemble` read `_mode_from_columns`. If deflation reached
+    # only one of them, a run would train one field and report another.
+    poly = build_orthogonal(uniform_exponents(2, 3), n_modes=1)
+    axes = make_two_axes()
+    coords = torch.stack([QUERY_X, torch.tensor([400.0, 700.0, 1000.0])], dim=1)
+
+    cols = [interpolate(poly, axes, 0, k, coords[:, k]) for k in range(2)]
+    expected = torch.zeros(coords.shape[0])
+    for mode, lam, coefficient in poly.polynomial_directory():
+        term = torch.ones(coords.shape[0])
+        for k, power in enumerate(lam):
+            term = term * cols[k] ** power
+        weight = 1.0 if coefficient is None else float(coefficient)
+        expected = expected + weight * term
+
+    assert torch.allclose(poly.evaluate(coords).reshape(-1), expected, atol=1e-5)
+
+
+def test_deflation_is_inert_while_the_coefficients_are_zero():
+    # A decomposition whose C rows are still at 0 must be exactly CPPGD, flag or
+    # no flag -- otherwise every run's linear phase would already be perturbed.
+    exponents = uniform_exponents(2, 3)
+    coords = torch.stack([QUERY_X, torch.tensor([400.0, 700.0, 1000.0])], dim=1)
+
+    poly = build_orthogonal(exponents)
+    with torch.no_grad():
+        poly.coefficients[0].zero_()
+
+    cp = CPPGD(axes=make_two_axes(), n_modes_max=1, n_modes_ini=1)
+    seed_monoms(cp, 1)
+
+    assert torch.allclose(poly.evaluate(coords), cp.evaluate(coords), atol=1e-6)
+
+
+def test_deflation_survives_skip_inert():
+    # Both rows of a deflated correction must disappear together: leaving the
+    # shadow behind would evaluate `-beta C prod w` with no term to cancel it.
+    poly = build_orthogonal(uniform_exponents(2, 3))
+    poly.freeze_mode_coefficients(0)
+    with torch.no_grad():
+        poly.coefficients[0].zero_()
+
+    assert poly._term_rows(0, skip_inert=True) == [((1, 1), None)]
+
+
+def test_the_deflation_factor_carries_a_gradient():
+    # `monom_norms` runs under no_grad because the gauge fix is applied to the
+    # parameters; beta is composed into the field instead, so a gradient that
+    # ignored it would be the gradient of a different model.
+    poly = build_orthogonal(uniform_exponents(2, 2))
+    fill_layout(poly)
+    beta = poly.deflation_factor(0, 0, 2)
+
+    assert beta.requires_grad

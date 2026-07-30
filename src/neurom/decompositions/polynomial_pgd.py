@@ -262,6 +262,7 @@ class PolynomialNLPGD(CPPGD):
         name="poly_pgd",
         n_modes_ini=1,
         leading_coefficients=False,
+        orthogonal_corrections=False,
     ):
         axes = list(axes)
         for a in axes:
@@ -309,6 +310,100 @@ class PolynomialNLPGD(CPPGD):
                 c.requires_grad_(False)
         else:
             self.leading_coefficients = None
+
+        # Deflate each correction against the leading term (see
+        # `_deflation_axis`). No parameters, so `state_dict` is unchanged and
+        # every checkpoint still loads -- but the *meaning* of a stored `C` moves,
+        # so a checkpoint must be reloaded with the same flag it was written
+        # with. Off by default, and then every code path below is bit-identical
+        # to what it was before this option existed.
+        self.orthogonal_corrections = bool(orthogonal_corrections)
+        self._deflation_axes = None
+        if self.orthogonal_corrections:
+            self._deflation_axes = [
+                self._deflation_axis(tuple(int(v) for v in lam))
+                for lam in self.exponents
+            ]
+
+    @staticmethod
+    def _deflation_axis(lam):
+        """Which axis of exponent row ``lam`` carries the deflation.
+
+        The inner product over a tensor-product domain factorises,
+        ``<prod_j f_j, prod_j g_j> = prod_j <f_j, g_j>``, so **one** zero factor
+        makes the whole product orthogonal to the leading term. Deflating a
+        single axis is therefore enough -- and it is what keeps the cost finite:
+        deflating every axis would expand one correction into ``2^d`` raw
+        products, and the consuming loop is quadratic in the term count.
+
+        The axis must have ``lam_j != 1``: for ``lam_j = 1`` the deflation is
+        ``w_j - (<w_j,w_j>/<w_j,w_j>) w_j = 0`` and would annihilate the term.
+        Such an axis always exists, because ``(1,) * d`` is rejected by
+        :meth:`_validate_exponents` -- it *is* the leading term.
+
+        Returns:
+            int: the first axis with ``lam_j != 1``.
+        """
+        for j, power in enumerate(lam):
+            if power != 1:
+                return j
+        raise ValueError(  # pragma: no cover -- _validate_exponents rejects it
+            f"exponent row {lam} is the leading term; it cannot be deflated"
+        )
+
+    def deflation_factor(self, m, k, power):
+        """``<w^p, w> / <w, w>`` on axis ``k`` of mode ``m``, by quadrature.
+
+        The coefficient that makes ``w^p - beta w`` orthogonal to ``w``. Read
+        off the *quadrature*, like :meth:`monom_norms` and for the same reason:
+        a nodal inner product would make the result mesh-dependent.
+
+        **Differentiable, deliberately** -- unlike ``monom_norms``, which runs
+        under ``no_grad`` because the gauge fix is applied to the parameters
+        rather than composed into the field. Here ``beta`` is part of the field
+        the energy sees, so a gradient that ignored it would be the gradient of a
+        different model.
+
+        Args:
+            m (int): mode index.
+            k (int): axis index.
+            power (int): the exponent ``p``.
+
+        Returns:
+            torch.Tensor: 0-dim.
+        """
+        r = self._assemblies[m][k].interpolate()
+        numerator = integrate(r.u**power * r.u * r.measure)
+        denominator = integrate(r.u * r.u * r.measure)
+        return numerator / denominator
+
+    def deflation_shrinkage(self, m, t):
+        """How much deflation shrinks correction ``t`` of mode ``m``.
+
+        ``||w_k^p - beta w_k|| / ||w_k||^p`` on the deflated axis, and exactly
+        ``1.0`` when ``orthogonal_corrections`` is off.
+
+        Exists for the diagnostics: a term magnitude read as
+        ``|C| prod_j ||w_j||^lambda_j`` measures the *undeflated* product, so
+        with deflation on it overstates the correction by this factor -- the
+        component parallel to the leading term is the part that was removed.
+        Multiplying by this restores the comparison without redefining the
+        magnitude for the runs that do not use the flag.
+
+        Returns:
+            float
+        """
+        if not self.orthogonal_corrections:
+            return 1.0
+        k = self._deflation_axes[t]
+        power = int(self.exponents[t, k])
+        with torch.no_grad():
+            r = self._assemblies[m][k].interpolate()
+            beta = self.deflation_factor(m, k, power)
+            deflated = r.u**power - beta * r.u
+            numerator = integrate(deflated * deflated * r.measure).sqrt()
+            plain = integrate(r.u * r.u * r.measure).sqrt() ** power
+        return float(numerator / plain)
 
     @staticmethod
     def _validate_exponents(exponents, n_axes):
@@ -568,13 +663,55 @@ class PolynomialNLPGD(CPPGD):
 
     # -- structure readback ----------------------------------------------------
 
-    def polynomial_directory(self):
+    def term_is_inert(self, m, t):
+        """Is correction term ``t`` of mode ``m`` both **frozen and exactly zero**?
+
+        Such a term contributes nothing to the field and can never come to: it
+        multiplies its product by ``0``, and with ``requires_grad=False`` it
+        receives no gradient that could move it off ``0``. Assembling it is pure
+        waste -- which is what :meth:`polynomial_directory`'s ``skip_inert``
+        exists to avoid.
+
+        **Both conditions are load-bearing.** A coefficient that is zero but
+        *trainable* is the ordinary state of a fresh mode at the start of a
+        ``joint`` stage: dropping it would remove it from the graph, so it would
+        get no gradient and stay at zero forever -- a correction that silently
+        never activates, which is the hardest failure mode to spot in this
+        example. Testing ``== 0`` alone is therefore a bug, not an optimisation.
+
+        Args:
+            m (int): mode index.
+            t (int): row of :attr:`exponents`.
+
+        Returns:
+            bool: True when the term can be dropped without changing anything.
+        """
+        coefficient = self.coefficients[m]
+        # `requires_grad` lives on the whole row, so a frozen row may still hold
+        # non-zero elements -- `staged` fits C and then freezes it. Hence the
+        # per-element test after the per-row one.
+        if coefficient.requires_grad:
+            return False
+        return float(coefficient[t].detach()) == 0.0
+
+    def polynomial_directory(self, skip_inert=False):
         """Flattened enumeration of the decomposition's terms.
 
         The companion to the inherited :meth:`directory`, which still supplies
         the monom *names*. This supplies the *powers and weights*: with a
         polynomial mode the unit of summation is no longer the mode but the
         term, so a bilinear energy's double loop runs over pairs of these.
+
+        Args:
+            skip_inert (bool): drop the correction terms :meth:`term_is_inert`
+                reports -- frozen at exactly zero, so contributing nothing and
+                unable to start. Off by default, so the enumeration stays a
+                faithful description of the decomposition unless a caller asks
+                for the cheaper one. The consuming loop is quadratic, so during
+                a linear phase (every ``C`` frozen at 0) this takes the cost from
+                ``(n_modes * (1 + |I|))^2`` down to ``n_modes^2`` -- a factor 36
+                at ``|I| = 5``. The **field is unchanged either way**; only the
+                assembly cost moves.
 
         Returns:
             list[tuple[int, tuple[int, ...], torch.Tensor | None]]: one entry per
@@ -598,15 +735,53 @@ class PolynomialNLPGD(CPPGD):
             ``n_modes * (1 + |I|)`` -- 5 modes with ``|I| = 5`` is 900 pairs
             where ``CPPGD`` has 25.
         """
-        leading = (1,) * len(self.axes)
-        rows = [tuple(int(v) for v in lam) for lam in self.exponents]
         out = []
         for m in range(self.n_modes_truncated):
-            c = self.leading_coefficients[m] if self.has_leading_coefficients else None
-            out.append((m, leading, c))
-            for t, lam in enumerate(rows):
-                out.append((m, lam, self.coefficients[m][t]))
+            for lam, coefficient in self._term_rows(m, skip_inert=skip_inert):
+                out.append((m, lam, coefficient))
         return out
+
+    def _term_rows(self, m, skip_inert=False):
+        """One mode's terms as ``(exponents, coefficient)`` pairs.
+
+        The single place the term structure is spelled out, so
+        :meth:`polynomial_directory` (which the energy reads) and
+        :meth:`_mode_from_columns` (which ``evaluate`` and ``assemble`` read)
+        cannot drift apart -- with ``orthogonal_corrections`` on they would
+        otherwise describe two different fields, and the run would train one and
+        report the other.
+
+        Args:
+            m (int): mode index.
+            skip_inert (bool): see :meth:`polynomial_directory`.
+
+        Returns:
+            list[tuple[tuple[int, ...], torch.Tensor | None]]
+        """
+        leading = (1,) * len(self.axes)
+        c = self.leading_coefficients[m] if self.has_leading_coefficients else None
+        # The leading term is never skipped: with a fixed unit weight it has no
+        # coefficient to be zero, and with `c` live a zero `c` is a state the
+        # optimizer may be passing through rather than parked at.
+        rows = [(leading, c)]
+        for t, lam in enumerate(self.exponents):
+            if skip_inert and self.term_is_inert(m, t):
+                continue
+            lam = tuple(int(v) for v in lam)
+            coefficient = self.coefficients[m][t]
+            if not self.orthogonal_corrections:
+                rows.append((lam, coefficient))
+                continue
+            # `w_j^p -> w_j^p - beta w_j` on one axis. Deflation is *linear*, so
+            # the deflated product expands into two ordinary products -- which is
+            # what lets every consumer stay a plain "coefficient times a product
+            # of powers" loop, at the price of one extra row per correction.
+            k = self._deflation_axes[t]
+            beta = self.deflation_factor(m, k, lam[k])
+            shadow = lam[:k] + (1,) + lam[k + 1 :]
+            rows.append((lam, coefficient))
+            rows.append((shadow, -beta * coefficient))
+        return rows
 
     # -- evaluation ------------------------------------------------------------
 
@@ -623,16 +798,14 @@ class PolynomialNLPGD(CPPGD):
             cols[k]**lam[t, k]``, with ``c_m`` a fixed 1 unless the
             decomposition carries leading coefficients.
         """
-        total = cols[0]
-        for c in cols[1:]:
-            total = total * c
-        if self.has_leading_coefficients:
-            total = self.leading_coefficients[m] * total
-        for t in range(self.n_terms):
-            term = cols[0] ** int(self.exponents[t, 0])
+        total = None
+        for lam, coefficient in self._term_rows(m):
+            term = cols[0] ** lam[0]
             for k, c in enumerate(cols[1:], start=1):
-                term = term * c ** int(self.exponents[t, k])
-            total = total + self.coefficients[m][t] * term
+                term = term * c ** lam[k]
+            if coefficient is not None:
+                term = coefficient * term
+            total = term if total is None else total + term
         return total
 
     def evaluate(self, coords):

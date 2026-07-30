@@ -487,9 +487,15 @@ def test_zero_coefficients_reproduce_the_cp_energy_exactly(beam5p, float64):
         def directory(self):
             return self._pgd.directory()
 
-        def polynomial_directory(self):
+        def polynomial_directory(self, skip_inert=False):
+            # Accepts (and ignores) `skip_inert`: this stub already keeps only
+            # the leading terms, which the real one never skips, so the filtered
+            # result is the same either way. The kwarg is here because `energy`
+            # passes it.
             return [
-                term for term in self._pgd.polynomial_directory() if term[2] is None
+                term
+                for term in self._pgd.polynomial_directory(skip_inert=skip_inert)
+                if term[2] is None
             ]
 
     cp_only = beam5p.energy(layout, _LeadingTermsOnly(problem.pgd))

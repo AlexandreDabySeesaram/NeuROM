@@ -798,18 +798,23 @@ def _independent_legendre(pgd, space=0):
     recomputing ``amax`` here would test nothing.
     """
 
+    # Degree 1 takes the RAW monom on every axis, normalised family or not:
+    # psi_1 is the identity, so w and w/||w||_inf differ by a positive constant
+    # and orthogonality against the higher degrees is unchanged -- while
+    # normalising it would quotient the leading term's amplitude away and leave
+    # the mode with one multiplicative channel instead of five.
     def value(m, k, power, values):
-        if k == space:
+        if k == space or power == 1:
             return values**power
         v = values / pgd.monom_scale(m, k)
-        return {1: v, 2: (3 * v**2 - 1) / 2, 3: (5 * v**3 - 3 * v) / 2}[power]
+        return {2: (3 * v**2 - 1) / 2, 3: (5 * v**3 - 3 * v) / 2}[power]
 
     def derivative(m, k, power, values):
-        if k == space:
+        if k == space or power == 1:
             return power * values ** (power - 1)
         scale = pgd.monom_scale(m, k)
         v = values / scale
-        return {1: torch.ones_like(v), 2: 3 * v, 3: (15 * v**2 - 3) / 2}[power] / scale
+        return {2: 3 * v, 3: (15 * v**2 - 3) / 2}[power] / scale
 
     return value, derivative
 

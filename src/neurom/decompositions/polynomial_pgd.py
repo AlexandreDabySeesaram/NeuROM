@@ -447,7 +447,7 @@ class PolynomialNLPGD(CPPGD):
             values (torch.Tensor): the interpolated monom, any shape.
         """
         basis = self.bases[k]
-        if not basis.needs_normalised_argument:
+        if not basis.normalises(power):
             return basis.value(power, values)
         return basis.value(power, values / self.monom_scale(m, k))
 
@@ -462,7 +462,7 @@ class PolynomialNLPGD(CPPGD):
         -- hence the autograd cross-check in the unit tests.
         """
         basis = self.bases[k]
-        if not basis.needs_normalised_argument:
+        if not basis.normalises(power):
             return basis.derivative(power, values)
         scale = self.monom_scale(m, k)
         return basis.derivative(power, values / scale) / scale
@@ -741,54 +741,44 @@ class PolynomialNLPGD(CPPGD):
           they sit at ``A^(1 - p)``, orders apart, which is what makes a single
           Adam ``coefficient_lr`` unable to serve them all.
 
-        **Axes on a normalised basis are skipped entirely.** Their factor is
-        ``psi_p(w / ||w||_inf)``, which does not move when ``w`` is rescaled --
-        for the corrections *and* for the leading term, since ``psi_1`` is the
-        identity of the same normalised argument. Such an axis has no scale for a
-        coefficient to absorb, so there is nothing to fix and, more to the point,
-        applying the ``s^(-lambda)`` rule to it would change the field. The
-        gauge fix therefore acts on the homogeneous (monomial) axes only, and
-        ``prod_j s_j = 1`` is imposed over those.
+        **Every axis is gauged, whatever its basis** -- the leading term uses the
+        raw monom on all of them, so rescaling one always changes the field and
+        always has to be compensated. What the basis changes is only *how much*
+        each factor moves, which
+        :meth:`~neurom.decompositions.term_basis.TermBasis.gauge_exponent`
+        answers: ``lambda_k`` for a homogeneous family, but ``0`` for a
+        normalised factor of degree >= 2, since ``psi_p(w / ||w||_inf)`` does not
+        move at all. Applying the plain ``s^(-lambda)`` rule to such a term would
+        change the field rather than preserve it.
         """
         norms = self.monom_norms(m)
         if not all(bool(torch.isfinite(n)) and float(n) > 0.0 for n in norms):
             return
 
-        # Axes whose basis is scale-invariant contribute no gauge direction.
-        gauged = [
-            k
-            for k in range(len(norms))
-            if not self.bases[k].needs_normalised_argument
-        ]
-        if not gauged:
-            return
-
         scales = [torch.ones_like(norms[0]) for _ in norms]
         if self.has_leading_coefficients:
-            for k in gauged:
+            for k in range(len(norms)):
                 scales[k] = 1.0 / norms[k]
         else:
-            # The first gauged axis absorbs the amplitude, so `prod s = 1` holds
-            # over the gauged axes and the leading term is untouched.
-            absorber = gauged[0]
-            for k in gauged[1:]:
+            for k in range(1, len(norms)):
                 scales[k] = 1.0 / norms[k]
-                scales[absorber] = scales[absorber] * norms[k]
+                scales[0] = scales[0] * norms[k]
 
         with torch.no_grad():
-            for k in gauged:
-                self.monoms[m][k].values_reduced.mul_(scales[k])
+            for k, s in enumerate(scales):
+                self.monoms[m][k].values_reduced.mul_(s)
             if self.has_leading_coefficients:
-                # The leading term's exponent row is (1, ..., 1), so it takes
-                # the same prod_j s_j^(-lambda_j) rule as every other term.
+                # The leading row is (1, ..., 1) and degree 1 is raw on every
+                # basis, so it takes the plain prod_j s_j^(-1).
                 leading = torch.ones_like(norms[0])
-                for k in gauged:
-                    leading = leading / scales[k]
+                for s in scales:
+                    leading = leading / s
                 self.leading_coefficients[m] *= leading
             for t in range(self.n_terms):
                 factor = torch.ones_like(norms[0])
-                for k in gauged:
-                    factor = factor * scales[k] ** (-int(self.exponents[t, k]))
+                for k, s in enumerate(scales):
+                    e = self.bases[k].gauge_exponent(int(self.exponents[t, k]))
+                    factor = factor * s ** (-e)
                 self.coefficients[m][t] *= factor
 
     # -- structure readback ----------------------------------------------------

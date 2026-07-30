@@ -46,9 +46,29 @@ numbers below are one tiny-mesh smoke run.
   `⟨ψ_a(w), ψ_b(w)⟩` integrates against the law of `w`'s *values*, not the
   uniform law. On the unit fixture the leading-correction cosine is 0.476
   against the monomials' 0.949 — a factor 2, not orthogonality.
+- **Degree 1 must never be normalised** — found by a run whose *linear* phase
+  was wrong, where the corrections are frozen at zero and cannot matter.
+  Normalising it makes the leading term `ψ₁(ŵ) = w/‖w‖_∞` scale-invariant, which
+  quotients the mode's amplitude away: **one** multiplicative channel where CP
+  has `d`, and Adam's per-stage budget cannot cover it. Rank 1, 300 iterations:
+
+  | | stage-0 energy | `\|c\|` | mode amplitude |
+  |---|---|---|---|
+  | monomial | −1.9047e+11 | 3.077e+05 | 3.08e+05 |
+  | Legendre, degree 1 normalised | −6.6426e+10 | 1.356e+02 | 5.52e+04 |
+  | Legendre, degree 1 raw | **−1.9047e+11** | 3.077e+05 | 3.08e+05 |
+
+  Each axis need only reach `(3e5)^{1/5} ≈ 12.6` when all five carry amplitude;
+  alone, space would need ~756 and ~2400 iterations. Same shape as the `support`
+  activation failure. Safe because `ψ₁` is the identity, so `w` and `w/‖w‖_∞`
+  differ by a positive constant and orthogonality against every higher degree is
+  unchanged — and the linear phase is now bit-identical to CP.
+  `TermBasis.gauge_exponent` carries the consequence into `renormalise_mode`:
+  every axis is gauged again, but a normalised factor of degree ≥ 2 scales as
+  `s^0`.
 - Smoke run only (tiny mesh 8/5/5/4/4, rank 3, 60 iters/stage, single run):
-  trains, energy monotone to −7.6e9, and the correction takes 64–68 % of its
-  mode — far more than the monomial rows' 0.1–3 %. Not a result.
+  trains, energy monotone, correction at 64–68 % of its mode against the
+  monomial rows' 0.1–3 %. Predates the degree-1 fix. Not a result.
 - Test scope, established by bug injection rather than assumed: dropping the
   normalisation in `basis_value` fails the 5-D brute-force cross-check;
   dropping the `1/scale` in `basis_derivative` **cannot** be seen there, because

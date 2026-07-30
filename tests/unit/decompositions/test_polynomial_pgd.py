@@ -1488,3 +1488,39 @@ def test_legendre_leaves_less_overlap_with_the_leading_term_than_the_monomials()
     # distribution is whatever `MONOM_VALUES` happens to be. The number that
     # decides whether the basis is good enough is the one on the real problem.
     assert legendre < 0.6 * monomial
+
+
+def test_degree_one_is_never_normalised():
+    # THE property that keeps the linear phase working. psi_1 is the identity, so
+    # w and w/||w||_inf differ by a positive constant and orthogonality against
+    # the higher degrees is untouched -- but normalising degree 1 makes the
+    # leading term scale-invariant, which quotients the mode's amplitude away and
+    # leaves ONE multiplicative channel where CP has d. Measured on the beam,
+    # rank 1, 300 iterations: stage-0 energy -6.64e10 against -1.90e11.
+    assert not LegendreBasis().normalises(1)
+    assert LegendreBasis().normalises(2)
+    assert not MonomialBasis().normalises(2)
+
+
+def test_a_frozen_correction_makes_a_legendre_decomposition_exactly_cp():
+    # The consequence: with C still at zero -- every linear phase -- a Legendre
+    # decomposition must be BIT-identical to the monomial one, since the only
+    # term left is the leading one and degree 1 is raw on both.
+    exponents = uniform_exponents(2, 2)
+    coords = torch.stack([QUERY_X, torch.tensor([400.0, 700.0, 1000.0])], dim=1)
+
+    monomial = build_seeded(exponents)
+    legendre = build_with_bases(exponents, legendre_on_the_second_axis())
+    for poly in (monomial, legendre):
+        with torch.no_grad():
+            poly.coefficients[0].zero_()
+
+    assert torch.equal(monomial.evaluate(coords), legendre.evaluate(coords))
+
+
+def test_the_gauge_exponent_is_zero_only_for_a_normalised_high_degree():
+    # What renormalise_mode must undo per factor. Degree 1 scales like s on every
+    # basis; a normalised factor above it does not move at all.
+    assert MonomialBasis().gauge_exponent(3) == 3
+    assert LegendreBasis().gauge_exponent(1) == 1
+    assert LegendreBasis().gauge_exponent(2) == 0

@@ -55,6 +55,42 @@ class TermBasis:
 
     needs_normalised_argument = False
 
+    def normalises(self, power):
+        """Does degree ``power`` want ``w / ||w||_inf`` rather than ``w``?
+
+        **Degree 1 never does**, even on a family that otherwise requires it, and
+        this is the difference between a working decomposition and a broken one
+        rather than a nicety.
+
+        Why it is safe: ``psi_1`` is the identity, so ``psi_1(w) = ||w||_inf
+        psi_1(w_hat)`` -- a *positive constant* multiple. Orthogonality against
+        every other degree is therefore untouched, ``<w, psi_p(w_hat)> =
+        ||w||_inf <w_hat, psi_p(w_hat)>``.
+
+        Why it is necessary: ``w_hat`` is scale-invariant, so normalising degree
+        1 quotients the leading term's amplitude away. The mode then has **one**
+        multiplicative amplitude channel instead of ``d``, and Adam's per-stage
+        step budget cannot cover it. Measured on the 5-parametric beam, rank 1,
+        300 iterations: normalising degree 1 gave a stage-0 energy of -6.64e10
+        against the monomials' -1.90e11, with the mode amplitude 5.5e4 against
+        3.1e5. Each axis only has to reach ``(3e5)^(1/5) = 12.6`` when all five
+        carry amplitude; alone, space would need ~756 and roughly 2400
+        iterations to get there.
+        """
+        return self.needs_normalised_argument and power != 1
+
+    def gauge_exponent(self, power):
+        """How this factor scales when its monom is rescaled: ``s ** ?``.
+
+        What ``renormalise`` must undo in the matching coefficient. ``power`` for
+        a homogeneous family; for a normalised one, ``1`` at degree 1 (the raw
+        monom, which does scale) and ``0`` above (``psi_p(w_hat)`` does not move
+        at all).
+        """
+        if not self.normalises(power):
+            return power
+        return 0
+
     def value(self, power, v):
         """``psi_power(v)``, elementwise."""
         raise NotImplementedError

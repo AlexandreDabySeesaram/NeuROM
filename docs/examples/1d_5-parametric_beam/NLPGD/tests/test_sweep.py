@@ -4,6 +4,7 @@ Loads the example script and ``sweep.py`` by path (they are scripts, not an
 installed package), mirroring the sibling example tests.
 """
 
+import dataclasses
 import importlib.util
 from pathlib import Path
 
@@ -37,6 +38,80 @@ def test_config_id_changes_when_a_knob_changes():
     a = ex.RunConfig(name="x")
     b = ex.RunConfig(name="x", stage_tol=1e-6)
     assert ex.config_id(a) != ex.config_id(b)
+
+
+def test_an_unused_new_knob_does_not_rekey_a_config():
+    # The invariant `ID_TRANSPARENT_DEFAULTS` exists for: adding a field must not
+    # change the id of a config that does not set it, or every ledger row and
+    # checkpoint written before the field is orphaned and silently retrained.
+    import dataclasses
+    import hashlib
+    import json
+
+    cfg = ex.RunConfig(name="x")
+    before_the_fields_existed = {
+        k: v
+        for k, v in dataclasses.asdict(cfg).items()
+        if k not in ex.ID_TRANSPARENT_DEFAULTS
+    }
+    assert ex.config_id(cfg) == hashlib.sha256(
+        json.dumps(before_the_fields_existed, sort_keys=True).encode()
+    ).hexdigest()[:8]
+
+
+@pytest.mark.parametrize("knob, value", sorted(
+    {"global_stage_tol": 1e-5, "global_max_iter": 999, "global_min_iter": 50,
+     "global_leading_coefficient": True, "global_renormalise": True,
+     "seed_shape": 0.25}.items()
+))
+def test_setting_a_transparent_knob_does_rekey(knob, value):
+    # Transparent only while unused: a config that asks for the global phase, or
+    # for a different seed shape, is a different experiment and must get its own
+    # row.
+    import dataclasses
+
+    cfg = ex.RunConfig(name="x")
+    assert ex.config_id(cfg) != ex.config_id(dataclasses.replace(cfg, **{knob: value}))
+
+
+def test_every_transparent_default_is_the_fields_default():
+    # An entry whose value is not the field's default would drop a *meaningful*
+    # value from the payload and make two different configs share an id.
+    import dataclasses
+
+    defaults = {
+        f.name: f.default for f in dataclasses.fields(ex.RunConfig)
+    }
+    for name, value in ex.ID_TRANSPARENT_DEFAULTS.items():
+        assert name in defaults, name
+        assert defaults[name] == value, name
+
+
+def test_stored_ledger_rows_still_reproduce_their_id():
+    # The rows this session's fields must not disturb. Hashed from the STORED
+    # config dict, not from a rebuilt RunConfig: rows written before
+    # `orthogonal_corrections` and `term_basis` existed were keyed over a payload
+    # that lacks those keys, and no later mechanism can recover that -- see
+    # `ID_TRANSPARENT_DEFAULTS`. What is pinned here is that the *global* fields
+    # cost nothing.
+    import hashlib
+    import json
+
+    ledger = EXAMPLE.parent / "sweep_results_new_strategies.jsonl"
+    rows = sw.load_ledger(ledger)
+    assert rows, "the ledger this test reads is missing"
+    for row in rows:
+        stored = dict(row["config"])
+        for name, default in ex.ID_TRANSPARENT_DEFAULTS.items():
+            stored.setdefault(name, default)
+        payload = {
+            k: v
+            for k, v in stored.items()
+            if not (k in ex.ID_TRANSPARENT_DEFAULTS and v == ex.ID_TRANSPARENT_DEFAULTS[k])
+        }
+        assert hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode()
+        ).hexdigest()[:8] == row["config_id"], row["config"]["name"]
 
 
 def test_config_id_is_hex8():
@@ -244,3 +319,36 @@ def test_show_rank_curve_says_so_when_the_row_predates_it(tmp_path, capsys):
                            "result": {"overall_error": 0.1}})
     sw.show_rank_curve("old1", ledger=ledger)
     assert "no rank_curve" in capsys.readouterr().out
+
+
+def test_seed_scan_is_the_cross_product_and_varies_only_the_seed():
+    # The arm's whole value is that its rows are one seed knob apart: a field
+    # that drifted between them would confound the study with whatever else moved.
+    configs = sw.seed_scan_configs(ex, amplitudes=[0.005, 0.05], shapes=[0.5, 0.25])
+
+    assert len(configs) == 4
+    assert len({ex.config_id(c) for c in configs}) == 4
+    fixed = [
+        {k: v for k, v in dataclasses.asdict(c).items()
+         if k not in ("name", "seed_amplitude", "seed_shape")}
+        for c in configs
+    ]
+    assert all(f == fixed[0] for f in fixed)
+
+
+def test_seed_scan_reproduces_the_row_it_is_anchored_on():
+    # `1c40b49c` is the 58.1%-non-linear row the study varies around. Its
+    # baseline seed point must be the same experiment, or the arm has no control.
+    ledger = EXAMPLE.parent / "sweep_results_new_strategies.jsonl"
+    anchor = next(
+        r for r in sw.load_ledger(ledger) if r["config_id"] == "1c40b49c"
+    )
+    baseline = next(
+        c for c in sw.seed_scan_configs(ex)
+        if (c.seed_amplitude, c.seed_shape) == (0.05, 0.5)
+    )
+
+    stored = dict(anchor["config"])
+    del stored["name"]  # the arm renames its rows; that is the only difference
+    for knob, value in stored.items():
+        assert getattr(baseline, knob) == value, knob

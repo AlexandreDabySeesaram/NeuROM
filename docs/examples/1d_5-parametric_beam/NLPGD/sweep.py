@@ -33,17 +33,24 @@ import torch
 
 HERE = Path(__file__).resolve().parent
 
-#: Default ledger for every helper here. The new-strategies campaign writes to
-#: its own file: its rows carry knobs (``n_linear_modes``, ``leading_coefficient``,
-#: ``pin_space_exponent``) that no earlier row has, so their content hashes -- and
-#: hence their identities -- are new anyway, and keeping them apart stops the
-#: median in :func:`energy_bands` from being drawn through two different designs.
+#: Default ledger for every helper here -- the campaign currently in the queue,
+#: so it moves when :func:`_configs` does. One file per design, because
+#: :func:`energy_bands` draws a median through whatever it is given and a median
+#: over two different designs means nothing.
 #:
 #: The earlier files are still reachable by passing ``ledger=`` explicitly:
-#: ``sweep_results_grid.jsonl`` (the fixed-budget screening grid) and
-#: ``sweep_results.jsonl`` (the exploratory rows, which stopped at whatever rank
-#: ``RelativeGain`` happened to allow and are not budget-comparable).
-LEDGER = "sweep_results_new_strategies.jsonl"
+#: :data:`STRATEGY_LEDGER` (below), ``sweep_results_grid.jsonl`` (the
+#: fixed-budget screening grid) and ``sweep_results.jsonl`` (the exploratory
+#: rows, which stopped at whatever rank ``RelativeGain`` happened to allow and
+#: are not budget-comparable).
+LEDGER = "sweep_results_seed_scan.jsonl"
+
+#: The strategy campaign this study is anchored on, `1c40b49c` included. Kept
+#: separate from :data:`LEDGER` because the seed arm holds one config fixed and
+#: varies two knobs across it: mixed in, its ten rows would dominate every
+#: aggregate in `show_ledger` and `energy_bands` and make the strategy
+#: comparison unreadable. Pass ``ledger=STRATEGY_LEDGER`` to reach it.
+STRATEGY_LEDGER = "sweep_results_new_strategies.jsonl"
 
 _EXAMPLE = None
 
@@ -217,7 +224,7 @@ def show_ledger(path, energy_tol=0.20):
         ("modes", 5, ">"),
         ("iters", 6, ">"),
         ("secs", 7, ">"),
-        ("seed", 6, ">"),
+        ("seed a/s", 9, ">"),
         ("I", 14, "<"),
         ("l/c/g", 5, "<"),
         ("max|c|", 10, ">"),
@@ -235,10 +242,16 @@ def show_ledger(path, energy_tol=0.20):
         # on different days.
         secs = r.get("meta", {}).get("train_seconds")
         secs_str = f"{secs:7.1f}" if secs is not None else f"{'-':>7}"
-        # Older rows predate the seed_amplitude knob; fall back so a mixed ledger
-        # still prints (the row is stale anyway and will be rerun).
-        seed = cfg.get("seed_amplitude")
-        seed_str = f"{seed:6.3g}" if seed is not None else f"{'-':>6}"
+        # Both halves of the seed, because a row is only interpretable with
+        # both: a mode enters at `a * s**4`, so `a` alone orders the rows wrongly
+        # (a=5,s=0.5 is a *smaller* seed than a=0.5,s=1). Older rows predate one
+        # or both knobs; fall back so a mixed ledger still prints.
+        seed_a = cfg.get("seed_amplitude")
+        seed_s = cfg.get("seed_shape", 0.5)
+        seed_str = (
+            f"{seed_a:.3g}/{seed_s:.3g}".rjust(9) if seed_a is not None
+            else f"{'-':>9}"
+        )
         # The last stage's energy -- the quantity the training actually
         # minimises, where `overall` is measured against the FEM reference.
         # Comparable across rows only at equal mesh: the energy is an integral
@@ -434,8 +447,125 @@ def show_leading_coefficients(config_id, ledger=None):
         ]
         # `mode` is the mode this stage trained; with a linear phase it is no
         # longer the stage index, which is why it is stored rather than derived.
-        print(f"{s['stage']:5d}  {s.get('mode', s['stage']):4d}  "
+        # `None` is the global stage's mode: it trained every mode at once, so
+        # no index is the right one to print -- and `{None:4d}` raises.
+        mode = s.get("mode", s["stage"])
+        mode = "all" if mode is None else str(mode)
+        print(f"{s['stage']:5d}  {mode:>4}  "
               f"{s.get('kind', 'cp'):>7}  " + "  ".join(cells))
+
+
+def term_magnitude_block(pgd):
+    """The ledger's ``term_magnitudes`` block: per mode, the size of every term.
+
+    ``coefficient_norm`` is the only other recorded quantity that looks at ``C``,
+    and it cannot answer "did the non-linear correction do anything": it is the
+    raw L1 norm of a coefficient row, so it moves under a rescaling of the monoms
+    that leaves the decomposition unchanged, and it says nothing about the size
+    of the term the coefficient multiplies. The example's ``term_magnitudes``
+    does -- ``|coeff| * prod_j ||psi_lambda_j(w_mj)||``, gauge-invariant -- so
+    that is what goes in the ledger.
+
+    Returns:
+        dict: ``exponents`` (the rows of ``I``, as lists), and ``modes`` -- one
+        entry per truncated mode with ``leading``, ``corrections`` (in
+        ``exponents`` order), and ``nonlinear_share``, the corrections' share of
+        the mode's total. ``None`` for a decomposition with no correction terms.
+    """
+    ex = _example()
+    if not hasattr(pgd, "exponents"):
+        return None
+    modes = []
+    for m in range(int(pgd.n_modes_truncated)):
+        leading, corrections = ex.term_magnitudes(pgd, m)
+        total = leading + sum(corrections)
+        modes.append({
+            "leading": leading,
+            "corrections": corrections,
+            # None, not 0, for a mode that is entirely empty: a share of zero
+            # would read as "the correction is off" when the whole mode is.
+            "nonlinear_share": (sum(corrections) / total) if total > 0 else None,
+        })
+    return {
+        "exponents": [[int(v) for v in row] for row in pgd.exponents],
+        "modes": modes,
+    }
+
+
+def show_term_magnitudes(config_id, ledger=None):
+    """Print a row's recorded term magnitudes, one line per mode.
+
+    Reads the ledger, not a checkpoint -- so it is instant, and so the numbers
+    are the ones the run recorded. Rows written before the block existed say so;
+    :func:`backfill_term_magnitudes` fills them in from their checkpoints.
+
+    Args:
+        config_id (str): the row's ``config_id``.
+        ledger (str or Path, optional): defaults to :data:`LEDGER`.
+    """
+    ledger = Path(ledger if ledger is not None else LEDGER)
+    if not ledger.is_absolute():
+        ledger = HERE / ledger
+    rows = load_ledger(ledger)
+    row = next((r for r in rows if r["config_id"] == config_id), None)
+    if row is None:
+        raise KeyError(f"no row with config_id {config_id!r} in {ledger}")
+    block = row["result"].get("term_magnitudes")
+    if block is None:
+        print(f"{config_id}: term magnitudes not recorded -- run "
+              "backfill_term_magnitudes(), or rerun with --retrain")
+        return
+
+    print(f"{row['config']['name']}  ({config_id})")
+    print("term magnitudes |coeff| * prod_j ||psi_lambda_j(w_j)||  "
+          "(gauge-invariant, share of the mode)")
+    for m, mode in enumerate(block["modes"]):
+        share = mode["nonlinear_share"]
+        if share is None:
+            print(f"  mode {m:2d}: (all terms zero -- this mode is empty)")
+            continue
+        cells = [f"lin {mode['leading']:10.3e}"]
+        for lam, size in zip(block["exponents"], mode["corrections"]):
+            cells.append(f"{tuple(lam)} {size:10.3e}")
+        print(f"  mode {m:2d}: NL {100.0 * share:5.1f}%   " + "   ".join(cells))
+
+
+def backfill_term_magnitudes(ledger=None, checkpoint_dir=None, verbose=True):
+    """Add :func:`term_magnitude_block` to every row that predates it.
+
+    Recomputes from each row's checkpoint -- a reload, not a retrain, seconds per
+    row -- and upserts. Rows that already carry the block, and rows whose
+    checkpoint is missing, are left untouched.
+
+    Returns:
+        list[str]: the ``config_id`` of every row filled in.
+    """
+    ledger = Path(ledger if ledger is not None else LEDGER)
+    if not ledger.is_absolute():
+        ledger = HERE / ledger
+    filled = []
+    for row in load_ledger(ledger):
+        cid = row["config_id"]
+        if row["result"].get("term_magnitudes") is not None:
+            continue
+        try:
+            problem = load_run(cid, ledger=ledger, checkpoint_dir=checkpoint_dir)
+        except (KeyError, FileNotFoundError) as exc:
+            if verbose:
+                print(f"skipped : {cid} -- {exc}")
+            continue
+        row["result"]["term_magnitudes"] = term_magnitude_block(problem.pgd)
+        upsert_row(ledger, row)
+        filled.append(cid)
+        if verbose:
+            shares = [
+                m["nonlinear_share"] for m in row["result"]["term_magnitudes"]["modes"]
+                if m["nonlinear_share"] is not None
+            ]
+            best = max(shares) if shares else float("nan")
+            print(f"filled  : {cid} {row['config']['name']} "
+                  f"max NL share {100.0 * best:.2f}%")
+    return filled
 
 
 def extract_result(problem, errors, reference=None):
@@ -481,6 +611,10 @@ def extract_result(problem, errors, reference=None):
         # from the decomposition rather than from the last stage record so it is
         # the value actually stored in the checkpoint.
         "leading_coefficients": leading,
+        # Per mode, the gauge-invariant size of every term -- the one recorded
+        # quantity that answers "did the non-linear correction activate". See
+        # `term_magnitude_block`; `show_term_magnitudes` prints it.
+        "term_magnitudes": term_magnitude_block(pgd),
         "overall_error": errors["overall"],
         # Error at every intermediate rank, from this same trained run -- see
         # `rank_curve`. The last entry restates `overall_error`/`worst_point_error`.
@@ -913,6 +1047,94 @@ def strategy_screen_configs(ex, n_modes_max=10, max_iter=400, min_iter=350):
     ]
 
 
+#: The seed points scanned, as a full cross product -- the ten rows of
+#: :data:`LEDGER`. ``(0.05, 0.5)`` is the baseline (the physics of `1c40b49c`,
+#: the 58.1 %-non-linear row this study is anchored on), included so the arm
+#: carries its own control; it reproduced that row to the digit.
+#:
+#: ``seed_amplitude = 0`` is in the list and is **not** a mistake: it zeroes only
+#: the *space* factor, and the gradient there is driven by the load times the
+#: still-non-zero parametric factors, so the mode takes off anyway. It gave the
+#: best error of the arm. The stationary point ``CPPGD.add_mode`` warns about
+#: needs the *whole* mode at zero -- which is why ``seed_shape`` may not be 0,
+#: and ``seed_amplitude`` may.
+SEED_SCAN_AMPLITUDES = [0.0, 0.05, 0.5, 1.0, 5]
+SEED_SCAN_SHAPES = [0.5, 1.0]
+
+
+def seed_scan_configs(ex, amplitudes=None, shapes=None, n_modes_max=10):
+    """The seed arm of ``l3-pinSpace-uniform3-r10``, one row per seed point.
+
+    Everything but the two seed knobs is `1c40b49c`'s stored config, written out
+    field by field -- the queue's convention (see :func:`_configs`), so this file
+    on its own says what was run. That row is one of only two in the ledger that
+    grew a real non-linear correction *and* converged (58.1 % non-linear share on
+    mode 3, ``overall_error`` 0.051); what decided that is unknown, and the seed
+    is the suspect, since ``C`` is released at a mode's seed.
+
+    The two knobs are **not orthogonal in size**: a mode enters at
+    ``seed_amplitude * seed_shape ** 4`` whichever one moves. What they separate
+    is where that size sits across the factors. Read a row against its two
+    neighbours, not against the magnitude alone.
+
+    The baseline point re-trains under a new id rather than reusing
+    `1c40b49c`'s checkpoint, because ``name`` is part of the content hash. That
+    is deliberate -- it buys an arm whose rows are one knob apart from each other,
+    and its ``term_magnitudes`` reproducing `1c40b49c`'s is itself the check that
+    exposing ``seed_shape`` changed nothing.
+
+    Args:
+        ex (module): the loaded example module.
+        amplitudes (list[float], optional): defaults to
+            :data:`SEED_SCAN_AMPLITUDES`.
+        shapes (list[float], optional): defaults to :data:`SEED_SCAN_SHAPES`.
+        n_modes_max (int): rank; nested, so `rank_curve` recovers every lower
+            rank from each run for free.
+
+    Returns:
+        list: ``len(amplitudes) * len(shapes)`` configs.
+    """
+    amplitudes = SEED_SCAN_AMPLITUDES if amplitudes is None else amplitudes
+    shapes = SEED_SCAN_SHAPES if shapes is None else shapes
+    return [
+        ex.RunConfig(
+            name=f"seed-a{amplitude:g}-s{shape:g}-r{n_modes_max}",
+            # --- THE KNOBS UNDER TEST -----------------------------------------
+            seed_amplitude=amplitude,   # the space factor of every mode but the 0th
+            seed_shape=shape,           # its four parametric factors
+            # --- what is trained, and in what order ---------------------------
+            strategy="support",
+            n_linear_modes=3,           # pure-CP modes before the NL schedule
+            leading_coefficient=True,   # release c_i on the NL modes
+            pin_space_exponent=True,    # pin_axis(I, space, 1)
+            renormalise=False,          # ON suppresses the correction; see ledger
+            orthogonal_corrections=False,
+            term_basis="monomial",
+            # --- the polynomial correction ------------------------------------
+            exponent_set="uniform",     # I = {(1,2,2,2,2), (1,3,3,3,3)} once pinned
+            max_power=3,
+            # --- rank and mesh -------------------------------------------------
+            n_modes_max=n_modes_max,    # per mode (rank), not per stage
+            n_nodes=None,               # None -> ex.DEFAULT_N_NODES
+            # --- stage schedule (all per STAGE, not per run) -------------------
+            min_iter=150,
+            max_iter=600,
+            stage_tol=1e-5,
+            stage_floor=1.0,
+            window=20,
+            linear_stage_tol=1e-3,
+            # --- enrichment ----------------------------------------------------
+            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
+            enrichment_floor=1.0,
+            # --- optimiser ------------------------------------------------------
+            lr=1e-1,
+            coefficient_lr=1e-4,
+        )
+        for amplitude in amplitudes
+        for shape in shapes
+    ]
+
+
 #: Background for the strategy screen, held fixed so the l/c/pin contrasts are
 #: read against one setting rather than confounded with the index set. Chosen as
 #: the cheapest of SCREEN_INDEX_SETS; **not** claimed to be the best -- the
@@ -940,79 +1162,28 @@ def _configs():
     To vary a knob: copy the block, change the one field, change ``name``.
     Identity is the content hash, so the two rows land side by side.
 
+    Currently the **seed arm**: :func:`seed_scan_configs` crosses
+    :data:`SEED_SCAN_AMPLITUDES` with :data:`SEED_SCAN_SHAPES` over
+    `1c40b49c`'s config. Edit those two lists to move the study; pass the
+    lists here (``seed_scan_configs(ex, amplitudes=[...])``) to try a point
+    without editing them.
+
     :func:`strategy_screen_configs` still builds the six-row l/c/pin screen;
-    ``return strategy_screen_configs(ex)`` to queue it instead.
+    ``return strategy_screen_configs(ex)`` to queue it instead. The block below
+    is kept commented as the one-off template.
     """
     ex = _example()
-    return [
+    return seed_scan_configs(ex) + [
         # ex.RunConfig(
-        #     name="l3-lead_coeffTrue-totaldeg6-coefflr1e-3-r7",
-        #     # --- what is trained, and in what order ---------------------------
-        #     strategy="joint",           
-        #     n_linear_modes=3,           # pure-CP modes before the NL schedule
-        #     leading_coefficient=True,  # release c_i on the NL modes
-        #     pin_space_exponent=False,   # pin_axis(I, space, 1)
-        #     renormalise=False,           # fix the scale gauge each stage
-
-        #     # --- the polynomial correction ------------------------------------
-        #     exponent_set="total_degree",     # "uniform" | "total_degree"
-        #     max_power=6,                # largest power (uniform) / total degree
-        #     # --- rank and mesh -------------------------------------------------
-        #     n_modes_max=7,             # per mode (rank), not per stage
-        #     n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-        #     seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-        #     # --- stage schedule (all per STAGE, not per run) -------------------
-        #     min_iter=100,               # >= ~300 or a fresh mode never launches
-        #     max_iter=600,
-        #     stage_tol=1e-5,             # inert at max_iter=400; check if a row
-        #     stage_floor=1.0,            #   reports otherwise before comparing it
-        #     window=20,
-        #     linear_stage_tol=1e-3,      # None -> reuse stage_tol
-        #     # --- enrichment ----------------------------------------------------
-        #     enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-        #     enrichment_floor=1.0,
-        #     # --- optimiser ------------------------------------------------------
-        #     lr=1e-1,
-        #     coefficient_lr=1e-4,
-        # ),
-        ex.RunConfig(
-            name="l3-lead_coeffTrue-stratSupportPinSpace-totaldeg6-r6-renorm",
-            # --- what is trained, and in what order ---------------------------
-            strategy="support",           
-            n_linear_modes=3,           # pure-CP modes before the NL schedule
-            leading_coefficient=True,  # release c_i on the NL modes
-            pin_space_exponent=True,   # pin_axis(I, space, 1)
-            renormalise=True,           # fix the scale gauge each stage
-
-            # --- the polynomial correction ------------------------------------
-            exponent_set="total_degree",     # "uniform" | "total_degree"
-            max_power=6,                # largest power (uniform) / total degree
-            # --- rank and mesh -------------------------------------------------
-            n_modes_max=6,             # per mode (rank), not per stage
-            n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-            seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-            # --- stage schedule (all per STAGE, not per run) -----x`--------------
-            min_iter=150,               # >= ~300 or a fresh mode never launches
-            max_iter=600,
-            stage_tol=1e-5,             # inert at max_iter=400; check if a row
-            stage_floor=1.0,            #   reports otherwise before comparing it
-            window=20,
-            linear_stage_tol=1e-3,      # None -> reuse stage_tol
-            # --- enrichment ----------------------------------------------------
-            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-            enrichment_floor=1.0,
-            # --- optimiser ------------------------------------------------------
-            lr=1e-1,
-            coefficient_lr=1e-4,
-        ),
-        # ex.RunConfig(
-        #     name="l3-lead_coeffTrue-uniform2-r10-renorm",
+        #     name="l3-lead_coeffTrue-uniform2-r10-renorm-legendre-coefflr1e-1",
         #     # --- what is trained, and in what order ---------------------------
         #     strategy="joint",
         #     n_linear_modes=3,           # pure-CP modes before the NL schedule
         #     leading_coefficient=True,   # release c_i on the NL modes
         #     pin_space_exponent=False,   # pin_axis(I, space, 1)
-        #     renormalise=True,           # THE knob under test
+        #     renormalise=True,           # fix the scale gauge each stage
+        #     orthogonal_corrections=False,  # exclusive with a non-monomial basis
+        #     term_basis="legendre_params",  # THE knob under test
         #     # --- the polynomial correction ------------------------------------
         #     exponent_set="uniform",     # "uniform" | "total_degree"
         #     max_power=2,                # largest power (uniform) / total degree
@@ -1032,260 +1203,8 @@ def _configs():
         #     enrichment_floor=1.0,
         #     # --- optimiser ------------------------------------------------------
         #     lr=1e-1,
-        #     coefficient_lr=1e-4,
+        #     coefficient_lr=1e-1,
         # ),
-        # ex.RunConfig(
-        #     name="l3-lead_coeffTrue-uniform3-r6-renorm",
-        #     # --- what is trained, and in what order ---------------------------
-        #     strategy="joint",
-        #     n_linear_modes=3,           # pure-CP modes before the NL schedule
-        #     leading_coefficient=True,   # release c_i on the NL modes
-        #     pin_space_exponent=False,   # pin_axis(I, space, 1)
-        #     renormalise=True,           # THE knob under test
-        #     # --- the polynomial correction ------------------------------------
-        #     exponent_set="uniform",     # "uniform" | "total_degree"
-        #     max_power=3,                # largest power (uniform) / total degree
-        #     # --- rank and mesh -------------------------------------------------
-        #     n_modes_max=6,              # per mode (rank), not per stage
-        #     n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-        #     seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-        #     # --- stage schedule (all per STAGE, not per run) -------------------
-        #     min_iter=300,               # >= ~300 or a fresh mode never launches
-        #     max_iter=600,
-        #     stage_tol=1e-5,             # inert at max_iter=400; check if a row
-        #     stage_floor=1.0,            #   reports otherwise before comparing it
-        #     window=20,
-        #     linear_stage_tol=1e-3,      # None -> reuse stage_tol
-        #     # --- enrichment ----------------------------------------------------
-        #     enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-        #     enrichment_floor=1.0,
-        #     # --- optimiser ------------------------------------------------------
-        #     lr=1e-1,
-        #     coefficient_lr=1e-4,
-        # ),
-        # Single-knob controls against the two `-renorm` rows above (e1850154
-        # and 944186d3): same everything, `orthogonal_corrections` on.
-        #
-        # `renormalise` removed the *leverage* -- uniform3 stopped diverging,
-        # 209% -> 8.81% overall -- but not the *redundancy*: the (3,3,3,3,3) row
-        # still holds 99.5% of mode 3 and 100% of mode 5, because with the monoms
-        # free it spans the same rank-1 set as the leading term and can replace
-        # it at no cost in energy. Deflation removes that overlap outright.
-        #
-        # What to read, in this order:
-        #   1. the term shares in the final recap -- does the leading term keep a
-        #      non-trivial share, or does one correction still take the mode?
-        #   2. `overall`, against 4.232e-02 (uniform2) and 8.811e-02 (uniform3).
-        # A row that only rebalances the shares without moving the error says the
-        # redundancy was real but harmless, which is itself worth knowing.
-        #
-        # Expect these to be slower: 1 + 2|I| terms instead of 1 + |I|, and the
-        # energy's double loop is quadratic -- 2.8x at |I| = 2, 2.25x at |I| = 1.
-        # ex.RunConfig(
-        #     name="l3-lead_coeffTrue-uniform2-r10-renorm-orth",
-        #     # --- what is trained, and in what order ---------------------------
-        #     strategy="joint",
-        #     n_linear_modes=3,           # pure-CP modes before the NL schedule
-        #     leading_coefficient=True,   # release c_i on the NL modes
-        #     pin_space_exponent=False,   # pin_axis(I, space, 1)
-        #     renormalise=True,           # fix the scale gauge each stage
-        #     orthogonal_corrections=True,  # THE knob under test
-        #     # --- the polynomial correction ------------------------------------
-        #     exponent_set="uniform",     # "uniform" | "total_degree"
-        #     max_power=2,                # largest power (uniform) / total degree
-        #     # --- rank and mesh -------------------------------------------------
-        #     n_modes_max=10,             # per mode (rank), not per stage
-        #     n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-        #     seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-        #     # --- stage schedule (all per STAGE, not per run) -------------------
-        #     min_iter=300,               # >= ~300 or a fresh mode never launches
-        #     max_iter=600,
-        #     stage_tol=1e-5,             # inert at max_iter=400; check if a row
-        #     stage_floor=1.0,            #   reports otherwise before comparing it
-        #     window=20,
-        #     linear_stage_tol=1e-3,      # None -> reuse stage_tol
-        #     # --- enrichment ----------------------------------------------------
-        #     enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-        #     enrichment_floor=1.0,
-        #     # --- optimiser ------------------------------------------------------
-        #     lr=1e-1,
-        #     coefficient_lr=1e-4,
-        # ),
-        # ex.RunConfig(
-        #     name="l3-lead_coeffTrue-uniform3-r6-renorm-orth",
-        #     # --- what is trained, and in what order ---------------------------
-        #     strategy="joint",
-        #     n_linear_modes=3,           # pure-CP modes before the NL schedule
-        #     leading_coefficient=True,   # release c_i on the NL modes
-        #     pin_space_exponent=False,   # pin_axis(I, space, 1)
-        #     renormalise=True,           # fix the scale gauge each stage
-        #     orthogonal_corrections=True,  # THE knob under test
-        #     # --- the polynomial correction ------------------------------------
-        #     exponent_set="uniform",     # "uniform" | "total_degree"
-        #     max_power=3,                # largest power (uniform) / total degree
-        #     # --- rank and mesh -------------------------------------------------
-        #     n_modes_max=6,              # per mode (rank), not per stage
-        #     n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-        #     seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-        #     # --- stage schedule (all per STAGE, not per run) -------------------
-        #     min_iter=300,               # >= ~300 or a fresh mode never launches
-        #     max_iter=600,
-        #     stage_tol=1e-5,             # inert at max_iter=400; check if a row
-        #     stage_floor=1.0,            #   reports otherwise before comparing it
-        #     window=20,
-        #     linear_stage_tol=1e-3,      # None -> reuse stage_tol
-        #     # --- enrichment ----------------------------------------------------
-        #     enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-        #     enrichment_floor=1.0,
-        #     # --- optimiser ------------------------------------------------------
-        #     lr=1e-1,
-        #     coefficient_lr=1e-4,
-        # ),
-        # --- deflation under the `support` schedule --------------------------
-        #
-        # Row 1 is the single-knob twin of eaf797f9 (5.944e-02); rows 2 and 3 are
-        # a pair, because no `support` + uniform2 + renormalise row exists to
-        # compare against.
-        #
-        # Why both exponent sets. Deflation was decisive at |I| = 1 (uniform2
-        # joint: 4.232e-02 -> 3.864e-02, worst point -25%) and nearly inert at
-        # |I| = 2, because a lone correction row makes *all* redundancy
-        # leading-vs-correction. Pinned, `uniform2` is |I| = 1 and
-        # `total_degree6` is |I| = 4 -- but the four rows deflate on four
-        # *different* axes ((1,1,1,1,2)->4, (1,1,1,2,1)->3, ...), so they overlap
-        # each other far less than uniform3's two rows, which both deflate on
-        # axis 1. Whether that is enough is the question.
-        #
-        # CAVEAT, stated because it confounds the reading. `renormalise` writes
-        # in place under `no_grad`, so under `support` it rescales the *frozen*
-        # space monom too. Field-preserving, so no result changes -- but "frozen
-        # support" means frozen up to a scale factor, and these rows cannot
-        # separate that from the deflation. The `joint` controls above have no
-        # such caveat.
-        ex.RunConfig(
-            name="l3-lead_coeffTrue-stratSupportPinSpace-totaldeg6-r6-renorm-orth",
-            strategy="support",
-            n_linear_modes=3,
-            leading_coefficient=True,
-            pin_space_exponent=True,
-            renormalise=True,
-            orthogonal_corrections=True,  # THE knob under test
-            exponent_set="total_degree",
-            max_power=6,
-            n_modes_max=6,
-            n_nodes=None,
-            seed_amplitude=0.05,
-            min_iter=150,
-            max_iter=600,
-            stage_tol=1e-5,
-            stage_floor=1.0,
-            window=20,
-            linear_stage_tol=1e-3,
-            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,
-            enrichment_floor=1.0,
-            lr=1e-1,
-            coefficient_lr=1e-4,
-        ),
-        ex.RunConfig(
-            name="l3-lead_coeffTrue-stratSupportPinSpace-uniform2-r10-renorm",
-            strategy="support",
-            n_linear_modes=3,
-            leading_coefficient=True,
-            pin_space_exponent=True,
-            renormalise=True,
-            orthogonal_corrections=False,  # the baseline of the pair
-            exponent_set="uniform",
-            max_power=2,
-            n_modes_max=10,
-            n_nodes=None,
-            seed_amplitude=0.05,
-            min_iter=150,
-            max_iter=600,
-            stage_tol=1e-5,
-            stage_floor=1.0,
-            window=20,
-            linear_stage_tol=1e-3,
-            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,
-            enrichment_floor=1.0,
-            lr=1e-1,
-            coefficient_lr=1e-4,
-        ),
-        ex.RunConfig(
-            name="l3-lead_coeffTrue-stratSupportPinSpace-uniform2-r10-renorm-orth",
-            strategy="support",
-            n_linear_modes=3,
-            leading_coefficient=True,
-            pin_space_exponent=True,
-            renormalise=True,
-            orthogonal_corrections=True,  # THE knob under test
-            exponent_set="uniform",
-            max_power=2,
-            n_modes_max=10,
-            n_nodes=None,
-            seed_amplitude=0.05,
-            min_iter=150,
-            max_iter=600,
-            stage_tol=1e-5,
-            stage_floor=1.0,
-            window=20,
-            linear_stage_tol=1e-3,
-            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,
-            enrichment_floor=1.0,
-            lr=1e-1,
-            coefficient_lr=1e-4,
-        ),
-        # --- the Legendre term basis ----------------------------------------
-        #
-        # Single-knob control against 3f5a4afe
-        # (l3-lead_coeffTrue-uniform2-r10-renorm-orth, 3.864e-02, the ledger's
-        # best row): same everything, `term_basis="legendre_params"` instead of
-        # `orthogonal_corrections=True`. The two are mutually exclusive by
-        # construction -- both attack the leading-vs-correction overlap -- so
-        # this reads as "which of the two ways of removing it wins".
-        #
-        # `uniform2` is |I| = 1, so the mode is rank 2 at 2 terms: the same cost
-        # as the row it is compared to, no term-count confound.
-        #
-        # READ THIS FIRST. The share diagnostic was wrong until today
-        # (`||w^p|| != ||w||^p`, a factor ~130 inflating the corrections), so the
-        # motivation for an orthogonal family -- "one correction takes 99% of its
-        # mode" -- was an artefact. Corrected, the leading term holds 80-98%
-        # everywhere renormalise is on. The redundancy argument survives on
-        # theory (`w -> w^(1/p)` makes prod w^p span the same rank-1 set) but no
-        # longer on that measurement. Treat this row as an open question, not a
-        # confirmation, and compare `overall` against 3.864e-02 knowing the
-        # single-run noise floor is ~6%.
-        ex.RunConfig(
-            name="l3-lead_coeffTrue-uniform2-r10-renorm-legendre",
-            # --- what is trained, and in what order ---------------------------
-            strategy="joint",
-            n_linear_modes=3,           # pure-CP modes before the NL schedule
-            leading_coefficient=True,   # release c_i on the NL modes
-            pin_space_exponent=False,   # pin_axis(I, space, 1)
-            renormalise=True,           # fix the scale gauge each stage
-            orthogonal_corrections=False,  # exclusive with a non-monomial basis
-            term_basis="legendre_params",  # THE knob under test
-            # --- the polynomial correction ------------------------------------
-            exponent_set="uniform",     # "uniform" | "total_degree"
-            max_power=2,                # largest power (uniform) / total degree
-            # --- rank and mesh -------------------------------------------------
-            n_modes_max=10,             # per mode (rank), not per stage
-            n_nodes=None,               # None -> ex.DEFAULT_N_NODES
-            seed_amplitude=0.05,        # must stay > 0, see CPPGD.add_mode
-            # --- stage schedule (all per STAGE, not per run) -------------------
-            min_iter=300,               # >= ~300 or a fresh mode never launches
-            max_iter=600,
-            stage_tol=1e-5,             # inert at max_iter=400; check if a row
-            stage_floor=1.0,            #   reports otherwise before comparing it
-            window=20,
-            linear_stage_tol=1e-3,      # None -> reuse stage_tol
-            # --- enrichment ----------------------------------------------------
-            enrichment_tol=SCREEN_NO_ENRICHMENT_STOP,  # disabled; stop on rank
-            enrichment_floor=1.0,
-            # --- optimiser ------------------------------------------------------
-            lr=1e-1,
-            coefficient_lr=1e-4,
-        ),
     ]
 
 

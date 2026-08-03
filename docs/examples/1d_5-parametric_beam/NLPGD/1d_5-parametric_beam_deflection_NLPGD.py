@@ -287,13 +287,31 @@ class RunConfig:
     #: the largest total degree for ``"total_degree"`` (which needs
     #: ``max_power > 5`` here, five being the number of axes).
     max_power: int = DEFAULT_MAX_POWER
-    #: Amplitude/shape seed for every mode after the first (see
-    #: :func:`build_problem`). A fresh mode enters with its parametric factors at
-    #: unit shape and the whole product's small initial amplitude carried by the
-    #: space factor, so enrichment does not spike the loss the way a 0.5 seed on
-    #: every factor does. Must stay > 0: an all-zero factor is a stationary point
-    #: of the energy and the mode never takes off (see ``CPPGD.add_mode``).
+    #: The **space** factor's seed for every mode after the first (see
+    #: :func:`build_problem`). A fresh mode enters as an amplitude/shape split:
+    #: the parametric factors carry the shape (``seed_shape``) and this one
+    #: carries the product's small initial amplitude, so enrichment does not
+    #: spike the loss.
+    #:
+    #: **May be 0**, unlike ``seed_shape`` -- measured, not assumed. The
+    #: stationary point ``CPPGD.add_mode`` warns about needs the *whole* mode at
+    #: zero; with only this factor zeroed the gradient on it is the load times
+    #: the non-zero parametric factors, so the mode takes off. ``a = 0`` gave the
+    #: best error of the seed arm (0.0438 vs 0.0509 at the 0.05 baseline, single
+    #: runs, rank 10).
     seed_amplitude: float = 0.05
+    #: The four **parametric** factors' seed for every mode after the first.
+    #: Was hard-coded at 0.5 until the seed study; the default reproduces every
+    #: row written before it, and it is id-transparent at that value (see
+    #: :data:`ID_TRANSPARENT_DEFAULTS`) so those rows keep their ids.
+    #:
+    #: **Not independent of** ``seed_amplitude``: the mode is a product, so it
+    #: enters at ``seed_amplitude * seed_shape ** 4`` whichever knob moves. What
+    #: the pair sets separately is *where* that size sits -- all of it in space,
+    #: or spread over the parametric axes -- which is what the CP scale
+    #: degeneracy makes invisible to the energy but visible to Adam, whose step
+    #: is ``~lr`` per parameter whatever the gradient. Same > 0 requirement.
+    seed_shape: float = 0.5
     #: How many leading modes are trained as **pure CP**, one stage each, before
     #: the polynomial schedule starts. The "curve a space that a linear PGD has
     #: already laid out" idea: the non-linearity does not act directly, it
@@ -397,16 +415,74 @@ class RunConfig:
     #: A no-op for the CP baselines: ``CPPGD.renormalise()`` does nothing, so
     #: ``greedy``/``simultaneous`` rows are unaffected either way.
     renormalise: bool = True
+    #: Stage tolerance for the terminal **global** stage (:class:`GlobalNLTrainer`
+    #: only). ``None`` -- the default -- disables the global phase entirely, so
+    #: the trainer degenerates to a plain CP greedy run; a float enables it and
+    #: sets that one stage's tolerance. It is a separate knob because the global
+    #: stage optimises every mode at once, ~``rank`` times the parameters of a
+    #: greedy stage, and should not inherit a budget sized for one mode.
+    global_stage_tol: float = None
+    #: Iteration bounds for the global stage; ``None`` falls back to
+    #: ``max_iter`` / ``min_iter``.
+    global_max_iter: int = None
+    global_min_iter: int = None
+    #: Release every mode's ``c_i`` in the global stage, not just its ``C``.
+    #: Off by default: the CP phase has already set the amplitudes, and leaving
+    #: ``c`` free is what lets a mode go entirely non-linear.
+    global_leading_coefficient: bool = False
+    #: Fix the gauge during (and after) the global stage. **Off** by default,
+    #: against ``renormalise``'s own default, because the ledger's ``renorm``
+    #: pairs are the ones whose coefficient rows never left the seed -- 48.9 %
+    #: non-linear share down to 0.00 % at otherwise identical config. That is a
+    #: correlation over single runs, not an established mechanism, which is why
+    #: this is a knob and not a hard-coded ``False``.
+    global_renormalise: bool = False
+
+
+#: Fields added after the ledger was written, with the value that means "this
+#: knob was never asked for". They are dropped from :func:`config_id`'s payload
+#: while they hold that value, so adding a knob does not re-key -- and thereby
+#: orphan the checkpoints of -- every row already recorded. A config that *sets*
+#: one hashes it and gets a new id, which is the whole point of the hash.
+#:
+#: Only ever *add* to this mapping, and only with the field's own default: an
+#: entry whose value is not the default would make two different configs share
+#: an id. The example's tests pin the invariant.
+#:
+#: This does **not** repair the past. ``orthogonal_corrections`` and
+#: ``term_basis`` were added without it, so the rows written before each of them
+#: were keyed over a payload that lacks those keys: rebuilding one of those
+#: configs today and re-hashing gives a *different* id, and re-running that
+#: queue would retrain it under a new row. Adding them here would fix those rows
+#: at the cost of re-keying the newer ones that stored the keys explicitly --
+#: there is no ordering of the two that saves both. The mapping exists so the
+#: next field costs neither.
+ID_TRANSPARENT_DEFAULTS = {
+    "seed_shape": 0.5,
+    "global_stage_tol": None,
+    "global_max_iter": None,
+    "global_min_iter": None,
+    "global_leading_coefficient": False,
+    "global_renormalise": False,
+}
 
 
 def config_id(cfg):
     """Stable 8-hex-char identity of a config's *contents*.
 
     Hash over every field with sorted keys, so field order is irrelevant and
-    any knob change yields a new id (hence a new ledger row and checkpoint).
+    any knob change yields a new id (hence a new ledger row and checkpoint) --
+    except for the fields listed in :data:`ID_TRANSPARENT_DEFAULTS`, which are
+    omitted while they hold their default so that older rows keep their ids.
     """
-    payload = json.dumps(dataclasses.asdict(cfg), sort_keys=True)
-    return hashlib.sha256(payload.encode()).hexdigest()[:8]
+    payload = {
+        k: v
+        for k, v in dataclasses.asdict(cfg).items()
+        if not (k in ID_TRANSPARENT_DEFAULTS and v == ID_TRANSPARENT_DEFAULTS[k])
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True).encode()
+    ).hexdigest()[:8]
 
 
 #: Exponent-set builders, keyed by ``RunConfig.exponent_set``. Injected the same
@@ -517,12 +593,36 @@ def build_linear_stage_criterion(cfg):
     return _stage_criterion(cfg, cfg.linear_stage_tol)
 
 
-def _stage_criterion(cfg, tol):
+def build_global_stage_criterion(cfg):
+    """The terminal global stage's criterion, or ``None`` when it is disabled.
+
+    Unlike :func:`build_linear_stage_criterion`, this one may move the iteration
+    bounds too: the global stage trains every mode at once, so a budget sized
+    for a single greedy mode is the wrong budget. ``None`` for the bounds falls
+    back to the shared ones, so only the tolerance is mandatory.
+
+    Args:
+        cfg (RunConfig): supplies ``global_stage_tol`` and the global bounds.
+
+    Returns:
+        RelativeChange | None
+    """
+    if cfg.global_stage_tol is None:
+        return None
+    return _stage_criterion(
+        cfg,
+        cfg.global_stage_tol,
+        max_iter=cfg.global_max_iter,
+        min_iter=cfg.global_min_iter,
+    )
+
+
+def _stage_criterion(cfg, tol, max_iter=None, min_iter=None):
     return RelativeChange(
         tol=tol,
         window=cfg.window,
-        max_iter=cfg.max_iter,
-        min_iter=cfg.min_iter,
+        max_iter=cfg.max_iter if max_iter is None else max_iter,
+        min_iter=cfg.min_iter if min_iter is None else min_iter,
         floor=cfg.stage_floor,
     )
 
@@ -627,7 +727,7 @@ class Problem:
 
 def build_problem(
     loss_fn, *, n_modes_max=N_MODES_MAX, n_modes_ini=1, n_nodes=None, quad=None,
-    seed_amplitude=0.05, exponents=None, leading_coefficients=False,
+    seed_amplitude=0.05, seed_shape=0.5, exponents=None, leading_coefficients=False,
     orthogonal_corrections=False, bases=None,
 ):
     """Assemble the five axes, the polynomial NL-PGD, the load and the model.
@@ -648,8 +748,10 @@ def build_problem(
             defaults to ``MidPoint1D()`` (one point per element). Injectable so
             tests can exercise ``N_q > 1`` rules (e.g. ``TwoPoints1D``), which
             catch broadcasting bugs that a single quadrature point hides.
-        seed_amplitude (float): Initial amplitude of every mode after the first,
-            realised as an amplitude/shape split of the CP seed (see below).
+        seed_amplitude (float): The space factor's seed for every mode after the
+            first -- the amplitude half of the split (see below).
+        seed_shape (float): The four parametric factors' seed for the same modes
+            -- the shape half. Mode 0 is untouched by both.
         leading_coefficients (bool): Give each mode a trainable weight ``c_i`` on
             its own linear term. Built frozen at 1, so this alone changes
             nothing; a trainer has to release it. See ``RunConfig``.
@@ -677,17 +779,22 @@ def build_problem(
     }
     # Mode 0 carries the bulk of the solution, so it keeps the plain 0.5 seed on
     # every factor. Every *later* mode is seeded as an amplitude/shape split: its
-    # parametric factors start at unit shape (1.0) and the whole product's small
-    # initial amplitude is carried by the space factor (`seed_amplitude`). This
-    # lets a new mode enter near zero -- no loss spike on enrichment -- while
-    # keeping every factor strictly non-zero, so no gradient is locked at the
-    # all-zero stationary point (cf. CPPGD.add_mode). Folding the amplitude into
-    # a single factor exploits the CP scale degeneracy (see plot_modes); the
-    # space factor is chosen because that is where the tutor's "seed the space
-    # mode small" intuition lives, minus the collapse that seeding it at exactly
-    # 0 causes.
+    # parametric factors carry the shape (`seed_shape`, 0.5 by default) and the
+    # product's small initial amplitude is carried by the space factor
+    # (`seed_amplitude`). This lets a new mode enter near zero -- no loss spike on
+    # enrichment -- while keeping every factor strictly non-zero, so no gradient
+    # is locked at the all-zero stationary point (cf. CPPGD.add_mode). Folding the
+    # amplitude into a single factor exploits the CP scale degeneracy (see
+    # plot_modes); the space factor is chosen because that is where the tutor's
+    # "seed the space mode small" intuition lives, minus the collapse that seeding
+    # it at exactly 0 causes.
+    #
+    # The two knobs do not set independent things: the mode enters at
+    # `seed_amplitude * seed_shape ** 4` either way. What they set separately is
+    # where that size sits across the factors -- invisible to the energy, visible
+    # to Adam. Both must stay > 0.
     init_values = {name: 0.5 for name in AXIS_ORDER}
-    init_values_rest = {name: 0.5 for name in AXIS_ORDER}
+    init_values_rest = {name: seed_shape for name in AXIS_ORDER}
     init_values_rest["space"] = seed_amplitude
     axes = [
         make_axis(
@@ -1370,6 +1477,236 @@ class SupportNLGreedyTrainer(PolynomialGreedyTrainer):
     schedule = "support"
 
 
+class GlobalNLTrainer(PolynomialGreedyTrainer):
+    """A coarse CP-PGD run, then **one** stage that corrects every mode at once.
+
+    What it does differently
+        Every other schedule here is purely greedy in the corrections too: a
+        mode's ``C`` is released while that mode is being built and re-frozen for
+        good the moment the next one is added, so no correction ever sees the
+        modes that come after it. This trainer splits the two questions instead.
+
+        1. **Enrichment.** Every mode is plain CP, one stage each, whatever
+           ``schedule`` says -- run it under coarse tolerances (``stage_tol``,
+           ``enrichment_tol``), since all this phase owes the second one is a
+           reasonable linear support.
+        2. **One terminal global stage.** Every mode's ``C`` is released
+           together, every mode's **space monom is frozen** as the support the CP
+           phase laid out, and all the parametric monoms and all the coefficient
+           rows descend the energy jointly. The corrections curve the parameter
+           directions of a fixed spatial support, with the whole rank free to
+           redistribute -- which no per-mode schedule can express.
+
+    Why the gauge fix defaults off here (``global_renormalise``)
+        The ledger's ``renorm`` pairs are the ones whose coefficient rows never
+        left the seed: ``pinSpace-uniform2-r10`` reports a 48.9 % non-linear
+        share without it and 0.00 % with it, at otherwise identical config and
+        no better error. That is a correlation across single runs, not an
+        established mechanism, so it is a knob -- but the default follows the
+        measurement. Note the CP phase still runs under ``renormalise``: only the
+        global stage (and the final ``on_run_end`` fix after it) is affected.
+
+    Cost
+        The global stage optimises ``rank`` times the parameters of a greedy
+        stage, so it gets its own budget (``global_stage_tol``,
+        ``global_max_iter``, ``global_min_iter``) rather than inheriting one
+        sized for a single mode.
+
+    Disabled by default
+        ``global_stage_criterion=None`` -- which is what ``RunConfig`` passes
+        when ``global_stage_tol`` is unset -- makes this a plain CP greedy run
+        with no terminal stage. That is the control to compare against, and it
+        is one field, not a second strategy.
+
+    Args:
+        model (NeuROMModel): as :class:`PolynomialGreedyTrainer`.
+        global_stage_criterion (StageCriterion, optional): the terminal stage's
+            criterion. ``None`` disables the global phase entirely.
+        global_leading_coefficient (bool): also release every mode's ``c_i`` in
+            the global stage. Requires ``leading_coefficient``-capable
+            decomposition; defaults to False.
+        global_renormalise (bool): fix the gauge during and after the global
+            stage. Defaults to False; see above.
+        **kwargs: as :class:`PolynomialGreedyTrainer`.
+    """
+
+    #: Every mode is pure CP regardless; kept so `stages_per_mode` and the
+    #: `STRATEGIES`/checkpoint plumbing still have a valid key to read.
+    schedule = "joint"
+
+    #: The plan entry for the terminal stage. Its mode is `None`: the stage
+    #: belongs to no single mode, and every consumer that indexes by mode
+    #: (`on_stage_end`, `mode_final_stages`, `adds_a_mode`) tests for it.
+    GLOBAL_STAGE = (None, "global")
+
+    def __init__(
+        self,
+        model,
+        global_stage_criterion=None,
+        global_leading_coefficient=False,
+        global_renormalise=False,
+        **kwargs,
+    ):
+        super().__init__(model, **kwargs)
+        self.global_stage_criterion = global_stage_criterion
+        self.global_leading_coefficient = global_leading_coefficient
+        self.global_renormalise = global_renormalise
+        if global_leading_coefficient and not self.decomposition.has_leading_coefficients:
+            raise RuntimeError(
+                "global_leading_coefficient=True needs a decomposition built "
+                "with PolynomialNLPGD(..., leading_coefficients=True); this one "
+                "has a fixed leading weight of 1."
+            )
+
+    @property
+    def runs_a_global_stage(self):
+        """Whether a terminal global stage is configured at all."""
+        return self.global_stage_criterion is not None
+
+    @property
+    def global_stage_ran(self):
+        """Whether the terminal stage is in the plan *and* already finished."""
+        if not self._plan or self._plan[-1] != self.GLOBAL_STAGE:
+            return False
+        return len(self.history.stages) >= len(self._plan)
+
+    # -- the plan --------------------------------------------------------------
+
+    def _schedule_for_mode(self, mode):
+        """Pure CP for every mode: the corrections all wait for the global stage.
+
+        Overrides the ``n_linear_modes`` split rather than reusing it -- here the
+        *whole* enrichment is linear, so a knob that says "the first n modes are"
+        would be a second way of saying the same thing, and a wrong value would
+        silently release a correction the design says nothing should release yet.
+        """
+        return LINEAR_SCHEDULE
+
+    def _ensure_plan(self, stage_index):
+        """As the parent, but never extend past the terminal global entry.
+
+        The global stage is the last one there is; without this guard the plan
+        would grow a mode behind it the moment anything asked about a later
+        index, and ``mode_of_stage`` would answer for a mode that will never be
+        added.
+        """
+        if self._plan and self._plan[-1] == self.GLOBAL_STAGE:
+            return
+        super()._ensure_plan(stage_index)
+
+    def adds_a_mode(self, stage_index):
+        """The global stage adds no mode; every other stage is a mode's first."""
+        self._ensure_plan(stage_index)
+        if self._plan[stage_index] == self.GLOBAL_STAGE:
+            return False
+        return super().adds_a_mode(stage_index)
+
+    def mode_final_stages(self, before):
+        """As the parent, minus the global stage.
+
+        The enrichment criterion compares mode-to-mode energy gains; the global
+        stage is not a mode, and feeding its (large) gain to ``RelativeGain``
+        would corrupt the comparison for anything that read the history back.
+        """
+        return [
+            i
+            for i in super().mode_final_stages(before)
+            if self._plan[i] != self.GLOBAL_STAGE
+        ]
+
+    # -- the trainer hooks -----------------------------------------------------
+
+    def should_add_stage(self, stage_index):
+        """Enrich as usual; when enrichment stops, append the global stage once.
+
+        The parent's stop is this trainer's phase change. Its reason is kept --
+        prefixed, so the ledger still says whether the CP phase ran out of
+        capacity or converged -- and the run continues for exactly one more
+        stage.
+        """
+        self._ensure_plan(stage_index)
+        if self.global_stage_ran:
+            # The plan stops growing at the global entry, so `stage_index` is
+            # past the end here: the run is over, and the stop reason recorded
+            # when the phase changed stands.
+            return False
+        if self._plan[stage_index] == self.GLOBAL_STAGE:
+            return True
+        if super().should_add_stage(stage_index):
+            return True
+        if not self.runs_a_global_stage:
+            return False
+        self.history.stop_reason = f"{self.history.stop_reason} -> global"
+        # Truncate first. `_ensure_plan` has already appended the mode this
+        # stage *would* have added -- that is how `adds_a_mode` answers before
+        # the stage runs -- and enrichment has just decided it never will. Left
+        # in place, the global entry would land one stage later and that phantom
+        # mode would train, which is exactly the bug this line fixes.
+        del self._plan[stage_index:]
+        self._plan.append(self.GLOBAL_STAGE)
+        return True
+
+    def prepare_stage(self, stage_index):
+        """The parent's CP preparation, or the global release for the last stage.
+
+        Args:
+            stage_index (int): index of the stage about to run.
+        """
+        if self.stage_kind(stage_index) != "global":
+            super().prepare_stage(stage_index)
+            return
+
+        space = AXIS_ORDER.index("space")
+        self.decomposition.freeze_all()
+        for mode in range(int(self.decomposition.n_modes_truncated)):
+            self.decomposition.unfreeze_mode(mode)
+            self.decomposition.freeze_monom(mode, space)
+            self.decomposition.unfreeze_mode_coefficients(mode)
+            if self.global_leading_coefficient:
+                self.decomposition.unfreeze_mode_leading_coefficient(mode)
+        # Set before fix_gauge, and left set: it must also suppress the final
+        # fix in `on_run_end`, which would otherwise undo the stage's own gauge
+        # at the very end of the run.
+        self.renormalise = self.global_renormalise
+        self.fix_gauge()
+        self.make_optimizer()
+
+    def stage_criterion_for(self, stage_index):
+        """The global stage's own criterion; otherwise the parent's choice."""
+        if self.stage_kind(stage_index) == "global":
+            return self.global_stage_criterion
+        return super().stage_criterion_for(stage_index)
+
+    def on_stage_end(self, record):
+        """As the parent, but the global stage reports the whole decomposition.
+
+        ``coefficient_norm`` is summed over every active mode there -- the stage
+        trained all of them, so a single mode's row would be an arbitrary pick --
+        and ``mode`` is ``None``, which is what tells a reader of the ledger that
+        this record is not a mode's.
+        """
+        if self.stage_kind(record.stage) != "global":
+            super().on_stage_end(record)
+            return
+
+        # Skip PolynomialGreedyTrainer.on_stage_end, whose per-mode indexing has
+        # no meaning here, but keep the CP diagnostics underneath it.
+        super(PolynomialGreedyTrainer, self).on_stage_end(record)
+        record.diagnostics["kind"] = "global"
+        record.diagnostics["mode"] = None
+        record.diagnostics["coefficient_norm"] = float(
+            sum(
+                self.decomposition.coefficients[m].detach().abs().sum()
+                for m in range(int(self.decomposition.n_modes_truncated))
+            )
+        )
+        if self.decomposition.has_leading_coefficients:
+            record.diagnostics["leading_coefficients"] = [
+                float(self.decomposition.leading_coefficients[m].detach())
+                for m in range(int(self.decomposition.n_modes_truncated))
+            ]
+
+
 ## Reference solution and plotting helpers
 
 
@@ -1719,6 +2056,7 @@ def main(
         n_modes_max=config.n_modes_max,
         n_nodes=config.n_nodes,
         seed_amplitude=config.seed_amplitude,
+        seed_shape=config.seed_shape,
         exponents=build_exponents(config),
         leading_coefficients=config.leading_coefficient,
         orthogonal_corrections=config.orthogonal_corrections,
@@ -1806,6 +2144,18 @@ def main(
             leading_coefficient=config.leading_coefficient,
             linear_stage_criterion=build_linear_stage_criterion(config),
         )
+        if issubclass(trainer_cls, GlobalNLTrainer):
+            kwargs.update(
+                global_stage_criterion=build_global_stage_criterion(config),
+                global_leading_coefficient=config.global_leading_coefficient,
+                global_renormalise=config.global_renormalise,
+            )
+        elif config.global_stage_tol is not None:
+            raise ValueError(
+                f"{trainer_cls.__name__} runs no global stage; global_stage_tol "
+                "would be silently ignored. Use strategy='global', or leave it "
+                "unset."
+            )
     elif config.n_linear_modes or config.leading_coefficient or config.linear_stage_tol:
         raise ValueError(
             f"{trainer_cls.__name__} is a CP baseline and ignores n_linear_modes, "
@@ -1971,9 +2321,12 @@ def _report(problem, history, verbose=True, plot=True):
         for record in history.stages:
             kind = record.diagnostics.get("kind", "cp")
             mode = record.diagnostics.get("mode", record.stage)
+            # `None` is the global stage's mode: it trained every mode, so no
+            # index is the right one to print.
+            mode = "all" if mode is None else str(mode)
             coefficient_norm = record.diagnostics.get("coefficient_norm", 0.0)
             row = (
-                f"{record.stage:5d} {mode:4d} {kind:>7} {record.n_iter:6d} "
+                f"{record.stage:5d} {mode:>4} {kind:>7} {record.n_iter:6d} "
                 f"{record.stop_reason:>10} "
                 f"{record.energy:14.6e} {record.gain:12.4e} "
                 f"{record.diagnostics['amplitude']:11.4e} "
@@ -2027,6 +2380,7 @@ STRATEGIES = {
     "staged": StagedNLGreedyTrainer,
     "refine": RefineNLGreedyTrainer,
     "support": SupportNLGreedyTrainer,
+    "global": GlobalNLTrainer,
     "greedy": GreedyTrainer,
     "simultaneous": SimultaneousTrainer,
 }
@@ -2063,6 +2417,11 @@ STAGE_MIN_ITER = {
     StagedNLGreedyTrainer: 120,
     RefineNLGreedyTrainer: 120,
     SupportNLGreedyTrainer: 120,
+    # Its enrichment phase is a greedy CP stage, hence greedy's number. The
+    # terminal global stage does NOT read this -- it has `global_min_iter`,
+    # because it trains every mode at once and a per-mode budget is the wrong
+    # unit for it.
+    GlobalNLTrainer: 120,
     GreedyTrainer: 120,
     SimultaneousTrainer: 300,
 }

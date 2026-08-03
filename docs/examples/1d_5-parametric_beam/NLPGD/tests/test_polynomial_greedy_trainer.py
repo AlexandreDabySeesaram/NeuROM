@@ -563,3 +563,189 @@ def test_the_fusion_composes_without_extra_machinery(beam5nl, problem_with_c):
     )
     assert problem_with_c.pgd.coefficients[1].abs().max() > 0.0
     assert problem_with_c.pgd.leading_coefficients[1].requires_grad
+
+
+# --- the global strategy: coarse CP, then one stage that corrects every mode --
+
+
+def make_global(beam5nl, problem, **kwargs):
+    kwargs.setdefault("stage_criterion", FixedIterations(5))
+    kwargs.setdefault("enrichment_criterion", MaxStages(2))
+    kwargs.setdefault("global_stage_criterion", FixedIterations(5))
+    return beam5nl.GlobalNLTrainer(problem.model, **kwargs)
+
+
+def _space(beam5nl):
+    return beam5nl.AXIS_ORDER.index("space")
+
+
+def test_global_plan_is_cp_per_mode_then_exactly_one_global_stage(beam5nl, problem):
+    history = make_global(beam5nl, problem).enrich()
+
+    assert [r.diagnostics["kind"] for r in history.stages] == ["cp", "cp", "global"]
+    assert [r.diagnostics["mode"] for r in history.stages] == [0, 1, None]
+    # The enrichment phase's own reason survives the phase change: a reader must
+    # still be able to tell a converged CP phase from one that hit capacity.
+    assert history.stop_reason == "n_stages -> global"
+
+
+def test_the_global_stage_adds_no_mode(beam5nl, problem):
+    trainer = make_global(beam5nl, problem)
+    trainer.enrich()
+
+    # Two modes, three stages -- the third trained what the first two built. The
+    # regression this pins: `_ensure_plan` speculatively appends the next mode,
+    # so a global entry appended without truncating first would let one more
+    # (unwanted) CP mode train before it.
+    assert problem.pgd.n_modes_truncated == 2
+    assert trainer.adds_a_mode(2) is False
+
+
+def test_the_global_stage_stops_at_capacity_too(beam5nl):
+    torch.manual_seed(0)
+    small = beam5nl.build_problem(beam5nl.energy, n_modes_max=2, n_nodes=TINY)
+    history = make_global(beam5nl, small, enrichment_criterion=MaxStages(9)).enrich()
+
+    assert [r.diagnostics["kind"] for r in history.stages] == ["cp", "cp", "global"]
+    assert history.stop_reason == "capacity -> global"
+
+
+def test_the_global_stage_releases_every_C_and_freezes_every_space_monom(
+    beam5nl, problem
+):
+    trainer = make_global(beam5nl, problem)
+    trainer.enrich()
+    pgd = problem.pgd
+
+    for mode in range(pgd.n_modes_truncated):
+        assert pgd.coefficients[mode].requires_grad, mode
+        assert not pgd.monoms[mode][_space(beam5nl)].values_reduced.requires_grad, mode
+        for axis in range(len(pgd.axes)):
+            if axis != _space(beam5nl):
+                assert pgd.monoms[mode][axis].values_reduced.requires_grad, (mode, axis)
+    # Released *and* used: every mode's correction actually moved off zero, which
+    # a release alone does not guarantee.
+    for mode in range(pgd.n_modes_truncated):
+        assert pgd.coefficients[mode].abs().max() > 0.0, mode
+
+
+def test_without_a_global_criterion_it_is_a_plain_CP_run(beam5nl, problem):
+    history = make_global(beam5nl, problem, global_stage_criterion=None).enrich()
+
+    assert [r.diagnostics["kind"] for r in history.stages] == ["cp", "cp"]
+    assert history.stop_reason == "n_stages"
+    for mode in range(problem.pgd.n_modes_truncated):
+        assert torch.equal(
+            problem.pgd.coefficients[mode],
+            torch.zeros_like(problem.pgd.coefficients[mode]),
+        )
+
+
+def test_the_global_stage_suppresses_the_gauge_fix_by_default(beam5nl, problem):
+    trainer = make_global(beam5nl, problem, renormalise=True)
+    trainer.enrich()
+
+    # The CP phase ran under the gauge fix; the global stage turned it off and
+    # left it off, so the final `on_run_end` fix cannot undo the stage's own
+    # gauge either.
+    assert trainer.renormalise is False
+
+
+def test_global_renormalise_keeps_the_gauge_fix(beam5nl, problem):
+    trainer = make_global(beam5nl, problem, renormalise=True, global_renormalise=True)
+    trainer.enrich()
+
+    assert trainer.renormalise is True
+
+
+def test_the_global_record_sums_C_over_every_mode(beam5nl, problem):
+    history = make_global(beam5nl, problem).enrich()
+    pgd = problem.pgd
+
+    total = sum(
+        float(pgd.coefficients[m].detach().abs().sum())
+        for m in range(pgd.n_modes_truncated)
+    )
+    # A single mode's row would be an arbitrary pick for a stage that trained
+    # all of them -- and would silently under-report the run.
+    assert history.stages[-1].diagnostics["coefficient_norm"] == pytest.approx(total)
+
+
+def test_global_leading_coefficient_needs_a_decomposition_that_has_one(
+    beam5nl, problem
+):
+    with pytest.raises(RuntimeError, match="leading_coefficients=True"):
+        make_global(beam5nl, problem, global_leading_coefficient=True)
+
+
+def test_global_leading_coefficient_releases_every_c(beam5nl, problem_with_c):
+    trainer = make_global(
+        beam5nl, problem_with_c, global_leading_coefficient=True, renormalise=False
+    )
+    trainer.enrich()
+
+    for mode in range(problem_with_c.pgd.n_modes_truncated):
+        assert problem_with_c.pgd.leading_coefficients[mode].requires_grad, mode
+
+
+# -- the seed split ---------------------------------------------------------
+#
+# `seed_amplitude` and `seed_shape` are the two halves of how a mode after the
+# first enters, and `C` is released at that seed. The seed study varies them, so
+# what is asserted here is that they land where the docstring says -- untested
+# until now, and invisible if wrong: a mode seeded on the wrong factor still
+# trains, just from somewhere else.
+
+
+def _mode_seed(pgd, axis_index, mode):
+    # `full_values` reinstates the constrained nodes (the Dirichlet zeros on
+    # space); the seed is what sits on the free ones.
+    values = pgd.monoms[mode][axis_index].values_reduced.detach()
+    return values
+
+
+def test_the_seed_splits_amplitude_on_space_and_shape_on_the_parameters(beam5nl):
+    problem = beam5nl.build_problem(
+        beam5nl.energy, n_modes_max=3, n_modes_ini=3, n_nodes=TINY,
+        seed_amplitude=0.02, seed_shape=0.25,
+    )
+    space = beam5nl.AXIS_ORDER.index("space")
+
+    for mode in (1, 2):
+        assert torch.allclose(
+            _mode_seed(problem.pgd, space, mode),
+            torch.tensor(0.02),
+        ), mode
+        for k, name in enumerate(beam5nl.AXIS_ORDER):
+            if k == space:
+                continue
+            assert torch.allclose(
+                _mode_seed(problem.pgd, k, mode), torch.tensor(0.25)
+            ), (mode, name)
+
+
+def test_mode_zero_ignores_both_seed_knobs(beam5nl):
+    # It carries the bulk of the solution and keeps the plain 0.5 seed; a study
+    # that moved it would be changing the linear phase, not the enrichment.
+    problem = beam5nl.build_problem(
+        beam5nl.energy, n_modes_max=2, n_modes_ini=2, n_nodes=TINY,
+        seed_amplitude=0.02, seed_shape=0.25,
+    )
+    for k in range(len(beam5nl.AXIS_ORDER)):
+        assert torch.allclose(
+            _mode_seed(problem.pgd, k, 0), torch.tensor(0.5)
+        ), k
+
+
+def test_seed_shape_defaults_to_the_value_it_replaced(beam5nl):
+    # 0.5 was hard-coded before the knob existed; every ledger row predating it
+    # ran that value, and `ID_TRANSPARENT_DEFAULTS` claims so.
+    problem = beam5nl.build_problem(
+        beam5nl.energy, n_modes_max=2, n_modes_ini=2, n_nodes=TINY,
+    )
+    for k, name in enumerate(beam5nl.AXIS_ORDER):
+        if name == "space":
+            continue
+        assert torch.allclose(
+            _mode_seed(problem.pgd, k, 1), torch.tensor(0.5)
+        ), name

@@ -1,3 +1,155 @@
+## 2026-07-31 — the seed scan: the 58 % correction is robust, the seed only breaks it
+
+**State:** the ten seed rows moved to their own ledger,
+`sweep_results_seed_scan.jsonl` (`sweep.LEDGER`); the strategy campaign is now
+reached as `sweep.STRATEGY_LEDGER`. `show_ledger`'s `seed` column prints both
+halves. Two doc claims corrected against measurement. 439 pass.
+
+All rank 10, `support`/l3/pinSpace/uniform3, 2550-2879 iters, **single runs** —
+read the ordering, not the third digit.
+
+| a / s | product `a·s⁴` | overall | max NL share |
+|---|---|---|---|
+| 0 / 0.5 | 0 | **0.0438** | 44.1 % |
+| 0 / 1 | 0 | 0.0451 | 45.2 % |
+| 0.05 / 1 | 0.05 | 0.0476 | 59.3 % |
+| 5 / 0.5 | 0.31 | 0.0485 | 52.4 % |
+| 0.05 / 0.5 | 3.1e-3 | 0.0509 | 58.1 % |
+| 0.5 / 0.5 | 0.031 | 0.0568 | 58.6 % |
+| 1 / 0.5 | 0.063 | 0.0582 | 40.4 % |
+| 0.5 / 1 | 0.5 | 0.0706 | 48.3 % |
+| 1 / 1 | 1 | 0.1164 | 43.1 % |
+| 5 / 1 | 5 | 0.2071 | 13.6 % |
+
+- **`(0.05, 0.5)` reproduced `1c40b49c` to the digit** (0.0509, 58.1 %, 2650
+  iters) — exposing `seed_shape` changed nothing, as intended.
+- **The correction is not a seed artefact.** Max non-linear share sits at
+  40-59 % across every seed that trains at all; it collapses (13.6 %) only in the
+  row that is broken anyway.
+- **A big seed breaks the run, it does not merely tune it.** `a=5, s=1` has a
+  flat rank curve — 0.2098 at rank 1, 0.2071 at rank 10: nine modes bought
+  nothing. `a=1, s=1` stalls to rank 5 before recovering.
+- **What matters is the product `a·s⁴`, not either knob.** Error is monotone in
+  it above ~0.05. The whole `s=0.5` column is fine (0.044-0.058) *because* `s⁴`
+  divides its product by 16.
+- **`seed_amplitude = 0` is legal and was the best row.** The stationary point
+  `CPPGD.add_mode` warns about needs the *whole* mode at zero; zeroing only the
+  space factor leaves the gradient there driven by the load times the non-zero
+  parametric factors. The "must stay > 0" in `RunConfig.seed_amplitude` was
+  wrong and is corrected; it still holds for `seed_shape`.
+- Not measured: whether `a=0` wins for a reason or by single-run noise — the
+  spread among the four best rows is 0.0438-0.0509, and nothing here replicates.
+
+## 2026-07-31 — the seed becomes two knobs, and an arm to scan them
+
+**State:** `RunConfig.seed_shape` (default 0.5, id-transparent) exposes what was
+hard-coded in `build_problem`; `sweep.seed_scan_configs` builds the seed arm of
+`l3-pinSpace-uniform3-r10` and is what `_configs()` now queues. The
+`global-uniform3-r10` block was deleted from the queue on request. 167 pass in
+the example dir, 272 in `tests/`. **No run yet** — the arm is queued, not
+trained.
+
+- **A mode after the first enters as an amplitude/shape split**, and `C` is
+  released at that seed. Only the amplitude half (`seed_amplitude`, on the space
+  factor) was configurable; the shape half was `0.5`, hard-coded, on the four
+  parametric factors. Both halves are knobs now.
+- The comment above that line **claimed unit shape (1.0)** where the code wrote
+  0.5. The code was right; the comment is fixed.
+- The two are **not orthogonal in size**: a mode enters at
+  `seed_amplitude * seed_shape**4` whichever moves. What they separate is where
+  that size sits across the factors — invisible to the energy, visible to Adam.
+- `seed_shape` joins `ID_TRANSPARENT_DEFAULTS`, so all 21 existing rows keep
+  their ids and checkpoints; `test_stored_ledger_rows_still_reproduce_their_id`
+  passes unchanged.
+- **The seed split was untested until now.** Three new tests pin that the
+  amplitude lands on space, the shape on the four parametric axes, and that mode
+  0 ignores both.
+- The arm is anchored on `1c40b49c` — 58.1 % non-linear share on mode 3,
+  `overall_error` 0.051, one of only two ledger rows with a real correction that
+  converged. A test asserts the arm's baseline point matches that row field for
+  field (`name` excepted).
+- The baseline point re-trains under a new id rather than reusing `1c40b49c`'s
+  checkpoint (`name` is in the hash). Deliberate: it gives the arm its own
+  control, and reproducing `1c40b49c`'s magnitudes checks that exposing
+  `seed_shape` changed nothing.
+
+## 2026-07-31 — a global correction phase: coarse CP first, then every mode at once
+
+**State:** `NLPGD/` gains `GlobalNLTrainer` (strategy `"global"`), five
+`RunConfig` knobs, `build_global_stage_criterion`, `ID_TRANSPARENT_DEFAULTS`,
+and `sweep.global_phase_configs` / `--global` writing to
+`sweep_results_global_nl.jsonl`. No `src/` change: `freeze_monom` and
+`unfreeze_mode_coefficients` were already the seams needed. 433 pass, 2 fail
+(pre-existing, sibling `PGD/` example). **No production run yet** — the numbers
+below are a 6-node, 20-iteration smoke run and mean nothing about accuracy.
+
+- **Every schedule so far was greedy in the corrections too**: a mode's `C` is
+  released while that mode is built and re-frozen when the next arrives, so no
+  correction ever sees the modes after it. `GlobalNLTrainer` splits the two:
+  pure CP enrichment for every mode (run it coarse, `stage_tol` /
+  `enrichment_tol` ~1e-3), then **one** terminal stage that releases every
+  mode's `C`, freezes every mode's space monom as the support the CP phase laid
+  out, and fits all parametric monoms and all coefficient rows together.
+- The terminal stage gets its own budget (`global_stage_tol`,
+  `global_max_iter`, `global_min_iter`): it trains ~`rank` times the parameters
+  of a greedy stage, so a per-mode budget is the wrong unit.
+- **`global_renormalise` defaults to False**, against `renormalise`'s own
+  default, following the measurement in the entry below. It is a knob, not a
+  hard-coded value, precisely because that evidence is a correlation over single
+  runs.
+- **Bug found and pinned by a test**: `_ensure_plan` speculatively appends the
+  next mode so `adds_a_mode` can answer before a stage runs, so appending the
+  global entry without truncating the plan first let one phantom CP mode train.
+- `global_stage_tol=None` (the default) makes the trainer a plain CP greedy run
+  — the control, one field away from the treatment.
+- **Adding a `RunConfig` field used to re-key every config**, orphaning the
+  ledger rows and checkpoints written before it; `orthogonal_corrections` and
+  `term_basis` both did. `ID_TRANSPARENT_DEFAULTS` drops a listed field from the
+  hash while it holds its default, so the five new knobs cost nothing. It does
+  **not** repair the earlier two — no ordering saves both — and a test now pins
+  the invariant.
+
+## 2026-07-31 — term magnitudes are in the ledger; `renormalise` kills the correction
+
+**State:** `NLPGD/sweep.py` gains `term_magnitude_block`, `show_term_magnitudes`
+and `backfill_term_magnitudes`; `extract_result` records `term_magnitudes`, so
+every future row carries it. All 21 rows of `sweep_results_new_strategies.jsonl`
+backfilled from their checkpoints — a reload, no retrain. No `src/` change.
+
+- **The ledger could not answer "did the correction activate".** Its only
+  `C`-aware field was `coefficient_norm`, the raw L1 of a coefficient row: it
+  moves under a rescaling of the monoms that leaves the decomposition unchanged,
+  and it ignores the size of the term the coefficient multiplies. The recorded
+  block is the gauge-invariant `|coeff|·∏ⱼ‖ψ_λⱼ(wⱼ)‖`, per mode, in `I` order,
+  with each mode's non-linear share.
+- **`renormalise` suppresses the correction, at no accuracy cost.** Identical
+  config either side; single runs, 10 modes, `coefficient_lr=1e-4`:
+
+  | run | renorm | max NL share | overall err |
+  |---|---|---|---|
+  | pinSpace-uniform2-r10 (`ba72a14b`/`2e54b1d5`) | off / on | 48.9 % → **0.00 %** | 0.061 → 0.039 |
+  | uniform2-r10 (`2224b67d`/`e1850154`) | off / on | 32.0 % → 19.4 % | 0.042 → 0.042 |
+
+  The 0.00 % rows sit at magnitudes ~1e-5: `C` never left the seed.
+- **`orthogonal_corrections` takes what is left**: 19.4 % → 2.9 % (`e1850154` →
+  `3f5a4afe`), accuracy 0.042 → 0.039.
+- **`totaldeg` and the `legendre` basis stay inert** — ≤ 2.5 %, often 1e-4, at
+  every rank tried with `coefficient_lr=1e-4`.
+- **Two runs carry a real correction and converge**, both `support`, both
+  without `renormalise`:
+
+  | id | config | max NL | err |
+  |---|---|---|---|
+  | `0278d766` | pinSpace-uniform4-r10 | 65.4 % | 0.054 |
+  | `1c40b49c` | pinSpace-uniform3-r10 | 58.1 % | 0.051 |
+  | `9b1ed483` | support-uniform3-r10 (no pin) | 33.3 % | **0.045** |
+
+  Above ~58 %, every *other* run diverged (err ≥ 0.25; `30b136ed` reaches 96.6 %
+  at err 2.09). NL share is not itself a good thing.
+- **Accuracy does not follow the NL share** on this ledger: the best row
+  (`3f5a4afe`, 0.0386) carries 2.9 %. Every row above is a single run — no
+  replicates, no ablation over seeds.
+
 ## 2026-07-30 — the term-share diagnostic was wrong; an injectable term basis
 
 **State:** `src/` gains `term_basis.py` (`MonomialBasis`, `LegendreBasis`) and,

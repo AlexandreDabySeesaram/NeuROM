@@ -20,7 +20,7 @@ spec.loader.exec_module(mod)
 LEDGER = HERE / mod.LEDGER
 
 ## CLEAN UP
-# for cid in ("bedb4e99", ):
+# for cid in ("9b1ed483", ):
 #     removed = mod.delete_row(LEDGER, cid)
 #     print(f"{'deleted' if removed else 'absent'} : {cid}")
 
@@ -31,7 +31,7 @@ mod.show_ledger(LEDGER)
 # one row's full per-stage table and coefficient rows, reloaded from
 ## its checkpoint. This is where `max corr` and `|C|` live; the ledger table
 ## above only carries the one-line summary.
-# for cid in ("1c40b49c",):
+# for cid in ("9b1ed483",):
 #     mod.show_run(cid, ledger=LEDGER)
 
 ## LEADING COEFFICIENTS -- c_m per stage, one column per mode: did they settle?

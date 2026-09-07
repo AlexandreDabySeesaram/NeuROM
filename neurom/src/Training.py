@@ -21,7 +21,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                                 InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum,\
                                 InternalEnergy_2D_einsum_hexa_para_fix, Hexa_mapping_non_vect, \
                                     InternalEnergy_2D_einsum_hexa_2param, InternalEnergy_2D_einsum_hexa_4param, InternalEnergy_2D_einsum_hexa_strain_sampled,\
-                                    InternalEnergy_2D_multiscale
+                                    InternalEnergy_2D_multiscale, InternalEnergy_2D_einsum_hexa_NeoHookean_sampled
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -448,13 +448,12 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
 
             case 4:
                 match config["solver"]["Problem"]:
-                    case "Hexa":
-
-                        if config["training"]["random_sampling"]:
-                            loss = InternalEnergy_2D_einsum_hexa_strain_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
-                        else:
-                            loss = InternalEnergy_2D_einsum_hexa_4param(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)  
-
+                    case "Hexa-Linear":
+                        loss = InternalEnergy_2D_einsum_hexa_strain_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
+                    case "Hexa-NeoHook":
+                        loss = InternalEnergy_2D_einsum_hexa_NeoHookean_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
+                    case "Hexa-Linear-full": 
+                        loss = InternalEnergy_2D_einsum_hexa_4param(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J)
 
         eval_time                   += time.time() - loss_time_start
         loss_current                = loss.item()
@@ -473,8 +472,6 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                     if Usefullness>=15:                                     # Check if mode was usefull for more than 15 iterations in a raw
                         FlagAddedMode_usefull = True                        # Flag stating that the new mode did help speeding-up the convergence
      
-
-
 
 
             if loss_min > loss_current:  
@@ -520,11 +517,9 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             print("Modes +1 ")
             print("     stagnancy_counter = ", stagnancy_counter, ", loss_counter = ", loss_counter)
 
-
             if config["training"]["random_sampling"]:
                 if loss_counter >= with_new_mode-1:
                     break
-
                 loss_counter = 0
                 with_new_mode = 0
 
@@ -535,6 +530,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
             FlagAddedMode_usefull   = False                                 # Flag stating that the new mode did help speeding-up the convergence
             stagnancy_counter       = 0
             Usefullness             = 0
+
         if FlagAddedMode:
             if epoch == Addition_epoch_index+2:
                 model.UnfreezeTruncated()
@@ -910,9 +906,10 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN', mapping = None):
                                     loss = InternalEnergy_2_3D_einsum_Tripara(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                 case 4:
                     match config["solver"]["Problem"]:
-                        case "Hexa":
-
+                        case "Hexa-Linear":
                             loss = InternalEnergy_2D_einsum_hexa_strain_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
+                        case "Hexa-NeoHook":
+                            loss = InternalEnergy_2D_einsum_hexa_NeoHookean_sampled(model, Mat.lmbda, Mat.mu, Training_para_coordinates_list, config, list_F, list_J) 
 
 
             loss.backward()
@@ -1456,100 +1453,102 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
                         # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
 
+                    if config["interpolation"]["dimension"]==2:
+                        loss_Neumann_BC = 0
 
-                    loss_Neumann_BC = 0
+                        for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
 
-                    for edges, i in zip(model.relation_BC_edges, range(len(model.relation_BC_edges))):
-
-                        t = model.relation_BC_values[i]
-                        normal_vectors = model.relation_BC_normal_vectors[i]
+                            t = model.relation_BC_values[i]
+                            normal_vectors = model.relation_BC_normal_vectors[i]
 
 
-                        if not (mapping is None) and config["solver"]["multi_scale"] == False:
-                            element_IDs = model.Element_ID_of_Neumann_edges[i]
-                            F = mapping[1]
-                            J = mapping[2]
+                            if not (mapping is None) and config["solver"]["multi_scale"] == False:
+                                element_IDs = model.Element_ID_of_Neumann_edges[i]
+                                F = mapping[1]
+                                J = mapping[2]
 
-                            if len(t)==1:
-                                for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
-                    
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                                if len(t)==1:
+                                    for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
+                        
+                                        ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                        ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                        ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                        ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    F_mid = F[element_id]
-                                    J_mid = J[element_id]
+                                        F_mid = F[element_id]
+                                        J_mid = J[element_id]
 
-                                    # Transformation of normal vector
-                                    n = J_mid * (F_mid.inverse().T @ n)
+                                        # Transformation of normal vector
+                                        n = J_mid * (F_mid.inverse().T @ n)
 
-                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                        tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                        dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                        loss_Neumann_BC = loss_Neumann_BC + tu*dx
 
-                            elif len(t)==2:
-                                for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
+                                elif len(t)==2:
+                                    for edge, n, element_id in zip(edges, normal_vectors, element_IDs):
 
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                                        ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                        ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                        ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                        ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    
-                                    F_mid = F[element_id]
-                                    J_mid = J[element_id]
-                                       
-                                    # surface Jacobian factor
-                                    scale = (J_mid * (F_mid.inverse().T @ n)).norm()
-                                    
-                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                        
+                                        F_mid = F[element_id]
+                                        J_mid = J[element_id]
+                                        
+                                        # surface Jacobian factor
+                                        scale = (J_mid * (F_mid.inverse().T @ n)).norm()
+                                        
+                                        tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+                                        dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
+                                        loss_Neumann_BC = loss_Neumann_BC + tu*scale*dx
 
-                        else:
-                            if len(t)==2:
-                                for edge, n in zip(edges, normal_vectors):
+                            else:
+                                if len(t)==2:
+                                    for edge, n in zip(edges, normal_vectors):
 
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                                        ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                        ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
-                                    
-                                    tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                        ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                        ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                        
+                                        tu = t[0] * 0.5 * (ua_x + ub_x) + t[1] * 0.5 * (ua_y + ub_y)
+                                        dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                                        loss_Neumann_BC = loss_Neumann_BC + tu*dx
 
-                            elif len(t)==1:
-                                for edge, n in zip(edges, normal_vectors):
+                                elif len(t)==1:
+                                    for edge, n in zip(edges, normal_vectors):
 
-                                    ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
-                                    ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
+                                        ua_x = model.nodal_values.x_free[model.mapping_free_x[edge[0]-1]]
+                                        ub_x = model.nodal_values.x_free[model.mapping_free_x[edge[1]-1]]
 
-                                    ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
-                                    ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
+                                        ua_y = model.nodal_values.y_free[model.mapping_free_y[edge[0]-1]]
+                                        ub_y = model.nodal_values.y_free[model.mapping_free_y[edge[1]-1]]
 
-                                    tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
-                                    dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
+                                        tu = t[0]*n[0] * 0.5 * (ua_x + ub_x) + t[0]*n[1] * 0.5 * (ua_y + ub_y)
+                                        dx = torch.norm(model.coordinates_all[edge[1]-1] - model.coordinates_all[edge[0]-1])
 
-                                    loss_Neumann_BC = loss_Neumann_BC + tu*dx
-                    
-                    loss = loss + loss_Neumann_BC
+                                        loss_Neumann_BC = loss_Neumann_BC + tu*dx
+                        
+                        loss = loss + loss_Neumann_BC
 
                 case "NeoHookean":
                     if config["solver"]["volume_forces"] == True:
-                        loss = torch.sum((0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
+                        loss = torch.sum((InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu, config)-10*VolumeForcesEnergy_2D(u_predicted,theta = torch.tensor(0*torch.pi/2), rho = 1e-9))*torch.abs(detJ))
                     else:
                         if (mapping is None):
-                            loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu)*torch.abs(detJ))
+                            loss = torch.sum(InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu, config)*torch.abs(detJ))
                         else:
-                            loss = torch.sum(0.5*InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu, mapping)*torch.abs(detJ)**torch.abs(mapping_J))
+                            # print("NeoHook - mapping")
+                            mapping_J = mapping[2]
+                            loss = torch.sum(InternalEnergy_2D_einsum_NeoHookean(u_predicted,xg,Mat.lmbda, Mat.mu, config, mapping)*torch.abs(detJ)*torch.abs(mapping_J))
 
                 case "SaintVenntKirchhoff":
                     if config["solver"]["volume_forces"] == True:
@@ -1576,10 +1575,10 @@ def Training_2D_Integral(model, optimizer, n_epochs, Mat, config, mapping = None
             # Periodic boundary conditions # # # # # # # # # # # # # # # # #
             # Source values ---> Dependent values
 
-            if len(model.source_free_x)>0:
-                model.nodal_values.x_imposed[model.dependent_x] = model.nodal_values.x_free[model.source_free_x]
-            if len(model.source_free_y)>0:
-                model.nodal_values.y_imposed[model.dependent_y] = model.nodal_values.y_free[model.source_free_y]
+            # if len(model.source_free_x)>0:
+            #     model.nodal_values.x_imposed[model.dependent_x] = model.nodal_values.x_free[model.source_free_x]
+            # if len(model.source_free_y)>0:
+            #     model.nodal_values.y_imposed[model.dependent_y] = model.nodal_values.y_free[model.source_free_y]
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
             detJ = detJ_new[0]
@@ -2173,6 +2172,8 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN', mapping = None):
                                 np            = config["interpolation"]["np"],
                                 MaxElemSize2D = config["interpolation"]["MaxElemSize2D"]
                             )
+    name_sequence       = config["geometry"]["Name_sequence"]
+
     Excluded = []
     try:
         loss_init               = model.training_recap["Loss_vect"]         # Test if model.training_recap exists
@@ -2198,7 +2199,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN', mapping = None):
                 Training_NeuROM_FinalStageLBFGS(model,config)           # Second stage of training (LBFGS)
             case 2:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
-                Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
+                # Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
             case 3:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
@@ -2230,8 +2231,7 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN', mapping = None):
             # Mesh_object_fine.ReadMesh()                                                      # Parse the .msh file
 
             # # # # # # # # # # # # # # # # # # # # # # # # # 
-            if config["geometry"]["Name"] == 'Hexa_init_coarse':
-                config["geometry"]["Name"] = 'Hexa_coarse'
+            config["geometry"]["Name"] = 'Hexa_'+str(name_sequence[n_refinement-1])
 
             Mesh_object_fine = pre.Mesh( 
                                 config["geometry"]["Name"],                 # Create the mesh object

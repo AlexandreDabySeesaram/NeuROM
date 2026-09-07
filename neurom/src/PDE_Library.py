@@ -438,10 +438,6 @@ def Stress_tensor(eps, lmbda, mu):
 
 def InternalEnergy_2_3D_einsum(model, u,x,lmbda, mu, config, dim = 2, mapping = None):
 
-    # NOTE!   
-    # Outside:  u_predicted = u_predicted + u_affine.T
-    # This is why we need to remove the 'eps_macro_4' before transforming Grad U by F_mapping
-
     if 'parameters' in config:
         if 'x_0_x' in config['parameters']:
          
@@ -552,6 +548,17 @@ def get_layered_h_values(x, h_range=[0.1, 0.35]):
 
     return h
 
+def get_layered_single_h(x, h_range=[0.1, 0.35]):
+
+    y = x[:, 1]
+
+    y_mid = 0.5 * (y.min() + y.max())
+
+    h_min, h_max = h_range
+
+    h = torch.full_like(y, (h_min+h_max)/2)
+
+    return h
 
 
 def prep_parameters(h_value, eps_val_xx, eps_val_xy, eps_val_yy):
@@ -576,7 +583,8 @@ def InternalEnergy_2D_multiscale(model, u, x, lmbda, mu, config, dim = 2, mappin
     micro_ROM = mapping[0]
     micro_ROM.train()
 
-    h_values = get_const_h_values(x)
+    h_values = get_lin_h_values(x)
+
     macro_eps_full = Strain_full(u,x) # xx, xy, yx, yy
 
     micro_results = get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu)
@@ -704,7 +712,6 @@ def get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu):
         lxy = micro_ROM.Para_modes[m][2](eps_xy_vals)
         lyy = micro_ROM.Para_modes[m][3](eps_yy_vals)
 
-        # SAFETY
         lambda_h.append(lh.squeeze(-1))
         lambda_xx.append(lxx.squeeze(-1))
         lambda_xy.append(lxy.squeeze(-1))
@@ -726,9 +733,6 @@ def get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu):
         * lambda_xy
         * lambda_yy
     )
-
-
-
 
     # ============================================================
     # 5. Reconstruct displacement gradient
@@ -866,33 +870,45 @@ def get_micro_stress(micro_ROM, h_values, macro_eps_full, lmbda, mu):
 
 
 
-def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu, mapping=None):
+def InternalEnergy_2D_einsum_NeoHookean(u,x,lmbda, mu, config, mapping=None):
 
     grad_u =  grad_u_2D(u,x)
     Green_lagrange_tensor = Green_lagrange(grad_u)
     Id = torch.eye(2,dtype=Green_lagrange_tensor.dtype, device=Green_lagrange_tensor.device)
 
-    if 'parameters' in config:
-        if 'x_0_x' in config['parameters']:
-            x0 = torch.tensor((config["parameters"]["x_0_x"],config["parameters"]["x_0_y"]))
-            eps_macro_4 = torch.tensor(((config["parameters"]["eps_xx"],config["parameters"]["eps_xy"]),(config["parameters"]["eps_xy"],config["parameters"]["eps_yy"])))
-            F_macro = Id + eps_macro_4
+    # Default is Identity (no macro strain)
+    F_macro = torch.eye(2, dtype=u.dtype, device=u.device).unsqueeze(0) 
     
+    if 'parameters' in config:
+        e_xx = config["parameters"].get("eps_xx", 0.0)
+        e_yy = config["parameters"].get("eps_yy", 0.0)
+        e_xy = config["parameters"].get("eps_xy", 0.0)
+        
+        # F_macro = I + eps_macro
+        F_macro = torch.tensor([
+            [1.0 + e_xx, e_xy],
+            [e_xy, 1.0 + e_yy]
+        ], dtype=u.dtype, device=u.device).unsqueeze(0)
+
+    # 3. Domain Mapping 
     if mapping is not None:
+        # F_map is the deformation gradient of the geometry mapping (dx/dX)
+        list_F_map = mapping[1]
+        F_map = torch.stack(list_F_map) # [N, 2, 2]
+        F_map_inv = torch.linalg.inv(F_map)
+        
+        # Total F = F_macro + (grad_u_star_reference * F_map_inv)
+        F = F_macro + torch.bmm(grad_u, F_map_inv)
+        
+    else:
+        F = F_macro + grad_u
 
-        F_map = torch.stack(mapping[1])   # same idea as your linear case
-        F_inv = torch.linalg.inv(F_map)
-        grad_u = grad_u @ F_inv   # push-forward of gradient
-
-
-    F = grad_u + Id
     C = torch.einsum('eki,ekj->eij',F,F)
     J = torch.linalg.det(F)
     tr = torch.einsum('eii->e',C)
 
-    penalty = torch.relu(-J)
 
-    W_e = 0.5*mu*(tr-2-2*torch.log(torch.abs(J))) + 0.5*(lmbda*(J-1)**2) + 1000*penalty
+    W_e = 0.5*mu*(tr-2-2*torch.log(torch.abs(J))) + 0.5*(lmbda*(J-1)**2) 
 
     return W_e
 
@@ -1215,7 +1231,7 @@ def InternalEnergy_2D_einsum_hexa_4param(
     grad_u = grad_u.permute(0, 3, 1, 2)   # [Nx, Nm, 2, 2]
 
     # ============================================================
-    # 4. Parametric coefficients λ_m^(l)  (SAFE)
+    # 4. Parametric coefficients λ_m^(l)  
     # ============================================================
     Para_mode_Lists = [
         [
@@ -1231,7 +1247,7 @@ def InternalEnergy_2D_einsum_hexa_4param(
             [Para_mode_Lists[m][l] for m in range(Nm)],
             dim=0
         )                    # [Nm, N_l, 1]
-        tmp = tmp.squeeze(-1)  # [Nm, N_l]  ← SAFE
+        tmp = tmp.squeeze(-1)  # [Nm, N_l]  
         lambda_i.append(tmp)
 
     lambda_h  = lambda_i[0]  # [Nm, Nh]
@@ -1239,19 +1255,9 @@ def InternalEnergy_2D_einsum_hexa_4param(
     lambda_xy = lambda_i[2]  # [Nm, Ne]
     lambda_yy = lambda_i[3]   # [Nm, Ne]
 
-    # ============================================================
-    # 5. FULL tensor-product λ_m(h,xx,xy,yy)
-    # ============================================================
-    # lambda_full = (
-    #     lambda_h[:, :, None, None, None]
-    #     * lambda_xx[:, None, :, None, None]
-    #     * lambda_xy[:, None, None, :, None]
-    #     * lambda_yy[:, None, None, None, :]
-    # ).contiguous()
-    # [Nm, Nh, Ne, Ne, Ne]
 
     # ============================================================
-    # 6. Modal superposition (FUSED, Nm-safe)
+    # 6. Modal superposition 
     # ============================================================
     # grad_u:     [Nx, Nm, 2, 2]
     # lambda_full [Nm, Nh, Ne, Ne, Ne]
@@ -1484,7 +1490,123 @@ def InternalEnergy_2D_einsum_hexa_strain_sampled(
 
 
 
+def InternalEnergy_2D_einsum_hexa_NeoHookean_sampled(
+    model, lmbda, mu, parameters, config, list_F, list_J):
 
+    """
+    Internal energy for Neo-Hookean material averaged over parametric space.
+    Corrected for Nx, Nh, Ne, 2, 2 broadcasting.
+    """
+    # ============================================================
+    # 0. Parameters & Setup
+    # ============================================================
+    h_vals  = parameters[0][:, 0]      # [Nh]
+    eps_vals = parameters[1]           # [Ne, 3] -> [eps_xx, eps_xy, eps_yy]
+
+    Nh, Ne = h_vals.shape[0], eps_vals.shape[0]
+    Nm = model.n_modes_truncated
+    dtype, device = h_vals.dtype, h_vals.device
+
+    # ============================================================
+    # 1. Spatial modes & Gradients
+    # ============================================================
+    Space_modes, xg_modes = [], []
+    for m in range(Nm):
+        u_m, xg_m, _ = model.Space_modes[m]()
+        Space_modes.append(u_m)
+        xg_modes.append(xg_m)
+
+    # eps_full: [Nx, 4, Nm] (components: du/dx, du/dy, dv/dx, dv/dy)
+    eps_full_list = [Strain_full(Space_modes[m], xg_modes[m]) for m in range(Nm)]
+    eps_full = torch.stack(eps_full_list, dim=2) 
+
+    # grad_u_spatial: [Nx, Nm, 2, 2]
+    grad_u_spatial = torch.stack([
+        torch.stack([eps_full[:,0,:], eps_full[:,1,:]], dim=1),
+        torch.stack([eps_full[:,2,:], eps_full[:,3,:]], dim=1)
+    ], dim=1).permute(0, 3, 1, 2)
+
+    # ============================================================
+    # 2. Parametric coefficients [Nm, Nh] or [Nm, Ne]
+    # ============================================================
+    lambda_h = torch.stack([model.Para_modes[m][0](h_vals[:, None]).squeeze(-1) for m in range(Nm)])
+    lambda_xx = torch.stack([model.Para_modes[m][1](eps_vals[:, 0:1]).squeeze(-1) for m in range(Nm)])
+    lambda_xy = torch.stack([model.Para_modes[m][2](eps_vals[:, 1:2]).squeeze(-1) for m in range(Nm)])
+    lambda_yy = torch.stack([model.Para_modes[m][3](eps_vals[:, 2:3]).squeeze(-1) for m in range(Nm)])
+
+    # ============================================================
+    # 3. Modal superposition (Fluctuation Gradient)
+    # ============================================================
+    # grad_u_star: [Nx, Nh, Ne, 2, 2]
+    grad_u_star = torch.einsum(
+        "xmij, mh, me, me, me -> xheij",
+        grad_u_spatial, lambda_h, lambda_xx, lambda_xy, lambda_yy
+    )
+
+    # ============================================================
+    # 4. Mapping & Total Deformation Gradient
+    # ============================================================
+    # list_F is list of lists, F_map: [Nx, Nh, 2, 2]
+    F_map = torch.stack([torch.stack(Fx) for Fx in list_F])
+    # F_map_inv: [Nx, Nh, 1, 2, 2] (unsqueeze to broadcast over Ne)
+    F_map_inv = torch.linalg.inv(F_map).unsqueeze(2)
+    
+    # Push-forward: grad_u_phys = grad_u_star @ F_map_inv
+    # grad_u_star is [Nx, Nh, Ne, 2, 2], F_map_inv is [Nx, Nh, 1, 2, 2]
+    grad_u_phys = torch.matmul(grad_u_star, F_map_inv)
+
+    # Construct F_macro: [Ne, 2, 2]
+    e_xx, e_xy, e_yy = eps_vals[:, 0], eps_vals[:, 1], eps_vals[:, 2]
+    row1 = torch.stack([1.0 + e_xx, e_xy], dim=1)
+    row2 = torch.stack([e_xy, 1.0 + e_yy], dim=1)
+    F_macro_base = torch.stack([row1, row2], dim=1) 
+
+    # F_macro_reshaped: [1, 1, Ne, 2, 2]
+    F_macro_reshaped = F_macro_base.view(1, 1, Ne, 2, 2)
+
+    # Total Deformation Gradient F: [Nx, Nh, Ne, 2, 2]
+    F = grad_u_phys + F_macro_reshaped
+
+    # ============================================================
+    # 5. Neo-Hookean Kinematics
+    # ============================================================
+    # Right Cauchy-Green C = F^T * F -> [Nx, Nh, Ne, 2, 2]
+    C = torch.matmul(F.transpose(-1, -2), F)
+    
+    # Determinant J and Trace of C -> [Nx, Nh, Ne]
+    J = torch.linalg.det(F)
+    trC = C[..., 0, 0] + C[..., 1, 1]
+
+    # ============================================================
+    # 6. Strain Energy Density
+    # ============================================================
+    # Clamp J -------> not necessary
+    # val_for_log = torch.clamp(torch.abs(J), min=1e-7)
+    # logJ = torch.log(val_for_log)
+    
+    logJ = torch.log(torch.abs(J))
+    
+    # W_e: [Nx, Nh, Ne]
+    W_e = 0.5 * mu * (trC - 2 - 2 * logJ) + 0.5 * lmbda * (J - 1)**2 
+    # W_e = 0.5*mu*(tr-2-2*torch.log(torch.abs(J))) + 0.5*(lmbda*(J-1)**2) 
+
+    # ============================================================
+    # 7. Integration & Averaging
+    # ============================================================
+    detJ_raw = model.Space_modes[0]()[2]
+    J_x = torch.abs(detJ_raw)
+    
+    # Jm is the geometry mapping Jacobian [Nx, Nh]
+    Jm = torch.abs(torch.tensor(list_J, dtype=dtype, device=device))
+
+    # Perform integration (W_e * dV)
+    # [Nx, Nh, Ne] * [Nx, 1, 1] * [Nx, Nh, 1]
+    integrand = W_e * J_x.view(-1, 1, 1) * Jm.unsqueeze(-1)
+
+    # Sum over spatial points (integral), then average over Nh and Ne
+    E_p = integrand.sum(dim=0)  # Shape: [Nh, Ne]
+    
+    return E_p.mean()
 
 
 
@@ -2684,6 +2806,8 @@ def Hexa_scaling_new_coord(center_point, coord, end_a, end_b, end_c, start_a, st
 def Hexa_mapping(mesh, xg, current_h, new_h):
 
     P1, P2, centers, impo_points, inner_edges, center_point = Hexa_domain_constants(mesh)
+
+    # [print("{:.6e}".format(c[1])) for c in centers ]
 
     F = []
     u = []

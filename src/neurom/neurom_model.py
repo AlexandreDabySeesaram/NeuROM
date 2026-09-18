@@ -50,7 +50,8 @@ class NeuROMModel(nn.Module):
             return self.field_layout
         if coords is None:
             raise ValueError(
-                "eval forward requires coords: a (P, n_axes) tensor, one point per row."
+                "eval forward requires coords: a (P, n_factors) tensor, one point "
+                "per row."
             )
         return self.decomposition.evaluate(coords)
 

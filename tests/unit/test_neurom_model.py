@@ -20,7 +20,7 @@ torch.set_default_dtype(torch.float32)
 class _ConstantDecomposition(TensorDecomposition):
     """Minimal fake decomposition with NO CP structure: registers one fixed
     Field and exposes a QuadratureAssembly for it. It has no ``monoms``, no
-    ``axes`` and no ``n_active_modes``, so any CP-specific attribute access
+    ``factors`` and no ``n_active_modes``, so any CP-specific attribute access
     that creeps into NeuROMModel raises AttributeError against it."""
 
     def __init__(self):
@@ -50,8 +50,8 @@ class _ConstantDecomposition(TensorDecomposition):
         return torch.ones(*[c.reshape(-1).shape[0] for c in coords])
 
 
-def test_neurommodel_train_forward_returns_layout_and_optimizes(two_axes):
-    cppgd = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_neurommodel_train_forward_returns_layout_and_optimizes(two_specs):
+    cppgd = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     layout = FieldLayout()
     domain = IntegrationDomain(cppgd.assemblies())
 
@@ -76,8 +76,8 @@ def test_neurommodel_train_forward_returns_layout_and_optimizes(two_axes):
     assert not torch.allclose(before, after)
 
 
-def test_neurommodel_add_mode_to_optimizer_grows_param_groups(two_axes):
-    cppgd = CPPGD(axes=two_axes, n_modes_max=2, n_modes_ini=1)
+def test_neurommodel_add_mode_to_optimizer_grows_param_groups(two_specs):
+    cppgd = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
     model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     optim = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=0.1)
@@ -85,12 +85,12 @@ def test_neurommodel_add_mode_to_optimizer_grows_param_groups(two_axes):
     cppgd.add_mode()
     model.add_mode_to_optimizer(optim)
     n_after = sum(len(g["params"]) for g in optim.param_groups)
-    # 2 new monom parameters (one per axis) added
+    # 2 new monom parameters (one per factor) added
     assert n_after == n_before + 2
 
 
-def test_neurommodel_eval_forward_matched_pointwise(two_axes):
-    cppgd = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_neurommodel_eval_forward_matched_pointwise(two_specs):
+    cppgd = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
         cppgd.monoms[0][0].values_reduced.copy_(
             torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
@@ -111,8 +111,8 @@ def test_neurommodel_eval_forward_matched_pointwise(two_axes):
     )
 
 
-def test_neurommodel_eval_forward_requires_coords(two_axes):
-    cppgd = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_neurommodel_eval_forward_requires_coords(two_specs):
+    cppgd = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
     model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     model.eval()
@@ -120,8 +120,8 @@ def test_neurommodel_eval_forward_requires_coords(two_axes):
         model()
 
 
-def test_neurommodel_assemble_delegates(two_axes):
-    cppgd = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_neurommodel_assemble_delegates(two_specs):
+    cppgd = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     domain = IntegrationDomain(cppgd.assemblies())
     model = NeuROMModel(FieldLayout(), cppgd, domain, loss=lambda out: out)
     x = torch.tensor([2.5, 5.0])
@@ -135,7 +135,7 @@ def test_neurommodel_never_touches_cp_specific_attributes():
     """NeuROMModel must go through the TensorDecomposition contract only.
 
     Driven by a fake decomposition with no CP structure at all. If any
-    CP-specific attribute access (``monoms``, ``axes``, ``n_active_modes``, ...)
+    CP-specific attribute access (``monoms``, ``factors``, ``n_active_modes``, ...)
     creeps into NeuROMModel, every CPPGD-backed test stays green and only this
     one fails -- with an AttributeError. All three public entry points are
     exercised for that reason: train forward, eval forward and assemble.

@@ -135,12 +135,12 @@ space mesh and sampled at the **same** space quadrature points as $u$, so that
 
 ## Discretisation used
 
-Concretely the two `Axis` objects fed to
+Concretely the two `MonomSpec` objects fed to
 the decomposition are:
 
-- **Space axis** — $x \in [0, 10]$ with $N_{\text{space}} = 30$ nodes, i.e. 29
+- **Space factor** — $x \in [0, 10]$ with $N_{\text{space}} = 30$ nodes, i.e. 29
   linear elements, clamped at both ends. This is a standard 1D FE mesh.
-- **Parameter axis** — $E \in [10, 100]$ with $N_E = 20$ nodes, no constraint.
+- **Parameter factor** — $E \in [10, 100]$ with $N_E = 20$ nodes, no constraint.
   This is a second, independent 1D FE mesh: the parametric coordinate is
   discretised exactly like a spatial one.
 

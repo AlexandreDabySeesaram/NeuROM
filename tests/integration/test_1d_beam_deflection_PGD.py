@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from neurom.decompositions import Axis, CPPGD
+from neurom.decompositions import CPPGD, FactorSpace, MonomSpec
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearBar
@@ -99,7 +99,7 @@ class Test1dBeamDeflectionPGD:
         # Deterministic run so the calibrated thresholds are meaningful.
         torch.manual_seed(0)
 
-        ## Axis
+        ## Factors
         # Shape function
         sf = LinearBar()
         # Quadrature strategy
@@ -134,12 +134,15 @@ class Test1dBeamDeflectionPGD:
 
         mesh_space = Mesh(connectivity_space, nodes_positions_space)
 
-        axis_space = Axis(
+        space_x = FactorSpace(
             name="space",
             mesh=mesh_space,
-            sf=sf,
             mapping=IsoparametricMapping1D(sf, mesh_space),
             quad=quad,
+        )
+        spec_x = MonomSpec(
+            space=space_x,
+            sf=sf,
             constraint=Dirichlet(
                 nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)
             ),
@@ -167,19 +170,22 @@ class Test1dBeamDeflectionPGD:
 
         mesh_E = Mesh(connectivity_E, nodes_positions_E)
 
-        axis_E = Axis(
+        space_E = FactorSpace(
             name="E",
             mesh=mesh_E,
-            sf=sf,
             mapping=IsoparametricMapping1D(sf, mesh_E),
             quad=quad,
+        )
+        spec_E = MonomSpec(
+            space=space_E,
+            sf=sf,
             constraint=NoConstraint(),
             init_values=E_init,
         )
 
         ## CP PGD object
         pgd_approx = CPPGD(
-            axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1
+            monom_specs=[spec_x, spec_E], n_modes_max=3, name="pgd", n_modes_ini=1
         )
 
         ###### Define constant load.
@@ -187,7 +193,7 @@ class Test1dBeamDeflectionPGD:
         # sampled at the SAME quadrature points as u so that inner(f, u) aligns
         # (this is exactly what neurom.physics.LoadPotential does). We give it its
         # own nodal values on the space mesh, then interpolate it once on the
-        # space axis's quadrature (same sf / quad / mapping / connectivity as u).
+        # space factor's quadrature (same sf / quad / mapping / connectivity as u).
         # For a load that is constant in E, this is the single rank-1 spatial
         # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
@@ -200,7 +206,7 @@ class Test1dBeamDeflectionPGD:
                 values=load_value * torch.ones(N_space, 1),
             )
         )
-        context_f = axis_space.context  # le même context que la partie spatiale
+        context_f = space_x.context  # le même context que la partie spatiale
         assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
         # Construction of the shared domain for the whole problem
@@ -452,10 +458,10 @@ def _factor(pgd_approx, m, k, pts):
     one monom field on its own axis mesh at arbitrary query points.
     """
     pwi = PointWiseInterpolator(
-        pgd_approx.axes[k].mesh,
-        pgd_approx.axes[k].sf,
+        pgd_approx.monom_specs[k].space.mesh,
+        pgd_approx.monom_specs[k].sf,
         pgd_approx.monoms[m][k],
-        pgd_approx.axes[k].mapping,
+        pgd_approx.monom_specs[k].space.mapping,
     )
     return pwi.at_position(pts.reshape(-1, 1)).reshape(-1)
 

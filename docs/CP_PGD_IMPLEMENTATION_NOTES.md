@@ -70,7 +70,7 @@ enrichment.
 ### Added — production code
 
 - `src/neurom/decompositions/__init__.py` — exports `TensorDecomposition`,
-  `Axis`, `CPPGD`, `PGDFEMModel`.
+  `FactorSpace`, `MonomSpec`, `CPPGD`, `PGDFEMModel`.
 - `src/neurom/decompositions/base.py` — **`TensorDecomposition(nn.Module, ABC)`**:
   the format-agnostic contract a PGD FEM model depends on. Abstract
   `register_into(field_layout)` (register this decomposition's factor fields
@@ -78,21 +78,32 @@ enrichment.
   active factor fields and `update()` them in the layout; the PGD analogue of
   `IntegrationDomain.interpolate_all`, called once per forward). CP today,
   Tucker/TT later, all drive the same `PGDFEMModel` through this seam.
-- `src/neurom/decompositions/pgd.py` — both classes:
+- `src/neurom/decompositions/factor.py` — the two descriptors:
 
-  **`Axis`** (dataclass) — descriptor of one factor/coordinate direction.
-  Fields: `name`, `nodes_positions` (a `neurom.fields.Field` giving the axis
-  mesh coordinates), `sf` (`ShapeFunction`), `mapping`, `quad`
-  (`QuadratureRule`), `constraint` (`Constraint`, carries the BCs),
-  `init_values` (initial nodal values for each monom on this axis). Read-only
-  property `connectivity` returns `nodes_positions.connectivity` (guarantees the same
-  `Connectivity` object is shared by the `Mesh` and the monoms' `TrainableField`).
+  **`FactorSpace`** (dataclass) — the discretised space one factor lives on,
+  and nothing else. Fields: `name`, `mesh`, `mapping` (which encloses the
+  *geometry* shape function), `quad` (`QuadratureRule`). Builds its
+  `QuadratureContext` in `__post_init__`. Read-only properties `connectivity`
+  and `nodes_positions` delegate to the mesh (guaranteeing the same
+  `Connectivity` object is shared by the `Mesh` and the monoms'
+  `TrainableField`). Shared by every field posed on it: all the monoms of that
+  factor, and any load read on the same quadrature points.
 
-  **`CPPGD(TensorDecomposition)`** — `CPPGD(axes: list[Axis], n_modes_max, n_modes_ini=1)`.
-  - `self.monoms` — `ModuleList` over modes of `ModuleList` over axes of
+  **`MonomSpec`** (dataclass) — the blueprint for the monoms posed on a
+  `FactorSpace`, **not** a monom itself. Fields: `space`, `sf` (the *field's*
+  shape function, distinct from the geometry one for a sub/super-parametric
+  element), `constraint` (`Constraint`, carries the BCs), `init_values` (initial
+  nodal values for each monom on this factor). One spec per factor, whatever the
+  number of modes: `CPPGD` reads it once per mode to build the corresponding
+  `TrainableField`.
+
+- `src/neurom/decompositions/pgd.py`:
+
+  **`CPPGD(TensorDecomposition)`** — `CPPGD(monom_specs: list[MonomSpec], n_modes_max, n_modes_ini=1)`.
+  - `self.monoms` — `ModuleList` over modes of `ModuleList` over factors of
     `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`.
-  - `self._meshes`, `self._contexts` — one `Mesh` / `QuadratureContext` per
-    axis, shared across modes.
+  - `self._contexts` — the factor spaces' `QuadratureContext`, shared across
+    modes.
   - `self.n_modes_max` (int), `self.n_active_modes` (int-valued buffer =
     currently active modes).
   - `register_into(field_layout)` — registers every monom field (all
@@ -136,7 +147,9 @@ enrichment.
 
 ### Added — tests
 
-- `tests/unit/decompositions/test_pgd.py` — `Axis` connectivity, `CPPGD`
+- `tests/unit/decompositions/test_factor.py` — `FactorSpace` connectivity and
+  context, and two `MonomSpec` sharing one space.
+- `tests/unit/decompositions/test_pgd.py` — `CPPGD`
   construction + freeze state, monom values read back by name from a
   `FieldLayout` after `register_into` + `fill`, `assemble` (single-mode and
   rank-2 sum of outer products), greedy mode management (freeze/activate/zero,
@@ -195,10 +208,10 @@ uv run pytest tests/integration/test_1d_beam_deflection_PGD_test.py -v
 - Constructor silently does `min(n_modes_ini, n_modes_max)` instead of raising
   `ValueError` when `n_modes_ini > n_modes_max`.
 - `assemble` with more than 26 axes raises a bare `IndexError`
-  (`string.ascii_lowercase[:n_axes]`) rather than a clear message.
+  (`string.ascii_lowercase[:n_factors]`) rather than a clear message.
 - `assemble` rebuilds a `PointWiseInterpolator` per mode (efficiency only;
   it is post-processing and returns a detached tensor).
-- `Axis.mapping` is typed `object` (no mapping ABC exists in the codebase yet).
+- `FactorSpace.mapping` is typed `object` (no mapping ABC exists in the codebase yet).
 
 ## Reference for the original implementation
 

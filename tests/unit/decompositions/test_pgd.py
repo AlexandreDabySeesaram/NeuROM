@@ -2,49 +2,21 @@ import pytest
 import torch
 
 from neurom.decompositions import CPPGD
-from neurom.meshes import Mesh
-from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
 
 torch.set_default_dtype(torch.float32)
 
 
-# --- Axis ---------------------------------------------------------------
-
-
-def test_axis_wires_mesh_context_and_connectivity(make_axis):
-    """An Axis owns one mesh and one context, all sharing the same objects.
-
-    Every identity here is an invariant CPPGD relies on: the monoms bind to
-    ``axis.connectivity``, so a copy anywhere in this chain would silently
-    detach them from the mesh they are supposed to live on.
-    """
-    axis = make_axis()
-    assert axis.name == "space"
-    assert isinstance(axis.mesh, Mesh)
-    assert isinstance(axis.context, QuadratureContext)
-    assert axis.connectivity is axis.nodes_positions.connectivity
-    assert axis.mesh.connectivity is axis.connectivity
-    assert axis.mesh.nodes_positions is axis.nodes_positions
-    assert axis.connectivity.n_nodes == 5
-
-
-def test_two_axes_have_distinct_contexts(two_axes):
-    space, para = two_axes
-    assert space.context is not para.context
-    assert space.mesh is not para.mesh
-
-
 # --- CPPGD construction -------------------------------------------------
 
 
-def test_cppgd_construction_structure_and_freeze(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_cppgd_construction_structure_and_freeze(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
 
     assert isinstance(model, TensorDecomposition)
 
-    # 3 modes, each with 2 monoms (one per axis)
+    # 3 modes, each with 2 monoms (one per factor)
     assert len(model.monoms) == 3
     assert all(len(mode) == 2 for mode in model.monoms)
 
@@ -61,15 +33,15 @@ def test_cppgd_construction_structure_and_freeze(two_axes):
     assert len(active) == 2
 
 
-def test_two_vector_axes_raises(make_axis):
-    a1 = make_axis(name="a", n=5, dim=2)
-    a2 = make_axis(name="b", n=4, dim=3)
+def test_two_vector_factors_raises(make_spec):
+    a1 = make_spec(name="a", n=5, dim=2)
+    a2 = make_spec(name="b", n=4, dim=3)
     with pytest.raises(ValueError):
-        CPPGD(axes=[a1, a2], n_modes_max=1, n_modes_ini=1)
+        CPPGD(monom_specs=[a1, a2], n_modes_max=1, n_modes_ini=1)
 
 
-def test_cppgd_has_name_and_monom_naming(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=2, n_modes_ini=1, name="beam")
+def test_cppgd_has_name_and_monom_naming(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1, name="beam")
     assert model.name == "beam"
     assert model.monoms[0][0].name == "beam_dimspace_mode0"
     assert model.monoms[1][1].name == "beam_dimE_mode1"
@@ -78,8 +50,8 @@ def test_cppgd_has_name_and_monom_naming(two_axes):
 # --- Greedy mode lifecycle ----------------------------------------------
 
 
-def test_add_mode_activates_new_without_freezing_previous(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=2, n_modes_ini=1)
+def test_add_mode_activates_new_without_freezing_previous(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1)
 
     # Seed the (frozen) mode-1 monoms so we can check they are preserved.
     with torch.no_grad():
@@ -98,14 +70,14 @@ def test_add_mode_activates_new_without_freezing_previous(two_axes):
     assert all(torch.count_nonzero(f.values_reduced) > 0 for f in model.monoms[1])
 
 
-def test_add_mode_raises_at_max(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_add_mode_raises_at_max(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     with pytest.raises(RuntimeError):
         model.add_mode()
 
 
-def test_n_active_modes_counts_active_blocks(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_n_active_modes_counts_active_blocks(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
     assert model.n_active_modes == 1
     # exactly the leading block's assemblies are active
     assert all(bool(a.active) for a in model._assemblies[0])
@@ -115,10 +87,10 @@ def test_n_active_modes_counts_active_blocks(two_axes):
     assert all(bool(a.active) for a in model._assemblies[1])
 
 
-def test_no_requires_grad_param_in_inactive_assembly(two_axes):
+def test_no_requires_grad_param_in_inactive_assembly(two_specs):
     """The illegal state (active=False, requires_grad=True) never occurs across
     the greedy sequence: every trainable monom belongs to an active assembly."""
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
 
     def check(mdl):
         for block in mdl._assemblies:
@@ -135,19 +107,19 @@ def test_no_requires_grad_param_in_inactive_assembly(two_axes):
     check(model)
 
 
-def test_mode_parameters_returns_one_param_per_axis(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=2, n_modes_ini=1)
+def test_mode_parameters_returns_one_param_per_factor(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1)
     model.add_mode()
     params = model.mode_parameters()  # defaults to last-activated mode
-    # one monom parameter per axis, and they are mode 1's tensors
+    # one monom parameter per factor, and they are mode 1's tensors
     assert params == [
         model.monoms[1][0].values_reduced,
         model.monoms[1][1].values_reduced,
     ]
 
 
-def test_mode_parameters_explicit_and_negative_index(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_mode_parameters_explicit_and_negative_index(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
     model.add_mode()
     model.add_mode()
 
@@ -159,8 +131,8 @@ def test_mode_parameters_explicit_and_negative_index(two_axes):
     assert model.mode_parameters(m=-1) == model.mode_parameters(m=2)
 
 
-def test_mode_parameters_out_of_range_raises(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_mode_parameters_out_of_range_raises(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
     # Only mode 0 is active.
     with pytest.raises(IndexError):
         model.mode_parameters(m=1)
@@ -171,18 +143,18 @@ def test_mode_parameters_out_of_range_raises(two_axes):
 # --- Wiring into a FieldLayout / IntegrationDomain ----------------------
 
 
-def test_register_into_populates_layout_with_all_monoms(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_register_into_populates_layout_with_all_monoms(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
     layout = FieldLayout()
     model.register_into(layout)
-    # every monom name registered (3 modes x 2 axes), incl. inactive modes
+    # every monom name registered (3 modes x 2 factors), incl. inactive modes
     for mode in model.monoms:
         for f in mode:
             assert f.name in layout._fields
 
 
-def test_directory_axis_major_active_names(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=2, name="beam")
+def test_directory_factor_major_active_names(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=2, name="beam")
     d = model.directory()
     assert set(d.keys()) == {"space", "E"}
     assert d["space"] == ["beam_dimspace_mode0", "beam_dimspace_mode1"]
@@ -195,23 +167,23 @@ def test_directory_axis_major_active_names(two_axes):
     ]
 
 
-def test_assemblies_accessor_is_flat_and_shares_axis_contexts(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=3, n_modes_ini=1)
+def test_assemblies_accessor_is_flat_and_shares_factor_contexts(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
     flat = model.assemblies()
-    assert len(flat) == 3 * 2  # n_modes_max * n_axes
-    # mode-major, axis order: block m, axis k -> flat[m * n_axes + k]
-    assert flat[0].context is two_axes[0].context
-    assert flat[1].context is two_axes[1].context
-    assert flat[2].context is two_axes[0].context  # mode 1, axis 0
+    assert len(flat) == 3 * 2  # n_modes_max * n_factors
+    # mode-major, factor order: block m, factor k -> flat[m * n_factors + k]
+    assert flat[0].context is two_specs[0].space.context
+    assert flat[1].context is two_specs[1].space.context
+    assert flat[2].context is two_specs[0].space.context  # mode 1, factor 0
 
 
 # --- Sampling the trained field: evaluate (diagonal) vs assemble (grid) --
 
 
-def test_assemble_matches_manual_outer_product(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_assemble_matches_manual_outer_product(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
 
-    # NoConstraint on both axes -> nodal values are the full field. Set them.
+    # NoConstraint on both factors -> nodal values are the full field. Set them.
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
             torch.linspace(0.0, 4.0, 5).unsqueeze(-1)  # S at 5 space nodes
@@ -237,10 +209,10 @@ def test_assemble_matches_manual_outer_product(two_axes):
     assert u.detach().numpy() == pytest.approx(expected.numpy(), rel=1e-5)
 
 
-def test_assemble_sums_two_modes_matching_manual_outer_products(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=2, n_modes_ini=2)
+def test_assemble_sums_two_modes_matching_manual_outer_products(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=2)
 
-    # NoConstraint on both axes -> nodal values are the full field. Set them
+    # NoConstraint on both factors -> nodal values are the full field. Set them
     # to distinct known vectors for each of the two modes.
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
@@ -276,8 +248,8 @@ def test_assemble_sums_two_modes_matching_manual_outer_products(two_axes):
     assert u.detach().numpy() == pytest.approx(expected.numpy(), rel=1e-5)
 
 
-def test_evaluate_matched_pointwise_matches_assemble_diagonal(two_axes):
-    model = CPPGD(axes=two_axes, n_modes_max=1, n_modes_ini=1)
+def test_evaluate_matched_pointwise_matches_assemble_diagonal(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
             torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
@@ -297,10 +269,10 @@ def test_evaluate_matched_pointwise_matches_assemble_diagonal(two_axes):
     )
 
 
-def test_evaluate_and_assemble_vector_factor(make_axis):
-    space = make_axis(name="space", n=5, dim=2)  # 2-D displacement factor
-    para = make_axis(name="E", n=4, lo=100.0, hi=1000.0)  # scalar weight
-    model = CPPGD(axes=[space, para], n_modes_max=1, n_modes_ini=1)
+def test_evaluate_and_assemble_vector_factor(make_spec):
+    space = make_spec(name="space", n=5, dim=2)  # 2-D displacement factor
+    para = make_spec(name="E", n=4, lo=100.0, hi=1000.0)  # scalar weight
+    model = CPPGD(monom_specs=[space, para], n_modes_max=1, n_modes_ini=1)
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
             torch.arange(10, dtype=torch.float32).reshape(5, 2)

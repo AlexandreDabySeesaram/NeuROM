@@ -137,7 +137,7 @@ class CPPGD(TensorDecomposition):
 
         # One QuadratureAssembly per monom, grouped into mode-blocks. The leading
         # `n_ini` blocks start active; the rest inactive. `active` is the single
-        # source of truth for truncation (n_modes_truncated counts leading active
+        # source of truth for truncation (n_active_modes counts leading active
         # blocks) — no separate counter to keep in sync.
         n_ini = min(n_modes_ini, n_modes_max)
         self._assemblies = nn.ModuleList(
@@ -156,11 +156,11 @@ class CPPGD(TensorDecomposition):
 
         # Freeze everything, then unfreeze the initially active modes.
         self.freeze_all()
-        for m in range(self.n_modes_truncated):
+        for m in range(self.n_active_modes):
             self.unfreeze_mode(m)
 
     @property
-    def n_modes_truncated(self) -> int:
+    def n_active_modes(self) -> int:
         """Number of active modes: the leading run of active mode-blocks.
 
         Single source of truth is the assemblies' `active` flags. Active blocks
@@ -212,7 +212,7 @@ class CPPGD(TensorDecomposition):
         0), which never takes off under a gradient optimizer. A non-zero
         parametric seed lets the linear load term drive the enrichment.
         """
-        m = self.n_modes_truncated
+        m = self.n_active_modes
         if m >= self.n_modes_max:
             raise RuntimeError("Cannot add a mode: all modes are already active.")
         for assembly in self._assemblies[m]:
@@ -230,7 +230,7 @@ class CPPGD(TensorDecomposition):
         Args:
             m (int, optional): Index of the mode. Supports negative indexing
                 (Python-style). Defaults to the last-activated mode
-                (``n_modes_truncated - 1``).
+                (``n_active_modes - 1``).
 
         Returns:
             list[torch.Tensor]: The monom parameters of mode ``m``, one per axis.
@@ -238,7 +238,7 @@ class CPPGD(TensorDecomposition):
         Raises:
             IndexError: If ``m`` is out of range for the active modes.
         """
-        n_active = int(self.n_modes_truncated)
+        n_active = int(self.n_active_modes)
         if m is None:
             m = n_active - 1
         if m < 0:
@@ -269,7 +269,7 @@ class CPPGD(TensorDecomposition):
             out of the FieldLayout by name (``field_layout[name]``). Truncates to
             active modes; grows after :meth:`add_mode`.
         """
-        n = self.n_modes_truncated
+        n = self.n_active_modes
         return {
             axis.name: [self.monoms[m][k].name for m in range(n)]
             for k, axis in enumerate(self.axes)
@@ -319,7 +319,7 @@ class CPPGD(TensorDecomposition):
             Detached (via ``PointWiseInterpolator``).
         """
         coords = self._as_axis_columns(coords)
-        n = self.n_modes_truncated
+        n = self.n_active_modes
         total = None
         for m in range(n):
             prod = None
@@ -327,8 +327,7 @@ class CPPGD(TensorDecomposition):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1, 1, 1))  # (P, 1, dim_k)
-                w = w.reshape(w.shape[0], -1)  # (P, dim_k)
+                w = pwi.at_position(coords[k].reshape(-1, 1))  # (P, dim_k)
                 prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
         return total
@@ -345,19 +344,16 @@ class CPPGD(TensorDecomposition):
             trailing ``d`` is present iff a vector factor exists (else dropped).
             Equals ``sum_m prod_k w_m^k`` over the coordinate grid. Detached.
         """
-        n_modes = self.n_modes_truncated
+        n_modes = self.n_active_modes
         mode_letter = "Z"
         per_axis = []  # per_axis[k]: (n_modes, N_k) or (n_modes, N_k, d_k)
         for k, axis in enumerate(self.axes):
-            P_k = coords[k].reshape(-1).shape[0]
             cols = []
             for m in range(n_modes):
                 pwi = PointWiseInterpolator(
                     axis.mesh, axis.sf, self.monoms[m][k], axis.mapping
                 )
-                w = pwi.at_position(coords[k].reshape(-1, 1, 1)).reshape(
-                    P_k, -1
-                )  # (N_k, d_k)
+                w = pwi.at_position(coords[k].reshape(-1, 1))  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_axis.append(torch.stack(cols, dim=0))
 

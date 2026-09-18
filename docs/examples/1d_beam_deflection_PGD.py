@@ -262,13 +262,13 @@ def plot_solution(
             pgd_approx.monoms[m][k],
             pgd_approx.axes[k].mapping,
         )
-        return pwi.at_position(pts.reshape(-1, 1, 1)).reshape(-1)
+        return pwi.at_position(pts.reshape(-1, 1)).reshape(-1)
 
     def norm(v):
         m = v.abs().max()
         return v / m if m > 0 else v
 
-    n_modes = pgd_approx.n_modes_truncated
+    n_modes = pgd_approx.n_active_modes
 
     # --- 1) FULL solution: PGD (sum of modes) vs analytical, at fixed E -----
     # This is the unambiguous comparison. The analytical deflection is

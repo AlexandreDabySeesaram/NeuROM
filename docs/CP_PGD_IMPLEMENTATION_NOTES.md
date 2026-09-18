@@ -93,7 +93,7 @@ enrichment.
     `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`.
   - `self._meshes`, `self._contexts` — one `Mesh` / `QuadratureContext` per
     axis, shared across modes.
-  - `self.n_modes_max` (int), `self.n_modes_truncated` (int-valued buffer =
+  - `self.n_modes_max` (int), `self.n_active_modes` (int-valued buffer =
     currently active modes).
   - `register_into(field_layout)` — registers every monom field (all
     `n_modes_max` modes x all axes, including not-yet-active ones) in the
@@ -117,7 +117,7 @@ enrichment.
     Returns a detached tensor (for post-processing / viz / tests). Unchanged
     by the `FieldLayout` migration.
   - Greedy enrichment:
-    `add_mode()` activates the next mode (increment `n_modes_truncated`,
+    `add_mode()` activates the next mode (increment `n_active_modes`,
     zero-out + unfreeze the new mode) and returns its index, **without**
     touching the freeze state of the currently-active modes — freezing is left
     to the caller (e.g. the beam test calls `freeze_mode(0)` before
@@ -137,15 +137,13 @@ enrichment.
 ### Added — tests
 
 - `tests/unit/decompositions/test_pgd.py` — `Axis` connectivity, `CPPGD`
-  construction + freeze state, `separated_view` keys/shapes/values (read back
-  from a `FieldLayout` after `register_into` + `fill`), a
-  `test_interpolate_separated_is_removed` regression test pinning the
-  removal, `assemble` (single-mode and rank-2 sum of outer products), greedy
-  mode management (freeze/activate/zero, RuntimeError at max, optimizer
-  growth), and `PGDFEMModel` wiring — including a format-agnostic test built
-  on a fake `TensorDecomposition` (`_ConstantDecomposition`) with no CP
-  structure, to pin that `PGDFEMModel` depends only on the base-class
-  contract.
+  construction + freeze state, monom values read back by name from a
+  `FieldLayout` after `register_into` + `fill`, `assemble` (single-mode and
+  rank-2 sum of outer products), greedy mode management (freeze/activate/zero,
+  RuntimeError at max, optimizer growth), and `NeuROMModel` wiring — including
+  a format-agnostic test built on a fake `TensorDecomposition`
+  (`_ConstantDecomposition`) with no CP structure, to pin that `NeuROMModel`
+  depends only on the base-class contract.
 - `tests/integration/test_1d_beam_deflection_PGD_test.py` — reference solve:
   1D beam parametrized by Young modulus `E`, a **2-axis** decomposition
   `u(x,E) = Σ_m S_m(x) g_m(E)`, solved through `PGDFEMModel` + `FieldLayout`.

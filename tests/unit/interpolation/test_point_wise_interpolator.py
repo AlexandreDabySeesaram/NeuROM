@@ -41,7 +41,9 @@ def test_at_position_interpolates_each_point_independently(interpolator):
     """
     pts = torch.tensor([2.5, 5.0, 7.5, 1.0])
 
-    out = interpolator.at_position(pts.reshape(-1, 1, 1))
+    out = interpolator.at_position(pts.reshape(-1, 1))
+
+    assert out.shape == (4, 1)
 
     # Nodes at 0, 2.5, 5, 7.5, 10 -> 2.5, 5.0 and 7.5 are nodes (exact x**2);
     # 1.0 sits in element [0, 2.5] and interpolates to 0 + (6.25 - 0) * 1/2.5.
@@ -49,9 +51,9 @@ def test_at_position_interpolates_each_point_independently(interpolator):
     assert out.reshape(-1).detach().numpy() == pytest.approx(expected.numpy(), rel=1e-5)
 
 
-@pytest.mark.parametrize("bad_shape", [(4,), (4, 1), (2, 2, 2, 1)])
+@pytest.mark.parametrize("bad_shape", [(4,), (4, 1, 1), (2, 2, 2, 1)])
 def test_at_position_rejects_wrong_rank(interpolator, bad_shape):
-    """Reject anything that is not (N_pts, N_q, dim).
+    """Reject anything that is not (N_pts, dim).
 
     A flat (N_pts,) tensor is the dangerous case: it broadcasts inside
     ``inverse_map_at`` into a point-by-element cross product that the shape

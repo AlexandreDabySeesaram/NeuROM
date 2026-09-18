@@ -287,7 +287,7 @@ class Test1dBeamDeflectionPGD:
                 )
             )
 
-        n_modes = pgd_approx.n_modes_truncated
+        n_modes = pgd_approx.n_active_modes
 
         # --- Polish: joint refinement of all modes, for a strict accuracy check.
         # The greedy loop above deliberately under-trains each mode (high epsilon)
@@ -457,7 +457,7 @@ def _factor(pgd_approx, m, k, pts):
         pgd_approx.monoms[m][k],
         pgd_approx.axes[k].mapping,
     )
-    return pwi.at_position(pts.reshape(-1, 1, 1)).reshape(-1)
+    return pwi.at_position(pts.reshape(-1, 1)).reshape(-1)
 
 
 def mode_contribution(pgd_approx, m, *, x_min, x_max, E_min, E_max, n=200):

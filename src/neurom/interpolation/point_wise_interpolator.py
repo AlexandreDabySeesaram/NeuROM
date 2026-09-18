@@ -51,21 +51,40 @@ class PointWiseInterpolator(nn.Module):
 
         Args:
             x (torch.Tensor): Physical query positions, tensor of shape
-                ``(N_pts, dim)``.
+                ``(N_pts, dim)`` — one query point per row.
 
         Returns:
             torch.Tensor: Interpolated field values at each query point,
-            tensor of shape ``(N_pts, 1, field_dim)``.
+            tensor of shape ``(N_pts, field_dim)``.
+
+        Raises:
+            ValueError: If ``x`` does not have shape ``(N_pts, dim)``.
         """
+        # Guard the rank explicitly: a tensor of the wrong rank does NOT fail
+        # downstream, it broadcasts inside `inverse_map_at` into a
+        # point-by-element cross product, which the shape function then slices
+        # back down to the *correct output shape* with wrong values. Silent
+        # numerical corruption; caught here instead.
+        if x.ndim != 2 or x.shape[-1] != self.mesh.dim:
+            raise ValueError(
+                f"at_position expects x of shape (N_pts, dim) with "
+                f"dim={self.mesh.dim}, got {tuple(x.shape)}. Reshape a flat "
+                f"list of points with x.reshape(-1, {self.mesh.dim})."
+            )
+
         element_ids = self.mesh.elements_at(x)
         # Get connectivity for those elements
         element_nodes_ids = self.mesh.connectivity.element_connectivity[element_ids, :]
 
-        # (N_e, N_q, dim)
-        xi = self._mapping.inverse_map_at(x, element_ids)
+        # `inverse_map_at` and the shape functions work on the quadrature
+        # layout (N_e, N_q, dim); a point-wise query is that layout with a
+        # single "quadrature point" per element, dropped again on the way out.
+        # (N_pts, 1, dim)
+        xi = self._mapping.inverse_map_at(x.unsqueeze(1), element_ids)
         N = self.sf.N(xi)
         u = torch.einsum(
             "en...,eqn...->eq...", self.field.full_values()[element_nodes_ids], N
         )
 
-        return u
+        # (N_pts, 1, field_dim) -> (N_pts, field_dim)
+        return u.squeeze(1)

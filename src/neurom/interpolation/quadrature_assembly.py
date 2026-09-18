@@ -22,27 +22,23 @@ class QuadratureAssembly(nn.Module):
     ``QuadratureAssemblyResult`` ready for numerical integration.
 
     Args:
-        context (QuadratureContext): Provides the quadrature positions in
-            physical and reference coordinates as well as the integration
-            measure.
-        sf (ShapeFunction): The shape function used to perform the
-            interpolation.
-        field (FieldBase): The field whose nodal values are interpolated at
-            the quadrature points.
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
 
     Attributes:
-        context (QuadratureContext): Provides the quadrature positions in
-            physical and reference coordinates as well as the integration
-            measure.
-        sf (ShapeFunction): The shape function used to perform the
-            interpolation.
-        field (FieldBase): The field whose nodal values are interpolated at
-            the quadrature points.
-        _field_interpolator (FieldInterpolator): Internal interpolator that
-            evaluates ``field`` using ``sf`` at reference coordinates.
+        context (QuadratureContext): The QuadratureContext with the positions of the quadrature points in physical and reference coordinates.
+        sf (ShapeFunction): The ShapeFunction to perform the interpolation.
+        field (FieldBase): The FieldBase to interpolate.
+        _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
     """
 
-    def __init__(self, context: QuadratureContext, sf: ShapeFunction, field: FieldBase):
+    def __init__(
+        self,
+        context: QuadratureContext,
+        sf: ShapeFunction,
+        field: FieldBase,
+    ):
         super().__init__()
         self.context = context
         self.field = field

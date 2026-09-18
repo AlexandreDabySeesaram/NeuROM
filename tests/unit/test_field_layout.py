@@ -28,21 +28,27 @@ class DummyField(FieldBase):
         return torch.tensor([])
 
 
-def test_add_and_duplicate():
-    """Adding a field works and duplicate addition raises ``ValueError``.
+def test_add_same_field_twice_is_a_no_op():
+    """Re-adding the *same* object is idempotent, not an error.
 
-    The first call to ``add`` should succeed, while a second call with the
-    same field name must raise.
+    This is what lets a decomposition re-run ``register_into`` after growing a
+    mode, without the layout complaining about the modes already in it.
     """
     layout = FieldLayout()
     field = DummyField(name="temperature")
 
-    # First addition should succeed.
-    layout.add(field)
+    assert layout.add(field) is field
+    assert layout.add(field) is field
+    assert len(layout._fields) == 1
 
-    # Adding a field with the same name should raise ``ValueError``.
+
+def test_add_different_field_with_same_name_raises():
+    """The name collision the check really guards against still raises."""
+    layout = FieldLayout()
+    layout.add(DummyField(name="temperature"))
+
     with pytest.raises(ValueError, match="already registered"):
-        layout.add(field)
+        layout.add(DummyField(name="temperature"))
 
 
 def test_add_returns_field():

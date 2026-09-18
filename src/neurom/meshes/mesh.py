@@ -169,8 +169,7 @@ class Mesh(nn.Module):
         depending on ``self.dim``.
 
         Args:
-            x (torch.Tensor): The query points, shape ``(N_pts, dim)`` or
-                broadcastable to it.
+            x (torch.Tensor): The query points, shape ``(N_pts, dim)``.
 
         Returns:
             torch.Tensor: Element indices of shape ``(N_pts,)`` giving the
@@ -183,6 +182,6 @@ class Mesh(nn.Module):
         connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
 
         if self.dim == 1:
-            return elements_at_1d(x.squeeze().unsqueeze(-1), nodes, connectivity)
+            return elements_at_1d(x, nodes, connectivity)
         elif self.dim == 2:
-            return elements_at_2d(x.squeeze(), nodes, connectivity)
+            return elements_at_2d(x, nodes, connectivity)

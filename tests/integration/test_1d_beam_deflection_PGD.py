@@ -184,9 +184,8 @@ class Test1dBeamDeflectionPGD:
         )
 
         ## CP PGD object
-        pgd_approx = CPPGD(
-            monom_specs=[spec_x, spec_E], n_modes_max=3, name="pgd", n_modes_ini=1
-        )
+        n_modes_target = 3
+        pgd_approx = CPPGD(monom_specs=[spec_x, spec_E], name="pgd", n_modes_ini=1)
 
         ###### Define constant load.
         # The load is a *field* f(x), not a raw nodal vector: it has to be
@@ -209,10 +208,9 @@ class Test1dBeamDeflectionPGD:
         context_f = space_x.context  # le même context que la partie spatiale
         assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
-        # Construction of the shared domain for the whole problem
-        domain = IntegrationDomain(
-            [*pgd_approx.assemblies(), assembly_f]
-        )  # do not forget * to unpack
+        # The domain holds the *static* assemblies only. The PGD's own grow with
+        # every mode added, so the model passes them per forward instead.
+        domain = IntegrationDomain([assembly_f])
 
         # Creer le modele
         model = NeuROMModel(
@@ -223,10 +221,11 @@ class Test1dBeamDeflectionPGD:
         )
 
         ## add training
-        optimizer = torch.optim.Adam(
-            [p for p in model.parameters() if p.requires_grad],
-            lr=0.1,
-        )
+        # Every parameter goes to the optimizer, frozen ones included. A frozen
+        # monom simply gets no gradient and Adam skips it; filtering on
+        # `requires_grad` here would silently exclude any monom unfrozen later
+        # (the polish phase below does exactly that).
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
         def closure():
             optimizer.zero_grad()
@@ -244,12 +243,11 @@ class Test1dBeamDeflectionPGD:
         error_per_mode = []  # rel. L2 error vs analytical after each mode
         contribution_per_mode = []  # L2 norm of each individual mode u_m
 
-        n_modes_target = pgd_approx.n_modes_max
-
         for mode_idx in range(n_modes_target):
             if mode_idx > 0:
                 pgd_approx.freeze_mode(mode_idx - 1)
-                pgd_approx.add_mode()  # active le mode suivant
+                pgd_approx.add_mode()  # builds the next mode
+                pgd_approx.register_into(field_layout)  # its fields join the layout
                 model.add_mode_to_optimizer(optimizer)
 
             mode_hist = []  # this mode's energy trajectory (for the plateau test)
@@ -293,7 +291,7 @@ class Test1dBeamDeflectionPGD:
                 )
             )
 
-        n_modes = pgd_approx.n_active_modes
+        n_modes = pgd_approx.n_modes
 
         # --- Polish: joint refinement of all modes, for a strict accuracy check.
         # The greedy loop above deliberately under-trains each mode (high epsilon)
@@ -305,10 +303,7 @@ class Test1dBeamDeflectionPGD:
         for m in range(n_modes):
             pgd_approx.unfreeze_mode(m)
 
-        polish_optimizer = torch.optim.Adam(
-            [p for p in model.parameters() if p.requires_grad],
-            lr=0.1,
-        )
+        polish_optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
         def polish_closure():
             polish_optimizer.zero_grad()

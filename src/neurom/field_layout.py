@@ -30,18 +30,30 @@ class FieldLayout(nn.Module):
 
         Creates an entry keyed by ``field.name`` in ``self._fields``.
 
+        Idempotent by identity: re-adding the *same* field object is a no-op, so
+        a producer of fields can re-synchronise the layout with itself at any
+        time -- this is what lets
+        :meth:`neurom.decompositions.tensor_decomposition.TensorDecomposition.register_into`
+        be called again after the decomposition has grown a mode. What stays
+        forbidden is the accident the check really guards against: two
+        *different* fields competing for one name.
+
         Args:
             field (FieldBase): The field to register.
 
         Returns:
-            FieldBase: The field that was just registered.
+            FieldBase: The field now registered under ``field.name``.
 
         Raises:
-            ValueError: If a field with the same name is already present in
-                ``self._fields``.
+            ValueError: If a *different* field with the same name is already
+                present in ``self._fields``.
         """
         if field.name in self._fields:
-            raise ValueError(f"Field '{field.name}' already registered.")
+            if self._fields[field.name] is field:
+                return field
+            raise ValueError(
+                f"A different field named '{field.name}' is already registered."
+            )
         self._fields[field.name] = field
         return field
 

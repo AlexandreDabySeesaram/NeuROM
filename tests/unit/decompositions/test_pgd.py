@@ -11,37 +11,36 @@ torch.set_default_dtype(torch.float32)
 # --- CPPGD construction -------------------------------------------------
 
 
-def test_cppgd_construction_structure_and_freeze(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
+def test_cppgd_builds_exactly_the_modes_asked_for(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
 
     assert isinstance(model, TensorDecomposition)
 
-    # 3 modes, each with 2 monoms (one per factor)
-    assert len(model.monoms) == 3
+    # Nothing is pre-allocated: 2 modes asked, 2 modes built, each with one
+    # monom per factor.
+    assert model.n_modes == 2
+    assert len(model.monoms) == 2
     assert all(len(mode) == 2 for mode in model.monoms)
+    assert len(model.assemblies()) == 2 * 2
 
-    # Only mode 0 active
-    assert int(model.n_active_modes) == 1
 
-    # Mode 0 monoms trainable, modes 1 and 2 frozen
-    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
-    assert all(not f.values_reduced.requires_grad for f in model.monoms[1])
-    assert all(not f.values_reduced.requires_grad for f in model.monoms[2])
+def test_cppgd_monoms_are_born_trainable(two_specs):
+    """The container applies no freezing policy of its own (that is the trainer's)."""
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
 
-    # Active parameters == the 2 monoms of mode 0
-    active = [p for p in model.parameters() if p.requires_grad]
-    assert len(active) == 2
+    assert all(f.values_reduced.requires_grad for mode in model.monoms for f in mode)
+    assert len([p for p in model.parameters() if p.requires_grad]) == 4
 
 
 def test_two_vector_factors_raises(make_spec):
     a1 = make_spec(name="a", n=5, dim=2)
     a2 = make_spec(name="b", n=4, dim=3)
     with pytest.raises(ValueError):
-        CPPGD(monom_specs=[a1, a2], n_modes_max=1, n_modes_ini=1)
+        CPPGD(monom_specs=[a1, a2], n_modes_ini=1)
 
 
 def test_cppgd_has_name_and_monom_naming(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1, name="beam")
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2, name="beam")
     assert model.name == "beam"
     assert model.monoms[0][0].name == "beam_dimspace_mode0"
     assert model.monoms[1][1].name == "beam_dimE_mode1"
@@ -50,67 +49,117 @@ def test_cppgd_has_name_and_monom_naming(two_specs):
 # --- Greedy mode lifecycle ----------------------------------------------
 
 
-def test_add_mode_activates_new_without_freezing_previous(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1)
-
-    # Seed the (frozen) mode-1 monoms so we can check they are preserved.
-    with torch.no_grad():
-        for f in model.monoms[1]:
-            f.values_reduced.add_(7.0)
+def test_add_mode_appends_a_row_to_the_grid(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
+    n_factors = len(two_specs)
 
     new = model.add_mode()
 
     assert new == 1
-    assert int(model.n_active_modes) == 2
-    # Previous mode left untouched (still active), new mode active
-    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
+    assert model.n_modes == 2
+    assert len(model.monoms) == 2
+    assert len(model.assemblies()) == 2 * n_factors
+    # New mode is trainable, previous one untouched.
     assert all(f.values_reduced.requires_grad for f in model.monoms[1])
-    # New mode keeps its seed (no zero-out): an all-zero mode is a stationary
-    # point of the energy and never takes off, so add_mode preserves init_values.
-    assert all(torch.count_nonzero(f.values_reduced) > 0 for f in model.monoms[1])
+    assert all(f.values_reduced.requires_grad for f in model.monoms[0])
+    # New mode keeps its MonomSpec seed (no zero-out): an all-zero mode is a
+    # stationary point of the energy and never takes off under a gradient
+    # optimizer, so the seed is what lets the enrichment start moving.
+    for f, spec in zip(model.monoms[1], two_specs):
+        assert torch.equal(f.values_reduced, spec.init_values)
 
 
-def test_add_mode_raises_at_max(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
-    with pytest.raises(RuntimeError):
-        model.add_mode()
+def test_add_mode_never_recomputes_geometry(two_specs):
+    """A mode added later binds to its factor's existing QuadratureContext.
 
-
-def test_n_active_modes_counts_active_blocks(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
-    assert model.n_active_modes == 1
-    # exactly the leading block's assemblies are active
-    assert all(bool(a.active) for a in model._assemblies[0])
-    assert all(not bool(a.active) for a in model._assemblies[1])
+    This is what the FactorSpace / MonomSpec split buys: enrichment reads the
+    blueprint again, it does not build a new discretisation.
+    """
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
     model.add_mode()
-    assert model.n_active_modes == 2
-    assert all(bool(a.active) for a in model._assemblies[1])
+
+    n_factors = len(two_specs)
+    flat = model.assemblies()
+    for k, spec in enumerate(two_specs):
+        assert flat[k].context is spec.space.context
+        assert flat[n_factors + k].context is spec.space.context
 
 
-def test_no_requires_grad_param_in_inactive_assembly(two_specs):
-    """The illegal state (active=False, requires_grad=True) never occurs across
-    the greedy sequence: every trainable monom belongs to an active assembly."""
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
+def test_add_mode_is_unbounded(two_specs):
+    """No capacity to hit: how far to enrich is not the container's business."""
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
+    for expected in range(1, 6):
+        assert model.n_modes == expected
+        model.add_mode()
+    assert model.n_modes == 6
 
-    def check(mdl):
-        for block in mdl._assemblies:
-            if bool(block[0].active):
-                continue
-            for a in block:
-                assert not a.field.values_reduced.requires_grad
 
-    check(model)  # initial
+# --- Freezing: row, column and cell utilities ---------------------------
+
+
+def _grad_grid(model):
+    return [[f.values_reduced.requires_grad for f in mode] for mode in model.monoms]
+
+
+def test_freeze_mode_freezes_a_row(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=3)
+    model.freeze_mode(1)
+    assert _grad_grid(model) == [[True, True], [False, False], [True, True]]
+    model.unfreeze_mode(1)
+    assert _grad_grid(model) == [[True, True]] * 3
+
+
+def test_freeze_factor_freezes_a_column(two_specs):
+    """What alternating-direction minimisation cycles over."""
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=3)
+    model.freeze_factor(0)
+    assert _grad_grid(model) == [[False, True]] * 3
+    model.unfreeze_factor(0)
+    model.freeze_factor(1)
+    assert _grad_grid(model) == [[True, False]] * 3
+
+
+def test_freeze_monom_freezes_a_single_cell(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
+    model.freeze_monom(1, 0)
+    assert _grad_grid(model) == [[True, True], [False, True]]
+    model.unfreeze_monom(1, 0)
+    assert _grad_grid(model) == [[True, True], [True, True]]
+
+
+def test_freeze_all_and_unfreeze_all(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
+    model.freeze_all()
+    assert _grad_grid(model) == [[False, False]] * 2
+    model.unfreeze_all()
+    assert _grad_grid(model) == [[True, True]] * 2
+
+
+def test_a_frozen_monom_is_still_interpolated(two_specs):
+    """requires_grad says "not optimised", never "absent from u".
+
+    Every monom that exists contributes to the energy, whatever its freeze
+    state -- which is precisely why the old `active` flag was a different thing
+    and could not serve this purpose.
+    """
+    from neurom.interpolation import IntegrationDomain
+
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
     model.freeze_mode(0)
-    model.add_mode()  # mode 1 active, mode 0 frozen-but-active
-    check(model)
-    model.add_mode()  # capacity
-    check(model)
+    layout = FieldLayout()
+    model.register_into(layout)
+
+    IntegrationDomain([]).interpolate_all(layout, model.assemblies())
+
+    for mode in model.monoms:
+        for f in mode:
+            assert layout[f.name].u.values is not None
 
 
 def test_mode_parameters_returns_one_param_per_factor(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
     model.add_mode()
-    params = model.mode_parameters()  # defaults to last-activated mode
+    params = model.mode_parameters()  # defaults to the last mode added
     # one monom parameter per factor, and they are mode 1's tensors
     assert params == [
         model.monoms[1][0].values_reduced,
@@ -119,7 +168,7 @@ def test_mode_parameters_returns_one_param_per_factor(two_specs):
 
 
 def test_mode_parameters_explicit_and_negative_index(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
     model.add_mode()
     model.add_mode()
 
@@ -127,13 +176,13 @@ def test_mode_parameters_explicit_and_negative_index(two_specs):
         model.monoms[1][0].values_reduced,
         model.monoms[1][1].values_reduced,
     ]
-    # Negative index resolves against the active modes.
+    # Negative index resolves against the existing modes.
     assert model.mode_parameters(m=-1) == model.mode_parameters(m=2)
 
 
 def test_mode_parameters_out_of_range_raises(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
-    # Only mode 0 is active.
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
+    # Only mode 0 exists.
     with pytest.raises(IndexError):
         model.mode_parameters(m=1)
     with pytest.raises(IndexError):
@@ -144,17 +193,31 @@ def test_mode_parameters_out_of_range_raises(two_specs):
 
 
 def test_register_into_populates_layout_with_all_monoms(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
     layout = FieldLayout()
     model.register_into(layout)
-    # every monom name registered (3 modes x 2 factors), incl. inactive modes
+    assert len(layout._fields) == 2 * 2
     for mode in model.monoms:
         for f in mode:
             assert f.name in layout._fields
 
 
-def test_directory_factor_major_active_names(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=2, name="beam")
+def test_register_into_is_replayable_after_add_mode(two_specs):
+    """How a new mode reaches the layout without the decomposition holding it."""
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
+    layout = FieldLayout()
+    model.register_into(layout)
+
+    model.add_mode()
+    model.register_into(layout)  # idempotent on the modes already there
+
+    assert len(layout._fields) == 2 * 2
+    for f in model.monoms[1]:
+        assert f.name in layout._fields
+
+
+def test_directory_factor_major_names(two_specs):
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2, name="beam")
     d = model.directory()
     assert set(d.keys()) == {"space", "E"}
     assert d["space"] == ["beam_dimspace_mode0", "beam_dimspace_mode1"]
@@ -168,9 +231,9 @@ def test_directory_factor_major_active_names(two_specs):
 
 
 def test_assemblies_accessor_is_flat_and_shares_factor_contexts(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=3, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=3)
     flat = model.assemblies()
-    assert len(flat) == 3 * 2  # n_modes_max * n_factors
+    assert len(flat) == 3 * 2  # n_modes * n_factors
     # mode-major, factor order: block m, factor k -> flat[m * n_factors + k]
     assert flat[0].context is two_specs[0].space.context
     assert flat[1].context is two_specs[1].space.context
@@ -181,7 +244,7 @@ def test_assemblies_accessor_is_flat_and_shares_factor_contexts(two_specs):
 
 
 def test_assemble_matches_manual_outer_product(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
 
     # NoConstraint on both factors -> nodal values are the full field. Set them.
     with torch.no_grad():
@@ -210,7 +273,7 @@ def test_assemble_matches_manual_outer_product(two_specs):
 
 
 def test_assemble_sums_two_modes_matching_manual_outer_products(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=2, n_modes_ini=2)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
 
     # NoConstraint on both factors -> nodal values are the full field. Set them
     # to distinct known vectors for each of the two modes.
@@ -249,7 +312,7 @@ def test_assemble_sums_two_modes_matching_manual_outer_products(two_specs):
 
 
 def test_evaluate_matched_pointwise_matches_assemble_diagonal(two_specs):
-    model = CPPGD(monom_specs=two_specs, n_modes_max=1, n_modes_ini=1)
+    model = CPPGD(monom_specs=two_specs, n_modes_ini=1)
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
             torch.linspace(0.0, 4.0, 5).unsqueeze(-1)
@@ -272,7 +335,7 @@ def test_evaluate_matched_pointwise_matches_assemble_diagonal(two_specs):
 def test_evaluate_and_assemble_vector_factor(make_spec):
     space = make_spec(name="space", n=5, dim=2)  # 2-D displacement factor
     para = make_spec(name="E", n=4, lo=100.0, hi=1000.0)  # scalar weight
-    model = CPPGD(monom_specs=[space, para], n_modes_max=1, n_modes_ini=1)
+    model = CPPGD(monom_specs=[space, para], n_modes_ini=1)
     with torch.no_grad():
         model.monoms[0][0].values_reduced.copy_(
             torch.arange(10, dtype=torch.float32).reshape(5, 2)

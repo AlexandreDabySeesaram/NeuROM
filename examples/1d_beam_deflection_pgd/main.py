@@ -114,9 +114,7 @@ def main(n_iter_training=150):
     )
 
     ## CP PGD object
-    pgd_approx = CPPGD(
-        monom_specs=[spec_x, spec_E], n_modes_max=3, name="pgd", n_modes_ini=1
-    )
+    pgd_approx = CPPGD(monom_specs=[spec_x, spec_E], name="pgd", n_modes_ini=1)
     # print(pgd_approx.directory())
 
     ###### Define constant load.
@@ -140,10 +138,10 @@ def main(n_iter_training=150):
     context_f = space_x.context  # the same context as the space part
     assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
-    # Construction of the shared domain for the whole problem
-    domain = IntegrationDomain(
-        [*pgd_approx.assemblies(), assembly_f]
-    )  # do not forget * to unpack
+    # The domain holds the *static* assemblies only -- here, the load. The PGD's
+    # own assemblies grow with every mode added, so storing them would go stale;
+    # the model asks the decomposition for them on every forward instead.
+    domain = IntegrationDomain([assembly_f])
 
     # Create the model
     model = NeuROMModel(
@@ -154,10 +152,11 @@ def main(n_iter_training=150):
     )
 
     ## add training
-    optimizer = torch.optim.Adam(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=0.1,
-    )
+    # Every parameter goes to the optimizer, frozen ones included. A frozen
+    # monom simply gets no gradient and Adam skips it; filtering on
+    # `requires_grad` here would silently exclude any monom unfrozen later
+    # (the polish phase below does exactly that).
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     def closure():
         optimizer.zero_grad()
@@ -173,9 +172,11 @@ def main(n_iter_training=150):
         loss = optimizer.step(closure)
         loss_history.append(loss.detach().item())
 
-    # Mode 1
+    # Mode 1. The greedy strategy lives here, in the training script, not in the
+    # decomposition: freeze what is converged, build one more mode, wire it up.
     pgd_approx.freeze_mode(0)
-    pgd_approx.add_mode()  # activates mode 1
+    pgd_approx.add_mode()
+    pgd_approx.register_into(field_layout)  # the new monoms join the layout
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -184,7 +185,8 @@ def main(n_iter_training=150):
 
     # Mode 2
     pgd_approx.freeze_mode(1)
-    pgd_approx.add_mode()  # activates mode 2
+    pgd_approx.add_mode()
+    pgd_approx.register_into(field_layout)
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -274,7 +276,7 @@ def plot_solution(
         m = v.abs().max()
         return v / m if m > 0 else v
 
-    n_modes = pgd_approx.n_active_modes
+    n_modes = pgd_approx.n_modes
 
     # --- 1) FULL solution: PGD (sum of modes) vs analytical, at fixed E -----
     # This is the unambiguous comparison. The analytical deflection is

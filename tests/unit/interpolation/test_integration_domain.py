@@ -45,41 +45,57 @@ def _layout(fields):
     return layout
 
 
-def test_active_defaults_true():
-    ctx, conn, sf = _ctx()
-    a = QuadratureAssembly(ctx, sf, _field("w", conn))
-    assert bool(a.active) is True
-
-
-def test_active_is_a_buffer():
-    ctx, conn, sf = _ctx()
-    a = QuadratureAssembly(ctx, sf, _field("w", conn))
-    assert "active" in dict(a.named_buffers())
-
-
-def test_inactive_assembly_is_not_interpolated():
+def test_static_assemblies_are_interpolated():
     ctx, conn, sf = _ctx()
     fa = _field("wa", conn)
-    fb = _field("wb", conn)
-    a = QuadratureAssembly(ctx, sf, fa, active=True)
-    b = QuadratureAssembly(ctx, sf, fb, active=False)
-    domain = IntegrationDomain([a, b])
-    layout = _layout([fa, fb])
+    a = QuadratureAssembly(ctx, sf, fa)
+    domain = IntegrationDomain([a])
+    layout = _layout([fa])
     domain.interpolate_all(layout)
-    assert layout[fa.name].u.shape[-1] == 1  # active -> interpolated
-    with pytest.raises(RuntimeError):  # inactive -> not interpolated
+    assert layout[fa.name].u.shape[-1] == 1
+
+
+def test_per_call_assemblies_are_interpolated_on_top_of_the_static_ones():
+    """The seam a growing decomposition uses: its assemblies are not stored here.
+
+    ``b`` is unknown to the domain and only handed over at call time, the way
+    ``NeuROMModel.forward`` passes ``decomposition.assemblies()``.
+    """
+    ctx, conn, sf = _ctx()
+    fa, fb = _field("wa", conn), _field("wb", conn)
+    a = QuadratureAssembly(ctx, sf, fa)
+    b = QuadratureAssembly(ctx, sf, fb)
+    domain = IntegrationDomain([a])
+    layout = _layout([fa, fb])
+
+    domain.interpolate_all(layout)
+    with pytest.raises(RuntimeError):  # b was not passed -> not interpolated
         _ = layout[fb.name]
 
-
-def test_activate_makes_next_interpolation_include_it():
-    ctx, conn, sf = _ctx()
-    fb = _field("wb", conn)
-    b = QuadratureAssembly(ctx, sf, fb, active=False)
-    domain = IntegrationDomain([b])
-    layout = _layout([fb])
-    b.activate()
-    domain.interpolate_all(layout)
+    domain.interpolate_all(layout, [b])
+    assert layout[fa.name].u.shape[-1] == 1
     assert layout[fb.name].u.shape[-1] == 1
+
+
+def test_update_contexts_reaches_a_per_call_only_context():
+    """A context the domain never stored still gets refreshed when passed.
+
+    Without this, a trainable mesh on a factor no static assembly touches would
+    silently keep a stale geometry.
+    """
+    ctx_static, conn, sf = _ctx()
+    ctx_dynamic, conn_d, sf_d = _ctx(n=5)
+    a = QuadratureAssembly(ctx_static, sf, _field("wa", conn))
+    b = QuadratureAssembly(ctx_dynamic, sf_d, _field("wb", conn_d, n=5))
+    domain = IntegrationDomain([a])
+    assert ctx_dynamic not in domain._contexts
+
+    updated = []
+    for ctx in (ctx_static, ctx_dynamic):
+        ctx.update = (lambda c: lambda: updated.append(c))(ctx)
+
+    domain.update_contexts([b])
+    assert updated == [ctx_static, ctx_dynamic]
 
 
 def test_contexts_deduplicated_across_assemblies():

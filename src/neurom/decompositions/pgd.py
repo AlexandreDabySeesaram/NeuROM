@@ -13,30 +13,54 @@ class CPPGD(TensorDecomposition):
     """Canonical-polyadic PGD separated-representation model.
 
     Represents ``u({x_k}) = sum_m prod_k w_m^k(x_k)`` over ``l`` factors. Holds
-    the monoms ``w_m^k`` as ``TrainableField`` on each factor, manages greedy mode
-    enrichment, fills a ``FieldLayout`` from its own flagged
-    ``QuadratureAssembly`` grid, and exposes the active monom field names
-    (:meth:`directory`), matched-pointwise
-    inference (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`). It
-    computes no energy and owns no training loop.
+    the monoms ``w_m^k`` as ``TrainableField`` on each factor, and exposes the
+    monom field names (:meth:`directory`), matched-pointwise inference
+    (:meth:`evaluate`) and a full-tensor grid (:meth:`assemble`).
+
+    It is a **container, not a strategy**: it computes no energy, owns no
+    training loop, and decides nothing about when to enrich or what to
+    optimise. It knows how many modes it has and how to grow one more.
 
     What it is built from, and what it builds
         The caller supplies one
         :class:`~neurom.decompositions.factor.MonomSpec` per factor -- ``l`` of
         them, whatever the number of modes -- each posed on a
         :class:`~neurom.decompositions.factor.FactorSpace`. From that,
-        ``__init__`` builds the ``n_modes_max x l`` grid of monoms: one
-        ``TrainableField`` per (mode, spec) pair, seeded from the spec's
-        ``init_values`` and sharing its ``constraint``, plus one
-        ``QuadratureAssembly`` each. Every monom of factor ``k`` therefore binds
-        to the same ``FactorSpace`` and, through it, to a single
-        ``QuadratureContext`` -- which is why ``assemblies()`` returns
-        ``n_modes_max * l`` assemblies over only ``l`` distinct contexts, and why
+        ``__init__`` builds the first ``n_modes_ini`` rows of an
+        ``n_modes x l`` grid of monoms: one ``TrainableField`` per (mode, spec)
+        pair, seeded from the spec's ``init_values`` and sharing its
+        ``constraint``, plus one ``QuadratureAssembly`` each.
+
+        The grid is **dynamic**: :meth:`add_mode` appends a row, reading the
+        same ``MonomSpec`` once more. It never creates a ``MonomSpec`` or a
+        ``FactorSpace``, and nothing is pre-allocated -- a mode that is never
+        added never exists, so it costs no field in the ``FieldLayout``, no
+        entry in ``state_dict`` and no interpolation.
+
+        Every monom of factor ``k`` binds to the same ``FactorSpace`` and,
+        through it, to a single ``QuadratureContext`` -- including the monoms
+        of modes added later. This is why ``assemblies()`` returns
+        ``n_modes * l`` assemblies over only ``l`` distinct contexts, and why
         ``IntegrationDomain`` updates that geometry once per forward instead of
         once per monom.
 
-        Enriching (:meth:`add_mode`) adds a row to that grid. It never creates a
-        ``MonomSpec`` or a ``FactorSpace``; it reads the existing ones again.
+    Freezing: mechanism, not policy
+        The ``freeze_*`` / ``unfreeze_*`` methods flip ``requires_grad`` on the
+        monoms of a row (:meth:`freeze_mode`), of a column
+        (:meth:`freeze_factor`) or of a single cell (:meth:`freeze_monom`).
+        They are plain utilities shared by several training strategies --
+        progressive greedy freezes the previous rows, simultaneous training
+        freezes nothing, alternating-direction minimisation cycles over the
+        columns.
+
+        The decomposition calls none of them on its own: a mode is born
+        trainable and stays so until someone decides otherwise. That someone is
+        the trainer.
+
+        A frozen monom is **still part of u**. ``requires_grad`` says "not
+        optimised", never "absent": every monom that exists is interpolated and
+        contributes to the energy, which is exactly what all three strategies
+        above need.
 
     Evaluation: diagonal (:meth:`evaluate`) vs grid (:meth:`assemble`)
         Two ways to sample the trained field, with **different input formats and
@@ -58,23 +82,21 @@ class CPPGD(TensorDecomposition):
 
     Args:
         monom_specs (list[MonomSpec]): One blueprint per factor, in order. Each
-            one is read ``n_modes_max`` times, to build that factor's monom for
-            every mode; the decomposition creates the ``TrainableField``, never
-            the specs.
-        n_modes_max (int): Maximum number of modes.
+            one is read once per mode, to build that factor's monom; the
+            decomposition creates the ``TrainableField``, never the specs.
         name (str): Prefix for the monom field names
             (``f"{name}_dim{spec.space.name}_mode{m}"``); makes them unique so several
             decompositions can share one ``FieldLayout``.
-        n_modes_ini (int): Number of initially active (trainable) modes.
+        n_modes_ini (int): Number of modes to build at construction. There is
+            no maximum: how far to enrich is the trainer's business.
     """
 
-    def __init__(self, monom_specs, n_modes_max, name="pgd", n_modes_ini=1):
+    def __init__(self, monom_specs, name="pgd", n_modes_ini=1):
         super().__init__()
         self.name = name
         self.monom_specs = list(monom_specs)
         if sum(int(s.init_values.shape[1] > 1) for s in self.monom_specs) > 1:
             raise ValueError("CP-PGD admits at most one vector-valued factor per mode.")
-        self.n_modes_max = n_modes_max
 
         # Contexts are built and owned by the factor spaces
         # (FactorSpace.__post_init__). Keep a reference ModuleList only so
@@ -83,110 +105,123 @@ class CPPGD(TensorDecomposition):
         # this list can hold duplicates.
         self._contexts = nn.ModuleList([s.space.context for s in self.monom_specs])
 
-        # Grid of monoms: modes x factors of TrainableField.
-        self.monoms = nn.ModuleList(
-            [
-                nn.ModuleList(
-                    [
-                        TrainableField(
-                            name=f"{self.name}_dim{spec.space.name}_mode{m}",
-                            connectivity=spec.space.connectivity,
-                            init_values=spec.init_values,
-                            constraint=spec.constraint,
-                        )
-                        for spec in self.monom_specs
-                    ]
-                )
-                for m in range(self.n_modes_max)
-            ]
-        )
-
-        # One QuadratureAssembly per monom, grouped into mode-blocks. The leading
-        # `n_ini` blocks start active; the rest inactive. `active` is the single
-        # source of truth for truncation (n_active_modes counts leading active
-        # blocks) — no separate counter to keep in sync.
-        n_ini = min(n_modes_ini, n_modes_max)
-        self._assemblies = nn.ModuleList(
-            [
-                nn.ModuleList(
-                    [
-                        QuadratureAssembly(
-                            spec.space.context,
-                            spec.sf,
-                            self.monoms[m][k],
-                            active=(m < n_ini),
-                        )
-                        for k, spec in enumerate(self.monom_specs)
-                    ]
-                )
-                for m in range(self.n_modes_max)
-            ]
-        )
-
-        # Freeze everything, then unfreeze the initially active modes.
-        self.freeze_all()
-        for m in range(self.n_active_modes):
-            self.unfreeze_mode(m)
+        # Grid of monoms: modes x factors, grown one row at a time. Empty here;
+        # add_mode() is the single code path that builds a mode, so the initial
+        # modes and the enriched ones cannot drift apart.
+        self.monoms = nn.ModuleList()
+        self._assemblies = nn.ModuleList()
+        for _ in range(n_modes_ini):
+            self.add_mode()
 
     @property
-    def n_active_modes(self) -> int:
-        """Number of active modes: the leading run of active mode-blocks.
-
-        Single source of truth is the assemblies' `active` flags. Active blocks
-        are contiguous from index 0 because the greedy lifecycle is monotone —
-        a mode, once activated, is never deactivated.
-        """
-        n = 0
-        for block in self._assemblies:
-            if not bool(block[0].active):
-                break
-            n += 1
-        return n
+    def n_modes(self) -> int:
+        """Number of modes currently in the decomposition."""
+        return len(self.monoms)
 
     def assemblies(self):
         """Flat list of this decomposition's QuadratureAssembly, one per monom.
 
-        Mode-major then factor order. The seam a caller uses to build the shared
-        ``IntegrationDomain([*pgd.assemblies(), other_assembly])``.
+        Mode-major then factor order; ``n_modes * l`` long, and one row longer
+        after every :meth:`add_mode`. Because it grows, it is not stored in the
+        ``IntegrationDomain`` -- the caller passes it per forward, as
+        ``domain.interpolate_all(layout, decomposition.assemblies())``.
         """
         return [a for block in self._assemblies for a in block]
 
+    def _set_requires_grad(self, fields, flag):
+        for field in fields:
+            field.values_reduced.requires_grad_(flag)
+
     def freeze_all(self):
-        """Freeze the monoms of every mode."""
-        for m in range(self.n_modes_max):
-            self.freeze_mode(m)
+        """Freeze every monom of the grid."""
+        self._set_requires_grad((f for row in self.monoms for f in row), False)
+
+    def unfreeze_all(self):
+        """Unfreeze every monom of the grid."""
+        self._set_requires_grad((f for row in self.monoms for f in row), True)
 
     def freeze_mode(self, m):
-        """Freeze the monoms of mode ``m``."""
-        for field in self.monoms[m]:
-            field.values_reduced.requires_grad_(False)
+        """Freeze the monoms of mode ``m`` -- a **row** of the grid.
+
+        What progressive greedy PGD does to the already-converged modes before
+        enriching. The mode keeps contributing to ``u``; it just stops moving.
+        """
+        self._set_requires_grad(self.monoms[m], False)
 
     def unfreeze_mode(self, m):
-        """Unfreeze the monoms of mode ``m``."""
-        for field in self.monoms[m]:
-            field.values_reduced.requires_grad_(True)
+        """Unfreeze the monoms of mode ``m`` -- a **row** of the grid."""
+        self._set_requires_grad(self.monoms[m], True)
+
+    def freeze_factor(self, k):
+        """Freeze the monoms of factor ``k`` -- a **column** of the grid.
+
+        All modes at once, for the ``k``-th factor. What alternating-direction
+        minimisation cycles over: unfreeze one direction, optimise, move on.
+        """
+        self._set_requires_grad((row[k] for row in self.monoms), False)
+
+    def unfreeze_factor(self, k):
+        """Unfreeze the monoms of factor ``k`` -- a **column** of the grid."""
+        self._set_requires_grad((row[k] for row in self.monoms), True)
+
+    def freeze_monom(self, m, k):
+        """Freeze the single monom ``w_m^k`` -- one **cell** of the grid.
+
+        The finest granularity, for a classical ADM sweep that optimises one
+        monom at a time.
+        """
+        self._set_requires_grad([self.monoms[m][k]], False)
+
+    def unfreeze_monom(self, m, k):
+        """Unfreeze the single monom ``w_m^k`` -- one **cell** of the grid."""
+        self._set_requires_grad([self.monoms[m][k]], True)
 
     def add_mode(self):
-        """Enrich the decomposition with one new mode (greedy PGD).
+        """Append one mode to the decomposition.
 
-        Activates the next mode-block's assemblies, then unfreezes its monoms
-        (activate-before-unfreeze, so the mode never passes through the illegal
-        active=False/requires_grad=True state). Leaves the freeze state of the
-        currently-active modes untouched. Returns the new mode index. Raises
-        RuntimeError at capacity.
+        Builds a new row of the grid: one ``TrainableField`` and one
+        ``QuadratureAssembly`` per ``MonomSpec``. The new monoms bind to their
+        factor's existing ``FactorSpace``, so they reuse its already-computed
+        ``QuadratureContext`` rather than recomputing any geometry.
+
+        Nothing is capped and nothing is frozen: the new monoms are born
+        trainable, and the freeze state of the other modes is untouched. Deciding
+        when to stop, and what to freeze, is the trainer's job.
+
+        Two things the caller must do afterwards, for as long as no trainer does
+        it for them: re-run :meth:`register_into` so the new fields reach the
+        ``FieldLayout`` (it is idempotent), and hand the new parameters to the
+        optimizer (see
+        :meth:`neurom.neurom_model.NeuROMModel.add_mode_to_optimizer`).
 
         The new mode keeps its ``MonomSpec.init_values`` seed rather than being zeroed:
         an all-zero mode is a stationary point of the energy (every gradient
         component is proportional to the *other* factor, so both stay locked at
         0), which never takes off under a gradient optimizer. A non-zero
         parametric seed lets the linear load term drive the enrichment.
+
+        Returns:
+            int: Index of the mode just added.
         """
-        m = self.n_active_modes
-        if m >= self.n_modes_max:
-            raise RuntimeError("Cannot add a mode: all modes are already active.")
-        for assembly in self._assemblies[m]:
-            assembly.activate()
-        self.unfreeze_mode(m)
+        m = self.n_modes
+        fields = [
+            TrainableField(
+                name=f"{self.name}_dim{spec.space.name}_mode{m}",
+                connectivity=spec.space.connectivity,
+                init_values=spec.init_values,
+                constraint=spec.constraint,
+            )
+            for spec in self.monom_specs
+        ]
+        self.monoms.append(nn.ModuleList(fields))
+        self._assemblies.append(
+            nn.ModuleList(
+                [
+                    QuadratureAssembly(spec.space.context, spec.sf, field)
+                    for spec, field in zip(self.monom_specs, fields)
+                ]
+            )
+        )
         return m
 
     def mode_parameters(self, m=None):
@@ -198,47 +233,47 @@ class CPPGD(TensorDecomposition):
 
         Args:
             m (int, optional): Index of the mode. Supports negative indexing
-                (Python-style). Defaults to the last-activated mode
-                (``n_active_modes - 1``).
+                (Python-style). Defaults to the last mode added
+                (``n_modes - 1``).
 
         Returns:
             list[torch.Tensor]: The monom parameters of mode ``m``, one per factor.
 
         Raises:
-            IndexError: If ``m`` is out of range for the active modes.
+            IndexError: If ``m`` is out of range for the existing modes.
         """
-        n_active = int(self.n_active_modes)
+        n_modes = self.n_modes
         if m is None:
-            m = n_active - 1
+            m = n_modes - 1
         if m < 0:
-            m += n_active
-        if not 0 <= m < n_active:
-            raise IndexError(
-                f"Mode index {m} out of range for {n_active} active mode(s)."
-            )
+            m += n_modes
+        if not 0 <= m < n_modes:
+            raise IndexError(f"Mode index {m} out of range for {n_modes} mode(s).")
         return [f.values_reduced for f in self.monoms[m]]
 
     def register_into(self, field_layout):
-        """Register every monom field (all modes, all factors) in the layout.
+        """Bring ``field_layout`` in phase with the monoms that exist now.
 
-        Called once at setup. All ``n_modes_max`` modes are registered up front
-        (including not-yet-active ones) so ``add_mode`` needs no layout
-        reference. Inactive monoms are registered but never interpolated.
+        Idempotent: fields already registered are skipped
+        (:meth:`neurom.field_layout.FieldLayout.add` is identity-aware), so this
+        is called once at setup **and again after every** :meth:`add_mode`. That
+        is how new monoms reach the layout without the decomposition ever
+        holding a reference to it.
         """
         for mode in self.monoms:
             for field in mode:
                 field_layout.add(field)
 
     def directory(self):
-        """Ordered lookup table of active monom field names, keyed by factor.
+        """Ordered lookup table of the monom field names, keyed by factor.
 
         Returns:
-            dict[str, list[str]]: factor name -> monom field names, one per active
-            mode (index ``m``). Feed to a physics/energy term to read each monom
-            out of the FieldLayout by name (``field_layout[name]``). Truncates to
-            active modes; grows after :meth:`add_mode`.
+            dict[str, list[str]]: factor name -> monom field names, one per mode
+            (index ``m``). Feed to a physics/energy term to read each monom
+            out of the FieldLayout by name (``field_layout[name]``). Grows after
+            :meth:`add_mode`.
         """
-        n = self.n_active_modes
+        n = self.n_modes
         return {
             spec.space.name: [self.monoms[m][k].name for m in range(n)]
             for k, spec in enumerate(self.monom_specs)
@@ -289,7 +324,7 @@ class CPPGD(TensorDecomposition):
             Detached (via ``PointWiseInterpolator``).
         """
         coords = self._as_factor_columns(coords)
-        n = self.n_active_modes
+        n = self.n_modes
         total = None
         for m in range(n):
             prod = None
@@ -317,7 +352,7 @@ class CPPGD(TensorDecomposition):
             trailing ``d`` is present iff a vector factor exists (else dropped).
             Equals ``sum_m prod_k w_m^k`` over the coordinate grid. Detached.
         """
-        n_modes = self.n_active_modes
+        n_modes = self.n_modes
         mode_letter = "Z"
         per_factor = []  # per_factor[k]: (n_modes, N_k) or (n_modes, N_k, d_k)
         for k, spec in enumerate(self.monom_specs):

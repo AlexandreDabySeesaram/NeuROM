@@ -99,16 +99,27 @@ enrichment.
 
 - `src/neurom/decompositions/pgd.py`:
 
-  **`CPPGD(TensorDecomposition)`** — `CPPGD(monom_specs: list[MonomSpec], n_modes_max, n_modes_ini=1)`.
+  **`CPPGD(TensorDecomposition)`** — `CPPGD(monom_specs: list[MonomSpec], name="pgd", n_modes_ini=1)`.
+  A **dynamic container**, not a training strategy: nothing is pre-allocated,
+  there is no maximum number of modes, and no freezing policy is applied.
   - `self.monoms` — `ModuleList` over modes of `ModuleList` over factors of
-    `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`.
+    `TrainableField`; `self.monoms[m][k]` is the monom `w_m^k`. Grows one row
+    at a time.
   - `self._contexts` — the factor spaces' `QuadratureContext`, shared across
-    modes.
-  - `self.n_modes_max` (int), `self.n_active_modes` (int-valued buffer =
-    currently active modes).
-  - `register_into(field_layout)` — registers every monom field (all
-    `n_modes_max` modes x all axes, including not-yet-active ones) in the
-    layout up front, so `add_mode` needs no layout reference.
+    modes, **including modes added later**.
+  - `self.n_modes` — `len(self.monoms)`. No separate counter, no active/inactive
+    distinction: a mode that was never added does not exist.
+  - `register_into(field_layout)` — brings the layout in phase with the monoms
+    that exist now. Idempotent (`FieldLayout.add` is identity-aware), so it is
+    called at setup **and again after every `add_mode()`**. This is how a new
+    mode reaches the layout without the decomposition ever holding a reference
+    to it.
+  - `assemblies()` — the `QuadratureAssembly` of every monom, `n_modes * l` of
+    them over only `l` distinct contexts. Because the list grows, it is **not**
+    stored in the `IntegrationDomain`: `NeuROMModel.forward` re-reads it on
+    every forward and passes it to
+    `domain.interpolate_all(layout, assemblies)`. The domain holds the static
+    assemblies only (the load, a source).
   - `fill(field_layout)` — for each active mode and axis, interpolates the
     monom at that axis's quadrature points and `update()`s it in the layout.
     Inactive monoms stay registered but uninterpolated (reading them raises
@@ -127,15 +138,21 @@ enrichment.
     number of axes (mode index = uppercase `Z`, axes = lowercase `a..`).
     Returns a detached tensor (for post-processing / viz / tests). Unchanged
     by the `FieldLayout` migration.
-  - Greedy enrichment:
-    `add_mode()` activates the next mode (increment `n_active_modes`,
-    zero-out + unfreeze the new mode) and returns its index, **without**
-    touching the freeze state of the currently-active modes — freezing is left
-    to the caller (e.g. the beam test calls `freeze_mode(0)` before
-    `add_mode()`); raises `RuntimeError` at `n_modes_max`.
-    `add_mode_to_optimizer(optim, m=None)` adds a mode's params via
-    `add_param_group` (defaults to the last-activated mode, supports negative
-    indexing), plus `freeze_all` / `freeze_mode` / `unfreeze_mode`.
+  - Enrichment: `add_mode()` **builds** a new row — one `TrainableField` and
+    one `QuadratureAssembly` per `MonomSpec` — and returns its index. It is
+    unbounded, it seeds the new monoms from `MonomSpec.init_values` (an
+    all-zero mode is a stationary point of the energy and never takes off), and
+    it freezes nothing. The caller then re-runs `register_into(layout)` and
+    `NeuROMModel.add_mode_to_optimizer(optim)`.
+  - Freezing utilities, mechanism without policy — `freeze_mode` /
+    `unfreeze_mode` (a **row**: progressive greedy), `freeze_factor` /
+    `unfreeze_factor` (a **column**: alternating-direction minimisation),
+    `freeze_monom` / `unfreeze_monom` (a **cell**: classical ADM), plus
+    `freeze_all` / `unfreeze_all`. The decomposition calls none of them itself.
+    A frozen monom is **still part of `u`**: `requires_grad` means "not
+    optimised", never "absent". Consequence for callers: hand *all* parameters
+    to the optimizer, since a `requires_grad` filter at construction time
+    silently excludes anything unfrozen later.
 - `src/neurom/decompositions/pgd_fem_model.py` — **`PGDFEMModel(nn.Module)`**:
   `PGDFEMModel(decomposition: TensorDecomposition, field_layout, loss)`, the
   PGD analogue of `neurom.fem_model.FEMModel`. Registers the decomposition's
@@ -205,8 +222,6 @@ uv run pytest tests/integration/test_1d_beam_deflection_PGD_test.py -v
 
 ## Deferred / known Minor items (optional, benign)
 
-- Constructor silently does `min(n_modes_ini, n_modes_max)` instead of raising
-  `ValueError` when `n_modes_ini > n_modes_max`.
 - `assemble` with more than 26 axes raises a bare `IndexError`
   (`string.ascii_lowercase[:n_factors]`) rather than a clear message.
 - `assemble` rebuilds a `PointWiseInterpolator` per mode (efficiency only;

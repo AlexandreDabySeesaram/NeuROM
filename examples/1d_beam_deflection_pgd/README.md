@@ -155,7 +155,7 @@ The modes are built **one at a time** (greedy enrichment):
 1. start with a single mode and minimise the energy over its two factors;
 2. *freeze* that converged mode, *add* a fresh one, and train only the new
    factors — which therefore fit the residual left by the previous modes;
-3. repeat up to `n_modes_max` (here 3).
+3. repeat for as many modes as the script asks for (here 3).
 
 In the code this is
 {py:meth}`~neurom.decompositions.pgd.CPPGD.freeze_mode`,

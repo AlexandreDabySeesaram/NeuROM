@@ -8,11 +8,17 @@ class NeuROMModel(nn.Module):
 
     Counterpart of :class:`neurom.fem_model.FEMModel` for separated
     representations. Depends only on the :class:`TensorDecomposition` contract
-    (``register_into`` / ``evaluate`` / ``assemble``), so any format (CP, later
-    Tucker/TT) drives the same model. Interpolation is the injected
+    (``register_into`` / ``assemblies`` / ``evaluate`` / ``assemble``), so any
+    format (CP, later Tucker/TT) drives the same model. Interpolation is the
+    injected
     :class:`~neurom.interpolation.integration_domain.IntegrationDomain`'s job —
     the same domain interpolates the decomposition's factor fields **and** any
     other field the energy reads (loads, sources).
+
+    The decomposition may grow a mode mid-training, so the model asks it for
+    ``assemblies()`` on every forward and hands them to the domain, rather than
+    baking them into it once. The domain therefore holds only the *other*
+    assemblies — the ones whose existence is fixed.
 
     ``forward`` branches on ``self.training``:
       * training: interpolate every active field through the domain and **return
@@ -26,9 +32,10 @@ class NeuROMModel(nn.Module):
             decomposition's factor fields into it (a layout already holding those
             names raises ``ValueError`` on the duplicate registration).
         decomposition (TensorDecomposition): The separated representation.
-        integration_domain (IntegrationDomain): Interpolates all active fields of
-            the problem; typically ``IntegrationDomain([*decomposition.assemblies(),
-            *other_assemblies])``.
+        integration_domain (IntegrationDomain): Interpolates the fields of the
+            problem. Built from the **non-decomposition** assemblies only
+            (``IntegrationDomain(other_assemblies)``, e.g. the load); the
+            decomposition's own assemblies are passed per forward.
         loss (Callable): Injected callable ``loss(output) -> torch.Tensor`` (the
             counterpart of ``FEMModel.loss``; the potential energy in a mechanics
             problem), reading fields from the layout.
@@ -46,7 +53,9 @@ class NeuROMModel(nn.Module):
 
     def forward(self, coords=None):
         if self.training:
-            self.integration_domain.interpolate_all(self.field_layout)
+            self.integration_domain.interpolate_all(
+                self.field_layout, self.decomposition.assemblies()
+            )
             return self.field_layout
         if coords is None:
             raise ValueError(

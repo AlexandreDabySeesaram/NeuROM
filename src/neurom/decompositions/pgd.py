@@ -14,7 +14,7 @@ from neurom.meshes.mesh import Mesh
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
-from neurom.decompositions.base import TensorDecomposition
+from neurom.decompositions.tensor_decomposition import TensorDecomposition
 
 
 @dataclass

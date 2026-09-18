@@ -58,7 +58,7 @@ def main(n_iter_training=150):
 
     connectivity_space = Connectivity(nodes_space, elements_space)
     nodes_positions_space = Field(
-        name=f"space_positions", connectivity=connectivity_space, values=x_array
+        name="space_positions", connectivity=connectivity_space, values=x_array
     )
 
     # Initialize displacement values
@@ -89,7 +89,7 @@ def main(n_iter_training=150):
 
     connectivity_E = Connectivity(nodes_E, elements_E)
     nodes_positions_E = Field(
-        name=f"E_positions", connectivity=connectivity_E, values=E_array
+        name="E_positions", connectivity=connectivity_E, values=E_array
     )
 
     # Initialize E mode values
@@ -123,7 +123,7 @@ def main(n_iter_training=150):
     # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
     # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
-    load_value = 1000.0  # x^2 ou une autre expression mathématique
+    load_value = 1000.0  # a constant here; could be x**2 or any expression of x
     load_field = field_layout.add(
         Field(
             name="load",
@@ -131,7 +131,7 @@ def main(n_iter_training=150):
             values=load_value * torch.ones(N_space, 1),
         )
     )
-    context_f = axis_space.context  # le même context que la partie spatiale
+    context_f = axis_space.context  # the same context as the space part
     assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
     # Construction of the shared domain for the whole problem
@@ -139,7 +139,7 @@ def main(n_iter_training=150):
         [*pgd_approx.assemblies(), assembly_f]
     )  # do not forget * to unpack
 
-    # Creer le modele
+    # Create the model
     model = NeuROMModel(
         field_layout=field_layout,
         decomposition=pgd_approx,
@@ -156,7 +156,6 @@ def main(n_iter_training=150):
     def closure():
         optimizer.zero_grad()
         out = model()
-        # print(out)
         loss = model.loss(out)
         loss.backward(retain_graph=True)
         return loss
@@ -170,7 +169,7 @@ def main(n_iter_training=150):
 
     # Mode 1
     pgd_approx.freeze_mode(0)
-    pgd_approx.add_mode()  # active le mode 1
+    pgd_approx.add_mode()  # activates mode 1
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -179,7 +178,7 @@ def main(n_iter_training=150):
 
     # Mode 2
     pgd_approx.freeze_mode(1)
-    pgd_approx.add_mode()  # active le mode 1
+    pgd_approx.add_mode()  # activates mode 2
     model.add_mode_to_optimizer(optimizer)
 
     for _ in range(n_iter_training):
@@ -380,17 +379,18 @@ def plot_solution(
 
 
 def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
-    # on va chercher les noms des champs {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
+    # Look up the field names, e.g.
+    # {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
     directory = decomposition.directory()
     n_modes = len(directory["space"])
 
-    # on les récupère dans le field_layout
+    # Fetch them from the field_layout
     space_modes_names = directory["space"]
     E_modes_names = directory["E"]
     space_modes = [field_layout[name] for name in space_modes_names]
     E_modes = [field_layout[name] for name in E_modes_names]
 
-    # et le load
+    # ... and the load
     load_field = field_layout[load_name]
 
     ## Elastic

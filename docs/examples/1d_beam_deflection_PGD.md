@@ -2,10 +2,12 @@
 
 ![Longitudinal deformation of the bi-clamped bar: reference state (solid) and deformed state (dashed).](bar_deformation.svg)
 
-*Longitudinal deformation of the bar. The **solid** line is the reference
-(undeformed) state, the **dashed** line the deformed one; the thin connectors
-track how each material point moves axially. Both ends stay clamped
-($u=0$), and the interior displaces under the distributed axial load.*
+*Longitudinal deformation of the bar.*
+
+The **solid** line is the reference (undeformed) state, the **dashed** line the
+deformed one; the thin connectors track how each material point moves axially.
+Both ends stay clamped ($u=0$), and the interior displaces under the
+distributed axial load.
 
 This example solves a parametric 1D bar problem with the Proper Generalized
 Decomposition (PGD): the deflection $u$ is computed as a function of both the
@@ -22,20 +24,34 @@ $$\begin{aligned}
             &= \frac{1}{2}\int_{\Omega_{ref}}E\, \nabla u \cdot \nabla u \,J - \int_{\Omega_{ref}} fu\, J
 \end{aligned}$$
 
-The second line maps the integral onto the reference element, $J$ being the
-Jacobian of the geometric map.
+where
+
+- $\mathcal{E}$ is the total potential energy of the bar,
+- $u$ is the axial **displacement field**, the unknown of the problem,
+- $x$ is the **position** along the bar, $x \in \Omega = [x_{\min}, x_{\max}]$,
+- $E$ is the **Young's modulus** of the material, here treated as a coordinate
+  rather than as a constant,
+- $f$ is the prescribed **axial load** density (per unit length),
+- $\nabla u = \mathrm{d}u/\mathrm{d}x$ is the displacement gradient, which in
+  1D is the axial strain,
+- $\Omega$ is the physical domain and $\Omega_{ref}$ the reference element onto
+  which the second line maps the integral,
+- $J$ is the **Jacobian** of the geometric map $\phi$ from $\Omega_{ref}$ to
+  $\Omega$.
 
 **Boundary conditions.** The bar is *clamped at both ends*:
 $u(x_{\min}) = u(x_{\max}) = 0$. In the code this is a Dirichlet constraint on
-the space axis, `Dirichlet(nodes=[0, N_space - 1], values_imposed=0)`. The two
+the space axis, `Dirichlet(nodes=[0, N_space - 1], values_imposed=0)` — see
+{py:class}`~neurom.constraints.dirichlet.Dirichlet`. The two
 ends are exact mesh nodes, so the constraint is imposed exactly.
 
 ## Finite-element discretisation and quadrature
 
 During training we evaluate $u$ at the Gauss points so that the energy integral
 is computed consistently with the polynomial discretisation of $u$. Here we use
-a **single Gauss point per element** — the mid-point rule (`MidPoint1D`) — so on
-each element the integral reduces to one evaluation:
+a **single Gauss point per element** — the mid-point rule
+({py:class}`~neurom.quadratures.mid_point_1d.MidPoint1D`) — so on each element
+the integral reduces to one evaluation:
 
 $$\begin{gathered}
 \mathcal{E}= \frac{1}{2}\sum_{e=1}^{N_e}\int_{e}E\,\nabla u \cdot \nabla u \,J - \sum_{e=1}^{N_e}\int_{e} fu\, J \\
@@ -44,34 +60,48 @@ $$\begin{gathered}
 
 With the finite-element discretisation $u$ reads
 
-$$u(x) = \sum_{e=1}^{N_e} \sum_{i=1}^{2} u_{e,i}\, N_{e,i}\big(\phi^{-1}(x)\big).$$
+$$u(x) = \sum_{e=1}^{N_e} \sum_{i=1}^{2} u_{e,i}\, N_{e,i}(x),
+\qquad N_{e,i}(x) = \hat{N}_i\big(\phi_e^{-1}(x)\big),$$
+
+where $\hat{N}_i$ is the shape function of local node $i$ on the **reference**
+element and $N_{e,i}$ its counterpart on element $e$, obtained by pulling $x$
+back through the geometric map $\phi_e$ of that element.
 
 Because we only ever evaluate it at the Gauss points, during training we compute
 
-$$u(x_{g,e}) = u_{e,i}\, N_{e,i}\big(\phi^{-1}(x_{g,e})\big) = \tfrac{1}{2}u_{e,1} + \tfrac{1}{2}u_{e,2},$$
+$$u(x_{g,e}) = u_{e,i}\, \hat{N}_i\big(\phi_e^{-1}(x_{g,e})\big) = \tfrac{1}{2}u_{e,1} + \tfrac{1}{2}u_{e,2},$$
 
 since on the reference element $[0,1]$ with linear shape functions
-$N_1(\xi)= 1-\xi$ and $N_2(\xi)= \xi$, the single Gauss point is
-$\xi_g = \tfrac{1}{2}$, hence
+$\hat{N}_1(\xi)= 1-\xi$ and $\hat{N}_2(\xi)= \xi$
+({py:class}`~neurom.shape_functions.linear_bar.LinearBar`), the single Gauss
+point is $\xi_g = \tfrac{1}{2}$, hence
 
-$$\begin{bmatrix} N_1(\xi_g) \\ N_2(\xi_g) \end{bmatrix} = \begin{bmatrix} \tfrac{1}{2} \\ \tfrac{1}{2} \end{bmatrix}.$$
+$$\begin{bmatrix} \hat{N}_1(\xi_g) \\ \hat{N}_2(\xi_g) \end{bmatrix} = \begin{bmatrix} \tfrac{1}{2} \\ \tfrac{1}{2} \end{bmatrix}.$$
 
 Even though the shape-function values at the Gauss point are known in advance, we
-do **not** simply take the half-sum of the nodal values: we evaluate through the
-interpolator so that the autodiff graph is built — that graph is what lets us
+do **not** simply use the closed form formulas: **we evaluate through the
+interpolator so that the autodiff graph is built** — that graph is what lets us
 differentiate the energy with respect to the nodal unknowns. Concretely,
 
-$$\begin{bmatrix} \tfrac{1}{2} \\ \tfrac{1}{2} \end{bmatrix} = \phi^{-1}(x_g) = \phi^{-1}\big(\phi(\xi_g)\big),$$
+$$\xi_g = \phi_e^{-1}(x_{g,e}) = \phi_e^{-1}\big(\phi_e(\xi_g)\big),$$
 
-where $\phi$ is the isoparametric geometric map
-$x = \phi(\xi) = a_x N_1(\xi) + b_x N_2(\xi)$ (`IsoparametricMapping1D`).
+where $\phi_e$ is the isoparametric geometric map of element $e$,
+$x = \phi_e(\xi) = a_x \hat{N}_1(\xi) + b_x \hat{N}_2(\xi)$ with $a_x, b_x$ its
+two node positions ({py:class}`~neurom.geometry.iso_parametric_mapping_1d.IsoparametricMapping1D`).
 
 ## Young's modulus as a parameter — separated form
 
 We now look for the solution in separated form, with the Young's modulus as a
 parameter:
 
-$$u(x, E) = \sum^m_{i=1}u_i(x)\,\lambda_i(E).$$
+$$u(x, E) = \underbrace{u_0(x)\,\lambda_0(E)}_{\text{boundary data}}
+\;+\; \sum^m_{i=1}u_i(x)\,\lambda_i(E).$$
+
+The $i=0$ term carries the **boundary data**: it is a fixed, never-trained mode
+that lifts the Dirichlet values, so that the trained modes $i \geq 1$ can all
+satisfy *homogeneous* constraints. In this example the bar is clamped at both
+ends with $u = 0$, so $u_0 \equiv 0$ and the term vanishes — it is written here
+for clarity, and is what a non-zero Dirichlet condition would need.
 
 The energy becomes a double integral over $\Omega \times I_E$, which factorises
 axis by axis:
@@ -99,13 +129,14 @@ constant in $E$, the source is itself rank-1 separable,
 $$f(x, E) = f_0(x) \otimes 1(E),$$
 
 so the parametric factor "$1$" is carried implicitly by the term
-$G_m = \int_{I_E} \lambda_m \, J^E \, dE$. The load is built as a `Field` on the
+$G_m = \int_{I_E} \lambda_m \, J^E \, dE$. The load is built as a {py:class}`~neurom.fields.field.Field` on the
 space mesh and sampled at the **same** space quadrature points as $u$, so that
 `inner(f, u)` aligns point-by-point.
 
 ## Discretisation used
 
-Concretely the two axes fed to the decomposition are:
+Concretely the two {py:class}`~neurom.decompositions.pgd.Axis` objects fed to
+the decomposition are:
 
 - **Space axis** — $x \in [0, 10]$ with $N_{\text{space}} = 30$ nodes, i.e. 29
   linear elements, clamped at both ends. This is a standard 1D FE mesh.
@@ -126,9 +157,12 @@ The modes are built **one at a time** (greedy enrichment):
    factors — which therefore fit the residual left by the previous modes;
 3. repeat up to `n_modes_max` (here 3).
 
-In the code this is `pgd_approx.freeze_mode(...)`, `pgd_approx.add_mode()` and
-`model.add_mode_to_optimizer(...)` (the optimizer wiring lives on the model, so
-the PGD stays optimizer-agnostic). Even though the exact solution here is
+In the code this is
+{py:meth}`~neurom.decompositions.pgd.CPPGD.freeze_mode`,
+{py:meth}`~neurom.decompositions.pgd.CPPGD.add_mode` and
+{py:meth}`~neurom.neurom_model.NeuROMModel.add_mode_to_optimizer` (the
+optimizer wiring lives on the model, so
+{py:class}`~neurom.decompositions.pgd.CPPGD` stays optimizer-agnostic). Even though the exact solution here is
 rank-1 (a single mode is enough), we deliberately add several modes to exercise
 the enrichment machinery; the extra modes come out small.
 
@@ -156,10 +190,12 @@ reconstruction is what panels 1–2 compare against the analytical solution.
 ## Implementation note
 
 The separated energy is assembled with the library helpers rather than a hand-
-written `einsum`: `neurom.math.inner` contracts the field and physical
-directions (e.g. $\nabla u_m \cdot \nabla u_n$) and `neurom.math.integrate`
-performs the quadrature sum, inside a loop over the mode pairs $(m, n)$. Under
+written `einsum`: {py:func}`~neurom.math.inner.inner` contracts the field and
+physical directions (e.g. $\nabla u_m \cdot \nabla u_n$) and
+{py:func}`~neurom.math.integrate.integrate` performs the quadrature sum, inside
+a loop over the mode pairs $(m, n)$. Under
 the hood, the tensor assembly of the decomposition
-(`CPPGD.assemble` / `CPPGD.evaluate`) *does* use `torch.einsum` to contract the
+({py:meth}`~neurom.decompositions.pgd.CPPGD.assemble` /
+{py:meth}`~neurom.decompositions.pgd.CPPGD.evaluate`) *does* use `torch.einsum` to contract the
 separated factors across axes — so the einsum is there, simply wrapped by the
 `inner` / `integrate` API used in the `energy()` function.

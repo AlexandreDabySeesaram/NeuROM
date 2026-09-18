@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from neurom.decompositions.base import TensorDecomposition
+from neurom.decompositions.tensor_decomposition import TensorDecomposition
 
 
 class NeuROMModel(nn.Module):

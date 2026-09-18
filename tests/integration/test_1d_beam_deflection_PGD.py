@@ -1,16 +1,14 @@
 import math
 
-import pytest
 import torch
 
 from neurom.decompositions import Axis, CPPGD
 from neurom.neurom_model import NeuROMModel
-from neurom.quadratures import MidPoint1D, TwoPoints1D
+from neurom.quadratures import TwoPoints1D
 from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Connectivity, Mesh
 from neurom.fields import Field
-from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.interpolation.integration_domain import IntegrationDomain
@@ -23,28 +21,42 @@ from neurom.field_layout import FieldLayout
 torch.set_default_dtype(torch.float32)
 
 
-class Test1dBeamDeflection:
+class Test1dBeamDeflectionPGD:
     """Integration test for the very first tensor-decomposition (CP-PGD) problem:
     a parametric 1D beam deflection u(x, E) whose analytical solution is rank-1
     separable,
 
         u(x, E) = 0.5 q (x - x_min)(x - x_max) / E,
 
+    where
+
+      u       -- the axial displacement field of the bar, the unknown
+      x       -- position along the bar, in [x_min, x_max]
+      x_min   -- left end of the bar (clamped, u = 0)
+      x_max   -- right end of the bar (clamped, u = 0)
+      E       -- Young's modulus, treated as an extra coordinate rather than a
+                 constant, sampled over [E_min, E_max]
+      q       -- the constant axial load density (`load_value` below)
+
     (a space parabola times 1/E). This test *bulletproofs* that first PGD by
     checking quantitative properties of the greedy enrichment rather than
     eyeballing plots:
 
-      1. bounded error       -- final relative L2 error vs analytical < tol
-      2. error decreases     -- rel. error is non-increasing as modes are added
-      3. energy decreases     -- the minimised functional never goes up when the
-                                 approximation space is enriched (core PGD prop.)
-      4. no NaN/Inf          -- loss and error stay finite throughout
-      5. Dirichlet BCs        -- u = 0 at the clamped ends for every E
-      6. decreasing modes     -- each successive mode contributes less (spectral
-                                 decay: the greedy PGD orders modes by importance)
-      7. rank-1 recovery      -- the first mode alone already captures most of the
-                                 field (the truth is rank-1), so it dominates the
-                                 later corrective modes.
+      1. no NaN/Inf          -- loss and error stay finite throughout
+      2. bounded error       -- final relative L2 error vs analytical < tol
+      3. error decreases     -- rel. error is non-increasing as modes are added
+      4. energy decreases    -- the minimised functional never goes up when the
+                                approximation space is enriched (core PGD prop.)
+      5. Dirichlet BCs       -- u = 0 at the clamped ends for every E
+      6. decreasing modes    -- each successive mode contributes less (spectral
+                                decay: the greedy PGD orders modes by importance)
+      7. rank-1 recovery     -- the first mode alone already captures most of the
+                                field (the truth is rank-1), so it dominates the
+                                later corrective modes
+      8. strict accuracy     -- with every mode unfrozen and jointly refined, the
+                                full-rank PGD matches the analytical field tightly
+
+    They are numbered here in the order in which they are asserted below.
 
     The enrichment is driven by a *relative-energy plateau*: we keep training the
     active mode until the energy's relative improvement over a sliding window of
@@ -114,7 +126,7 @@ class Test1dBeamDeflection:
 
         connectivity_space = Connectivity(nodes_space, elements_space)
         nodes_positions_space = Field(
-            name=f"space_positions", connectivity=connectivity_space, values=x_array
+            name="space_positions", connectivity=connectivity_space, values=x_array
         )
 
         # Initialize displacement values
@@ -147,7 +159,7 @@ class Test1dBeamDeflection:
 
         connectivity_E = Connectivity(nodes_E, elements_E)
         nodes_positions_E = Field(
-            name=f"E_positions", connectivity=connectivity_E, values=E_array
+            name="E_positions", connectivity=connectivity_E, values=E_array
         )
 
         # Initialize E mode values
@@ -169,7 +181,6 @@ class Test1dBeamDeflection:
         pgd_approx = CPPGD(
             axes=[axis_space, axis_E], n_modes_max=3, name="pgd", n_modes_ini=1
         )
-        # print(pgd_approx.directory())
 
         ###### Define constant load.
         # The load is a *field* f(x), not a raw nodal vector: it has to be
@@ -214,7 +225,6 @@ class Test1dBeamDeflection:
         def closure():
             optimizer.zero_grad()
             out = model()
-            # print(out)
             loss = model.loss(out)
             loss.backward(retain_graph=True)
             return loss
@@ -288,6 +298,7 @@ class Test1dBeamDeflection:
         # guarantee (the accuracy check the previous, LBFGS-based test asserted).
         for m in range(n_modes):
             pgd_approx.unfreeze_mode(m)
+
         polish_optimizer = torch.optim.Adam(
             [p for p in model.parameters() if p.requires_grad],
             lr=0.1,
@@ -312,19 +323,12 @@ class Test1dBeamDeflection:
             load_value=load_value,
         )
 
-        print("Successfully trained!")
-        print(f"modes enriched      : {n_modes}")
-        print(f"energy per mode     : {loss_per_mode}")
-        print(f"rel. error per mode : {error_per_mode}")
-        print(f"contribution per mode: {contribution_per_mode}")
-        print(f"error after polish  : {final_error_polished}")
-
         # ================================================================
         # Metrics / assertions -- this is what makes the test a test.
         # ================================================================
 
-        # (4) No NaN/Inf anywhere -- catch a diverging optimisation early.
-        assert all(math.isfinite(l) for l in loss_history), (
+        # (1) No NaN/Inf anywhere -- catch a diverging optimisation early.
+        assert all(math.isfinite(loss) for loss in loss_history), (
             "non-finite loss encountered"
         )
         assert all(math.isfinite(e) for e in error_per_mode), (
@@ -332,14 +336,14 @@ class Test1dBeamDeflection:
         )
         assert all(math.isfinite(c) for c in contribution_per_mode)
 
-        # (1) Bounded error: the converged rank-N PGD matches the analytical
+        # (2) Bounded error: the converged rank-N PGD matches the analytical
         #     parametric field over the whole (x, E) domain.
         assert error_per_mode[-1] < self.final_error_tol, (
             f"final relative L2 error {error_per_mode[-1]:.3e} exceeds "
             f"tolerance {self.final_error_tol:.3e}"
         )
 
-        # (2) Error decreases (non-increasing) as modes are added. A small slack
+        # (3) Error decreases (non-increasing) as modes are added. A small slack
         #     absorbs the fact that a converged higher mode may leave the error
         #     essentially unchanged rather than strictly lower.
         for i in range(len(error_per_mode) - 1):
@@ -348,7 +352,7 @@ class Test1dBeamDeflection:
                 f"{error_per_mode[i]:.3e} -> {error_per_mode[i + 1]:.3e}"
             )
 
-        # (3) Energy monotonically decreases under enrichment: adding a mode
+        # (4) Energy monotonically decreases under enrichment: adding a mode
         #     enlarges the trial space, so the minimum of the functional can only
         #     drop (or stay). Slack is relative to the current energy magnitude.
         for i in range(len(loss_per_mode) - 1):
@@ -548,4 +552,4 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
 
 
 if __name__ == "__main__":
-    Test1dBeamDeflection().test_beam()
+    Test1dBeamDeflectionPGD().test_beam()

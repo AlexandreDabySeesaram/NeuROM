@@ -152,10 +152,12 @@ def main(n_iter_training=150):
     )
 
     ## add training
-    # Every parameter goes to the optimizer, frozen ones included. A frozen
-    # monom simply gets no gradient and Adam skips it; filtering on
-    # `requires_grad` here would silently exclude any monom unfrozen later
-    # (the polish phase below does exactly that).
+    # Every parameter goes to the optimizer, frozen ones included. Membership in
+    # a param group is a snapshot taken here and says what the optimizer *may*
+    # touch; `requires_grad` is the live switch saying what it touches now (a
+    # frozen monom gets no gradient, so Adam skips it). Filtering on
+    # `requires_grad` here would conflate the two: a monom unfrozen later would
+    # be in no group, get a gradient, and still never move.
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
     def closure():

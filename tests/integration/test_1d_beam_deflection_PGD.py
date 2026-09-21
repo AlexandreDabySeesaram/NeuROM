@@ -197,7 +197,7 @@ class Test1dBeamDeflectionPGD:
         # factor f_0(x) of the separated source f(x, E) = f_0(x) ⊗ 1(E); the E
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
-        load_value = 1000.0  # x^2 ou une autre expression mathématique
+        load_value = 1000.0  # a constant here; could be x**2 or any expression of x
         load_field = field_layout.add(
             Field(
                 name="load",
@@ -205,14 +205,14 @@ class Test1dBeamDeflectionPGD:
                 values=load_value * torch.ones(N_space, 1),
             )
         )
-        context_f = space_x.context  # le même context que la partie spatiale
+        context_f = space_x.context  # the same context as the space part
         assembly_f = QuadratureAssembly(context_f, sf, load_field)
 
         # The domain holds the *static* assemblies only. The PGD's own grow with
         # every mode added, so the model passes them per forward instead.
         domain = IntegrationDomain([assembly_f])
 
-        # Creer le modele
+        # Create the model
         model = NeuROMModel(
             field_layout=field_layout,
             decomposition=pgd_approx,

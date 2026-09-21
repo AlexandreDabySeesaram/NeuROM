@@ -42,7 +42,7 @@ where
 **Boundary conditions.** The bar is *clamped at both ends*:
 $u(x_{\min}) = u(x_{\max}) = 0$. In the code this is a Dirichlet constraint on
 the space axis, `Dirichlet(nodes=[0, N_space - 1], values_imposed=0)` — see
-`Dirichlet`. The two
+[`Dirichlet`](../../src/neurom/constraints/dirichlet.py). The two
 ends are exact mesh nodes, so the constraint is imposed exactly.
 
 ## Finite-element discretisation and quadrature
@@ -50,7 +50,7 @@ ends are exact mesh nodes, so the constraint is imposed exactly.
 During training we evaluate $u$ at the Gauss points so that the energy integral
 is computed consistently with the polynomial discretisation of $u$. Here we use
 a **single Gauss point per element** — the mid-point rule
-(`MidPoint1D`) — so on each element
+([`MidPoint1D`](../../src/neurom/quadratures/mid_point_1d.py)) — so on each element
 the integral reduces to one evaluation:
 
 $$\begin{gathered}
@@ -73,7 +73,7 @@ $$u(x_{g,e}) = u_{e,i}\, \hat{N}_i\big(\phi_e^{-1}(x_{g,e})\big) = \tfrac{1}{2}u
 
 since on the reference element $[0,1]$ with linear shape functions
 $\hat{N}_1(\xi)= 1-\xi$ and $\hat{N}_2(\xi)= \xi$
-(`LinearBar`), the single Gauss
+([`LinearBar`](../../src/neurom/shape_functions/linear_bar.py)), the single Gauss
 point is $\xi_g = \tfrac{1}{2}$, hence
 
 $$\begin{bmatrix} \hat{N}_1(\xi_g) \\ \hat{N}_2(\xi_g) \end{bmatrix} = \begin{bmatrix} \tfrac{1}{2} \\ \tfrac{1}{2} \end{bmatrix}.$$
@@ -87,7 +87,7 @@ $$\xi_g = \phi_e^{-1}(x_{g,e}) = \phi_e^{-1}\big(\phi_e(\xi_g)\big),$$
 
 where $\phi_e$ is the isoparametric geometric map of element $e$,
 $x = \phi_e(\xi) = a_x \hat{N}_1(\xi) + b_x \hat{N}_2(\xi)$ with $a_x, b_x$ its
-two node positions (`IsoparametricMapping1D`).
+two node positions ([`IsoparametricMapping1D`](../../src/neurom/geometry/iso_parametric_mapping_1d.py)).
 
 ## Young's modulus as a parameter — separated form
 
@@ -129,13 +129,13 @@ constant in $E$, the source is itself rank-1 separable,
 $$f(x, E) = f_0(x) \otimes 1(E),$$
 
 so the parametric factor "$1$" is carried implicitly by the term
-$G_m = \int_{I_E} \lambda_m \, J^E \, dE$. The load is built as a `Field` on the
+$G_m = \int_{I_E} \lambda_m \, J^E \, dE$. The load is built as a [`Field`](../../src/neurom/fields/field.py) on the
 space mesh and sampled at the **same** space quadrature points as $u$, so that
 `inner(f, u)` aligns point-by-point.
 
 ## Discretisation used
 
-Concretely the two `MonomSpec` objects fed to
+Concretely the two [`MonomSpec`](../../src/neurom/decompositions/factor.py) objects fed to
 the decomposition are:
 
 - **Space factor** — $x \in [0, 10]$ with $N_{\text{space}} = 30$ nodes, i.e. 29
@@ -158,11 +158,11 @@ The modes are built **one at a time** (greedy enrichment):
 3. repeat for as many modes as the script asks for (here 3).
 
 In the code this is
-{py:meth}`~neurom.decompositions.pgd.CPPGD.freeze_mode`,
-{py:meth}`~neurom.decompositions.pgd.CPPGD.add_mode` and
-{py:meth}`~neurom.neurom_model.NeuROMModel.add_mode_to_optimizer` (the
+[`freeze_mode`](../../src/neurom/decompositions/pgd.py),
+[`add_mode`](../../src/neurom/decompositions/pgd.py) and
+[`add_mode_to_optimizer`](../../src/neurom/neurom_model.py) (the
 optimizer wiring lives on the model, so
-`CPPGD` stays optimizer-agnostic). Even though the exact solution here is
+[`CPPGD`](../../src/neurom/decompositions/pgd.py) stays optimizer-agnostic). Even though the exact solution here is
 rank-1 (a single mode is enough), we deliberately add several modes to exercise
 the enrichment machinery; the extra modes come out small.
 
@@ -190,12 +190,12 @@ reconstruction is what panels 1–2 compare against the analytical solution.
 ## Implementation note
 
 The separated energy is assembled with the library helpers rather than a hand-
-written `einsum`: `inner` contracts the field and
+written `einsum`: [`inner`](../../src/neurom/math/inner.py) contracts the field and
 physical directions (e.g. $\nabla u_m \cdot \nabla u_n$) and
-`integrate` performs the quadrature sum, inside
+[`integrate`](../../src/neurom/math/integrate.py) performs the quadrature sum, inside
 a loop over the mode pairs $(m, n)$. Under
 the hood, the tensor assembly of the decomposition
-({py:meth}`~neurom.decompositions.pgd.CPPGD.assemble` /
-{py:meth}`~neurom.decompositions.pgd.CPPGD.evaluate`) *does* use `torch.einsum` to contract the
+([`assemble`](../../src/neurom/decompositions/pgd.py) /
+[`evaluate`](../../src/neurom/decompositions/pgd.py)) *does* use `torch.einsum` to contract the
 separated factors across axes — so the einsum is there, simply wrapped by the
 `inner` / `integrate` API used in the `energy()` function.

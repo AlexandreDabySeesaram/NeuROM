@@ -3,11 +3,16 @@
 Solves u(x, E) for a bi-clamped bar under a constant axial load, with the
 Young's modulus E treated as an extra (parametric) coordinate. The solution is
 sought in separated form u(x, E) = sum_m w_m^x(x) * w_m^E(E) and built greedily,
-one mode at a time. See the accompanying ``1d_beam_deflection_PGD.md`` for the
-maths. Run directly to train and produce the two figures:
+one mode at a time. See the accompanying ``README.md`` for the maths. Run
+directly to train and produce the two figures:
 
-    python 1d_beam_deflection_PGD.py
+    python main.py
+
+``python main.py --help`` lists the knobs (mesh sizes, iterations, learning
+rate); the defaults are the ones the write-up describes.
 """
+
+import argparse
 
 import torch
 
@@ -30,7 +35,7 @@ from neurom.field_layout import FieldLayout
 torch.set_default_dtype(torch.float32)
 
 
-def main(n_iter_training=150):
+def main(n_iter_training=150, n_space=30, n_e=20, lr=0.1, show=True):
     ## Factors
     # Shape function
     sf = LinearBar()
@@ -47,7 +52,7 @@ def main(n_iter_training=150):
     # Dimensions
     x_min = 0.0
     x_max = 10.0
-    N_space = 30
+    N_space = n_space
 
     # Generate vertices and connectivity
     x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
@@ -83,7 +88,7 @@ def main(n_iter_training=150):
     # Dimensions
     E_min = 10.0
     E_max = 100.0
-    N_E = 20
+    N_E = n_e
 
     # Generate vertices and connectivity
     E_array = torch.linspace(E_min, E_max, N_E).unsqueeze(-1)
@@ -158,7 +163,7 @@ def main(n_iter_training=150):
     # frozen monom gets no gradient, so Adam skips it). Filtering on
     # `requires_grad` here would conflate the two: a monom unfrozen later would
     # be in no group, get a gradient, and still never move.
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     def closure():
         optimizer.zero_grad()
@@ -197,7 +202,7 @@ def main(n_iter_training=150):
     print("Successfully trained!")
 
     ## Plotting
-    plot_convergence(loss_history)  # OK
+    plot_convergence(loss_history, show=show)  # OK
     plot_solution(  # investigate how to get the information monom per monom
         model,
         pgd_approx,
@@ -206,17 +211,19 @@ def main(n_iter_training=150):
         E_min=E_min,
         E_max=E_max,
         load_value=load_value,
+        show=show,
     )
 
 
 ## Plotting helpers
-def plot_convergence(loss_history, save_path="pgd_convergence.png"):
+def plot_convergence(loss_history, save_path="pgd_convergence.png", show=True):
     """Plot the (minimised) energy against the training iteration.
 
     Args:
         loss_history (list[float]): energy value returned by the optimizer at each
             iteration (the PGD functional we minimise).
         save_path (str): where to write the PNG.
+        show (bool): open a window once the PNG is written.
     """
     import matplotlib.pyplot as plt
 
@@ -228,7 +235,8 @@ def plot_convergence(loss_history, save_path="pgd_convergence.png"):
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
-    plt.show()
+    if show:
+        plt.show()
 
 
 def plot_solution(
@@ -241,6 +249,7 @@ def plot_solution(
     E_max,
     load_value,
     save_path="pgd_vs_analytical.png",
+    show=True,
 ):
     """Compare the PGD solution to the analytical beam deflection.
 
@@ -255,6 +264,7 @@ def plot_solution(
         x_min, x_max, E_min, E_max (float): axis bounds.
         load_value (float): constant load q used in the analytical formula.
         save_path (str): where to write the PNG.
+        show (bool): open a window once the PNG is written.
     """
     import matplotlib.pyplot as plt
 
@@ -382,7 +392,8 @@ def plot_solution(
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=120)
-    plt.show()
+    if show:
+        plt.show()
 
 
 ## Energy
@@ -462,5 +473,36 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     return elastic + load
 
 
+def parse_args():
+    """Read the command line. Every default reproduces the write-up's run."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--n-iter", type=int, default=150, help="training iterations per mode"
+    )
+    parser.add_argument(
+        "--n-space", type=int, default=30, help="nodes on the space mesh"
+    )
+    parser.add_argument(
+        "--n-e", type=int, default=20, help="nodes on the parametric (E) mesh"
+    )
+    parser.add_argument("--lr", type=float, default=0.1, help="Adam learning rate")
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="write the figures without opening a window",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main(150)
+    args = parse_args()
+    main(
+        n_iter_training=args.n_iter,
+        n_space=args.n_space,
+        n_e=args.n_e,
+        lr=args.lr,
+        show=not args.no_show,
+    )

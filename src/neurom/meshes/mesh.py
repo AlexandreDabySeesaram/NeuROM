@@ -3,6 +3,36 @@
 import torch.nn as nn
 
 
+def check_points_shape(x, dim, caller):
+    """Check that ``x`` is a stack of query points, ``(N_pts, dim)``.
+
+    A point-wise query has exactly one shape: one row per point, one column
+    per spatial coordinate. Anything else has to be rejected here rather than
+    left to fail downstream, because it usually does not fail at all -- it
+    broadcasts. A flat ``(N_pts,)`` tensor pairs up against the element axis
+    instead of the point axis, and when ``N_pts`` happens to equal ``N_e`` the
+    result comes back the wrong length with the wrong values and no error. The
+    same trap bit :meth:`PointWiseInterpolator.at_position`, where the shape
+    functions sliced the broadcast product back down to the *correct output
+    shape* while the numbers were wrong.
+
+    Args:
+        x (torch.Tensor): The query points to check.
+        dim (int): Spatial dimension the points must carry.
+        caller (str): Name of the public function, used in the message so the
+            error names the entry point the user actually called.
+
+    Raises:
+        ValueError: If ``x`` is not of shape ``(N_pts, dim)``.
+    """
+    if x.ndim != 2 or x.shape[-1] != dim:
+        raise ValueError(
+            f"{caller} expects x of shape (N_pts, dim) with dim={dim}, got "
+            f"{tuple(x.shape)}. Reshape a flat list of points with "
+            f"x.reshape(-1, {dim})."
+        )
+
+
 def is_in_triangle(pts, vertices):
     """Find if points are inside a triangle defined by its vertices.
 
@@ -58,22 +88,29 @@ def elements_at_1d(x, nodes_positions, connectivity):
     Raises:
         ValueError: If one or more query points do not lie in any element.
     """
-    # (N_nodes,) -> element intervals
+    # Drop the trailing coordinate axis. A 1-D point is stored as (N_pts, 1),
+    # but the point-by-element cross product below wants a plain (N_pts, N_e)
+    # matrix -- the shape elements_at_2d already works with. Keeping the axis
+    # makes `inside` (N_pts, N_e, 1) and forces a squeeze on the way out, an
+    # asymmetry between the two implementations with nothing to justify it.
+    x_flat = x[:, 0]  # (N_pts,)
     x_nodes = nodes_positions[connectivity]  # (N_e, 2, 1)
-    x_lo = x_nodes[:, 0]  # (N_e,)
-    x_hi = x_nodes[:, 1]  # (N_e,)
+    x_lo = x_nodes[:, 0, 0]  # (N_e,)
+    x_hi = x_nodes[:, 1, 0]  # (N_e,)
 
-    inside = (x[:, None] >= x_lo[None, :]) & (
-        x[:, None] <= x_hi[None, :]
+    inside = (x_flat[:, None] >= x_lo[None, :]) & (
+        x_flat[:, None] <= x_hi[None, :]
     )  # (N_pts, N_e)
 
-    elem_ids = inside.long().argmax(dim=1)
+    # A point sitting exactly on a shared node is inside both elements;
+    # argmax keeps the first one.
+    elem_ids = inside.long().argmax(dim=1)  # (N_pts,)
 
-    not_found = ~inside.any(dim=1)
+    not_found = ~inside.any(dim=1)  # (N_pts,)
     if not_found.any():
         raise ValueError(f"No element found for points: {x[not_found]}")
 
-    return elem_ids.squeeze(-1)
+    return elem_ids
 
 
 def elements_at_2d(x, nodes_positions, connectivity):
@@ -176,8 +213,12 @@ class Mesh(nn.Module):
             index of the element that contains each query point.
 
         Raises:
-            ValueError: If one or more query points do not lie in any element.
+            ValueError: If ``x`` is not of shape ``(N_pts, dim)``, or if one or
+                more query points do not lie in any element.
+            NotImplementedError: If the mesh dimension is neither 1 nor 2.
         """
+        check_points_shape(x, self.dim, "elements_at")
+
         nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
         connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
 
@@ -185,3 +226,12 @@ class Mesh(nn.Module):
             return elements_at_1d(x, nodes, connectivity)
         elif self.dim == 2:
             return elements_at_2d(x, nodes, connectivity)
+        else:
+            # Without this branch the method falls off the end and returns
+            # None, which does not raise where it is used: `tensor[None, :]`
+            # is valid indexing that inserts an axis. The failure would then
+            # surface several lines later as an unrelated shape error.
+            raise NotImplementedError(
+                f"Point location is only implemented for 1-D and 2-D meshes, "
+                f"got dim={self.dim}."
+            )

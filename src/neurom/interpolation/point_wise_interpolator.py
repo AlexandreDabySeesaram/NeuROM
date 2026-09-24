@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.fields.field_base import FieldBase
-from neurom.meshes.mesh import Mesh
+from neurom.meshes.mesh import Mesh, check_points_shape
 
 
 class PointWiseInterpolator(nn.Module):
@@ -60,17 +60,11 @@ class PointWiseInterpolator(nn.Module):
         Raises:
             ValueError: If ``x`` does not have shape ``(N_pts, dim)``.
         """
-        # Guard the rank explicitly: a tensor of the wrong rank does NOT fail
-        # downstream, it broadcasts inside `inverse_map_at` into a
-        # point-by-element cross product, which the shape function then slices
-        # back down to the *correct output shape* with wrong values. Silent
-        # numerical corruption; caught here instead.
-        if x.ndim != 2 or x.shape[-1] != self.mesh.dim:
-            raise ValueError(
-                f"at_position expects x of shape (N_pts, dim) with "
-                f"dim={self.mesh.dim}, got {tuple(x.shape)}. Reshape a flat "
-                f"list of points with x.reshape(-1, {self.mesh.dim})."
-            )
+        # Guard the rank explicitly -- see check_points_shape for why a wrong
+        # rank is not caught downstream. `elements_at` runs the same check,
+        # but at_position is a public entry point of its own and should not
+        # depend on staying its first caller.
+        check_points_shape(x, self.mesh.dim, "at_position")
 
         element_ids = self.mesh.elements_at(x)
         # Get connectivity for those elements

@@ -497,7 +497,6 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     load_field = field_layout[load_name]
 
     ## Elastic
-    elastic = 0.0
     # param part
     E_val = [E_mode_field.x.values for E_mode_field in E_modes]
     lmbdas = [E_mode_field.u.values for E_mode_field in E_modes]
@@ -529,6 +528,7 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # (measure/coords indexed by m are used for both). Once modes can live on
     # independent (e.g. r-adapted) meshes, these products need to be
     # integrated on a common intersection mesh with a recomputed measure.
+    elastic_terms = []
     for m in range(n_modes):
         for n in range(n_modes):
             # inner() contracts grad(u_m) . grad(u_n) over the field and d axes,
@@ -536,9 +536,8 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
             # `* J_u[m]` below aligns element-wise as intended (no reshape needed).
             Kx = integrate(inner(grad_u[m], grad_u[n]) * J_u[m])
             AE = integrate(E_val[m] * lmbdas[m] * lmbdas[n] * J_E[m])
-            elastic = elastic + Kx * AE
-    elastic = 0.5 * elastic
-    load = 0.0
+            elastic_terms.append(Kx * AE)
+    elastic = 0.5 * sum(elastic_terms)
     # load_interp.u is the load field sampled at the space quadrature points, so
     # it has the same (N_e, N_q, *u_shape) shape as u[m]: inner() contracts them
     # into (N_e, N_q, 1) and the * J_u[m] measure aligns element-wise -- unlike
@@ -546,10 +545,12 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # against quadrature-point values (silently with N_q=1, crashing with N_q>1).
     # Gm = ∫ lmbda dE carries the constant-in-E factor of the separated load.
     load_f = load_field.u.values
+    load_terms = []
     for m in range(n_modes):
         Fx = integrate(inner(load_f, u[m]) * J_u[m])
         Gm = integrate(lmbdas[m] * J_E[m])
-        load = load + Fx * Gm
+        load_terms.append(Fx * Gm)
+    load = sum(load_terms)
 
     return elastic + load
 

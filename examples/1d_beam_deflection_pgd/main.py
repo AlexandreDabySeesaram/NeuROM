@@ -399,22 +399,20 @@ def plot_solution(
 ## Energy
 
 
-def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
+def elastic_energy(field_layout: FieldLayout, decomposition: any):
+    """Elastic half of the PGD energy.
+
+    1/2 sum_{m,n} [int_Omega grad(u_m).grad(u_n) J^u dx]
+                  * [int_I E lmbda_m lmbda_n J^E dE]
+    """
     # Look up the field names, e.g.
     # {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
     directory = decomposition.directory()
-    n_modes = len(directory["space"])
-
     # Fetch them from the field_layout
-    space_modes_names = directory["space"]
-    E_modes_names = directory["E"]
-    space_modes = [field_layout[name] for name in space_modes_names]
-    E_modes = [field_layout[name] for name in E_modes_names]
+    space_modes = [field_layout[name] for name in directory["space"]]
+    E_modes = [field_layout[name] for name in directory["E"]]
+    n_modes = len(space_modes)
 
-    # ... and the load
-    load_field = field_layout[load_name]
-
-    ## Elastic
     # param part
     E_val = [E_mode_field.x.values for E_mode_field in E_modes]
     lmbdas = [E_mode_field.u.values for E_mode_field in E_modes]
@@ -423,6 +421,8 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # space part
     u = [space_mode_field.u.values for space_mode_field in space_modes]
     x_val = [space_mode_field.x.values for space_mode_field in space_modes]
+    J_u = [space_mode_field.measure.values for space_mode_field in space_modes]
+
     # jacobian returns (N_e, N_q, *u_shape, d): one extra trailing axis of
     # size d (the physical dimension) compared to u's own shape (N_e, N_q,
     # *u_shape). That axis must be *contracted away* -- the elastic term is the
@@ -440,7 +440,6 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
     # match size of tensor b (N_e)"; and in 2D/3D (d>1) reshape can't collapse the
     # axis at all. Using inner() instead is correct AND dimension-agnostic.
     grad_u = [jacobian(x_val[n], u[n]) for n in range(n_modes)]
-    J_u = [space_mode_field.measure.values for space_mode_field in space_modes]
 
     # NB: cross terms (m, n) below assume modes m and n share the same mesh
     # (measure/coords indexed by m are used for both). Once modes can live on
@@ -455,22 +454,52 @@ def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
             Kx = integrate(inner(grad_u[m], grad_u[n]) * J_u[m])
             AE = integrate(E_val[m] * lmbdas[m] * lmbdas[n] * J_E[m])
             elastic_terms.append(Kx * AE)
-    elastic = 0.5 * sum(elastic_terms)
-    # load_interp.u is the load field sampled at the space quadrature points, so
-    # it has the same (N_e, N_q, *u_shape) shape as u[m]: inner() contracts them
-    # into (N_e, N_q, 1) and the * J_u[m] measure aligns element-wise -- unlike
-    # the old raw nodal `external_load_values` (N_space, 1), which broadcast wrong
+    return 0.5 * sum(elastic_terms)
+
+
+def load_energy(field_layout: FieldLayout, decomposition: any, load_name: str):
+    """Load half of the PGD energy.
+
+    sum_m [int_Omega f.u_m J^u dx] * [int_I lmbda_m J^E dE]
+    """
+    # Look up the field names, e.g.
+    # {'space': ['pgd_dimspace_mode0'], 'E': ['pgd_dimE_mode0']}
+    directory = decomposition.directory()
+    # Fetch them from the field_layout
+    space_modes = [field_layout[name] for name in directory["space"]]
+    E_modes = [field_layout[name] for name in directory["E"]]
+    n_modes = len(space_modes)
+
+    # param part
+    lmbdas = [E_mode_field.u.values for E_mode_field in E_modes]
+    J_E = [E_mode_field.measure.values for E_mode_field in E_modes]
+
+    # space part
+    u = [space_mode_field.u.values for space_mode_field in space_modes]
+    J_u = [space_mode_field.measure.values for space_mode_field in space_modes]
+
+    # ... and the load
+    # load_field.u is the load sampled at the space quadrature points, so it has
+    # the same (N_e, N_q, *u_shape) shape as u[m]: inner() contracts them into
+    # (N_e, N_q, 1) and the * J_u[m] measure aligns element-wise -- unlike the
+    # old raw nodal `external_load_values` (N_space, 1), which broadcast wrong
     # against quadrature-point values (silently with N_q=1, crashing with N_q>1).
-    # Gm = ∫ lmbda dE carries the constant-in-E factor of the separated load.
-    load_f = load_field.u.values
+    # Gm = int lmbda dE carries the constant-in-E factor of the separated load.
+    load_f = field_layout[load_name].u.values
+
     load_terms = []
     for m in range(n_modes):
         Fx = integrate(inner(load_f, u[m]) * J_u[m])
         Gm = integrate(lmbdas[m] * J_E[m])
         load_terms.append(Fx * Gm)
-    load = sum(load_terms)
+    return sum(load_terms)
 
-    return elastic + load
+
+def energy(field_layout: FieldLayout, decomposition: any, load_name: str):
+    """Total PGD energy: the elastic term plus the load term."""
+    return elastic_energy(field_layout, decomposition) + load_energy(
+        field_layout, decomposition, load_name
+    )
 
 
 def parse_args():

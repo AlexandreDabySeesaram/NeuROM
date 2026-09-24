@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from neurom.meshes.mesh import Mesh
+from neurom.meshes.mesh import Mesh, is_in_triangle
 from neurom.meshes.connectivity import Connectivity
 from neurom.fields.field import Field
 from neurom.fields.trainable_field import TrainableField
@@ -138,10 +138,12 @@ def _mesh_1d(n_nodes=5, x_min=0.0, x_max=4.0):
     return Mesh(connectivity, positions)
 
 
-def _mesh_2d():
+def _mesh_2d(reverse_winding=False):
     """The unit square split into two triangles: [0, 1, 2] and [0, 2, 3]."""
     nodes = torch.arange(0, 4)
     elements = torch.tensor([[0, 1, 2], [0, 2, 3]])
+    if reverse_winding:
+        elements = elements.flip(-1)
     connectivity = Connectivity(nodes, elements)
     positions = Field(
         name="x",
@@ -245,3 +247,24 @@ class TestElementsAt:
 
         with pytest.raises(NotImplementedError, match="dim=3"):
             mesh.elements_at(torch.tensor([[0.1, 0.1, 0.1]]))
+
+    def test_is_in_triangle_accepts_both_windings(self):
+        """The same triangle, listed the other way round, is the same triangle."""
+        a, b, c = [0.0, 0.0], [1.0, 0.0], [0.0, 1.0]
+        one_way = torch.tensor([[a, b, c]])
+        other_way = torch.tensor([[a, c, b]])
+        inside = torch.tensor([[0.2, 0.2]])
+        outside = torch.tensor([[0.9, 0.9]])
+
+        assert is_in_triangle(inside, one_way).item()
+        assert is_in_triangle(inside, other_way).item()
+        # ... and reversing the winding must not turn the test into a tautology
+        assert not is_in_triangle(outside, one_way).item()
+        assert not is_in_triangle(outside, other_way).item()
+
+    def test_elements_at_2d_is_winding_agnostic(self):
+        """A mesh wound the other way used to fail every single lookup."""
+        x = torch.tensor([[0.8, 0.2], [0.2, 0.8]])
+
+        assert _mesh_2d().elements_at(x).tolist() == [0, 1]
+        assert _mesh_2d(reverse_winding=True).elements_at(x).tolist() == [0, 1]

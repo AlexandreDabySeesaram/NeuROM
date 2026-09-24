@@ -42,6 +42,10 @@ def is_in_triangle(pts, vertices):
             where the second dimension indexes the three vertices ``a``,
             ``b``, ``c`` and the last dimension holds the 2-D coordinates.
 
+    The test accepts either vertex winding: a point is inside when the three
+    cross products share a sign, whichever it is. Points on an edge give a
+    zero cross product and count as inside.
+
     Returns:
         torch.Tensor: Boolean tensor of shape ``(N_pts, N_e)`` indicating
         whether each point lies inside each triangle.
@@ -68,7 +72,15 @@ def is_in_triangle(pts, vertices):
     d1 = cross2d(pts - b, c - b)
     d2 = cross2d(pts - c, a - c)
 
-    return (d0 <= 0) & (d1 <= 0) & (d2 <= 0)  # (N_pts, N_e)
+    # Sign, not orientation: the three cross products are all negative for a
+    # triangle listed one way round and all positive for the other, so testing
+    # a single sign silently rejects every point of a mesh wound the other way
+    # -- and the caller then blames the point ("No element found"). Nothing in
+    # the API asks for a particular winding, so accept both.
+    same_sign = ((d0 <= 0) & (d1 <= 0) & (d2 <= 0)) | (
+        (d0 >= 0) & (d1 >= 0) & (d2 >= 0)
+    )
+    return same_sign  # (N_pts, N_e)
 
 
 def elements_at_1d(x, nodes_positions, connectivity):

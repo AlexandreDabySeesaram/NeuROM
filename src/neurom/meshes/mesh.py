@@ -3,36 +3,6 @@
 import torch.nn as nn
 
 
-def check_points_shape(x, dim, caller):
-    """Check that ``x`` is a stack of query points, ``(N_pts, dim)``.
-
-    A point-wise query has exactly one shape: one row per point, one column
-    per spatial coordinate. Anything else has to be rejected here rather than
-    left to fail downstream, because it usually does not fail at all -- it
-    broadcasts. A flat ``(N_pts,)`` tensor pairs up against the element axis
-    instead of the point axis, and when ``N_pts`` happens to equal ``N_e`` the
-    result comes back the wrong length with the wrong values and no error. The
-    same trap bit :meth:`PointWiseInterpolator.at_position`, where the shape
-    functions sliced the broadcast product back down to the *correct output
-    shape* while the numbers were wrong.
-
-    Args:
-        x (torch.Tensor): The query points to check.
-        dim (int): Spatial dimension the points must carry.
-        caller (str): Name of the public function, used in the message so the
-            error names the entry point the user actually called.
-
-    Raises:
-        ValueError: If ``x`` is not of shape ``(N_pts, dim)``.
-    """
-    if x.ndim != 2 or x.shape[-1] != dim:
-        raise ValueError(
-            f"{caller} expects x of shape (N_pts, dim) with dim={dim}, got "
-            f"{tuple(x.shape)}. Reshape a flat list of points with "
-            f"x.reshape(-1, {dim})."
-        )
-
-
 def is_in_triangle(pts, vertices):
     """Find if points are inside a triangle defined by its vertices.
 
@@ -229,7 +199,22 @@ class Mesh(nn.Module):
                 more query points do not lie in any element.
             NotImplementedError: If the mesh dimension is neither 1 nor 2.
         """
-        check_points_shape(x, self.dim, "elements_at")
+        # A point-wise query has exactly one shape: one row per point, one
+        # column per spatial coordinate. Anything else has to be rejected here
+        # rather than left to fail downstream, because it usually does not fail
+        # at all -- it broadcasts. A flat (N_pts,) tensor pairs up against the
+        # element axis instead of the point axis, and when N_pts happens to
+        # equal N_e the result comes back the wrong length with the wrong
+        # values and no error: four points on a four-element mesh return a
+        # single index. The same trap bit PointWiseInterpolator.at_position,
+        # where the shape functions sliced the broadcast product back down to
+        # the *correct output shape* while the numbers were wrong.
+        if x.ndim != 2 or x.shape[-1] != self.dim:
+            raise ValueError(
+                f"elements_at expects x of shape (N_pts, dim) with "
+                f"dim={self.dim}, got {tuple(x.shape)}. Reshape a flat "
+                f"list of points with x.reshape(-1, {self.dim})."
+            )
 
         nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
         connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)

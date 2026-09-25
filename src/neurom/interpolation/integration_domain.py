@@ -93,6 +93,12 @@ class IntegrationDomain(nn.Module):
         ``QuadratureAssemblyResult`` in ``field_layout`` under the assembly's
         associated field.
 
+        Before interpolating, every unique context whose cached positions
+        graph was consumed by a previous ``backward()`` is updated (see
+        ``QuadratureContext.graph_consumed``).  This only happens when the loss
+        depends on the back-mapped reference coordinates; otherwise the cache
+        is reused.  Trainable mesh nodes still require :meth:`update_contexts`.
+
         Args:
             field_layout (FieldLayout): The layout in which to record each
                 interpolation result via ``field_layout.update()``.
@@ -101,6 +107,14 @@ class IntegrationDomain(nn.Module):
                 separated representation, ``decomposition.assemblies()``, whose
                 length grows with every mode added.
         """
+        all_assemblies = self._all(assemblies)
+
+        # Rebuild the cached positions graph of the contexts a backward() consumed
+        contexts = {id(a.context): a.context for a in all_assemblies}.values()
+        for ctx in contexts:
+            if ctx.graph_consumed:
+                ctx.update()
+
         # Interpolate all required fields and update() their values in FieldLayout
-        for assembly in self._all(assemblies):
+        for assembly in all_assemblies:
             field_layout.update(assembly.field, assembly.interpolate())

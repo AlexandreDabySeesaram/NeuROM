@@ -14,7 +14,7 @@ the README's own title down one level so it nests under this page,
 `relative-docs` rewrites its relative links so they still resolve from here,
 and `relative-images` does the same for its figures.
 
-```{include} ../../examples/1d_beam_deflection_pgd/README.md
+```{include} ../../examples/1d_bar_deflection_pgd/README.md
 :heading-offset: 1
 :relative-docs: ../
 :relative-images:

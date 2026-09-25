@@ -15,7 +15,7 @@ position $x$ **and** the Young's modulus $E$, treated as an extra coordinate.
 <!-- The detour through the parent directory is deliberate: the Sphinx
      include in docs/src/examples.md only rewrites links that start with
      `../`, so a plain `main.py` here breaks the documentation build. -->
-The companion script is [`main.py`](../1d_beam_deflection_pgd/main.py).
+The companion script is [`main.py`](../1d_bar_deflection_pgd/main.py).
 
 <!-- API references below are written as Sphinx roles ({py:class}, {py:meth},
      {py:func}). They resolve to the API pages once this file is included in

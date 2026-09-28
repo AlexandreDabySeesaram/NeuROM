@@ -45,7 +45,7 @@ class PointWiseInterpolator(nn.Module):
         For each point in ``x`` the method:
 
         1. Finds the containing element using ``self.mesh.elements_at``.
-        2. Retrieves the element node indices from the mesh connectivity.
+        2. Gathers the field values of those elements.
         3. Computes reference coordinates via ``self._mapping.inverse_map_at``.
         4. Evaluates shape functions and contracts with the nodal field values.
 
@@ -74,8 +74,8 @@ class PointWiseInterpolator(nn.Module):
             )
 
         element_ids = self.mesh.elements_at(x)
-        # Get connectivity for those elements
-        element_nodes_ids = self.mesh.connectivity.element_connectivity[element_ids, :]
+        # Field values of those elements, through the field's own connectivity
+        u_elem = self.field.at_elements()[element_ids]
 
         # `inverse_map_at` and the shape functions work on the quadrature
         # layout (N_e, N_q, dim); a point-wise query is that layout with a
@@ -83,9 +83,7 @@ class PointWiseInterpolator(nn.Module):
         # (N_pts, 1, dim)
         xi = self._mapping.inverse_map_at(x.unsqueeze(1), element_ids)
         N = self.sf.N(xi)
-        u = torch.einsum(
-            "en...,eqn...->eq...", self.field.full_values()[element_nodes_ids], N
-        )
+        u = torch.einsum("en...,eqn...->eq...", u_elem, N)
 
         # (N_pts, 1, field_dim) -> (N_pts, field_dim)
         return u.squeeze(1)

@@ -64,3 +64,32 @@ def test_at_position_rejects_wrong_rank(interpolator, bad_shape):
 
     with pytest.raises(ValueError, match="expects x of shape"):
         interpolator.at_position(x)
+
+
+def test_at_position_uses_the_field_connectivity():
+    """Field values are gathered through the field's connectivity, not the mesh's.
+
+    The field numbers its nodes in reverse order of the mesh, so reading its
+    values through the mesh connectivity would return the mirrored field.
+    """
+    n = 5
+    coords = torch.linspace(0.0, 10.0, n).unsqueeze(-1)
+    elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
+    connectivity = Connectivity(torch.arange(0, n), elements)
+    positions = Field(name="x", connectivity=connectivity, values=coords)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=positions)
+
+    # Field node k sits at mesh node n - 1 - k
+    field_connectivity = Connectivity(torch.arange(0, n), n - 1 - elements)
+    field = Field(name="u", connectivity=field_connectivity, values=coords.flip(0) ** 2)
+
+    sf = LinearBar()
+    interpolator = PointWiseInterpolator(
+        mesh, sf, field, IsoparametricMapping1D(sf, mesh)
+    )
+
+    out = interpolator.at_position(torch.tensor([[1.0], [7.5]]))
+
+    # Same oracle as above: linear interpolation of u = x**2
+    expected = torch.tensor([2.5, 56.25])
+    assert out.reshape(-1).detach().numpy() == pytest.approx(expected.numpy(), rel=1e-5)

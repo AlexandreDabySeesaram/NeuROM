@@ -1,6 +1,6 @@
 """2D plate-with-hole simulation with r-adaptivity (moving mesh).
 
-This example mirrors ``scripts/2d/main.py`` (a linear-elastic plate-with-hole
+This example mirrors ``examples/2d/main.py`` (a linear-elastic plate-with-hole
 under a prescribed top displacement), but additionally makes the **mesh node
 positions trainable**. Minimising the elastic potential energy with respect to
 the interior node positions performs *r-adaptivity*: the mesh relocates its
@@ -22,10 +22,10 @@ Training proceeds in two stages: first the displacement and the mesh are
 optimised jointly (r-adaptivity), then the mesh is frozen and the displacement
 is refined on the adapted mesh.
 
-The mesh file is produced by ``scripts/2d/generate_mesh.py``; run it first, e.g.::
+The mesh file is produced by ``examples/2d/generate_mesh.py``; run it first, e.g.::
 
-    uv run python scripts/2d/generate_mesh.py -o scripts/2d_r_adaptivity/
-    uv run python scripts/2d_r_adaptivity/main.py -i scripts/2d_r_adaptivity/plate_with_hole.xdmf
+    uv run python examples/2d/generate_mesh.py -o examples/2d_r_adaptivity/
+    uv run python examples/2d_r_adaptivity/main.py -i examples/2d_r_adaptivity/plate_with_hole.xdmf
 """
 
 import argparse
@@ -184,7 +184,7 @@ def main():
         "--input-mesh",
         type=Path,
         default="./plate_with_hole.xdmf",
-        help="Mesh in xdmf format (see scripts/2d/generate_mesh.py).",
+        help="Mesh in xdmf format (see examples/2d/generate_mesh.py).",
     )
     parser.add_argument(
         "-o",

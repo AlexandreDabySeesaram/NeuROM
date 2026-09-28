@@ -47,6 +47,16 @@ NeuROM uses [`uv`](https://docs.astral.sh/uv/) as a package and project manager.
 uv pip install -e .
 ```
 
+## Documentation
+
+The documentation is built with [Sphinx](https://www.sphinx-doc.org/) from
+`docs/src/`:
+```bash
+uv run sphinx-build docs/src/ -b html ../build_docs/
+```
+Then open `../build_docs/index.html`. `make -C docs html` does the same thing
+and writes to `docs/build/` instead, inside the repository.
+
 ## Licensing
 
   Copyright (C) 2024, UMR 7649, École Polytechnique, IPP, CNRS, MΞDISIM Team, INRIA

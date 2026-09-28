@@ -12,6 +12,10 @@ def is_in_triangle(pts, vertices):
             where the second dimension indexes the three vertices ``a``,
             ``b``, ``c`` and the last dimension holds the 2-D coordinates.
 
+    The test accepts either vertex winding: a point is inside when the three
+    cross products share a sign, whichever it is. Points on an edge give a
+    zero cross product and count as inside.
+
     Returns:
         torch.Tensor: Boolean tensor of shape ``(N_pts, N_e)`` indicating
         whether each point lies inside each triangle.
@@ -38,7 +42,15 @@ def is_in_triangle(pts, vertices):
     d1 = cross2d(pts - b, c - b)
     d2 = cross2d(pts - c, a - c)
 
-    return (d0 <= 0) & (d1 <= 0) & (d2 <= 0)  # (N_pts, N_e)
+    # Sign, not orientation: the three cross products are all negative for a
+    # triangle listed one way round and all positive for the other, so testing
+    # a single sign silently rejects every point of a mesh wound the other way
+    # -- and the caller then blames the point ("No element found"). Nothing in
+    # the API asks for a particular winding, so accept both.
+    same_sign = ((d0 <= 0) & (d1 <= 0) & (d2 <= 0)) | (
+        (d0 >= 0) & (d1 >= 0) & (d2 >= 0)
+    )
+    return same_sign  # (N_pts, N_e)
 
 
 def elements_at_1d(x, nodes_positions, connectivity):
@@ -58,22 +70,29 @@ def elements_at_1d(x, nodes_positions, connectivity):
     Raises:
         ValueError: If one or more query points do not lie in any element.
     """
-    # (N_nodes,) -> element intervals
+    # Drop the trailing coordinate axis. A 1-D point is stored as (N_pts, 1),
+    # but the point-by-element cross product below wants a plain (N_pts, N_e)
+    # matrix -- the shape elements_at_2d already works with. Keeping the axis
+    # makes `inside` (N_pts, N_e, 1) and forces a squeeze on the way out, an
+    # asymmetry between the two implementations with nothing to justify it.
+    x_flat = x[:, 0]  # (N_pts,)
     x_nodes = nodes_positions[connectivity]  # (N_e, 2, 1)
-    x_lo = x_nodes[:, 0]  # (N_e,)
-    x_hi = x_nodes[:, 1]  # (N_e,)
+    x_lo = x_nodes[:, 0, 0]  # (N_e,)
+    x_hi = x_nodes[:, 1, 0]  # (N_e,)
 
-    inside = (x[:, None] >= x_lo[None, :]) & (
-        x[:, None] <= x_hi[None, :]
+    inside = (x_flat[:, None] >= x_lo[None, :]) & (
+        x_flat[:, None] <= x_hi[None, :]
     )  # (N_pts, N_e)
 
-    elem_ids = inside.long().argmax(dim=1)
+    # A point sitting exactly on a shared node is inside both elements;
+    # argmax keeps the first one.
+    elem_ids = inside.long().argmax(dim=1)  # (N_pts,)
 
-    not_found = ~inside.any(dim=1)
+    not_found = ~inside.any(dim=1)  # (N_pts,)
     if not_found.any():
         raise ValueError(f"No element found for points: {x[not_found]}")
 
-    return elem_ids.squeeze(-1)
+    return elem_ids
 
 
 def elements_at_2d(x, nodes_positions, connectivity):
@@ -169,20 +188,47 @@ class Mesh(nn.Module):
         depending on ``self.dim``.
 
         Args:
-            x (torch.Tensor): The query points, shape ``(N_pts, dim)`` or
-                broadcastable to it.
+            x (torch.Tensor): The query points, shape ``(N_pts, dim)``.
 
         Returns:
             torch.Tensor: Element indices of shape ``(N_pts,)`` giving the
             index of the element that contains each query point.
 
         Raises:
-            ValueError: If one or more query points do not lie in any element.
+            ValueError: If ``x`` is not of shape ``(N_pts, dim)``, or if one or
+                more query points do not lie in any element.
+            NotImplementedError: If the mesh dimension is neither 1 nor 2.
         """
+        # A point-wise query has exactly one shape: one row per point, one
+        # column per spatial coordinate. Anything else has to be rejected here
+        # rather than left to fail downstream, because it usually does not fail
+        # at all -- it broadcasts. A flat (N_pts,) tensor pairs up against the
+        # element axis instead of the point axis, and when N_pts happens to
+        # equal N_e the result comes back the wrong length with the wrong
+        # values and no error: four points on a four-element mesh return a
+        # single index. The same trap bit PointWiseInterpolator.at_position,
+        # where the shape functions sliced the broadcast product back down to
+        # the *correct output shape* while the numbers were wrong.
+        if x.ndim != 2 or x.shape[-1] != self.dim:
+            raise ValueError(
+                f"elements_at expects x of shape (N_pts, dim) with "
+                f"dim={self.dim}, got {tuple(x.shape)}. Reshape a flat "
+                f"list of points with x.reshape(-1, {self.dim})."
+            )
+
         nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
         connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
 
         if self.dim == 1:
-            return elements_at_1d(x.squeeze().unsqueeze(-1), nodes, connectivity)
+            return elements_at_1d(x, nodes, connectivity)
         elif self.dim == 2:
-            return elements_at_2d(x.squeeze(), nodes, connectivity)
+            return elements_at_2d(x, nodes, connectivity)
+        else:
+            # Without this branch the method falls off the end and returns
+            # None, which does not raise where it is used: `tensor[None, :]`
+            # is valid indexing that inserts an axis. The failure would then
+            # surface several lines later as an unrelated shape error.
+            raise NotImplementedError(
+                f"Point location is only implemented for 1-D and 2-D meshes, "
+                f"got dim={self.dim}."
+            )

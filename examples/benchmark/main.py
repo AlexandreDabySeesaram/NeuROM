@@ -11,8 +11,8 @@ The problem is self-contained (no external mesh file is required) and scales
 with ``--nodes``, mirroring ``tests/integration/test_1d_beam_deflection.py``.
 
 Example:
-    uv run python scripts/benchmark/benchmark.py --repeats 20 --nodes 200 --epochs 3
-    uv run python scripts/benchmark/benchmark.py --quadrature two-points --json out.json
+    uv run python examples/benchmark/benchmark.py --repeats 20 --nodes 200 --epochs 3
+    uv run python examples/benchmark/benchmark.py --quadrature two-points --json out.json
 """
 
 import argparse

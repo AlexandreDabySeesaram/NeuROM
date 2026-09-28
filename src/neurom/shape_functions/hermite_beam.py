@@ -18,7 +18,11 @@ class HermiteBeam(ShapeFunction):
         H_3(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(2-\\xi), \\quad
         H_4(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(\\xi - 1).
 
+    The element DOFs are ``(w, dw/dxi)`` at ``xi = -1`` then at ``xi = 1``.
     """
+
+    dof_kinds = ("value", "d1", "value", "d1")
+    dof_nodes_xi = (-1.0, -1.0, 1.0, 1.0)
 
     def __init__(self):
         """Initialise using the standard ``Bar`` reference element."""

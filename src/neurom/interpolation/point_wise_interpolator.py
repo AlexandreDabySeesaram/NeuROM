@@ -6,6 +6,7 @@ import torch.nn as nn
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.fields.field_base import FieldBase
 from neurom.meshes.mesh import Mesh
+from neurom.dof_transformations import default_dof_transformation
 
 
 class PointWiseInterpolator(nn.Module):
@@ -30,6 +31,9 @@ class PointWiseInterpolator(nn.Module):
         field (FieldBase): The field whose nodal values are interpolated.
         _mapping: The geometric mapping providing the inverse map from
             physical to reference coordinates.
+        _dof_transformation (DofTransformation): Maps the physical element
+            DOFs of ``field`` to the reference DOFs expected by ``sf``, built
+            from ``sf`` and ``mapping``.
     """
 
     def __init__(self, mesh: Mesh, sf: ShapeFunction, field: FieldBase, mapping):
@@ -38,6 +42,7 @@ class PointWiseInterpolator(nn.Module):
         self.sf = sf
         self.field = field
         self._mapping = mapping
+        self._dof_transformation = default_dof_transformation(sf, mapping)
 
     def at_position(self, x: torch.Tensor):
         """Interpolate the field at the given physical positions.
@@ -45,7 +50,8 @@ class PointWiseInterpolator(nn.Module):
         For each point in ``x`` the method:
 
         1. Finds the containing element using ``self.mesh.elements_at``.
-        2. Gathers the field values of those elements.
+        2. Gathers the field DOFs of those elements and maps them to
+           reference DOFs.
         3. Computes reference coordinates via ``self._mapping.inverse_map_at``.
         4. Evaluates shape functions and contracts with the nodal field values.
 
@@ -76,6 +82,8 @@ class PointWiseInterpolator(nn.Module):
         element_ids = self.mesh.elements_at(x)
         # Field values of those elements, through the field's own connectivity
         u_elem = self.field.at_elements()[element_ids]
+        # Physical element DOFs to reference element DOFs
+        u_elem = self._dof_transformation.to_reference(u_elem, element_ids)
 
         # `inverse_map_at` and the shape functions work on the quadrature
         # layout (N_e, N_q, dim); a point-wise query is that layout with a

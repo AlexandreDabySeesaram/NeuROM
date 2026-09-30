@@ -22,7 +22,7 @@ from neurom.physics.tensors import (
 )
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
-from neurom.math import jacobian, second_derivative
+from neurom.math import jacobian, hessian
 
 
 # Physical constants (steel, 1 cm x 1 cm square section)
@@ -119,7 +119,7 @@ def main():
     #########################################################
 
     # Bending
-    bending_energy = SolidElasticEnergy(u, strain=second_derivative, stress_point=lambda kappa: kappa)
+    bending_energy = SolidElasticEnergy(u, strain=hessian, stress_point=lambda kappa: kappa)
 
     # Axial load (non-dimensional P, first clamped-clamped critical load is 4*pi^2)
     P = 1.5 * 4 * torch.pi**2

@@ -44,6 +44,7 @@ docs = [
 #uv sync --group dev --group docs
 [dependency-groups]
 dev = [
+   "ipykernel>=7.4.0",
    "pytest>=9.0.2",
    "pytest-cov>=7.1.0",
    "ruff>=0.14.10",

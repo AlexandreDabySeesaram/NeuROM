@@ -56,3 +56,12 @@ def test_repeated_backward(sf, d, strain, consumed):
         model().backward()
         assert ctx.graph_consumed is consumed
 
+
+
+def test_direct_assembly_interpolate():
+    """A consumed graph is rebuilt when interpolating an assembly outside IntegrationDomain."""
+    model, ctx = build(LinearBar(), 1, values)
+    assembly = model.integration_domain.assemblies[0]
+    for _ in range(3):
+        assembly.interpolate().u.values.sum().backward()
+        assert ctx.graph_consumed

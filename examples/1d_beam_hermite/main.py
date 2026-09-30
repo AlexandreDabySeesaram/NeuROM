@@ -3,7 +3,7 @@ import torch
 
 
 # Import library modules
-from neurom.quadratures import TwoPoints1D
+from neurom.quadratures import TwoPoints1D, ThreePoints1D
 from neurom.shape_functions import HermiteBeam, LinearBar
 from neurom.meshes import Connectivity
 from neurom.geometry import IsoparametricMapping1D
@@ -84,14 +84,17 @@ def nodal_dofs(w_init, x):
 #########################################################
 
 
-def build_problem(n_elements, P, w_init):
+def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadrature=None):
     """Assemble the clamped-clamped von Karman beam on [0, 1].
 
     Args:
         n_elements (int): number of Hermite elements.
         P (float): non-dimensional axial load.
-        w_init (callable): x -> w, initial deflection; the slope DOFs w'
-            are obtained by autograd (see `nodal_dofs`).
+        w_init (callable, optional): x -> w, initial deflection; the slope DOFs
+            w' are obtained by autograd (see `nodal_dofs`). None means w = 0.
+        noise (float): amplitude of a Gaussian noise added to all DOFs (w, w').
+        seed (int, optional): `torch.manual_seed` used for the noise.
+        quadrature (QuadratureRule, optional): defaults to TwoPoints1D().
 
     Returns:
         dict: model, field_layout, domain, the displacement field `u`, its
@@ -124,8 +127,13 @@ def build_problem(n_elements, P, w_init):
     ## Field
     # 2 DOFs per node (w and its physical slope w')
     x_n = x_array.squeeze(-1)
-    u_init = torch.empty(2 * N, 1)
-    u_init[0::2, 0], u_init[1::2, 0] = nodal_dofs(w_init, x_n)
+    u_init = torch.zeros(2 * N, 1)
+    if w_init is not None:
+        u_init[0::2, 0], u_init[1::2, 0] = nodal_dofs(w_init, x_n)
+    if noise:
+        if seed is not None:
+            torch.manual_seed(seed)
+        u_init += noise * torch.randn(2 * N, 1)
 
     nodes = torch.arange(0, 2 * N)
     elements = torch.vstack([
@@ -153,8 +161,8 @@ def build_problem(n_elements, P, w_init):
 
     sf_field = HermiteBeam()
 
-    # Quadrature strategy: two Gauss points per element.
-    quad = TwoPoints1D()
+    # Quadrature strategy (default: two Gauss points per element).
+    quad = TwoPoints1D() if quadrature is None else quadrature
 
     # Define interpolation at quadrature
     ctx = QuadratureContext(mesh, quad, mapping_geom)
@@ -202,17 +210,24 @@ def build_problem(n_elements, P, w_init):
 #########################################################
 
 
-def minimize(model, *, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol, verbose=True):
+def minimize(
+    model, *, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol, verbose=True, callback=None,
+):
     """Minimize the model energy with Adam, then LBFGS (strong Wolfe).
 
     Each phase stops after its number of iterations or when the relative change
     of the loss |L_k - L_{k-1}| / |L_k| falls below `tol`. A phase with 0
     iterations is skipped. One LBFGS iteration is one `optimizer.step`.
 
+    Args:
+        callback (callable, optional): called as callback(phase, i, loss)
+            after each step.
+
     Returns:
-        dict: "loss" (list of floats) and "phase" (list of "adam" / "lbfgs").
+        dict: "loss" (list of floats), "phase" (list of "adam" / "lbfgs") and
+        "converged" (bool, the last phase run stopped on `tol`).
     """
-    history = {"loss": [], "phase": []}
+    history = {"loss": [], "phase": [], "converged": False}
 
     phases = [
         ("adam", adam_iters, lambda: torch.optim.Adam(model.parameters(), lr=adam_lr)),
@@ -233,13 +248,17 @@ def minimize(model, *, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol, verbose=
             return loss
 
         previous = None
+        history["converged"] = False
         for i in range(n_iters):
             loss = optimizer.step(closure).item()
             history["loss"].append(loss)
             history["phase"].append(name)
             if verbose:
                 print(f"{name} i = {i} loss={loss:.6e}")
+            if callback is not None:
+                callback(name, i, loss)
             if previous is not None and abs(loss - previous) <= tol * max(abs(loss), 1e-30):
+                history["converged"] = True
                 break
             previous = loss
 
@@ -304,7 +323,7 @@ def rescale(x, w, u_axial, P, *, E, A, I, length):
 
 def main(
     *, n_elements, P, w_init, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol,
-    E, A, I, length,
+    E, A, I, length, quadrature=None,
 ):
     """Build, minimize and post-process the beam problem.
 
@@ -314,11 +333,12 @@ def main(
         w_init (callable): x -> w, initial deflection (slopes by autograd).
         adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol: see `minimize`.
         E, A, I, length (float): physical constants, used by `rescale`.
+        quadrature (QuadratureRule, optional): see `build_problem`.
 
     Returns:
         dict: dimensional and non-dimensional results, loss and phase history.
     """
-    problem = build_problem(n_elements, P, w_init)
+    problem = build_problem(n_elements, P, w_init, quadrature=quadrature)
 
     print("* Training")
     history = minimize(
@@ -390,14 +410,14 @@ if __name__ == "__main__":
     ADAM_LR = 1e-1
     ADAM_ITERS = 500
     LBFGS_LR = 1.0
-    LBFGS_ITERS = 0
+    LBFGS_ITERS = 10
     TOL = 1e-6
 
     results = main(
         n_elements=N_ELEMENTS, P=P, w_init=W_INIT,
         adam_lr=ADAM_LR, adam_iters=ADAM_ITERS,
         lbfgs_lr=LBFGS_LR, lbfgs_iters=LBFGS_ITERS, tol=TOL,
-        E=E, A=A, I=I, length=L,
+        E=E, A=A, I=I, length=L, quadrature=ThreePoints1D(),
     )
 
 

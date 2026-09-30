@@ -27,6 +27,9 @@ dev = [
    "pytest>=9.0.2",
    "ruff>=0.14.10",
 ]
+plot = [
+    "plotly>=5",
+]
 docs = [
     "sphinx",
     "sphinx-autoapi>=3.6.1",

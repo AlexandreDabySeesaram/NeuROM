@@ -133,7 +133,7 @@ class QuadratureContext(nn.Module):
         The cached positions carry the autograd graph
         ``xi_ref -> x_phys -> xi_back``.  When the loss depends on ``xi_back``
         -- a term uses the field values, or the derivatives of shape functions
-        whose derivatives depend on ``xi`` (e.g. ``HermiteBeam``, quadratic
+        whose derivatives depend on ``xi`` (e.g. ``CubicHermiteBar``, quadratic
         elements) -- ``backward()`` traverses this graph down to ``xi_ref``
         and frees its saved tensors; the next forward pass would then fail.
         This is detected by ``xi_ref.grad`` being set.

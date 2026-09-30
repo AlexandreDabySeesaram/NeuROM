@@ -3,7 +3,7 @@ import torch
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import HermiteBeam, LinearBar
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 from neurom.meshes import Connectivity
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh
@@ -104,7 +104,7 @@ def main():
     )
 
     # sf and mapping interpolation ?
-    sf_field = HermiteBeam()
+    sf_field = CubicHermiteBar()
 
     # Quadrature strategy: two Gauss points per element.
     quad = TwoPoints1D()

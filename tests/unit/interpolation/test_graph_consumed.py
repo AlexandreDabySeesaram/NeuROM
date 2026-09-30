@@ -12,7 +12,7 @@ from neurom.meshes import Connectivity, Mesh
 from neurom.physics import SolidElasticEnergy
 from neurom.physics_loss import PhysicsLoss
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import HermiteBeam, LinearBar
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 
 
 def build(sf, n_dofs_per_node, strain, N=5):
@@ -47,7 +47,7 @@ def values(x, u):
     [
         (LinearBar(), 1, jacobian, False),  # u' of linear sf: loss independent of xi_back
         (LinearBar(), 1, values, True),  # values of u depend on xi_back
-        (HermiteBeam(), 2, jacobian, True),  # u' of cubic sf depends on xi_back
+        (CubicHermiteBar(), 2, jacobian, True),  # u' of cubic sf depends on xi_back
     ],
 )
 def test_repeated_backward(sf, d, strain, consumed):

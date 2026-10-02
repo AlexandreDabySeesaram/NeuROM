@@ -21,9 +21,10 @@ class CubicHermiteBar(ShapeFunction):
 
         H_4(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(\\xi - 1)
 
-    ``H_1`` and ``H_3`` carry the value at the end nodes ``\\xi = -1`` and
-    ``\\xi = 1`` respectively; ``H_2`` and ``H_4`` carry the slope
-    ``d/d\\xi`` at the same nodes.
+    :math:`H_1` and :math:`H_3` carry the value at the end nodes
+    :math:`\\xi = -1` and :math:`\\xi = 1` respectively; :math:`H_2` and
+    :math:`H_4` carry the slope :math:`\\mathrm{d}/\\mathrm{d}\\xi` at the
+    same nodes.
     """
 
     def __init__(self):

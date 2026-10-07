@@ -2,7 +2,7 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.shape_functions import LinearBar, QuadraticBar, HermiteBeam
+from neurom.shape_functions import LinearBar, QuadraticBar, CubicHermiteBar
 from neurom.meshes import Connectivity, Mesh
 from neurom.fields.field import Field
 from neurom.geometry import IsoparametricMapping1D
@@ -35,7 +35,7 @@ def hermite_transformation(mapping):
     """
     Nodal derivative transformation with the Hermite beam DOF description.
     """
-    sf = HermiteBeam()
+    sf = CubicHermiteBar()
     return NodalDerivativeDofTransformation(mapping, sf.dof_kinds, sf.dof_nodes_xi)
 
 
@@ -139,6 +139,6 @@ class TestDefaultDofTransformation:
         Hermite beam slope DOFs are scaled by the Jacobian
         """
         assert isinstance(
-            default_dof_transformation(HermiteBeam(), mapping),
+            default_dof_transformation(CubicHermiteBar(), mapping),
             NodalDerivativeDofTransformation,
         )

@@ -56,6 +56,8 @@ class QuadratureAssembly(nn.Module):
         Retrieves the integration measure and quadrature positions from
         ``self.context``, evaluates ``self.field`` at the back-mapped reference
         coordinates, and bundles everything into a ``QuadratureAssemblyResult``.
+        The context is first refreshed if a previous ``backward()`` consumed
+        its cached positions graph (see ``QuadratureContext.refresh_if_consumed``).
 
         Returns:
             QuadratureAssemblyResult: Contains the physical positions ``x``,
@@ -63,6 +65,9 @@ class QuadratureAssembly(nn.Module):
             all as ``QuadratureSampling`` objects of shape
             ``(N_e, N_q, *)``.
         """
+        # Rebuild the cached positions graph if a backward() consumed it
+        self.context.refresh_if_consumed()
+
         # Get measure and quadrature positions from context
         measure = self.context.measure
         quad_pos = self.context.interpolate

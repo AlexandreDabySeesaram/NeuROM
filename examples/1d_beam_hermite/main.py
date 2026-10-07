@@ -140,7 +140,7 @@ def main():
     # Stretch: integrand w'^2 dx (SolidElasticEnergy has a built-in 1/2, hence 2 * eps)
     stretch = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: 2 * eps)
 
-    membrane_stretching_energy = MembraneStretchEnergy(stretch)
+    membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1 / 8)
 
     # Sum the pieces
     energy = bending_energy + axial_loading_energy + membrane_stretching_energy

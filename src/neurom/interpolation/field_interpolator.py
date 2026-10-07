@@ -27,19 +27,24 @@ class FieldInterpolator(nn.Module):
         self.sf = sf
         self.field = field
 
-    def at_reference(self, xi: torch.Tensor):
+    def at_reference(self, xi: torch.Tensor, u_elem: torch.Tensor | None = None):
         """Interpolate the field at reference-element coordinates.
 
         Evaluates the shape functions at ``xi`` and contracts them with the
-        element-wise nodal values of ``self.field`` via an Einstein summation.
+        element-wise DOFs via an Einstein summation.
 
         Args:
             xi (torch.Tensor): Reference coordinates, tensor of shape
                 ``(N_e, N_q, dim)``.
+            u_elem (torch.Tensor, optional): Reference DOFs gathered per
+                element, tensor of shape ``(N_e, N_dofs, field_dim)``.
+                Defaults to ``self.field.at_elements()``.
 
         Returns:
             torch.Tensor: Interpolated field values, tensor of shape
             ``(N_e, N_q, field_dim)``.
         """
+        if u_elem is None:
+            u_elem = self.field.at_elements()
         N = self.sf.N(xi)
-        return torch.einsum("en...,eqn...->eq...", self.field.at_elements(), N)
+        return torch.einsum("en...,eqn...->eq...", u_elem, N)

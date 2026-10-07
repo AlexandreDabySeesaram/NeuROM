@@ -70,16 +70,15 @@ def main():
 
     ## Field
     # Initialize displacement values: slightly curved beam w = eps (1 - cos 2 pi x)
-    # 2 DOFs per node (w and its slope in xi, i.e. (h/2)*w')
+    # 2 DOFs per node (w and its physical slope w')
     eps_init = 1e-2
-    h = (x_max - x_min) / (N - 1)
     x_n = x_array.squeeze(-1)
     u_init = torch.empty(2*N, 1) # We keep it 1D but with twice the number of nodes
 
     # Use a stride of 2 because we store dofs intertwined 
     # This is to match how shapes functions are ordered in the later sf_field = CubicHermiteBar())
     u_init[0::2, 0] = eps_init * (1 - torch.cos(2 * torch.pi * x_n))
-    u_init[1::2, 0] = (h / 2) * eps_init * 2 * torch.pi * torch.sin(2 * torch.pi * x_n)
+    u_init[1::2, 0] = eps_init * 2 * torch.pi * torch.sin(2 * torch.pi * x_n)
 
     nodes = torch.arange(0, 2* N)
 

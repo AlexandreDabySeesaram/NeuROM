@@ -6,6 +6,7 @@ from neurom.interpolation.field_interpolator import FieldInterpolator
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.fields.field_base import FieldBase
 from neurom.shape_functions.shape_function import ShapeFunction
+from neurom.dof_transformations import default_dof_transformation
 
 from neurom.interpolation.quadrature_assembly_result import (
     QuadratureAssemblyResult,
@@ -31,6 +32,7 @@ class QuadratureAssembly(nn.Module):
         sf (ShapeFunction): The ShapeFunction to perform the interpolation.
         field (FieldBase): The FieldBase to interpolate.
         _field_interpolator (FieldInterpolator): The FieldInterpolator used to interpolate the ``field`` with the given shape function ``sf``.
+        _dof_transformation (DofTransformation): Maps the physical element DOFs of ``field`` to the reference DOFs expected by ``sf``, built from ``sf`` and the context mapping.
     """
 
     def __init__(
@@ -44,6 +46,9 @@ class QuadratureAssembly(nn.Module):
         self.field = field
         self.sf = sf
         self._field_interpolator = FieldInterpolator(self.sf, self.field)
+        self._dof_transformation = default_dof_transformation(
+            self.sf, self.context.mapping
+        )
 
     def interpolate(self) -> QuadratureAssemblyResult:
         """Interpolate the field at all quadrature points.
@@ -67,9 +72,12 @@ class QuadratureAssembly(nn.Module):
         measure = self.context.measure
         quad_pos = self.context.interpolate
 
+        # Physical element DOFs to reference element DOFs
+        u_elem = self._dof_transformation.to_reference(self.field.at_elements())
+
         # Interpolate field
         u_q = QuadratureSampling(
-            self._field_interpolator.at_reference(quad_pos.xi_back.values)
+            self._field_interpolator.at_reference(quad_pos.xi_back.values, u_elem)
         )
 
         # Assemble the result

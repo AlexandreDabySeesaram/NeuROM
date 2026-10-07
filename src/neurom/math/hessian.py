@@ -29,6 +29,11 @@ def hessian(x, u):
 
     Raises:
         TypeError: If the types of ``x`` and ``u`` are not supported.
+
+    Note:
+        The Hessian is usually defined for scalar fields only.  Here it is
+        extended to vector and tensor fields component-wise:
+        :math:`H_{ijk} = \\partial^2 u_i / \\partial x_j \\partial x_k`.
     """
     raise TypeError(f"Unsupported types: {type(x)}, {type(u)}")
 

@@ -1,14 +1,16 @@
 """Branch selection by the minimization (stage 1bis).
 
-Runs the tests A-E of the plan and writes, in `results/`:
+Runs the tests A-F of the plan and writes, in `results/`:
 - runs.csv: one row per run (parameters, projection on psi1/psi2/psi3, branch,
   energy error, iterations, convergence);
 - trajectories.csv: projections and loss at each iteration, for the first
   `--n-traj` seeds of each configuration.
+Rows of the tests not requested are kept from existing files.
 
 Usage:
     uv run python branch_selection.py                 # all tests
     uv run python branch_selection.py --tests ABC D   # a subset
+    uv run python branch_selection.py --tests F       # adds F to the existing results
 """
 
 import argparse
@@ -21,7 +23,7 @@ import pandas as pd
 import torch
 
 from main import build_problem, minimize, sample_deflection, symmetric_mode, antisymmetric_mode
-from branches import classify_branch, project
+from branches import MODES, classify_branch, exact_amplitude, project
 from neurom.quadratures import TwoPoints1D, ThreePoints1D
 
 
@@ -36,34 +38,57 @@ ADAM_LR, LBFGS_LR, TOL = 0.1, 1.0, 1e-6
 
 IMPERFECTIONS = {"psi1": symmetric_mode, "psi2": antisymmetric_mode}
 
+# Test F: start on a branch at a load where trivial, psi1 (stable) and psi2
+# (unstable) all exist, and increase the noise.
+P_F = 10 * torch.pi**2
+NOISES_F = [1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2, 1e-1, 1.0]
+SEEDS_F = 20
+
 
 def run(cfg):
     """One minimization. Returns (row dict, list of trajectory rows)."""
     torch.set_num_threads(1)
     w_init = None
-    if cfg["init"] != "noise":
+    if cfg["init"] not in ("noise", "trivial"):
         w_init = IMPERFECTIONS[cfg["init"]](cfg["amplitude"])
     problem = build_problem(
         cfg["n_el"], cfg["P"], w_init,
         noise=cfg["noise"], seed=cfg["seed"], quadrature=QUADRATURES[cfg["quad"]](),
     )
 
+    x, w = sample_deflection(problem)
+    a_psi1_init = project(x, w)[0]["psi1"]
+    # Branch of the unperturbed start ("noise" and "trivial" both start at w = 0)
+    start = ("trivial", 0) if cfg["init"] in ("noise", "trivial") else (cfg["init"], 1)
+
     traj = []
+    exit_step = None
 
     def record(phase, i, loss):
+        nonlocal exit_step
         x, w = sample_deflection(problem)
-        coeffs, _ = project(x, w)
-        traj.append({**_keys(cfg), "step": len(traj), "phase": phase, "loss": loss,
-                     **{f"a_{k}": v for k, v in coeffs.items()}})
+        out = classify_branch(x, w, cfg["P"], loss)
+        if exit_step is None and _label(out) != start:
+            exit_step = i_step[0]
+        if cfg["trajectory"]:
+            traj.append({**_keys(cfg), "step": i_step[0], "phase": phase, "loss": loss,
+                         **{k: out[k] for k in ("a_psi1", "a_psi2", "a_psi3")}})
+        i_step[0] += 1
+
+    i_step = [0]
+    track = cfg["trajectory"] or cfg["test"] == "F"
 
     adam_iters, lbfgs_iters = OPTIMIZERS[cfg["optim"]]
     history = minimize(
         problem["model"], adam_lr=ADAM_LR, adam_iters=adam_iters,
         lbfgs_lr=LBFGS_LR, lbfgs_iters=lbfgs_iters, tol=TOL,
-        verbose=False, callback=record if cfg["trajectory"] else None,
+        verbose=False, callback=record if track else None,
     )
 
-    energy = problem["model"]().item()
+    params = [p for p in problem["model"].parameters() if p.requires_grad]
+    loss = problem["model"]()
+    grad_norm = torch.cat([g.flatten() for g in torch.autograd.grad(loss, params)]).norm().item()
+    energy = loss.item()
     x, w = sample_deflection(problem)
     row = {
         **_keys(cfg),
@@ -72,8 +97,16 @@ def run(cfg):
         "energy": energy,
         "iters": len(history["loss"]),
         "converged": history["converged"],
+        "grad_norm": grad_norm,
+        "a_psi1_init": a_psi1_init,
+        "exit_step": exit_step if track else None,
     }
     return row, traj
+
+
+def _label(out):
+    """Branch and sign, e.g. ("psi1", -1)."""
+    return out["branch"], out["sign"]
 
 
 def _keys(cfg):
@@ -114,12 +147,20 @@ def configurations(tests, seeds, n_traj, n_elements, best_optim, best_quad):
         for n_el, P, s in itertools.product(n_elements, [P_REF, 10 * torch.pi**2, 30 * torch.pi**2], seeds):
             add("E", n_el, best_optim, best_quad, P, "noise", 0.0, NOISE, s)
 
+    # F: start on the trivial, psi1 or psi2 branch at P_F, increasing noise
+    if "F" in tests:
+        for init in ["trivial", "psi1", "psi2"]:
+            amp = 0.0 if init == "trivial" else exact_amplitude(P_F, MODES[init][1])
+            add("F", 16, "adam+lbfgs", "gauss3", P_F, init, amp, 0.0, 0)
+            for noise, s in itertools.product(NOISES_F, range(SEEDS_F)):
+                add("F", 16, "adam+lbfgs", "gauss3", P_F, init, amp, noise, s)
+
     return cfgs
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--tests", nargs="+", default=["ABC", "D", "E"], choices=["ABC", "D", "E"])
+    parser.add_argument("--tests", nargs="+", default=["ABC", "D", "E"], choices=["ABC", "D", "E", "F"])
     parser.add_argument("--seeds", type=int, default=50)
     parser.add_argument("--n-traj", type=int, default=3, help="seeds with a recorded trajectory")
     parser.add_argument("--n-elements", type=int, nargs="+", default=[8, 16])
@@ -143,9 +184,10 @@ def main():
                 print(f"  {k + 1}/{len(cfgs)}")
 
     args.out.mkdir(exist_ok=True)
-    runs = pd.DataFrame(rows)
+    runs = _merge(args.out / "runs.csv", pd.DataFrame(rows), args.tests)
     runs.to_csv(args.out / "runs.csv", index=False)
-    pd.DataFrame(trajs).to_csv(args.out / "trajectories.csv", index=False)
+    _merge(args.out / "trajectories.csv", pd.DataFrame(trajs), args.tests).to_csv(
+        args.out / "trajectories.csv", index=False)
 
     summary = (
         runs.assign(label=runs["branch"] + runs["sign"].map({1: "+", -1: "-", 0: ""}))
@@ -155,6 +197,14 @@ def main():
     with pd.option_context("display.max_rows", None, "display.width", 200):
         print(summary)
     print(f"Written to {args.out}")
+
+
+def _merge(path, new, tests):
+    """Replace, in the CSV at `path` if any, the rows of the tests just run."""
+    if not path.exists():
+        return new
+    old = pd.read_csv(path)
+    return pd.concat([old[~old["test"].isin(tests)], new], ignore_index=True)
 
 
 if __name__ == "__main__":

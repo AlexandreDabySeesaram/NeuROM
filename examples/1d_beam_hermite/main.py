@@ -15,69 +15,17 @@ from neurom.interpolation import (
     QuadratureContext,
     QuadratureAssembly,
     IntegrationDomain,
-    PointWiseInterpolator,
 )
 from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 from neurom.math import jacobian, second_derivative
 
+from modes import symmetric_mode, nodal_dofs
+from utils import minimize, axial_displacement, sample_deflection, rescale
+
 
 torch.set_default_dtype(torch.float64)
-
-
-# Initial DOFs.
-#########################################################
-
-
-def symmetric_mode(eps, m=1):
-    """Clamped-clamped symmetric mode w = eps (1 - cos 2 m pi x).
-
-    Returns:
-        callable: x -> w, of the shape of x.
-    """
-    k = 2 * m * torch.pi
-    return lambda x: eps * (1 - torch.cos(k * x))
-
-
-def antisymmetric_gamma(n=1):
-    """n-th positive root of tan(gamma/2) = gamma/2, by Newton from (2n+1) pi.
-
-    Written as h(t) = sin t - t cos t = 0 with t = gamma/2 (no tan poles).
-    """
-    t = (2 * n + 1) * torch.pi / 2 - 1e-2
-    for _ in range(50):
-        t = t - (np.sin(t) - t * np.cos(t)) / (t * np.sin(t))
-    return 2 * t
-
-
-def antisymmetric_mode(eps, n=1):
-    """Clamped-clamped n-th antisymmetric mode.
-
-    w = eps (1 - 2x - cos(gamma x) + 2/gamma sin(gamma x)),
-    gamma = antisymmetric_gamma(n).
-
-    Returns:
-        callable: x -> w, of the shape of x.
-    """
-    g = antisymmetric_gamma(n)
-    return lambda x: eps * (1 - 2 * x - torch.cos(g * x) + 2 / g * torch.sin(g * x))
-
-
-def nodal_dofs(w_init, x):
-    """Hermite DOFs (w, w') at positions x, w' obtained by autograd.
-
-    Args:
-        w_init (callable): x -> w, any differentiable torch function.
-        x (torch.Tensor): positions, shape (N_nodes,).
-
-    Returns:
-        tuple: w and w', shape (N_nodes,), detached.
-    """
-    x = x.detach().clone().requires_grad_(True)
-    w = w_init(x)
-    (dw,) = torch.autograd.grad(w.sum(), x)
-    return w.detach(), dw.detach()
 
 
 # Problem.
@@ -204,121 +152,6 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
         "x_nodes": x_n,
         "P": P,
     }
-
-
-# Minimization.
-#########################################################
-
-
-def minimize(
-    model, *, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol, verbose=True, callback=None,
-):
-    """Minimize the model energy with Adam, then LBFGS (strong Wolfe).
-
-    Each phase stops after its number of iterations or when the relative change
-    of the loss |L_k - L_{k-1}| / |L_k| falls below `tol`. A phase with 0
-    iterations is skipped. One LBFGS iteration is one `optimizer.step`.
-
-    Args:
-        callback (callable, optional): called as callback(phase, i, loss)
-            after each step.
-
-    Returns:
-        dict: "loss" (list of floats), "phase" (list of "adam" / "lbfgs") and
-        "converged" (bool, the last phase run stopped on `tol`).
-    """
-    history = {"loss": [], "phase": [], "converged": False}
-
-    phases = [
-        ("adam", adam_iters, lambda: torch.optim.Adam(model.parameters(), lr=adam_lr)),
-        ("lbfgs", lbfgs_iters, lambda: torch.optim.LBFGS(
-            model.parameters(), lr=lbfgs_lr, line_search_fn="strong_wolfe")),
-    ]
-
-    for name, n_iters, make_optimizer in phases:
-        if n_iters == 0:
-            continue
-        optimizer = make_optimizer()
-
-        def closure():
-            optimizer.zero_grad()
-            loss = model()
-            if loss.requires_grad:
-                loss.backward()
-            return loss
-
-        previous = None
-        history["converged"] = False
-        for i in range(n_iters):
-            loss = optimizer.step(closure).item()
-            history["loss"].append(loss)
-            history["phase"].append(name)
-            if verbose:
-                print(f"{name} i = {i} loss={loss:.6e}")
-            if callback is not None:
-                callback(name, i, loss)
-            if previous is not None and abs(loss - previous) <= tol * max(abs(loss), 1e-30):
-                history["converged"] = True
-                break
-            previous = loss
-
-    return history
-
-
-# Post-processing.
-#########################################################
-
-
-def axial_displacement(stretch, field_layout, x_nodes, P):
-    """Non-dimensional axial displacement at the mesh nodes.
-
-    u(x_j) = -[(P - S/2) x_j + 1/2 int_0^{x_j} w'^2], with S = int_0^1 w'^2,
-    so that u_hat = (r^2 / l) * u. The integrals reuse the quadrature of
-    `stretch` (integrand w'^2 dx), i.e. the one the solver minimized.
-
-    Args:
-        stretch (SolidElasticEnergy): term with integrand w'^2 dx.
-        field_layout (FieldLayout): layout holding the up-to-date quadrature results.
-        x_nodes (torch.Tensor): non-dimensional node positions, shape (N_nodes,).
-        P (float): non-dimensional axial load.
-
-    Returns:
-        torch.Tensor: non-dimensional axial displacement, shape (N_nodes,).
-    """
-    # Per-element integrals of w'^2, then cumulative from x = 0
-    I_e = stretch.integrand(field_layout).detach().reshape(x_nodes.shape[0] - 1, -1).sum(dim=1)
-    cum = torch.cat([torch.zeros(1), torch.cumsum(I_e, dim=0)])
-    S = cum[-1]
-
-    return -((P - 0.5 * S) * x_nodes + 0.5 * cum)
-
-
-def sample_deflection(problem, n_per_element=20):
-    """Evaluate w with the Hermite shape functions on a fine grid.
-
-    Returns:
-        tuple: x (N_pts,) and w (N_pts,), non-dimensional.
-    """
-    n_elements = problem["x_nodes"].shape[0] - 1
-    x = torch.linspace(0.0, 1.0, n_elements * n_per_element + 1)
-    pwi = PointWiseInterpolator(problem["mesh"], problem["sf"], problem["u"], problem["mapping"])
-    w = pwi.at_position(x.unsqueeze(-1)).squeeze(-1).detach()
-    return x, w
-
-
-def rescale(x, w, u_axial, P, *, E, A, I, length):
-    """Convert non-dimensional quantities back to physical ones.
-
-    x_hat = l x, w_hat = r w, u_hat = (r^2 / l) u, P_hat = P E I / l^2,
-    with r = sqrt(I / A).
-    """
-    r = (I / A) ** 0.5
-    return (
-        length * x,
-        r * w,
-        (r**2 / length) * u_axial,
-        P * E * I / length**2,
-    )
 
 
 def main(

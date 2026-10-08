@@ -1,8 +1,66 @@
-"""Identification of the buckled branch reached by a converged deflection."""
+"""Analytical clamped-clamped buckling modes and identification of the branch
+reached by a converged deflection."""
 
+import numpy as np
 import torch
 
-from main import symmetric_mode, antisymmetric_mode, antisymmetric_gamma
+
+# Analytical modes.
+#########################################################
+
+
+def symmetric_mode(eps, m=1):
+    """Clamped-clamped symmetric mode w = eps (1 - cos 2 m pi x).
+
+    Returns:
+        callable: x -> w, of the shape of x.
+    """
+    k = 2 * m * torch.pi
+    return lambda x: eps * (1 - torch.cos(k * x))
+
+
+def antisymmetric_gamma(n=1):
+    """n-th positive root of tan(gamma/2) = gamma/2, by Newton from (2n+1) pi.
+
+    Written as h(t) = sin t - t cos t = 0 with t = gamma/2 (no tan poles).
+    """
+    t = (2 * n + 1) * torch.pi / 2 - 1e-2
+    for _ in range(50):
+        t = t - (np.sin(t) - t * np.cos(t)) / (t * np.sin(t))
+    return 2 * t
+
+
+def antisymmetric_mode(eps, n=1):
+    """Clamped-clamped n-th antisymmetric mode.
+
+    w = eps (1 - 2x - cos(gamma x) + 2/gamma sin(gamma x)),
+    gamma = antisymmetric_gamma(n).
+
+    Returns:
+        callable: x -> w, of the shape of x.
+    """
+    g = antisymmetric_gamma(n)
+    return lambda x: eps * (1 - 2 * x - torch.cos(g * x) + 2 / g * torch.sin(g * x))
+
+
+def nodal_dofs(w_init, x):
+    """Hermite DOFs (w, w') at positions x, w' obtained by autograd.
+
+    Args:
+        w_init (callable): x -> w, any differentiable torch function.
+        x (torch.Tensor): positions, shape (N_nodes,).
+
+    Returns:
+        tuple: w and w', shape (N_nodes,), detached.
+    """
+    x = x.detach().clone().requires_grad_(True)
+    w = w_init(x)
+    (dw,) = torch.autograd.grad(w.sum(), x)
+    return w.detach(), dw.detach()
+
+
+# Branch identification.
+#########################################################
 
 
 # Reference modes: name -> (unit-amplitude mode, Gamma).

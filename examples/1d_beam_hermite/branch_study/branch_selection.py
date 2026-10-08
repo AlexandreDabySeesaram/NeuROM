@@ -16,14 +16,20 @@ Usage:
 import argparse
 import itertools
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import torch
 
-from main import build_problem, minimize, sample_deflection, symmetric_mode, antisymmetric_mode
-from branches import MODES, classify_branch, exact_amplitude, project
+from main import build_problem
+from utils import minimize, sample_deflection
+from modes import (
+    MODES, classify_branch, exact_amplitude, project, symmetric_mode, antisymmetric_mode,
+)
 from neurom.quadratures import TwoPoints1D, ThreePoints1D
 
 

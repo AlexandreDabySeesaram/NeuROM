@@ -14,11 +14,14 @@ Usage:
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
 import torch
 
-from main import build_problem, minimize, sample_deflection
-from branches import MODES, classify_branch, exact_amplitude
+from main import build_problem
+from utils import minimize, sample_deflection
+from modes import MODES, classify_branch, exact_amplitude
 from branch_selection import (
     P_F, ADAM_LR, LBFGS_LR, TOL, OPTIMIZERS, QUADRATURES, IMPERFECTIONS,
 )

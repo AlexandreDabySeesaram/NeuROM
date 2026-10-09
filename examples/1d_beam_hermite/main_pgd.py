@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 
@@ -17,6 +18,7 @@ from neurom.training import GreedyTrainer, Phase, RelativeChange, MaxStages
 from neurom.math import jacobian, hessian, inner, integrate
 
 from modes import symmetric_mode, nodal_dofs
+from utils import rescale
 
 
 torch.set_default_dtype(torch.float64)
@@ -221,9 +223,46 @@ def sample_monoms(cppgd, x, P):
     return tuple(sampled)
 
 
+def axial_displacement(field_layout, cppgd, x_nodes, P_monoms, P):
+    """Non-dimensional axial displacement u(x, P) at the mesh nodes in x.
+
+    u(x_j, P) = -[(P - S(P)/2) x_j + 1/2 int_0^{x_j} w'^2], with
+    int_0^{x} w'^2 = sum_mn lambda_m(P) lambda_n(P) C_mn(x),
+    C_mn(x) = int_0^x w_m' w_n' and S(P) the same at x = 1, so that
+    u_hat = (r^2 / l) u. C_mn reuses the quadrature in x of the energy.
+
+    Args:
+        field_layout (FieldLayout): layout holding the up-to-date quadrature
+            results of the x monoms.
+        cppgd (CPPGD): the decomposition, to look up the monom names.
+        x_nodes (torch.Tensor): node positions in x, shape (N_nodes,).
+        P_monoms (torch.Tensor): P monoms sampled at `P`, shape (n_modes, N_P).
+        P (torch.Tensor): non-dimensional loads, shape (N_P,).
+
+    Returns:
+        torch.Tensor: non-dimensional axial displacement, shape (N_nodes, N_P).
+    """
+    x_monoms = [field_layout[name] for name in cppgd.directory()["x"]]
+    J_x = x_monoms[0].measure.values
+    dw = [jacobian(m.x.values, m.u.values) for m in x_monoms]
+    n_elements = x_nodes.shape[0] - 1
+
+    # int_0^{x_j} w'^2 at every node and every P
+    cum = torch.zeros(x_nodes.shape[0], P.shape[0])
+    for m in range(len(x_monoms)):
+        for n in range(len(x_monoms)):
+            # Per-element integrals of w_m' w_n', then cumulative from x = 0
+            I_e = (inner(dw[m], dw[n]) * J_x).detach().reshape(n_elements, -1).sum(dim=1)
+            C_mn = torch.cat([torch.zeros(1), torch.cumsum(I_e, dim=0)])
+            cum = cum + C_mn[:, None] * (P_monoms[m] * P_monoms[n])[None, :]
+    S = cum[-1]
+
+    return -((P - 0.5 * S)[None, :] * x_nodes[:, None] + 0.5 * cum)
+
+
 def main(
-    *, n_elements, n_P, P_range, w_init, n_modes, adam_lr, adam_max_iter, tol,
-    quadrature=None,
+    *, n_elements, n_P, P_range, w_init, n_modes, adam_lr, adam_max_iter,
+    lbfgs_lr, lbfgs_max_iter, tol, E, A, I, length, quadrature=None,
 ):
     """Build the separated problem, train it greedily and sample the result.
 
@@ -232,24 +271,36 @@ def main(
         n_modes (int): number of greedy stages, one mode each.
         adam_lr (float): Adam learning rate.
         adam_max_iter (int): cap on the Adam iterations of each mode.
-        tol (float): relative change of the loss that ends a mode.
+        lbfgs_lr (float): LBFGS learning rate (strong Wolfe line search).
+        lbfgs_max_iter (int): cap on the LBFGS iterations run after Adam on
+            each mode; 0 disables the LBFGS phase.
+        tol (float): relative change of the loss that ends a phase.
+        E, A, I, length (float): physical constants, used by `rescale`.
 
     Returns:
-        dict: training history, fine grids x and P, w(x, P) on the grid and
-        the sampled monoms.
+        dict: training history, the sampled monoms, and on the grids
+        (x nodes or fine x) x (fine P) the deflection w and axial displacement,
+        non-dimensional and dimensional (suffix `_hat`).
     """
     problem = build_problem_pgd(n_elements, n_P, P_range, w_init, quadrature=quadrature)
     model, cppgd = problem["model"], problem["cppgd"]
 
     print("* Training")
+    phases = [Phase(
+        lambda params: torch.optim.Adam(params, lr=adam_lr),
+        RelativeChange(tol=tol, max_iter=adam_max_iter),
+        "adam",
+    )]
+    if lbfgs_max_iter > 0:
+        phases.append(Phase(
+            lambda params: torch.optim.LBFGS(
+                params, lr=lbfgs_lr, line_search_fn="strong_wolfe"
+            ),
+            RelativeChange(tol=tol, max_iter=lbfgs_max_iter),
+            "lbfgs",
+        ))
     trainer = GreedyTrainer(
-        model,
-        phases=[Phase(
-            lambda params: torch.optim.Adam(params, lr=adam_lr),
-            RelativeChange(tol=tol, max_iter=adam_max_iter),
-            "adam",
-        )],
-        enrichment_criterion=MaxStages(n_modes),
+        model, phases=phases, enrichment_criterion=MaxStages(n_modes)
     )
     history = trainer.enrich()
     for record in history.stages:
@@ -258,24 +309,65 @@ def main(
             f"{record.stop_reason}, energy = {record.energy:.6e}"
         )
 
-    model.eval()
+    # Refresh the quadrature results with the trained DOFs
+    model.train()
+    model()
+
+    x_nodes = problem["x_nodes"]
     x_fine = torch.linspace(0.0, 1.0, 201)
     P_fine = torch.linspace(P_range[0], P_range[1], 201)
-    w_grid = cppgd.assemble([x_fine, P_fine]).detach()  # (N_x, N_P)
     x_monoms, P_monoms = sample_monoms(cppgd, x_fine, P_fine)
+    u_axial = axial_displacement(problem["field_layout"], cppgd, x_nodes, P_monoms, P_fine)
+
+    model.eval()
+    w_grid = cppgd.assemble([x_fine, P_fine]).detach()  # (N_x, N_P)
+    w_nodes = cppgd.assemble([x_nodes, P_fine]).detach()
+
+    # Axial displacement linearly interpolated from the nodes, for every P
+    u_fine = torch.from_numpy(np.stack(
+        [np.interp(x_fine.numpy(), x_nodes.numpy(), u_P) for u_P in u_axial.T.numpy()],
+        axis=1,
+    )).to(x_fine.dtype)
+
+    x_hat, w_hat, u_hat, P_hat = rescale(
+        x_nodes, w_nodes, u_axial, P_fine, E=E, A=A, I=I, length=length
+    )
+    x_fine_hat, w_fine_hat, u_fine_hat, _ = rescale(
+        x_fine, w_grid, u_fine, P_fine, E=E, A=A, I=I, length=length
+    )
 
     return {
         "history": history,
         "x": x_fine,
         "P": P_fine,
         "w": w_grid,
+        "u_fine": u_fine,
+        "x_nodes": x_nodes,
+        "w_nodes": w_nodes,
+        "u_axial": u_axial,
         "x_monoms": x_monoms,
         "P_monoms": P_monoms,
+        "x_hat": x_hat,
+        "w_hat": w_hat,
+        "u_hat": u_hat,
+        "P_hat": P_hat,
+        "x_fine_hat": x_fine_hat,
+        "w_fine_hat": w_fine_hat,
+        "u_fine_hat": u_fine_hat,
     }
 
 
 if __name__ == "__main__":
-    from plotting import plot_loss_history, plot_monoms, plot_amplitude
+    from plotting import (
+        plot_loss_history, plot_monoms, plot_amplitude, plot_deformed_beam,
+    )
+
+    # Physical constants (steel, 1 cm x 1 cm square section)
+    E = 210e9  # Young's modulus [Pa]
+    b = 1e-2  # section side [m]
+    A = b**2  # cross-section area [m^2]
+    I = b**4 / 12  # second moment of area [m^4]
+    L = 1.0  # beam length [m]
 
     P1 = 4 * torch.pi**2  # first critical load, clamped-clamped
 
@@ -290,11 +382,18 @@ if __name__ == "__main__":
     # Minimization hyperparameters
     ADAM_LR = 1e-2
     ADAM_MAX_ITER = 5000  # cap per mode; a mode stops earlier on TOL
+    LBFGS_LR = 1.0
+    LBFGS_MAX_ITER = 10  # LBFGS after Adam on each mode, 0 disables it
     TOL = 1e-6
+
+    # Load at which the deformed beam is drawn (closest sampled P)
+    P_PLOT = 1.5 * P1
 
     results = main(
         n_elements=N_ELEMENTS, n_P=N_P, P_range=P_RANGE, w_init=W_INIT,
-        n_modes=N_MODES, adam_lr=ADAM_LR, adam_max_iter=ADAM_MAX_ITER, tol=TOL,
+        n_modes=N_MODES, adam_lr=ADAM_LR, adam_max_iter=ADAM_MAX_ITER,
+        lbfgs_lr=LBFGS_LR, lbfgs_max_iter=LBFGS_MAX_ITER, tol=TOL,
+        E=E, A=A, I=I, length=L,
     )
 
     history = results["history"]
@@ -305,3 +404,10 @@ if __name__ == "__main__":
     plot_monoms(results["x"], results["x_monoms"], results["P"], results["P_monoms"]).show()
     mid = results["x"].shape[0] // 2  # x = 1/2
     plot_amplitude(results["P"], results["w"][mid], P_critical=P1).show()
+
+    j = int(torch.argmin(torch.abs(results["P"] - P_PLOT)))
+    plot_deformed_beam(
+        results["x_fine_hat"], results["w_fine_hat"][:, j], results["u_fine_hat"][:, j],
+        x_nodes=results["x_hat"], w_nodes=results["w_hat"][:, j],
+        u_nodes=results["u_hat"][:, j], amplification=5.0,
+    ).show()

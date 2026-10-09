@@ -3,10 +3,9 @@
 import torch
 import torch.nn as nn
 
-from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.fields.field_base import FieldBase
 from neurom.meshes.mesh import Mesh
-from neurom.dof_transformations import default_dof_transformation
+from neurom.dof_transformations import Transformation
 
 
 class PointWiseInterpolator(nn.Module):
@@ -17,32 +16,34 @@ class PointWiseInterpolator(nn.Module):
     evaluates the shape functions, and applies a finite-element interpolation
     using the field's nodal values.
 
+    The element basis, the physical-to-reference DOF transformation, and the geometric
+    mapping are all derived from the mesh and the field's space -- nothing geometric is
+    passed in.
+
     Args:
         mesh (Mesh): The mesh on which the field is defined.
-        sf (ShapeFunction): The shape function used for the interpolation.
-        field (FieldBase): The field whose nodal values are interpolated.
-        mapping: The geometric mapping that provides ``inverse_map_at``,
-            translating physical positions to reference coordinates for
-            specified elements.
+        field (FieldBase): The field whose DOF values are interpolated; its space supplies
+            the element.
 
     Attributes:
         mesh (Mesh): The mesh on which the field is defined.
-        sf (ShapeFunction): The shape function used for the interpolation.
-        field (FieldBase): The field whose nodal values are interpolated.
-        _mapping: The geometric mapping providing the inverse map from
+        sf (ShapeFunction): The element's reference basis.
+        field (FieldBase): The interpolated field.
+        _mapping: The geometric mapping (built from the mesh) providing the inverse map from
             physical to reference coordinates.
-        _dof_transformation (DofTransformation): Maps the physical element
-            DOFs of ``field`` to the reference DOFs expected by ``sf``, built
-            from ``sf`` and ``mapping``.
+        _dof_transformation (dof_transformations.Transformation): Maps the physical element
+            DOFs of ``field`` to reference DOFs, built from the element and the mapping.
     """
 
-    def __init__(self, mesh: Mesh, sf: ShapeFunction, field: FieldBase, mapping):
+    def __init__(self, mesh: Mesh, field: FieldBase):
         super().__init__()
+        from neurom.geometry import isoparametric_mapping
+
         self.mesh = mesh
-        self.sf = sf
         self.field = field
-        self._mapping = mapping
-        self._dof_transformation = default_dof_transformation(sf, mapping)
+        self.sf = field.space.element.reference_basis
+        self._mapping = isoparametric_mapping(mesh)
+        self._dof_transformation = Transformation(field.space.element, self._mapping)
 
     def at_position(self, x: torch.Tensor):
         """Interpolate the field at the given physical positions.
@@ -82,8 +83,9 @@ class PointWiseInterpolator(nn.Module):
         element_ids = self.mesh.elements_at(x)
         # Field values of those elements, through the field's own connectivity
         u_elem = self.field.at_elements()[element_ids]
-        # Physical element DOFs to reference element DOFs
-        u_elem = self._dof_transformation.to_reference(u_elem, element_ids)
+        # Physical element DOFs to reference coefficients (identity when no transform)
+        if self._dof_transformation is not None:
+            u_elem = self._dof_transformation.to_reference(u_elem, element_ids)
 
         # `inverse_map_at` and the shape functions work on the quadrature
         # layout (N_e, N_q, dim); a point-wise query is that layout with a

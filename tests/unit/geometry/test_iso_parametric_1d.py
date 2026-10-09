@@ -2,9 +2,10 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.shape_functions import LinearBar
-from neurom.meshes import Connectivity, Mesh
-from neurom.fields.field import Field
+from neurom.meshes import Mesh, Topology
+from neurom.function_space import FunctionSpace
+from neurom.elements import P1_BAR, VectorElement
+from neurom.fields import Field
 from neurom.geometry import IsoparametricMapping1D
 
 torch.set_default_dtype(torch.float32)
@@ -17,15 +18,14 @@ def mapping():
     """
     # Create a mesh with a single element: [5., 10.]
     # (N_e, N_nodes, dim) = (1,2,1)
-    nodes = torch.tensor([0, 1])
     elements = torch.tensor([0, 1]).reshape(1, 2)
-    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([5.0, 10.0]).reshape(2, 1)
-    x = Field(name="x", connectivity=connectivity, values=values)
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    mesh = Mesh(topology, Field(geometry, values))
 
     # Mapping from/to reference/physical coordinates
-    mapping = IsoparametricMapping1D(LinearBar(), mesh)
+    mapping = IsoparametricMapping1D(mesh)
 
     return mapping
 
@@ -92,12 +92,11 @@ def _non_uniform_mapping(positions):
     """
     Build a two-element mapping on the given node positions.
     """
-    nodes = torch.tensor([0, 1, 2])
     elements = torch.tensor([[0, 1], [1, 2]])
-    connectivity = Connectivity(nodes, elements)
-    x = Field(name="x", connectivity=connectivity, values=positions.reshape(3, 1))
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-    return IsoparametricMapping1D(LinearBar(), mesh)
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    mesh = Mesh(topology, Field(geometry, positions.reshape(3, 1)))
+    return IsoparametricMapping1D(mesh)
 
 
 class TestJacobianAt:

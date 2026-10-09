@@ -29,4 +29,7 @@ class Triangle(ReferenceElement):
         # Area of the reference simplex
         measure = torch.tensor(0.5)
 
-        super().__init__(simplex, measure)
+        # Local edges, cyclic convention (0,1),(1,2),(2,0) -- shared with Topology.
+        local_edges = torch.tensor([[0, 1], [1, 2], [2, 0]])
+
+        super().__init__(simplex, measure, local_edges=local_edges)

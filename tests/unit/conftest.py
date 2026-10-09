@@ -1,38 +1,30 @@
 import pytest
 import torch
 
-from neurom.constraints import NoConstraint
 from neurom.decompositions import FactorSpace, MonomSpec
+from neurom.meshes import Mesh, Topology
 from neurom.fields import Field
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Connectivity, Mesh
+from neurom.function_space import FunctionSpace
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearBar
+from neurom.elements import P1_BAR, VectorElement
 
 
 @pytest.fixture
 def make_factor_space():
     """Factory for a uniform 1-D ``FactorSpace`` on ``n`` nodes over ``[lo, hi]``.
 
-    Isoparametric: the mapping is built on ``LinearBar``, the same shape
-    function the factors posed on this space use by default.
+    The geometry basis comes from the mesh's (P1) coordinate element, so the space needs
+    only a mesh and a quadrature rule.
     """
 
     def _make_factor_space(name="space", n=5, lo=0.0, hi=10.0):
         coords = torch.linspace(lo, hi, n).unsqueeze(-1)
-        nodes = torch.arange(0, n)
         elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
-        connectivity = Connectivity(nodes, elements)
-        positions = Field(
-            name=f"{name}_positions", connectivity=connectivity, values=coords
-        )
-        mesh = Mesh(connectivity, positions)
-        return FactorSpace(
-            name=name,
-            mesh=mesh,
-            mapping=IsoparametricMapping1D(LinearBar(), mesh),
-            quad=TwoPoints1D(),
-        )
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        positions = Field(geometry, coords, name=f"{name}_positions")
+        mesh = Mesh(topology, positions)
+        return FactorSpace(name=name, mesh=mesh, quad=TwoPoints1D())
 
     return _make_factor_space
 
@@ -52,8 +44,7 @@ def make_spec(make_factor_space):
             space = make_factor_space(name=name, n=n, lo=lo, hi=hi)
         return MonomSpec(
             space=space,
-            sf=LinearBar(),
-            constraint=NoConstraint(),
+            element=P1_BAR if dim == 1 else VectorElement(P1_BAR, dim),
             init_values=torch.zeros(space.connectivity.n_nodes, dim),
         )
 

@@ -3,7 +3,9 @@ import torch
 
 # Import library modules
 from neurom.fields import Field
-from neurom.meshes import Connectivity
+from neurom.meshes import Mesh, Topology
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace
 
 torch.set_default_dtype(torch.float32)
 
@@ -13,15 +15,19 @@ def field():
     """
     Prepare what is needed to define a Field:
     * name = "test"
-    * Simple connectivity: 3 elements with 4 nodes.
+    * P1 space over a 3-cell / 4-vertex bar mesh.
     * Values: [3., 7., 6., -5.]
     """
     N = 4
-    nodes = torch.arange(0, N)
-    elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
+    cell_vertices = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+    points = torch.linspace(0, 1, N).unsqueeze(-1)
+    topology = Topology(cell_vertices)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, points, name="x")
+    mesh = Mesh(topology, coords)
+    space = FunctionSpace(mesh.topology, P1_BAR)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    field = Field(name="test", connectivity=connectivity, values=values)
+    field = Field(space, values, name="test")
 
     return field
 
@@ -55,33 +61,23 @@ class TestField:
         """
         Test creating a Field with invalid shape.
         """
-        connectivity = field.connectivity
-        values = torch.tensor([3.0, 7.0, 6.0, -5.0])
+        space = field.space
+        values = torch.tensor([3.0, 7.0, 6.0, -5.0])  # 1-D, missing component axis
         with pytest.raises(ValueError):
-            Field(
-                name="missing field dimension", connectivity=connectivity, values=values
-            )
+            Field(space, values, name="missing field dimension")
 
     def test_incompatible_field_and_connectivity(self, field):
         """
-        Test creating a Field with invalid shape.
+        Test creating a Field whose row count does not match the space's DOF count.
         """
-        connectivity = field.connectivity
+        space = field.space
         more = torch.tensor([3.0, 7.0, 6.0, -5.0, 4.0]).unsqueeze(-1)
         with pytest.raises(ValueError):
-            Field(
-                name="more field values than nodes",
-                connectivity=connectivity,
-                values=more,
-            )
+            Field(space, more, name="more field values than dofs")
 
         less = torch.tensor([3.0, 7.0, 6.0]).unsqueeze(-1)
         with pytest.raises(ValueError):
-            Field(
-                name="less field values than nodes",
-                connectivity=connectivity,
-                values=less,
-            )
+            Field(space, less, name="less field values than dofs")
 
     def test_full_values(self, field):
         """

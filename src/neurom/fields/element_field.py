@@ -1,4 +1,4 @@
-"""Field defined per mesh element rather than per node."""
+"""Per-element field values (output / export), e.g. projected stresses."""
 
 import torch
 import torch.nn as nn
@@ -7,17 +7,21 @@ from neurom.samplings import ElementSampling
 
 
 class ElementField(nn.Module):
-    """Field whose values are defined per element (not per node).
+    """Per-element output values, one vector per element, shape ``(n_elem, f_dim)``.
 
-    Typical use-cases include material properties, phase indicators, and
-    per-element output quantities.  The field stores one value vector per
-    element, giving a values tensor of shape ``(n_elem, f_dim)``.
+    This is an **output / export holder** for quantities evaluated per element
+    (material properties, phase indicators, projected stresses written as XDMF
+    cell data) -- not an interpolatable finite-element space.
+
+    A *trainable* piecewise-constant (DG0) unknown is instead a field on a
+    ``FunctionSpace`` built from the :func:`neurom.elements.DG0` element -- it needs
+    no dedicated field type.
 
     Attributes:
         name (str): Human-readable identifier for the field.
-        values (torch.Tensor or torch.nn.Parameter): Per-element field values
-            of shape ``(n_elem, f_dim)``.  Stored as an ``nn.Parameter`` when
-            ``trainable=True``, or as a registered buffer otherwise.
+        values (torch.Tensor or torch.nn.Parameter): Per-element values of shape
+            ``(n_elem, f_dim)``.  An ``nn.Parameter`` when ``trainable=True``,
+            else a registered buffer.
     """
 
     def __init__(self, name: str, values: torch.Tensor, trainable: bool = False):
@@ -28,9 +32,7 @@ class ElementField(nn.Module):
             values (torch.Tensor): Per-element field values of shape
                 ``(n_elem, f_dim)``.
             trainable (bool): If ``True``, ``values`` is registered as an
-                ``nn.Parameter`` so gradients are computed during training.
-                If ``False`` (default), ``values`` is registered as a
-                non-trainable buffer.
+                ``nn.Parameter``; otherwise as a non-trainable buffer.
         """
         super().__init__()
         self.name = name

@@ -2,9 +2,10 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.meshes.connectivity import Connectivity
+from neurom.meshes import Topology
+from neurom.function_space import FunctionSpace
+from neurom.elements import P1_BAR
 from neurom.fields import Field, TrainableField
-from neurom.constraints.no_constraint import NoConstraint
 from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.field_interpolator import FieldInterpolator
 
@@ -20,11 +21,10 @@ def field():
     * Values: [3., 7., 6., -5.]
     """
     N = 4
-    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
+    space = FunctionSpace(Topology(elements), P1_BAR)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    field = Field(name="test", connectivity=connectivity, values=values)
+    field = Field(space, values, name="test")
 
     return field
 
@@ -36,19 +36,14 @@ def trainable_field():
     * name = "test"
     * Simple connectivity: 3 elements with 4 nodes.
     * Values: [3., 7., 6., -5.]
-    * Constraint: NoConstraint()
+    * Constraint: no boundary conditions (all DOFs free -> NoConstraint)
     """
     N = 4
-    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
+    space = FunctionSpace(Topology(elements), P1_BAR)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    field = TrainableField(
-        name="test",
-        connectivity=connectivity,
-        init_values=values,
-        constraint=NoConstraint(),
-    )
+    # Empty bcs compile to NoConstraint (every DOF free), as in the original test.
+    field = TrainableField(space, values, bcs=[], name="test")
 
     return field
 

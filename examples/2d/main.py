@@ -8,12 +8,11 @@ import torch.profiler
 
 # Import library modules
 from neurom.quadratures import MidPoint2D
-from neurom.shape_functions import LinearTriangle
-from neurom.geometry import IsoparametricMapping2D
-from neurom.meshes import Mesh
-from neurom.constraints import Dirichlet
-from neurom.fields import Field, TrainableField, ElementField
+from neurom.meshes import Mesh, Topology
+from neurom.fields import ElementField, Field, TrainableField
 from neurom.field_layout import FieldLayout
+from neurom.elements import VectorElement, P1_TRIANGLE
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.interpolation import (
     QuadratureContext,
     QuadratureAssembly,
@@ -81,58 +80,48 @@ def main():
     nodes_top = connectivity.nodes_indices[mask_top]
     nodes_bottom = connectivity.nodes_indices[mask_bottom]
 
-    u_top = torch.tensor([0.0, -1.0]).expand(nodes_top.shape[0], 2)
-    u_bottom = torch.tensor([0.0, 0.0]).expand(nodes_bottom.shape[0], 2)
-
-    # Dirichlet.expand fills constrained DOFs in ascending node-index order,
-    # so the imposed values must be sorted accordingly.
-    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
-    u_bc = torch.cat([u_top, u_bottom])
-    order = torch.argsort(nodes_u_bc)
-    nodes_u_bc = nodes_u_bc[order]
-    u_bc = u_bc[order]
-
     # Initialize displacement value
     u_init = 0.1 * torch.ones(N, 2)
 
-    # Define shape function to use
-    sf = LinearTriangle()
     # Define quadrature method
     quad = MidPoint2D()
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
 
-    # Displacement
-    u = field_layout.add(
-        TrainableField(
-            name="displacement",
-            connectivity=connectivity,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=nodes_u_bc, values_imposed=u_bc),
-        )
-    )
-
-    # Positions
-    x = field_layout.add(
-        Field(name="positions", connectivity=connectivity, values=points)
-    )
-
-    # Generate mesh
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
+    # Generate mesh (topology + P1 geometry) from the read connectivity table
+    topology = Topology(connectivity.element_connectivity)
+    geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
+    coords = Field(geometry, points, name="positions")
+    mesh = Mesh(topology, coords)
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
+
+    # Function space: a 2-component linear-triangle displacement. The element owns the
+    # DOF layout (one value DOF per vertex, 2 components); the space deduces the DOF
+    # numbering and connectivity from it. BCs are given by meaning -- clamp the top
+    # vertices to (0, -1) and the bottom ones to (0, 0) -- as per-component vectors.
+    space = FunctionSpace(mesh.topology, VectorElement(P1_TRIANGLE, 2))
+    u = field_layout.add(
+        TrainableField(
+            space,
+            u_init,
+            bcs=[
+                DirichletBC(0, nodes_bottom.tolist(), value=[0.0, 0.0]),
+                DirichletBC(0, nodes_top.tolist(), value=[0.0, -1.0]),
+            ],
+            name="displacement",
+        )
+    )
 
     # Write init mesh with all fields
     fname = output_dir / "init.xdmf"
     write_mesh(fname, mesh, field_layout)
 
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping2D(sf, mesh)
-
-    # Define interpolation at quadrature
-    ctx = QuadratureContext(mesh, quad, mapping)
-    assembly_u = QuadratureAssembly(ctx, sf, u)
+    # Define interpolation at quadrature. Quadrature + mapping enter here, at the
+    # integration layer, not in the space.
+    ctx = QuadratureContext(mesh, quad)
+    assembly_u = QuadratureAssembly(ctx, u)
     domain = IntegrationDomain([assembly_u])
 
     def stress(strain):

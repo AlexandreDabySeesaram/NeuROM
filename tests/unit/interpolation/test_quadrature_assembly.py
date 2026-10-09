@@ -4,9 +4,9 @@ import torch
 # Import library modules
 from neurom.quadratures import TwoPoints1D, QuadratureRule
 from neurom.reference_elements.bar import Bar
-from neurom.shape_functions import HermiteBeam, LinearBar
-from neurom.meshes import Connectivity, Mesh
-from neurom.geometry import IsoparametricMapping1D
+from neurom.shape_functions import LinearBar
+from neurom.meshes import Mesh, Topology
+from neurom.function_space import FunctionSpace
 from neurom.fields import Field
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
@@ -17,6 +17,7 @@ from neurom.interpolation import (
 )
 from neurom.physics import SolidElasticEnergy
 from neurom.math import jacobian, second_derivative
+from neurom.elements import P1_BAR, HERMITE, VectorElement
 
 torch.set_default_dtype(torch.float32)
 
@@ -34,19 +35,15 @@ class Endpoints(QuadratureRule):
         self.register_buffer("weights_ref", torch.tensor([1.0, 1.0]))
 
 
-def _mesh_and_mapping(field_layout, x_nodes):
+def _mesh(x_nodes):
     """
-    Build a 1-D mesh on the given node positions and its linear mapping.
+    Build a 1-D mesh on the given node positions (P1 geometry).
     """
     n = len(x_nodes)
-    connectivity = Connectivity(
-        torch.arange(n), torch.vstack([torch.arange(n - 1), torch.arange(1, n)]).T
-    )
-    x = field_layout.add(
-        Field(name="positions", connectivity=connectivity, values=x_nodes.unsqueeze(-1))
-    )
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-    return mesh, IsoparametricMapping1D(LinearBar(), mesh)
+    elements = torch.vstack([torch.arange(n - 1), torch.arange(1, n)]).T
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    return Mesh(topology, Field(geometry, x_nodes.unsqueeze(-1)))
 
 
 def _cubic_hermite_layout(quad):
@@ -55,23 +52,20 @@ def _cubic_hermite_layout(quad):
     """
     field_layout = FieldLayout()
     x_nodes = torch.tensor([0.0, 0.25, 1.0])
-    mesh, mapping = _mesh_and_mapping(field_layout, x_nodes)
+    mesh = _mesh(x_nodes)
 
     n = len(x_nodes)
+    # Hermite DOFs interleaved per vertex as (w, w'); the Hermite element numbers
+    # them [w0, w'0, w1, w'1, ...], matching this values tensor.
     values = torch.empty(2 * n, 1)
     values[0::2, 0] = x_nodes**3
     values[1::2, 0] = 3 * x_nodes**2
 
-    e = torch.arange(n - 1)
-    connectivity = Connectivity(
-        torch.arange(2 * n), torch.vstack([2 * e, 2 * e + 1, 2 * e + 2, 2 * e + 3]).T
-    )
-    w = field_layout.add(Field(name="w", connectivity=connectivity, values=values))
+    w = field_layout.add(Field(FunctionSpace(mesh.topology, HERMITE), values, name="w"))
 
-    ctx = QuadratureContext(mesh, quad, mapping)
-    IntegrationDomain([QuadratureAssembly(ctx, HermiteBeam(), w)]).interpolate_all(
-        field_layout
-    )
+    ctx = QuadratureContext(mesh, quad)
+    assembly = QuadratureAssembly(ctx, w)
+    IntegrationDomain([assembly]).interpolate_all(field_layout)
     return field_layout, w
 
 
@@ -115,17 +109,17 @@ class TestQuadratureAssemblyDofTransformation:
         Lagrange DOFs go through the identity: same values as the bare interpolator
         """
         field_layout = FieldLayout()
-        mesh, mapping = _mesh_and_mapping(field_layout, torch.tensor([0.0, 0.25, 1.0]))
+        mesh = _mesh(torch.tensor([0.0, 0.25, 1.0]))
         u = field_layout.add(
             Field(
+                FunctionSpace(mesh.topology, P1_BAR),
+                torch.tensor([[1.0], [-2.0], [3.0]]),
                 name="u",
-                connectivity=mesh.connectivity,
-                values=torch.tensor([[1.0], [-2.0], [3.0]]),
             )
         )
-        ctx = QuadratureContext(mesh, TwoPoints1D(), mapping)
+        ctx = QuadratureContext(mesh, TwoPoints1D())
 
-        u_q = QuadratureAssembly(ctx, LinearBar(), u).interpolate().u.values
+        u_q = QuadratureAssembly(ctx, u).interpolate().u.values
         u_q_bare = FieldInterpolator(LinearBar(), u).at_reference(
             ctx.interpolate.xi_back.values
         )

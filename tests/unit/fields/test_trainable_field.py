@@ -3,11 +3,22 @@ import torch
 import torch.nn as nn
 
 # Import library modules
-from neurom.fields import TrainableField
-from neurom.meshes import Connectivity
-from neurom.constraints import NoConstraint, Dirichlet
+from neurom.fields import TrainableField, Field
+from neurom.meshes import Mesh, Topology
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace, DirichletBC
 
 torch.set_default_dtype(torch.float32)
+
+
+def _p1_space(N=4):
+    cell_vertices = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
+    points = torch.linspace(0, 1, N).unsqueeze(-1)
+    topology = Topology(cell_vertices)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, points, name="x")
+    mesh = Mesh(topology, coords)
+    return FunctionSpace(mesh.topology, P1_BAR)
 
 
 @pytest.fixture
@@ -15,21 +26,13 @@ def field_no_constraint():
     """
     Prepare a TrainableField with:
     * name = "test"
-    * Simple connectivity: 3 elements with 4 nodes.
+    * P1 space over a 3-cell / 4-vertex bar mesh.
     * Values: [3., 7., 6., -5.]
-    * Constraint: NoConstraint
+    * No boundary conditions (all DOFs free).
     """
-    N = 4
-    nodes = torch.arange(0, N)
-    elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
+    space = _p1_space(4)
     init_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    field = TrainableField(
-        name="test",
-        connectivity=connectivity,
-        init_values=init_values,
-        constraint=NoConstraint(),
-    )
+    field = TrainableField(space, init_values, name="test")
 
     return field
 
@@ -39,21 +42,20 @@ def field_dirichlet_constraint():
     """
     Prepare a TrainableField with:
     * name = "test"
-    * Simple connectivity: 3 elements with 4 nodes.
+    * P1 space over a 3-cell / 4-vertex bar mesh.
     * Values: [3., 7., 6., -5.]
-    * Constraint: Dirichlet with nodes=[0, 2], values_imposed=[100., 200.]
+    * Dirichlet BCs: vertex 0 -> 100, vertex 2 -> 200 (one BC per imposed value).
     """
-    N = 4
-    nodes = torch.arange(0, N)
-    elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
+    space = _p1_space(4)
     init_values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    values_imposed = torch.tensor([100.0, 200.0]).unsqueeze(-1)
     field = TrainableField(
+        space,
+        init_values,
+        bcs=[
+            DirichletBC(0, [0], value=100.0),
+            DirichletBC(0, [2], value=200.0),
+        ],
         name="test",
-        connectivity=connectivity,
-        init_values=init_values,
-        constraint=Dirichlet(nodes=[0, 2], values_imposed=values_imposed),
     )
 
     return field

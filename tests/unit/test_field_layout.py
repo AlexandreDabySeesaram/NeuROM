@@ -13,13 +13,13 @@ torch.set_default_dtype(torch.float32)
 class DummyField(FieldBase):
     """Minimal concrete ``FieldBase`` implementation for testing purposes.
 
-    The connectivity argument is not needed for the current tests, so ``None`` is
+    The function space is not needed for the current tests, so ``None`` is
     passed to the superclass.
     """
 
     def __init__(self, name: str):
-        # Provide a dummy connectivity; ``None`` is acceptable for these unit tests.
-        super().__init__(name=name, connectivity=None)
+        # Provide a dummy space; ``None`` is acceptable for these unit tests.
+        super().__init__(space=None, name=name)
 
     def full_values(self):
         return torch.tensor([])

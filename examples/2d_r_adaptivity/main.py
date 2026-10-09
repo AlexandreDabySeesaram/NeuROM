@@ -10,7 +10,7 @@ Compared to the fixed-mesh example, three things change:
 
 1. ``positions`` is a :class:`~neurom.fields.trainable_field.TrainableField`
    (instead of a fixed :class:`~neurom.fields.field.Field`), with all boundary
-   nodes pinned by a :class:`~neurom.constraints.dirichlet.Dirichlet`
+   nodes pinned by a a `DirichletBC`
    constraint so the domain shape (outer edges and the hole) is preserved.
 2. A ``FlipLoss`` barrier penalises elements whose signed area becomes
    non-positive, preventing the moving mesh from tangling (inverted triangles).
@@ -37,10 +37,9 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.quadratures import MidPoint2D
-from neurom.shape_functions import LinearTriangle
-from neurom.geometry import IsoparametricMapping2D
-from neurom.meshes import Mesh
-from neurom.constraints import Dirichlet
+from neurom.meshes import Topology, Mesh
+from neurom.elements import VectorElement, P1_TRIANGLE
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.fields import TrainableField, ElementField
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
@@ -241,68 +240,65 @@ def main():
     nodes_top = connectivity.nodes_indices[mask_top]
     nodes_bottom = connectivity.nodes_indices[mask_bottom]
 
-    u_top = torch.tensor([0.0, -1.0]).expand(nodes_top.shape[0], 2)
-    u_bottom = torch.tensor([0.0, 0.0]).expand(nodes_bottom.shape[0], 2)
-
-    # Dirichlet.expand fills constrained DOFs in ascending node-index order,
-    # so the imposed values must be sorted accordingly.
-    nodes_u_bc = torch.cat([nodes_top, nodes_bottom])
-    u_bc = torch.cat([u_top, u_bottom])
-    order = torch.argsort(nodes_u_bc)
-    nodes_u_bc = nodes_u_bc[order]
-    u_bc = u_bc[order]
-
     # --- Position boundary conditions (r-adaptivity) ---
     # Pin every boundary node to its initial position so the domain shape (outer
-    # edges and the hole) is preserved while interior nodes are free to move.
-    nodes_x_bc = boundary_nodes(connectivity)  # already sorted ascending
+    # edges and the hole) is preserved while interior nodes are free to move. Each
+    # boundary vertex keeps its own coordinate, so one DirichletBC per vertex.
+    nodes_x_bc = boundary_nodes(connectivity)
     x_bc = points[nodes_x_bc]
+    position_bcs = [
+        DirichletBC(0, [int(node)], value=x_bc[i].tolist())
+        for i, node in enumerate(nodes_x_bc)
+    ]
 
     # Initialize displacement value
     u_init = 0.1 * torch.ones(N, 2)
 
-    # Define shape function to use
-    sf = LinearTriangle()
     # Define quadrature method
     quad = MidPoint2D()
+
+    # Topology shared by the (trainable) geometry and the displacement field
+    topology = Topology(connectivity.element_connectivity)
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
 
-    # Displacement (trainable, with prescribed top/bottom displacement)
-    u = field_layout.add(
-        TrainableField(
-            name="displacement",
-            connectivity=connectivity,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=nodes_u_bc, values_imposed=u_bc),
-        )
-    )
-
     # Positions (trainable -> r-adaptivity, with boundary nodes pinned)
+    geometry_space = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
     x = field_layout.add(
         TrainableField(
+            geometry_space,
+            points,
+            bcs=position_bcs,
             name="positions",
-            connectivity=connectivity,
-            init_values=points,
-            constraint=Dirichlet(nodes=nodes_x_bc, values_imposed=x_bc),
         )
     )
 
-    # Generate mesh
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
+    # Generate mesh from the topology and the trainable coordinate field
+    mesh = Mesh(topology, x)
     if not is_valid_mesh(mesh):
         raise ValueError("There is an issue with the processed mesh.")
+
+    # Displacement (trainable, with prescribed top/bottom displacement)
+    space = FunctionSpace(mesh.topology, VectorElement(P1_TRIANGLE, 2))
+    u = field_layout.add(
+        TrainableField(
+            space,
+            u_init,
+            bcs=[
+                DirichletBC(0, nodes_top.tolist(), value=[0.0, -1.0]),
+                DirichletBC(0, nodes_bottom.tolist(), value=[0.0, 0.0]),
+            ],
+            name="displacement",
+        )
+    )
 
     # Write init mesh with all fields
     write_mesh(output_dir / "init.xdmf", mesh, field_layout)
 
-    # Define mapping (depends on the - now trainable - positions)
-    mapping = IsoparametricMapping2D(sf, mesh)
-
     # Define interpolation at quadrature points
-    ctx = QuadratureContext(mesh, quad, mapping)
-    assembly_u = QuadratureAssembly(ctx, sf, u)
+    ctx = QuadratureContext(mesh, quad)
+    assembly_u = QuadratureAssembly(ctx, u)
     domain = IntegrationDomain([assembly_u])
 
     def stress(strain):

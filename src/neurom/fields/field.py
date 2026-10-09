@@ -1,101 +1,39 @@
-"""Non-trainable nodal field with fixed values stored as a buffer."""
+"""Non-trainable field: fixed DOF values on a :class:`FunctionSpace`."""
 
 from neurom.fields.field_base import FieldBase
-from neurom.meshes.connectivity import Connectivity
 
 
 class Field(FieldBase):
-    """A nodal field with fixed (non-trainable) values.
+    """A field with fixed (non-trainable) DOF values.
 
-    A ``Field`` stores values at every node of the mesh.  The values tensor
-    has shape ``(n_nodes, dim)`` where ``dim`` is the field dimension.  Values
-    are registered as an ``nn.Module`` buffer and therefore cannot be updated
-    by an optimizer.
+    The values tensor has shape ``(n_scalar_dofs, n_components)`` and is stored as a
+    buffer, so an optimizer never updates it. Use :class:`~neurom.fields.TrainableField`
+    for learnable values.
 
-    Note:
-        To create a field whose values can be updated during training, use
-        :class:`~neurom.fields.TrainableField` instead.
-
-    Attributes:
-        name (str): Human-readable identifier for the field.
-        connectivity (Connectivity): Mesh connectivity that defines the
-            element-to-node mapping used by the field.
-        values (torch.Tensor): Fixed nodal values of shape
-            ``(n_nodes, dim)``, registered as a non-trainable buffer.
+    Args:
+        space (FunctionSpace): The function space the field lives on.
+        values (torch.Tensor): DOF values of shape ``(n_scalar_dofs, n_components)``.
+        name (str): Human-readable identifier.
 
     Raises:
-        ValueError: If ``values`` has fewer than two dimensions, i.e. if the
-            field dimension ``dim`` is not provided.
-        ValueError: If the number of rows in ``values`` does not match the
-            number of nodes in ``connectivity``.
+        ValueError: If ``values`` is not 2-D, or its row count differs from the space's
+            scalar-DOF count.
     """
 
-    def __init__(
-        self,
-        name: str,
-        connectivity: Connectivity,
-        values,
-    ):
-        """Initialize a fixed nodal field.
-
-        Args:
-            name (str): Human-readable identifier for the field.
-            connectivity (Connectivity): Mesh connectivity that defines the
-                element-to-node mapping.
-            values (torch.Tensor): Initial nodal values of shape
-                ``(n_nodes, dim)``.  Must have at least two dimensions.
-
-        Raises:
-            ValueError: If ``values`` has fewer than two dimensions.
-            ValueError: If ``values.shape[0]`` differs from the number of
-                nodes in ``connectivity``.
-        """
-        super().__init__(name=name, connectivity=connectivity)
-
-        n_nodes = self.connectivity.n_nodes
-        shape_values = values.shape
-        if len(shape_values) <= 1:
+    def __init__(self, space, values, name: str = ""):
+        super().__init__(space=space, name=name)
+        if values.ndim != 2:
             raise ValueError(
-                f"Given 'values' has shape {shape_values}, but we expect it to be of shape (N_nodes, dim) with dim the field dimension."
+                f"Field values must be (n_scalar_dofs, n_components); got {tuple(values.shape)}."
             )
-
-        n_values = shape_values[0]
-        if n_values != n_nodes:
+        n_dofs = space.n_scalar_dofs
+        if values.shape[0] != n_dofs:
             raise ValueError(
-                f"Given 'values' has a different number of values ({n_values}) than number of nodes in self.connectivity ({n_nodes})"
+                f"Field values have {values.shape[0]} rows but the space has "
+                f"{n_dofs} scalar DOFs."
             )
-
-        # Initialize reduced DOFs
         self.register_buffer("values", values)
 
-    @property
-    def dim(self):
-        """Field dimension (number of components per node).
-
-        Returns:
-            int: Size of the second dimension of ``self.values``.
-        """
-        return self.values.shape[1]
-
     def full_values(self):
-        """Return the complete nodal values.
-
-        For a fixed ``Field`` no expansion is necessary; the stored buffer is
-        returned directly.
-
-        Returns:
-            torch.Tensor: Nodal field values of shape ``(n_nodes, dim)``.
-        """
+        """Return the stored DOF values (no expansion needed)."""
         return self.values
-
-    def at_elements(self):
-        """Return nodal values gathered per element.
-
-        Indexes :meth:`full_values` with the element connectivity to produce
-        one block of nodal values per element.
-
-        Returns:
-            torch.Tensor: Field values of shape
-            ``(n_elements, n_simplex, dim)``.
-        """
-        return self.full_values()[self.connectivity.element_connectivity]

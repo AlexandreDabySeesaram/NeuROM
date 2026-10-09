@@ -2,21 +2,24 @@ import pytest
 import torch
 
 # Import library modules
-from neurom.meshes.connectivity import Connectivity
 from neurom.meshes.mesh import Mesh
+from neurom.meshes import Topology
 from neurom.meshes.validity import is_valid_mesh, signed_area
-from neurom.fields.field import Field
+from neurom.function_space import FunctionSpace
+from neurom.fields import Field
+from neurom.elements import P1_TRIANGLE, VectorElement
 
 torch.set_default_dtype(torch.float32)
 
 
 def _build_mesh(positions: torch.Tensor, elements: torch.Tensor) -> Mesh:
     """Build a 2D mesh from node positions and triangle connectivity."""
-    n_nodes = positions.shape[0]
-    nodes = torch.arange(0, n_nodes)
-    connectivity = Connectivity(nodes, elements)
-    x = Field(name="positions", connectivity=connectivity, values=positions)
-    return Mesh(connectivity=connectivity, nodes_positions=x)
+    # A mesh is (topology, coordinates): the coordinate field is a P1 (linear-Lagrange)
+    # vector field, built explicitly over the cell table's topology.
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
+    coords = Field(geometry, positions, name="positions")
+    return Mesh(topology, coords)
 
 
 class TestSignedArea:

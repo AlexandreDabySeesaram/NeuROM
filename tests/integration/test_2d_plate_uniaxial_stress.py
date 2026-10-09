@@ -5,12 +5,11 @@ import torch
 
 # Import library modules
 from neurom.quadratures import MidPoint2D
-from neurom.shape_functions import LinearTriangle
-from neurom.geometry import IsoparametricMapping2D
-from neurom.meshes import Mesh, Connectivity
+from neurom.meshes import Mesh, Topology
 from neurom.meshes.validity import is_valid_mesh
-from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
+from neurom.elements import VectorElement, P1_TRIANGLE
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     QuadratureContext,
@@ -38,9 +37,8 @@ def build_plate_mesh(l_x: float, l_y: float, n_x: int, n_y: int):
     counter-clockwise triangles, so the resulting mesh is valid by construction.
 
     Returns:
-        A tuple ``(connectivity, points)`` with the
-        :class:`~neurom.meshes.connectivity.Connectivity` and the node positions
-        of shape ``(n_x * n_y, 2)``.
+        A tuple ``(elements, points)`` with the ``(n_cells, 3)`` cell-vertex table
+        and the node positions of shape ``(n_x * n_y, 2)``.
     """
     xs = torch.linspace(0.0, l_x, n_x)
     ys = torch.linspace(0.0, l_y, n_y)
@@ -62,9 +60,7 @@ def build_plate_mesh(l_x: float, l_y: float, n_x: int, n_y: int):
             elements.append([n0, n2, n3])
 
     elements = torch.tensor(elements)
-    nodes = torch.arange(0, points.shape[0])
-    connectivity = Connectivity(nodes, elements)
-    return connectivity, points
+    return elements, points
 
 
 class Test2dPlateUniaxialStress:
@@ -117,8 +113,15 @@ class Test2dPlateUniaxialStress:
         von_mises_expected = math.sqrt(1.5 * (sdev_xx**2 + sdev_yy**2))
 
         # --- Mesh ---
-        connectivity, points = build_plate_mesh(l_x, l_y, n_x, n_y)
+        elements, points = build_plate_mesh(l_x, l_y, n_x, n_y)
         N = points.shape[0]
+
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
+        coords = Field(geometry, points, name="positions")
+        mesh = Mesh(topology, coords)
+        assert is_valid_mesh(mesh)
+        space = FunctionSpace(mesh.topology, VectorElement(P1_TRIANGLE, 2))
 
         # --- Prescribe the linear field u = (eps_xx * X, eps_yy * Y) on the
         #     boundary; interior nodes are free (trainable). ---
@@ -126,40 +129,31 @@ class Test2dPlateUniaxialStress:
         on_boundary = (
             (x_coord == 0.0) | (x_coord == l_x) | (y_coord == 0.0) | (y_coord == l_y)
         )
-        # Masking arange keeps node indices ascending, which is what
-        # Dirichlet.expand assumes for its imposed values.
-        nodes_bc = connectivity.nodes_indices[on_boundary]
+        nodes_bc = torch.arange(N)[on_boundary]
         u_bc = torch.stack(
             [eps_xx * x_coord[on_boundary], eps_yy * y_coord[on_boundary]], dim=1
         )
+        # Each boundary vertex gets its own imposed (u_x, u_y); one DirichletBC per
+        # vertex since the prescribed value differs from vertex to vertex.
+        bcs = [
+            DirichletBC(0, [int(node)], value=u_bc[i].tolist())
+            for i, node in enumerate(nodes_bc)
+        ]
 
         # Start the interior nodes away from the answer (only the prescribed
         # boundary values are used for the constrained nodes) so the solver
         # genuinely has to recover the field by energy minimization.
         u_init = torch.zeros(N, 2)
 
-        sf = LinearTriangle()
         quad = MidPoint2D()
 
         field_layout = FieldLayout()
         u = field_layout.add(
-            TrainableField(
-                name="displacement",
-                connectivity=connectivity,
-                init_values=u_init,
-                constraint=Dirichlet(nodes=nodes_bc, values_imposed=u_bc),
-            )
-        )
-        x = field_layout.add(
-            Field(name="positions", connectivity=connectivity, values=points)
+            TrainableField(space, u_init, bcs=bcs, name="displacement")
         )
 
-        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-        assert is_valid_mesh(mesh)
-
-        mapping = IsoparametricMapping2D(sf, mesh)
-        ctx = QuadratureContext(mesh, quad, mapping)
-        assembly_u = QuadratureAssembly(ctx, sf, u)
+        ctx = QuadratureContext(mesh, quad)
+        assembly_u = QuadratureAssembly(ctx, u)
         domain = IntegrationDomain([assembly_u])
 
         def stress_point(strain):
@@ -204,7 +198,7 @@ class Test2dPlateUniaxialStress:
         sigma = linear_elastic_stress(strain, lame_lambda, lame_mu)
         von_mises = stress_von_mises(stress_deviator(sigma))
 
-        n_elements = connectivity.n_elements
+        n_elements = mesh.n_elements
         strain_e = strain.values.mean(dim=1)  # (N_e, 2, 2)
         sigma_e = sigma.values.mean(dim=1)  # (N_e, 2, 2)
         von_mises_e = von_mises.values.mean(dim=1)  # (N_e, 1)

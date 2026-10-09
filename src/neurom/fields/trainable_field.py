@@ -1,96 +1,60 @@
-"""Trainable nodal field with support for Dirichlet-type constraints."""
+"""Trainable field: free DOF values are learnable parameters, fixed ones imposed by BCs."""
 
 import torch.nn as nn
 
 from neurom.fields.field_base import FieldBase
-from neurom.meshes.connectivity import Connectivity
 
 
 class TrainableField(FieldBase):
-    """A nodal field whose free-DOF values are trainable parameters.
+    """A field whose free DOF values are trainable parameters.
 
-    A ``TrainableField`` stores values at every node of the mesh.  The values
-    tensor has conceptual shape ``(n_nodes, dim)``.  A
-    :class:`~neurom.constraints.Constraint` partitions the nodes into *free*
-    DOFs (whose values are learned) and *constrained* DOFs (whose values are
-    imposed).  Only the free values are stored as ``nn.Parameter``
-    (``values_reduced``); the full nodal tensor is reconstructed on the fly by
-    :meth:`full_values`.
+    The space compiles the boundary conditions (``bcs``) into a per-component free/fixed
+    split: the free slots become the ``values_reduced`` :class:`~torch.nn.Parameter`, the
+    fixed ones hold their imposed values. :meth:`full_values` scatters both back into the
+    complete ``(n_scalar_dofs, n_components)`` tensor.
+
+    Args:
+        space (FunctionSpace): The function space the field lives on.
+        init_values (torch.Tensor): Initial DOF values, shape
+            ``(n_scalar_dofs, n_components)``. Only the free slots seed the parameter.
+        bcs (Sequence[DirichletBC]): Essential boundary conditions; empty means all free.
+        name (str): Human-readable identifier.
 
     Attributes:
-        name (str): Human-readable identifier for the field.
-        connectivity (Connectivity): Mesh connectivity that defines the
-            element-to-node mapping used by the field.
-        constraint (Constraint): Constraint object that determines which DOFs
-            are free and supplies imposed values for the constrained ones.
-        dofs_free (torch.Tensor): Boolean mask of shape ``(n_nodes,)``; entry
-            is ``True`` if the corresponding DOF is free (trainable) and
-            ``False`` if it is constrained (imposed value).
-        values_reduced (torch.nn.Parameter): Trainable parameter tensor
-            containing the field values for the free DOFs only, of shape
-            ``(n_free, dim)``.
-        dim (int): Field dimension (number of components per node).
+        free_mask (torch.Tensor): Boolean ``(n_scalar_dofs, n_components)`` buffer, ``True``
+            where the slot is trainable.
+        imposed (torch.Tensor): ``(n_scalar_dofs, n_components)`` buffer of fixed values.
+        values_reduced (torch.nn.Parameter): The free values. Shaped ``(n_free_dofs,
+            n_components)`` when the free/fixed split is per-DOF (the common case: whole DOFs
+            free or clamped together), or a flat ``(n_free_slots,)`` for a per-component
+            roller where a DOF is partly free.
     """
 
-    def __init__(
-        self,
-        name: str,
-        connectivity: Connectivity,
-        init_values,
-        constraint,
-    ):
-        """Initialize a trainable nodal field.
+    def __init__(self, space, init_values, bcs=(), name: str = ""):
+        super().__init__(space=space, name=name)
+        free_mask, imposed = space.compile_constraint(bcs, init_values.shape[1])
+        self.register_buffer("imposed", imposed)
 
-        Args:
-            name (str): Human-readable identifier for the field.
-            connectivity (Connectivity): Mesh connectivity that defines the
-                element-to-node mapping.
-            init_values (torch.Tensor): Initial nodal values of shape
-                ``(n_nodes, dim)``.  The free-DOF slice is used to initialise
-                ``values_reduced``.
-            constraint (Constraint): Constraint that defines the free/imposed
-                DOF split and provides the imposed values during expansion.
-        """
-        super().__init__(name=name, connectivity=connectivity)
-
-        self.constraint = constraint
-
-        # Ask constraint for free DOFs
-        dofs_free = self.constraint.get_dofs_free(connectivity.n_nodes)
-        self.register_buffer("dofs_free", dofs_free)
-
-        # Initialize reduced DOFs
-        self.values_reduced = nn.Parameter(init_values[dofs_free])
-        self.dim = init_values.shape[1]
+        # Whole-DOF split (every component of a DOF free or fixed together) keeps the
+        # natural (n_free_dofs, n_components) shape; a per-component roller must flatten.
+        free_dof = free_mask.all(dim=1)
+        whole_dof = bool((free_dof | (~free_mask).all(dim=1)).all())
+        self._whole_dof = whole_dof
+        if whole_dof:
+            self.register_buffer("free_mask", free_dof)  # (n_scalar_dofs,)
+            self.values_reduced = nn.Parameter(init_values[free_dof])
+        else:
+            self.register_buffer(
+                "free_mask", free_mask
+            )  # (n_scalar_dofs, n_components)
+            self.values_reduced = nn.Parameter(init_values[free_mask])
 
     def full_values(self):
-        """Return the complete nodal values by expanding the free-DOF parameter.
-
-        Delegates to the constraint's ``expand`` method, which fills the free
-        DOF slots with ``values_reduced`` and the constrained slots with the
-        imposed values.
-
-        Returns:
-            torch.Tensor: Full nodal field values of shape ``(n_nodes, dim)``.
-        """
-        return self.constraint.expand(self.values_reduced, self.dofs_free)
-
-    def at_elements(self):
-        """Return nodal values gathered per element.
-
-        Indexes :meth:`full_values` with the element connectivity to produce
-        one block of nodal values per element.
-
-        Returns:
-            torch.Tensor: Field values of shape
-            ``(n_elements, n_simplex, dim)``.
-        """
-        return self.full_values()[self.connectivity.element_connectivity]
+        """Scatter the free parameter and the imposed values into the full DOF tensor."""
+        full = self.imposed.clone()
+        full[self.free_mask] = self.values_reduced.to(full.dtype)
+        return full
 
     def freeze(self):
-        """Disable gradient computation for the trainable DOF values.
-
-        After calling this method, ``values_reduced`` will no longer
-        accumulate gradients and the field will not be updated by an optimizer.
-        """
+        """Stop training this field's free DOFs (``values_reduced`` requires no grad)."""
         self.values_reduced.requires_grad_(False)

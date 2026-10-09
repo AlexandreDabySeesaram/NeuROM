@@ -24,11 +24,10 @@ from dataclasses import asdict, dataclass
 import torch
 
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearBar
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Mesh, Connectivity
+from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
-from neurom.constraints import Dirichlet
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     QuadratureContext,
@@ -106,7 +105,6 @@ def build_model(
     x_min, x_max = 0.0, 10.0
 
     x_array = torch.linspace(x_min, x_max, n_nodes, device=device).unsqueeze(-1)
-    nodes = torch.arange(0, n_nodes, device=device)
     elements = torch.vstack(
         [torch.arange(0, n_nodes - 1), torch.arange(1, n_nodes)]
     ).T.to(device)
@@ -114,35 +112,30 @@ def build_model(
     u_init = 0.5 * torch.ones(n_nodes, 1, device=device)
     load = 1000.0 * torch.ones(n_nodes, 1, device=device)
 
-    connectivity = Connectivity(nodes, elements)
-    sf = LinearBar()
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, x_array, name="positions")
+    mesh = Mesh(topology, coords)
+    space = FunctionSpace(mesh.topology, P1_BAR)
     quad = quad_cls()
 
     field_layout = FieldLayout()
     u = field_layout.add(
         TrainableField(
+            space,
+            u_init,
+            bcs=[DirichletBC(0, [0, n_nodes - 1], value=0.0)],
             name="displacement",
-            connectivity=connectivity,
-            init_values=u_init,
-            constraint=Dirichlet(
-                nodes=[0, n_nodes - 1], values_imposed=torch.zeros(2, 1, device=device)
-            ),
         )
     )
-    x = field_layout.add(
-        Field(name="positions", connectivity=connectivity, values=x_array)
-    )
-    f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
-
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-    mapping = IsoparametricMapping1D(sf, mesh)
+    f = field_layout.add(Field(space, load, name="load"))
 
     physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
-    ctx = QuadratureContext(mesh, quad, mapping)
-    assembly_u = QuadratureAssembly(ctx, sf, u)
-    assembly_f = QuadratureAssembly(ctx, sf, f)
+    ctx = QuadratureContext(mesh, quad)
+    assembly_u = QuadratureAssembly(ctx, u)
+    assembly_f = QuadratureAssembly(ctx, f)
     domain = IntegrationDomain([assembly_u, assembly_f])
 
     model = FEMModel(

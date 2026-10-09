@@ -4,12 +4,16 @@ from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.shape_functions.linear_bar import LinearBar
 from neurom.shape_functions.quadratic_bar import QuadraticBar
 from neurom.shape_functions.linear_triangle import LinearTriangle
+from neurom.shape_functions.quadratic_triangle import QuadraticTriangle
 from neurom.shape_functions.hermite_beam import HermiteBeam
+from neurom.shape_functions.constant import Constant
 
 __all__ = [
     "ShapeFunction",
     "LinearBar",
     "QuadraticBar",
     "LinearTriangle",
+    "QuadraticTriangle",
     "HermiteBeam",
+    "Constant",
 ]

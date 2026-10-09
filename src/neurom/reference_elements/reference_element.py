@@ -16,9 +16,18 @@ class ReferenceElement(nn.Module, ABC):
             shape ``(N_nodes, dim_ref)``.
         measure (torch.Tensor): Measure (length, area, or volume) of the
             reference element, scalar tensor.
+        local_edges (torch.Tensor): Local vertex-index pairs of the element's edges,
+            shape ``(n_edges, 2)`` -- the convention shared with
+            :class:`~neurom.meshes.Topology`'s edge enumeration. Empty for a bar (whose
+            "edge" is the cell itself).
     """
 
-    def __init__(self, simplex: torch.Tensor, measure: torch.Tensor):
+    def __init__(
+        self,
+        simplex: torch.Tensor,
+        measure: torch.Tensor,
+        local_edges: torch.Tensor | None = None,
+    ):
         """Initialise the reference element with simplex vertices and measure.
 
         Args:
@@ -26,6 +35,8 @@ class ReferenceElement(nn.Module, ABC):
                 ``(N_nodes, dim_ref)``.
             measure (torch.Tensor): Scalar tensor representing the measure
                 (length, area, or volume) of the reference element.
+            local_edges (torch.Tensor, optional): ``(n_edges, 2)`` local vertex-index pairs
+                of the edges; defaults to none (no sub-edges).
 
         Raises:
             ValueError: If ``simplex`` is not a 2-D tensor.
@@ -37,3 +48,6 @@ class ReferenceElement(nn.Module, ABC):
 
         self.register_buffer("simplex", simplex)
         self.register_buffer("measure", measure)
+        if local_edges is None:
+            local_edges = torch.empty(0, 2, dtype=torch.int64)
+        self.register_buffer("local_edges", local_edges)

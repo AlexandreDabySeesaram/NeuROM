@@ -6,10 +6,12 @@ import torch
 # Import library modules
 from neurom.meshes.connectivity import Connectivity
 from neurom.meshes.mesh import Mesh
+from neurom.meshes import Topology
 from neurom.meshes.io import read_mesh, write_mesh
 from neurom.field_layout import FieldLayout
-from neurom.fields import Field, TrainableField, ElementField
-from neurom.constraints import NoConstraint
+from neurom.fields import TrainableField, ElementField, Field
+from neurom.function_space import FunctionSpace
+from neurom.elements import P1_TRIANGLE, VectorElement
 
 torch.set_default_dtype(torch.float32)
 
@@ -72,31 +74,26 @@ class TestWriteMesh:
     relative_tolerance: float = 1e-6
 
     def _build_layout(self):
-        """Build a connectivity, mesh and field layout for a unit square."""
-        nodes = torch.arange(0, 4)
+        """Build a mesh and field layout for a unit square."""
         elements = torch.tensor(TRIANGLES)
-        connectivity = Connectivity(nodes, elements)
-
         positions = torch.tensor(POINTS[:, 0:2], dtype=torch.float32)
 
+        # New model: (topology, coordinates). The coordinate field is a 2-D P1
+        # Triangle field; reuse its space for the (same-layout) displacement.
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
+        coords = Field(geometry, positions, name="positions")
+        mesh = Mesh(topology, coords)
+        V = mesh.coordinates.space
+
         field_layout = FieldLayout()
-        x = field_layout.add(
-            Field(name="positions", connectivity=connectivity, values=positions)
-        )
-        field_layout.add(
-            TrainableField(
-                name="displacement",
-                connectivity=connectivity,
-                init_values=0.5 * torch.ones(4, 2),
-                constraint=NoConstraint(),
-            )
-        )
+        field_layout.add(mesh.coordinates)
+        field_layout.add(TrainableField(V, 0.5 * torch.ones(4, 2), name="displacement"))
         # One scalar value per element.
         field_layout.add(
             ElementField(name="stress", values=torch.tensor([[1.0], [2.0]]))
         )
 
-        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
         return mesh, field_layout
 
     def test_write_mesh_roundtrip(self, tmp_path):

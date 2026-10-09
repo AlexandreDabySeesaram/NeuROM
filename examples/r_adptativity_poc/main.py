@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearBar
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Connectivity, Mesh
-from neurom.constraints import Dirichlet
+from neurom.meshes import Topology, Mesh
+from neurom.elements import VectorElement, P1_BAR
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
@@ -26,7 +25,6 @@ torch.set_default_dtype(torch.float32)
 
 def main():
     N = 40
-    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
     # Positions
@@ -40,55 +38,55 @@ def main():
     # Define constant load
     load = 1000.0 * torch.ones(N, 1)
 
-    # Initialize connectivity
-    connectivity = Connectivity(nodes, elements)
+    # Topology shared by the (trainable) geometry and the fields
+    topology = Topology(elements)
 
-    # Define shape function to use
-    sf = LinearBar()
     # Define quadrature method
     quad = TwoPoints1D()
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
 
-    # Displacement
-    u = field_layout.add(
-        TrainableField(
-            name="displacement",
-            connectivity=connectivity,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
-        )
-    )
-
-    # Positions
+    # Positions: trainable (moving mesh / r-adaptivity), end vertices pinned to the
+    # domain bounds. The geometry is a P1 vector field (1 component = the x coord).
+    geometry_space = FunctionSpace(topology, VectorElement(P1_BAR, 1))
     x = field_layout.add(
         TrainableField(
+            geometry_space,
+            x_array,
+            bcs=[
+                DirichletBC(0, [0], value=x_min),
+                DirichletBC(0, [N - 1], value=x_max),
+            ],
             name="positions",
-            connectivity=connectivity,
-            init_values=x_array,
-            constraint=Dirichlet(
-                nodes=[0, N - 1],
-                values_imposed=torch.tensor([x_min, x_max]).unsqueeze(-1),
-            ),
         ),
     )
 
+    # Generate mesh from the topology and the trainable coordinate field
+    mesh = Mesh(topology, x)
+
+    # Function space the solution fields live on
+    space = FunctionSpace(mesh.topology, P1_BAR)
+
+    # Displacement
+    u = field_layout.add(
+        TrainableField(
+            space,
+            u_init,
+            bcs=[DirichletBC(0, [0, N - 1], value=0.0)],
+            name="displacement",
+        )
+    )
+
     # Load
-    f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
-
-    # Generate mesh
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping1D(sf, mesh)
+    f = field_layout.add(Field(space, load, name="load"))
 
     # Define interpolation at quadrature points.
     # The positions are trainable (moving mesh / r-adaptivity), so the context
     # geometry must be recomputed at each step via domain.update_contexts().
-    ctx = QuadratureContext(mesh, quad, mapping)
-    assembly_u = QuadratureAssembly(ctx, sf, u)
-    assembly_f = QuadratureAssembly(ctx, sf, f)
+    ctx = QuadratureContext(mesh, quad)
+    assembly_u = QuadratureAssembly(ctx, u)
+    assembly_f = QuadratureAssembly(ctx, f)
     domain = IntegrationDomain([assembly_u, assembly_f])
 
     # Define physics to solve
@@ -178,9 +176,9 @@ def main():
     # At quadrature points
     result = field_layout["displacement"]
 
-    # At test points
-    x_test = torch.linspace(0, 6, 30)
-    pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+    # At test points (shape (N, 1): at_position wants one point per row, not a flat list)
+    x_test = torch.linspace(0, 6, 30).unsqueeze(-1)
+    pwi = PointWiseInterpolator(mesh, u)
     u_test = pwi.at_position(x_test).squeeze().detach()
     if plot_loss:
         plt.figure()

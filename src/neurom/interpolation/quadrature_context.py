@@ -19,13 +19,13 @@ class QuadratureContext(nn.Module):
     mapping (physical space -> reference space) is required so that autograd
     can trace the dependency of ``u(x)`` back through ``x``.
 
+    The geometric mapping is built from the mesh (its coordinate element supplies the
+    geometry basis), so it is not passed in.
+
     Args:
         mesh (Mesh): The mesh on which to interpolate.
         quad (QuadratureRule): The quadrature rule that defines the reference
             positions and weights.
-        mapping: The geometric mapping that provides ``map``,
-            ``inverse_map``, and ``det_jacobian`` for translating between
-            physical and reference coordinates.
 
     Attributes:
         _mesh (Mesh): The mesh on which to interpolate.
@@ -45,10 +45,12 @@ class QuadratureContext(nn.Module):
             ``(N_e, N_q, 1)``.
     """
 
-    def __init__(self, mesh: Mesh, quad: QuadratureRule, mapping):
+    def __init__(self, mesh: Mesh, quad: QuadratureRule):
         super().__init__()
+        from neurom.geometry import isoparametric_mapping
+
         self._mesh = mesh
-        self._mapping = mapping
+        self._mapping = isoparametric_mapping(mesh)
         self._quad = quad
         self._xi_ref = reference_coordinates(
             self._mesh.connectivity.n_elements, self._quad

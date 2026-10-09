@@ -32,7 +32,10 @@ def _jacobian_flat_impl(x: torch.Tensor, u_flat: torch.Tensor) -> torch.Tensor:
             x,
             retain_graph=True,
             create_graph=True,
+            allow_unused=True,  # a component may not depend on x (e.g. DG0 fields)
         )[0]  # (*batch_shape, x_dim)
+        if g is None:
+            g = torch.zeros_like(x)
         grads.append(g)
 
     # (*batch_shape, m, x_dim) -> (*batch_shape, *f_shape, x_dim)
@@ -90,6 +93,13 @@ def _(x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
     f_shape = u.shape[batch_ndim:]  # (*f_shape,) — may be () (2,) (2,2) etc.
     m = f_shape.numel() if len(f_shape) > 0 else 1
 
+    # A field that carries no autograd graph at all (e.g. a constant buffer) has
+    # a zero gradient; return it instead of letting autograd.grad raise.
+    if not u.requires_grad:
+        return torch.zeros(
+            *batch_shape, *f_shape, x_dim, dtype=u.dtype, device=u.device
+        )
+
     # flatten f_shape into a single dim for uniform treatment
     u_flat = u.reshape(*batch_shape, m)  # (*batch_shape, m)
 
@@ -128,6 +138,13 @@ def _(x: Sampling, u: Sampling) -> Sampling:
     x_dim = x.f_shape[0]
     f_shape = u.f_shape
     m = f_shape.numel() if len(f_shape) > 0 else 1
+
+    # A constant field (no autograd graph) has a zero gradient.
+    if not u.values.requires_grad:
+        zeros = torch.zeros(
+            *batch_shape, *f_shape, x_dim, dtype=u.values.dtype, device=u.values.device
+        )
+        return u.__class__(values=zeros)
 
     # flatten f_shape into a single dim for uniform treatment
     u_flat = u.values.reshape(*batch_shape, m)  # (*batch_shape, m)

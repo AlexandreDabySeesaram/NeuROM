@@ -3,37 +3,34 @@
 import torch
 import torch.nn as nn
 
-from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.meshes.mesh import Mesh
 
 
 class IsoparametricMapping2D(nn.Module):
     """Isoparametric mapping between reference and physical space for 2-D elements.
 
-    Implements the forward map :math:`x = \\sum_n N_n(\\xi)\\, x_n` and
-    the analytic inverse for linear triangular elements.  The Jacobian and
-    its inverse are precomputed at construction time and refreshed by
-    :meth:`update`.
+    Implements the forward map :math:`x = \\sum_n N_n(\\xi)\\, x_n` and the analytic inverse
+    for linear triangular elements. The Jacobian and its inverse are precomputed at
+    construction time and refreshed by :meth:`update`. The geometry basis is taken from the
+    mesh's coordinate element (``mesh.coordinates.space.element``).
 
     Attributes:
-        sf (ShapeFunction): Shape-function object used to evaluate basis
-            functions.
-        x_nodes (torch.Tensor): Physical node coordinates gathered per
-            element, shape ``(N_e, N_nodes, dim)``.
+        sf (ShapeFunction): The coordinate element's reference basis.
+        x_nodes (torch.Tensor): Physical node coordinates gathered per element, shape
+            ``(N_e, N_nodes, dim)``.
     """
 
-    def __init__(self, shape_function: ShapeFunction, mesh: Mesh):
-        """Initialise the mapping from a shape function and a mesh.
+    def __init__(self, mesh: Mesh):
+        """Initialise the mapping from a mesh.
 
         Args:
-            shape_function (ShapeFunction): Shape-function object compatible
-                with the mesh element type.
-            mesh (Mesh): Mesh whose node positions define the physical domain.
+            mesh (Mesh): Mesh whose coordinate field defines the physical domain (and,
+                through its space, the geometry basis).
         """
         super().__init__()
-        self.sf = shape_function
+        self.sf = mesh.coordinates.space.element.reference_basis
         self._mesh = mesh
-        self.x_nodes = self._mesh.nodes_positions.at_elements()
+        self.x_nodes = self._mesh.coordinates.at_elements()
         self._compute_J_inv()
 
     def _compute_J_inv(self):
@@ -164,5 +161,5 @@ class IsoparametricMapping2D(nn.Module):
         :meth:`map`, :meth:`inverse_map`, :attr:`J_inv`, and
         :attr:`det_jacobian` use the updated geometry.
         """
-        self.x_nodes = self._mesh.nodes_positions.at_elements()
+        self.x_nodes = self._mesh.coordinates.at_elements()
         self._compute_J_inv()

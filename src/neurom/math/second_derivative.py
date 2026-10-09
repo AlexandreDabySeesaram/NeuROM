@@ -25,7 +25,14 @@ def second_derivative(x, u):
     if isinstance(du, Sampling):
         if not du.values.requires_grad:
             x_dim = x.f_shape[0]
-            return du.__class__(values=torch.zeros(*du.values.shape, x_dim, dtype=du.values.dtype, device=du.values.device))
+            return du.__class__(
+                values=torch.zeros(
+                    *du.values.shape,
+                    x_dim,
+                    dtype=du.values.dtype,
+                    device=du.values.device,
+                )
+            )
     elif not du.requires_grad:
         return torch.zeros(*du.shape, x.shape[-1], dtype=du.dtype, device=du.device)
     return jacobian(x, du)

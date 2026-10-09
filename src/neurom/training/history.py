@@ -19,14 +19,17 @@ class StageRecord:
         losses (list[float]): Loss at every iteration of the stage. Each value
             is the loss *before* that iteration's update, as returned by
             ``optimizer.step(closure)``.
-        stop_reason (str): Why the stage ended (``"converged"``,
-            ``"max_iter"``, ``"n_iter"``, ``"diverged"``).
+        phases (list[str]): Name of the phase that ran each iteration, aligned
+            with ``losses``.
+        stop_reason (str): Why the last phase of the stage ended
+            (``"converged"``, ``"max_iter"``, ``"n_iter"``, ``"diverged"``).
         final_energy (float): Loss of the state the stage ended in, evaluated
             once after the last update. None until the stage has run.
     """
 
     stage: int
     losses: list = field(default_factory=list)
+    phases: list = field(default_factory=list)
     stop_reason: str = ""
     final_energy: float = None
 

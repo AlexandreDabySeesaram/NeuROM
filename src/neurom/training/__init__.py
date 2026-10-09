@@ -8,7 +8,7 @@ from neurom.training.criteria import (
     FixedIterations,
     MaxStages,
 )
-from neurom.training.base import PGDTrainer
+from neurom.training.base import Phase, PGDTrainer
 from neurom.training.greedy import GreedyTrainer
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "RelativeChange",
     "FixedIterations",
     "MaxStages",
+    "Phase",
     "PGDTrainer",
     "GreedyTrainer",
 ]

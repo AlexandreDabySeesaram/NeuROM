@@ -12,6 +12,7 @@ from neurom.training import (
     FixedIterations,
     GreedyTrainer,
     MaxStages,
+    Phase,
     RelativeChange,
 )
 
@@ -71,6 +72,18 @@ def make_model(make_factor_space):
     return _make_model
 
 
+def _adam(criterion, lr=0.1):
+    return Phase(lambda p: torch.optim.Adam(p, lr=lr), criterion, "adam")
+
+
+def _lbfgs(criterion):
+    return Phase(
+        lambda p: torch.optim.LBFGS(p, line_search_fn="strong_wolfe"),
+        criterion,
+        "lbfgs",
+    )
+
+
 def _values(cppgd, m):
     return [f.values_reduced.detach().clone() for f in cppgd.monoms[m]]
 
@@ -82,7 +95,7 @@ def test_one_mode_per_stage(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        stage_criterion=FixedIterations(5),
+        phases=[_adam(FixedIterations(5))],
         enrichment_criterion=MaxStages(3),
     )
     history = trainer.enrich()
@@ -97,7 +110,7 @@ def test_earlier_modes_do_not_move(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        stage_criterion=FixedIterations(20),
+        phases=[_adam(FixedIterations(20))],
         enrichment_criterion=MaxStages(1),
     )
     trainer.enrich()
@@ -114,10 +127,7 @@ def test_energy_decreases_and_reaches_rank_two_minimum(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        optimizer_factory=lambda p: torch.optim.LBFGS(
-            p, line_search_fn="strong_wolfe"
-        ),
-        stage_criterion=RelativeChange(tol=1e-7, max_iter=50),
+        phases=[_lbfgs(RelativeChange(tol=1e-7, max_iter=50))],
         enrichment_criterion=MaxStages(2),
     )
     history = trainer.enrich()
@@ -155,8 +165,7 @@ def test_matches_hand_written_greedy_loop(make_model):
     # Trainer
     trainer = GreedyTrainer(
         make_model(),
-        optimizer_factory=lambda p: torch.optim.Adam(p, lr=lr),
-        stage_criterion=FixedIterations(n_iter),
+        phases=[_adam(FixedIterations(n_iter), lr=lr)],
         enrichment_criterion=MaxStages(3),
     )
     assert trainer.enrich().losses == expected
@@ -166,8 +175,7 @@ def test_diverged_stage_stops_the_run(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        optimizer_factory=lambda p: torch.optim.SGD(p, lr=1e30),
-        stage_criterion=FixedIterations(50),
+        phases=[Phase(lambda p: torch.optim.SGD(p, lr=1e30), FixedIterations(50))],
         enrichment_criterion=MaxStages(3),
     )
     history = trainer.enrich()
@@ -181,4 +189,41 @@ def test_nothing_trainable_raises(make_model):
     trainer = GreedyTrainer(model)
     model.decomposition.freeze_all()
     with pytest.raises(RuntimeError):
-        trainer.make_optimizer()
+        trainer.make_optimizer(lambda p: torch.optim.Adam(p))
+
+
+# --- phases -------------------------------------------------------------
+
+
+def test_phases_run_in_order_with_their_own_criterion(make_model):
+    trainer = GreedyTrainer(
+        make_model(),
+        phases=[_adam(FixedIterations(7)), _lbfgs(FixedIterations(3))],
+        enrichment_criterion=MaxStages(2),
+    )
+    history = trainer.enrich()
+    for record in history.stages:
+        assert record.phases == ["adam"] * 7 + ["lbfgs"] * 3
+        assert record.n_iter == 10
+        assert record.stop_reason == "n_iter"
+
+
+def test_phase_already_met_is_skipped(make_model):
+    trainer = GreedyTrainer(
+        make_model(),
+        phases=[_adam(FixedIterations(0)), _lbfgs(FixedIterations(2))],
+    )
+    assert trainer.enrich().stages[0].phases == ["lbfgs", "lbfgs"]
+
+
+def test_lbfgs_after_adam_lowers_the_energy(make_model):
+    adam_only = GreedyTrainer(make_model(), phases=[_adam(FixedIterations(20))])
+    adam_then_lbfgs = GreedyTrainer(
+        make_model(),
+        phases=[_adam(FixedIterations(20)), _lbfgs(FixedIterations(5))],
+    )
+    e_adam = adam_only.enrich().stages[0].energy
+    record = adam_then_lbfgs.enrich().stages[0]
+    # Same Adam phase on the same seed: identical losses up to the switch.
+    assert record.losses[:20] == adam_only.history.stages[0].losses
+    assert record.energy < e_adam

@@ -13,7 +13,7 @@ class GreedyTrainer(PGDTrainer):
 
     Args:
         model (NeuROMModel): Model whose ``decomposition`` is a ``CPPGD``.
-        optimizer_factory, stage_criterion, enrichment_criterion: See
+        phases, enrichment_criterion: See
             :class:`~neurom.training.base.PGDTrainer`.
     """
 
@@ -22,7 +22,7 @@ class GreedyTrainer(PGDTrainer):
         self.decomposition = model.decomposition
 
     def prepare_stage(self, stage_index):
-        """Freeze everything, add one mode, register it, build an optimizer.
+        """Freeze everything, add one mode and register it.
 
         Stage 0 adds nothing: it trains the modes already in the decomposition.
 
@@ -33,7 +33,6 @@ class GreedyTrainer(PGDTrainer):
             self.decomposition.freeze_all()
             self.decomposition.add_mode()
             self.decomposition.register_into(self.model.field_layout)
-        self.make_optimizer()
 
     def should_add_stage(self, stage_index):
         """Run stage 0 unconditionally, then ask the enrichment criterion.

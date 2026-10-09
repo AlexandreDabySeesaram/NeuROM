@@ -167,10 +167,9 @@ The modes are built **one at a time** (greedy enrichment):
 
 In the code this is
 {py:meth}`~neurom.decompositions.pgd.CPPGD.freeze_mode`,
-{py:meth}`~neurom.decompositions.pgd.CPPGD.add_mode` and
-{py:meth}`~neurom.neurom_model.NeuROMModel.add_mode_to_optimizer` (the
-optimizer wiring lives on the model, so
-{py:class}`~neurom.decompositions.pgd.CPPGD` stays optimizer-agnostic). Even though the exact solution here is
+{py:meth}`~neurom.decompositions.pgd.CPPGD.add_mode`, followed by a fresh
+optimizer over the model parameters (the frozen monoms get no gradient, so the
+optimizer leaves them untouched). Even though the exact solution here is
 rank-1 (a single mode is enough), we deliberately add several modes to exercise
 the enrichment machinery; the extra modes come out small.
 

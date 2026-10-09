@@ -157,12 +157,9 @@ def main(n_iter_training=150, n_space=30, n_e=20, lr=0.1, show=True):
     )
 
     ## add training
-    # Every parameter goes to the optimizer, frozen ones included. Membership in
-    # a param group is a snapshot taken here and says what the optimizer *may*
-    # touch; `requires_grad` is the live switch saying what it touches now (a
-    # frozen monom gets no gradient, so Adam skips it). Filtering on
-    # `requires_grad` here would conflate the two: a monom unfrozen later would
-    # be in no group, get a gradient, and still never move.
+    # One fresh optimizer per mode, over every parameter: a frozen monom gets
+    # no gradient, so Adam skips it, and the new mode's monoms are included
+    # because the optimizer is built after add_mode().
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     def closure():
@@ -180,11 +177,12 @@ def main(n_iter_training=150, n_space=30, n_e=20, lr=0.1, show=True):
         loss_history.append(loss.detach().item())
 
     # Mode 1. The greedy strategy lives here, in the training script, not in the
-    # decomposition: freeze what is converged, build one more mode, wire it up.
+    # decomposition: freeze what is converged, build one more mode, hand it to a
+    # fresh optimizer.
     pgd_approx.freeze_mode(0)
     pgd_approx.add_mode()
     pgd_approx.register_into(field_layout)  # the new monoms join the layout
-    model.add_mode_to_optimizer(optimizer)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     for _ in range(n_iter_training):
         loss = optimizer.step(closure)
@@ -194,7 +192,7 @@ def main(n_iter_training=150, n_space=30, n_e=20, lr=0.1, show=True):
     pgd_approx.freeze_mode(1)
     pgd_approx.add_mode()
     pgd_approx.register_into(field_layout)
-    model.add_mode_to_optimizer(optimizer)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     for _ in range(n_iter_training):
         loss = optimizer.step(closure)

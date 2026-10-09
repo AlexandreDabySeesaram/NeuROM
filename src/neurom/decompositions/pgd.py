@@ -207,7 +207,11 @@ class CPPGD(TensorDecomposition):
         fields = [
             TrainableField(
                 name=f"{self.name}_dim{spec.space.name}_mode{m}",
-                connectivity=spec.space.connectivity,
+                connectivity=(
+                    spec.connectivity
+                    if spec.connectivity is not None
+                    else spec.space.connectivity
+                ),
                 init_values=spec.init_values,
                 constraint=spec.constraint,
             )

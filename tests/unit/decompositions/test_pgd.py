@@ -1,9 +1,15 @@
 import pytest
 import torch
 
-from neurom.decompositions import CPPGD
+from neurom.constraints import NoConstraint
+from neurom.decompositions import CPPGD, FactorSpace, MonomSpec
 from neurom.decompositions import TensorDecomposition
 from neurom.field_layout import FieldLayout
+from neurom.fields import Field
+from neurom.geometry import IsoparametricMapping1D
+from neurom.meshes import Connectivity, Mesh
+from neurom.quadratures import TwoPoints1D
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 
 torch.set_default_dtype(torch.float32)
 
@@ -370,3 +376,65 @@ def test_evaluate_and_assemble_vector_factor(make_spec):
         ]
     )
     assert grid.detach().numpy() == pytest.approx(expected_grid.numpy(), rel=1e-5)
+
+
+# --- monom connectivity (Hermite) ---------------------------------------
+
+
+def test_monom_connectivity_carries_hermite_dofs(make_factor_space):
+    """A spec with its own connectivity builds Hermite monoms (2 DOFs per node).
+
+    The space monom holds the physical DOFs (w, w') of w = x**3 on a
+    non-uniform mesh, the other factor is constant 1: the mode reproduces x**3
+    exactly, point-wise and at the quadrature points.
+    """
+    coords = torch.tensor([[0.0], [0.3], [1.0]])
+    n = coords.shape[0]
+    mesh_connectivity = Connectivity(
+        torch.arange(0, n), torch.tensor([[0, 1], [1, 2]])
+    )
+    mesh = Mesh(
+        mesh_connectivity,
+        Field(name="x_positions", connectivity=mesh_connectivity, values=coords),
+    )
+    space_x = FactorSpace(
+        name="x",
+        mesh=mesh,
+        mapping=IsoparametricMapping1D(LinearBar(), mesh),
+        quad=TwoPoints1D(),
+    )
+    dof_connectivity = Connectivity(
+        torch.arange(0, 2 * n), torch.tensor([[0, 1, 2, 3], [2, 3, 4, 5]])
+    )
+    x = coords.squeeze(-1)
+    dofs = torch.stack([x**3, 3 * x**2], dim=1).reshape(-1, 1)  # (w, w') per node
+    spec_x = MonomSpec(
+        space=space_x,
+        sf=CubicHermiteBar(),
+        constraint=NoConstraint(),
+        init_values=dofs,
+        connectivity=dof_connectivity,
+    )
+    space_y = make_factor_space(name="y", n=3, lo=0.0, hi=1.0)
+    spec_y = MonomSpec(
+        space=space_y,
+        sf=LinearBar(),
+        constraint=NoConstraint(),
+        init_values=torch.ones(3, 1),
+    )
+    cppgd = CPPGD(monom_specs=[spec_x, spec_y], n_modes_ini=1)
+
+    assert cppgd.monoms[0][0].connectivity is dof_connectivity
+    assert cppgd.monoms[0][1].connectivity is space_y.connectivity
+
+    pts = torch.tensor([[0.1, 0.5], [0.2, 0.0], [0.6, 1.0], [0.9, 0.3]])
+    u = cppgd.evaluate(pts)
+    assert u.detach().reshape(-1).numpy() == pytest.approx(
+        (pts[:, 0] ** 3).numpy(), rel=1e-5
+    )
+
+    result = cppgd.assemblies()[0].interpolate()
+    x_q = result.x.values.detach().reshape(-1)
+    assert result.u.values.detach().reshape(-1).numpy() == pytest.approx(
+        (x_q**3).numpy(), rel=1e-5
+    )

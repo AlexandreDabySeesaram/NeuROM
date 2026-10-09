@@ -114,13 +114,19 @@ class MonomSpec:
             isoparametric element.
         constraint (Constraint): Constraint (boundary conditions) shared by
             every monom built from this spec.
-        init_values (torch.Tensor): Initial nodal values for each new monom,
-            shape (n_nodes, dim). Its width is the monom's value dimension: 1
+        init_values (torch.Tensor): Initial DOF values for each new monom,
+            shape (n_dofs, dim), with ``n_dofs`` the number of nodes of the
+            monom's connectivity. Its width is the monom's value dimension: 1
             for a scalar factor, >1 for the single vector-valued factor a CP
             decomposition admits.
+        connectivity (Connectivity, optional): DOF layout of the monoms, when
+            it differs from the mesh's, e.g. two DOFs per node (value and
+            slope) for :class:`~neurom.shape_functions.CubicHermiteBar`.
+            Defaults to None: the monoms use ``space.connectivity``.
     """
 
     space: FactorSpace
     sf: ShapeFunction
     constraint: Constraint
     init_values: torch.Tensor
+    connectivity: Connectivity = None

@@ -9,7 +9,7 @@ from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.interpolation import QuadratureContext, QuadratureAssembly
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import HermiteBeam
+from neurom.shape_functions import CubicHermiteBar
 
 torch.set_default_dtype(torch.float32)
 
@@ -123,7 +123,7 @@ def _cubic_hermite_on_non_uniform_mesh():
 def test_at_position_hermite_reproduces_cubic_on_non_uniform_mesh():
     """Hermite with physical slope DOFs reproduces w = x**3 exactly in both elements."""
     mesh, mapping, w = _cubic_hermite_on_non_uniform_mesh()
-    interpolator = PointWiseInterpolator(mesh, HermiteBeam(), w, mapping)
+    interpolator = PointWiseInterpolator(mesh, CubicHermiteBar(), w, mapping)
 
     pts = torch.tensor([0.1, 0.2, 0.4, 0.8])
 
@@ -136,10 +136,10 @@ def test_at_position_matches_quadrature_assembly():
     """Point-wise and quadrature interpolation agree at the quadrature points."""
     mesh, mapping, w = _cubic_hermite_on_non_uniform_mesh()
     ctx = QuadratureContext(mesh, TwoPoints1D(), mapping)
-    result = QuadratureAssembly(ctx, HermiteBeam(), w).interpolate()
+    result = QuadratureAssembly(ctx, CubicHermiteBar(), w).interpolate()
 
     x_q = result.x.values.detach().reshape(-1, 1)
-    out = PointWiseInterpolator(mesh, HermiteBeam(), w, mapping).at_position(x_q)
+    out = PointWiseInterpolator(mesh, CubicHermiteBar(), w, mapping).at_position(x_q)
 
     assert out.reshape(-1).detach().numpy() == pytest.approx(
         result.u.values.reshape(-1).detach().numpy(), rel=1e-5

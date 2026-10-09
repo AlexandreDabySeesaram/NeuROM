@@ -4,7 +4,7 @@ import torch
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D, ThreePoints1D
-from neurom.shape_functions import HermiteBeam, LinearBar
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 from neurom.meshes import Connectivity
 from neurom.geometry import IsoparametricMapping1D
 from neurom.meshes import Mesh
@@ -19,7 +19,7 @@ from neurom.interpolation import (
 from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
-from neurom.math import jacobian, second_derivative
+from neurom.math import jacobian, hessian
 
 from modes import symmetric_mode, nodal_dofs
 from utils import minimize, axial_displacement, sample_deflection, rescale
@@ -75,6 +75,8 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
     ## Field
     # 2 DOFs per node (w and its physical slope w')
     x_n = x_array.squeeze(-1)
+    # We keep it 1D but with twice the number of nodes. Stride of 2 because the
+    # DOFs are stored intertwined (w, w'), to match the ordering of CubicHermiteBar.
     u_init = torch.zeros(2 * N, 1)
     if w_init is not None:
         u_init[0::2, 0], u_init[1::2, 0] = nodal_dofs(w_init, x_n)
@@ -84,6 +86,8 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
         u_init += noise * torch.randn(2 * N, 1)
 
     nodes = torch.arange(0, 2 * N)
+
+    # elements[i] gives the list of the indices of the DoFs inside element i
     elements = torch.vstack([
         torch.arange(0, 2*N - 2, 2),   # 0, 2, ..., 2N-4
         torch.arange(1, 2*N - 1, 2),   # 1, 3, ..., 2N-3
@@ -107,19 +111,22 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
         )
     )
 
-    sf_field = HermiteBeam()
+    # Shape function for the interpolation
+    sf_field = CubicHermiteBar()
 
     # Quadrature strategy (default: two Gauss points per element).
     quad = TwoPoints1D() if quadrature is None else quadrature
 
     # Define interpolation at quadrature
+    ## Quad context: meqsure and points of quadratures
     ctx = QuadratureContext(mesh, quad, mapping_geom)
+    ## Quad assembly, ready to be called 
     assembly_u = QuadratureAssembly(ctx, sf_field, u)
     domain = IntegrationDomain([assembly_u])
 
     ## Energy
     # Bending
-    bending_energy = SolidElasticEnergy(u, strain=second_derivative, stress_point=lambda kappa: kappa)
+    bending_energy = SolidElasticEnergy(u, strain=hessian, stress_point=lambda kappa: kappa)
 
     # Axial load potential: -P/2 * int w'^2
     axial_loading_energy = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: -P * eps)
@@ -128,7 +135,7 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
     stretch = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: 2 * eps)
 
     # Membrane stretching: 1/8 * (int w'^2)^2
-    membrane_stretching_energy = MembraneStretchEnergy(stretch)
+    membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1 / 8)
 
     energy = bending_energy + axial_loading_energy + membrane_stretching_energy
     loss = PhysicsLoss(energy, field_layout)

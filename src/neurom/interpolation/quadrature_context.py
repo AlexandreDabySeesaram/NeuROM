@@ -138,7 +138,7 @@ class QuadratureContext(nn.Module):
         The cached positions carry the autograd graph
         ``xi_ref -> x_phys -> xi_back``.  When the loss depends on ``xi_back``
         -- a term uses the field values, or the derivatives of shape functions
-        whose derivatives depend on ``xi`` (e.g. ``HermiteBeam``, quadratic
+        whose derivatives depend on ``xi`` (e.g. ``CubicHermiteBar``, quadratic
         elements) -- ``backward()`` traverses this graph down to ``xi_ref``
         and frees its saved tensors; the next forward pass would then fail.
         This is detected by ``xi_ref.grad`` being set.
@@ -156,8 +156,8 @@ class QuadratureContext(nn.Module):
         node positions into the mapping, then recomputes the measure and
         quadrature positions via ``_setup()``, which rebuilds a fresh autograd
         graph and resets :attr:`graph_consumed`.  It is called automatically
-        by ``IntegrationDomain.interpolate_all`` when :attr:`graph_consumed` is
-        ``True``.  When mesh nodes are trainable, it must still be called at
+        by :meth:`refresh_if_consumed`, at the start of
+        ``QuadratureAssembly.interpolate``.  When mesh nodes are trainable, it must still be called at
         the start of each forward pass (via
         ``IntegrationDomain.update_contexts``): moved nodes are not detected
         by :attr:`graph_consumed`.
@@ -165,3 +165,13 @@ class QuadratureContext(nn.Module):
         self._xi_ref.grad = None
         self._mapping.update()
         self._setup()
+
+    def refresh_if_consumed(self) -> None:
+        """Call :meth:`update` if a ``backward()`` consumed the cached graph.
+
+        Does nothing otherwise, so the cache is reused when the loss does not
+        depend on the back-mapped reference coordinates (see
+        :attr:`graph_consumed`).
+        """
+        if self.graph_consumed:
+            self.update()

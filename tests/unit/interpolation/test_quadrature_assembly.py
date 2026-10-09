@@ -4,7 +4,7 @@ import torch
 # Import library modules
 from neurom.quadratures import TwoPoints1D, QuadratureRule
 from neurom.reference_elements.bar import Bar
-from neurom.shape_functions import HermiteBeam, LinearBar
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 from neurom.meshes import Connectivity, Mesh
 from neurom.geometry import IsoparametricMapping1D
 from neurom.fields import Field
@@ -16,7 +16,7 @@ from neurom.interpolation import (
     IntegrationDomain,
 )
 from neurom.physics import SolidElasticEnergy
-from neurom.math import jacobian, second_derivative
+from neurom.math import jacobian, hessian
 
 torch.set_default_dtype(torch.float32)
 
@@ -69,7 +69,7 @@ def _cubic_hermite_layout(quad):
     w = field_layout.add(Field(name="w", connectivity=connectivity, values=values))
 
     ctx = QuadratureContext(mesh, quad, mapping)
-    IntegrationDomain([QuadratureAssembly(ctx, HermiteBeam(), w)]).interpolate_all(
+    IntegrationDomain([QuadratureAssembly(ctx, CubicHermiteBar(), w)]).interpolate_all(
         field_layout
     )
     return field_layout, w
@@ -105,7 +105,7 @@ class TestQuadratureAssemblyDofTransformation:
         field_layout, w = _cubic_hermite_layout(TwoPoints1D())
 
         energy = SolidElasticEnergy(
-            w, strain=second_derivative, stress_point=lambda k: k
+            w, strain=hessian, stress_point=lambda k: k
         ).integrand(field_layout)
 
         assert energy.sum().item() == pytest.approx(6.0, rel=self.relative_tolerance)

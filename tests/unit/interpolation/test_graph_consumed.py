@@ -12,7 +12,7 @@ from neurom.meshes import Connectivity, Mesh
 from neurom.physics import SolidElasticEnergy
 from neurom.physics_loss import PhysicsLoss
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import HermiteBeam, LinearBar
+from neurom.shape_functions import CubicHermiteBar, LinearBar
 
 
 def build(sf, n_dofs_per_node, strain, N=5):
@@ -47,7 +47,7 @@ def values(x, u):
     [
         (LinearBar(), 1, jacobian, False),  # u' of linear sf: loss independent of xi_back
         (LinearBar(), 1, values, True),  # values of u depend on xi_back
-        (HermiteBeam(), 2, jacobian, True),  # u' of cubic sf depends on xi_back
+        (CubicHermiteBar(), 2, jacobian, True),  # u' of cubic sf depends on xi_back
     ],
 )
 def test_repeated_backward(sf, d, strain, consumed):
@@ -56,3 +56,12 @@ def test_repeated_backward(sf, d, strain, consumed):
         model().backward()
         assert ctx.graph_consumed is consumed
 
+
+
+def test_direct_assembly_interpolate():
+    """A consumed graph is rebuilt when interpolating an assembly outside IntegrationDomain."""
+    model, ctx = build(LinearBar(), 1, values)
+    assembly = model.integration_domain.assemblies[0]
+    for _ in range(3):
+        assembly.interpolate().u.values.sum().backward()
+        assert ctx.graph_consumed

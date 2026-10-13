@@ -16,7 +16,7 @@ from neurom.interpolation import (
     QuadratureAssembly,
     IntegrationDomain,
 )
-from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy
+from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy, LoadPotential
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 from neurom.math import jacobian, hessian
@@ -32,14 +32,22 @@ torch.set_default_dtype(torch.float64)
 #########################################################
 
 
-def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadrature=None):
+def build_problem(
+    n_elements, P, w_init=None, *, k=0.0, load=None, noise=0.0, seed=None, quadrature=None,
+):
     """Assemble the clamped-clamped von Karman beam on [0, 1].
+
+    Pi = 1/2 int w''^2 - P/2 int w'^2 + 1/8 (int w'^2)^2 + k/2 int w^2 - int f w.
+    The analytical solutions of `modes` hold for k = 0 and f = 0 only.
 
     Args:
         n_elements (int): number of Hermite elements.
         P (float): non-dimensional axial load.
         w_init (callable, optional): x -> w, initial deflection; the slope DOFs
             w' are obtained by autograd (see `nodal_dofs`). None means w = 0.
+        k (float): stiffness of the elastic (Winkler) foundation.
+        load (callable, optional): x -> f, transverse load density, interpolated
+            with the Hermite shape functions (slopes by autograd). None means f = 0.
         noise (float): amplitude of a Gaussian noise added to all DOFs (w, w').
         seed (int, optional): `torch.manual_seed` used for the noise.
         quadrature (QuadratureRule, optional): defaults to TwoPoints1D().
@@ -111,6 +119,14 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
         )
     )
 
+    # Transverse load density, same Hermite DOFs (f, f') as the displacement
+    f_values = torch.zeros(2 * N, 1)
+    if load is not None:
+        f_values[0::2, 0], f_values[1::2, 0] = nodal_dofs(load, x_n)
+    f = field_layout.add(
+        Field(name="load", connectivity=connectivity_field, values=f_values)
+    )
+
     # Shape function for the interpolation
     sf_field = CubicHermiteBar()
 
@@ -122,7 +138,8 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
     ctx = QuadratureContext(mesh, quad, mapping_geom)
     ## Quad assembly, ready to be called 
     assembly_u = QuadratureAssembly(ctx, sf_field, u)
-    domain = IntegrationDomain([assembly_u])
+    assembly_f = QuadratureAssembly(ctx, sf_field, f)
+    domain = IntegrationDomain([assembly_u, assembly_f])
 
     ## Energy
     # Bending
@@ -137,7 +154,16 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
     # Membrane stretching: 1/8 * (int w'^2)^2
     membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1 / 8)
 
-    energy = bending_energy + axial_loading_energy + membrane_stretching_energy
+    # Elastic foundation: k/2 * int w^2
+    foundation_energy = SolidElasticEnergy(u, strain=lambda x, w: w, stress_point=lambda w: k * w)
+
+    # Transverse load potential: -int f w
+    load_potential = LoadPotential(u, f)
+
+    energy = (
+        bending_energy + axial_loading_energy + membrane_stretching_energy
+        + foundation_energy + load_potential
+    )
     loss = PhysicsLoss(energy, field_layout)
 
     model = FEMModel(
@@ -163,7 +189,7 @@ def build_problem(n_elements, P, w_init=None, *, noise=0.0, seed=None, quadratur
 
 def main(
     *, n_elements, P, w_init, adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol,
-    E, A, I, length, quadrature=None,
+    E, A, I, length, k=0.0, load=None, quadrature=None,
 ):
     """Build, minimize and post-process the beam problem.
 
@@ -173,12 +199,13 @@ def main(
         w_init (callable): x -> w, initial deflection (slopes by autograd).
         adam_lr, adam_iters, lbfgs_lr, lbfgs_iters, tol: see `minimize`.
         E, A, I, length (float): physical constants, used by `rescale`.
+        k (float), load (callable, optional): see `build_problem`.
         quadrature (QuadratureRule, optional): see `build_problem`.
 
     Returns:
         dict: dimensional and non-dimensional results, loss and phase history.
     """
-    problem = build_problem(n_elements, P, w_init, quadrature=quadrature)
+    problem = build_problem(n_elements, P, w_init, k=k, load=load, quadrature=quadrature)
 
     print("* Training")
     history = minimize(

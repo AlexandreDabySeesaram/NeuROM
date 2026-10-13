@@ -20,7 +20,7 @@ import pandas as pd
 import torch
 
 from main import build_problem
-from utils import minimize, sample_deflection
+from utils import minimize, sample_deflection, grad_hessian, newton
 from modes import MODES, classify_branch, exact_amplitude
 from branch_selection import (
     P_F, ADAM_LR, LBFGS_LR, TOL, OPTIMIZERS, QUADRATURES, IMPERFECTIONS,
@@ -36,25 +36,8 @@ EXPECTED_MORSE = {"psi1": 0, "psi2": 1, "trivial": 2}
 RESULTS = Path(__file__).parent / "results"
 
 
-# Hessian diagnostic and Newton.
+# Hessian diagnostic.
 #########################################################
-
-
-def grad_hessian(model, hessian=True):
-    """Gradient and Hessian of Pi with respect to the free DOFs (values_reduced).
-
-    Computed by double backward on the model's own parameter: torch.func.functional_call
-    does not restore this parameter after the call (it is left as a non-leaf tensor).
-
-    Returns:
-        tuple: the parameter, grad Pi (flat), Hessian (n, n) or None.
-    """
-    (p,) = model.parameters()
-    g = torch.autograd.grad(model(), p, create_graph=hessian)[0].flatten()
-    if not hessian:
-        return p, g.detach(), None
-    H = torch.stack([torch.autograd.grad(gi, p, retain_graph=True)[0].flatten() for gi in g])
-    return p, g.detach(), H.detach()
 
 
 def diagnose(model):
@@ -66,21 +49,6 @@ def diagnose(model):
         "lambda_min": eig[0].item(),
         "n_neg": int((eig < -NEG_EIG_TOL * eig.abs().max()).sum()),
     }
-
-
-def newton(model, tol=NEWTON_TOL, max_iter=50):
-    """Newton on grad Pi = 0, in place. Converges to saddles as well as minima.
-
-    Returns:
-        tuple: number of iterations, converged (bool).
-    """
-    for k in range(max_iter):
-        p, g, H = grad_hessian(model)
-        if g.norm() < tol:
-            return k, True
-        with torch.no_grad():
-            p -= torch.linalg.solve(H, g).view_as(p)
-    return max_iter, False
 
 
 # Runs.
@@ -124,7 +92,7 @@ def g3():
     for init in ["psi1", "psi2", "trivial"]:
         problem = make_problem(init, 0.0, None, 16, "gauss3")
         start = diagnose(problem["model"])
-        iters, converged = newton(problem["model"])
+        iters, converged = newton(problem["model"], tol=NEWTON_TOL)
         rows.append(row("G3", "newton", problem, iters, converged, start,
                         init=init, noise=0.0, seed=None, n_el=16, quad="gauss3", stop_cause=None))
     return rows

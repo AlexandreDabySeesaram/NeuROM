@@ -64,6 +64,56 @@ def minimize(
     return history
 
 
+def grad_hessian(model, hessian=True):
+    """Gradient and Hessian of the energy with respect to the free DOFs.
+
+    Use: second-order information on Pi without assembling any matrix by hand,
+    e.g. to classify a stationary point (sign of the eigenvalues), to run Newton,
+    or to read the stiffness matrices of the linearized problem at w = 0.
+
+    How: double backward on the model's single parameter (`values_reduced`, the
+    DOFs left free by the Dirichlet conditions). torch.func.functional_call is
+    not used: it does not restore this parameter after the call.
+
+    Args:
+        model (FEMModel): model whose forward returns Pi.
+        hessian (bool): if False, only the gradient is computed.
+
+    Returns:
+        tuple: the parameter, grad Pi (flat, n), Hessian (n, n) or None.
+    """
+    (p,) = model.parameters()
+    g = torch.autograd.grad(model(), p, create_graph=hessian)[0].flatten()
+    if not hessian:
+        return p, g.detach(), None
+    H = torch.stack([torch.autograd.grad(gi, p, retain_graph=True)[0].flatten() for gi in g])
+    return p, g.detach(), H.detach()
+
+
+def newton(model, tol=1e-9, max_iter=50):
+    """Newton iterations on grad Pi = 0, updating the model DOFs in place.
+
+    Use: reach an exact discrete stationary point, independently of the
+    stopping criteria of Adam / LBFGS (e.g. to separate optimizer error from
+    discretization error). Converges to saddles as well as minima.
+
+    Args:
+        model (FEMModel): model whose forward returns Pi.
+        tol (float): stop when ||grad Pi|| < tol (float64 round-off floor ~1e-10).
+        max_iter (int): maximum number of Newton steps.
+
+    Returns:
+        tuple: number of iterations, converged (bool).
+    """
+    for k in range(max_iter):
+        p, g, H = grad_hessian(model)
+        if g.norm() < tol:
+            return k, True
+        with torch.no_grad():
+            p -= torch.linalg.solve(H, g).view_as(p)
+    return max_iter, False
+
+
 # Post-processing.
 #########################################################
 

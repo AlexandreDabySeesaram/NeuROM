@@ -260,32 +260,20 @@ def axial_displacement(field_layout, cppgd, x_nodes, P_monoms, P):
     return -((P - 0.5 * S)[None, :] * x_nodes[:, None] + 0.5 * cum)
 
 
-def main(
-    *, n_elements, n_P, P_range, w_init, n_modes, adam_lr, adam_max_iter,
-    lbfgs_lr, lbfgs_max_iter, tol, E, A, I, length, quadrature=None,
-):
-    """Build the separated problem, train it greedily and sample the result.
+def default_phases(*, adam_lr, adam_max_iter, lbfgs_lr, lbfgs_max_iter, tol):
+    """Adam, then optionally LBFGS (strong Wolfe), each ended by `RelativeChange`.
 
     Args:
-        n_elements, n_P, P_range, w_init, quadrature: see `build_problem_pgd`.
-        n_modes (int): number of greedy stages, one mode each.
         adam_lr (float): Adam learning rate.
         adam_max_iter (int): cap on the Adam iterations of each mode.
-        lbfgs_lr (float): LBFGS learning rate (strong Wolfe line search).
+        lbfgs_lr (float): LBFGS learning rate.
         lbfgs_max_iter (int): cap on the LBFGS iterations run after Adam on
             each mode; 0 disables the LBFGS phase.
         tol (float): relative change of the loss that ends a phase.
-        E, A, I, length (float): physical constants, used by `rescale`.
 
     Returns:
-        dict: training history, the sampled monoms, and on the grids
-        (x nodes or fine x) x (fine P) the deflection w and axial displacement,
-        non-dimensional and dimensional (suffix `_hat`).
+        list[Phase]: the phases run on every mode.
     """
-    problem = build_problem_pgd(n_elements, n_P, P_range, w_init, quadrature=quadrature)
-    model, cppgd = problem["model"], problem["cppgd"]
-
-    print("* Training")
     phases = [Phase(
         lambda params: torch.optim.Adam(params, lr=adam_lr),
         RelativeChange(tol=tol, max_iter=adam_max_iter),
@@ -299,8 +287,34 @@ def main(
             RelativeChange(tol=tol, max_iter=lbfgs_max_iter),
             "lbfgs",
         ))
+    return phases
+
+
+def main(
+    *, n_elements, n_P, P_range, w_init, phases, enrichment_criterion,
+    E, A, I, length, quadrature=None,
+):
+    """Build the separated problem, train it greedily and sample the result.
+
+    Args:
+        n_elements, n_P, P_range, w_init, quadrature: see `build_problem_pgd`.
+        phases (list[Phase]): optimizer phases run on every mode, each with
+            its own stopping criterion (see `default_phases`).
+        enrichment_criterion (EnrichmentCriterion): decides when to stop
+            adding modes, e.g. `MaxStages(n_modes)`.
+        E, A, I, length (float): physical constants, used by `rescale`.
+
+    Returns:
+        dict: training history, the sampled monoms, and on the grids
+        (x nodes or fine x) x (fine P) the deflection w and axial displacement,
+        non-dimensional and dimensional (suffix `_hat`).
+    """
+    problem = build_problem_pgd(n_elements, n_P, P_range, w_init, quadrature=quadrature)
+    model, cppgd = problem["model"], problem["cppgd"]
+
+    print("* Training")
     trainer = GreedyTrainer(
-        model, phases=phases, enrichment_criterion=MaxStages(n_modes)
+        model, phases=phases, enrichment_criterion=enrichment_criterion
     )
     history = trainer.enrich()
     for record in history.stages:
@@ -391,8 +405,11 @@ if __name__ == "__main__":
 
     results = main(
         n_elements=N_ELEMENTS, n_P=N_P, P_range=P_RANGE, w_init=W_INIT,
-        n_modes=N_MODES, adam_lr=ADAM_LR, adam_max_iter=ADAM_MAX_ITER,
-        lbfgs_lr=LBFGS_LR, lbfgs_max_iter=LBFGS_MAX_ITER, tol=TOL,
+        phases=default_phases(
+            adam_lr=ADAM_LR, adam_max_iter=ADAM_MAX_ITER,
+            lbfgs_lr=LBFGS_LR, lbfgs_max_iter=LBFGS_MAX_ITER, tol=TOL,
+        ),
+        enrichment_criterion=MaxStages(N_MODES),
         E=E, A=A, I=I, length=L,
     )
 

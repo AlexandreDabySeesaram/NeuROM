@@ -80,6 +80,35 @@ class FixedIterations(StageCriterion):
         return "n_iter" if len(losses) >= self.n_iter else None
 
 
+class RelativeGain(EnrichmentCriterion):
+    """Stop enriching when a stage barely improved on the previous one.
+
+    Stops with ``"converged"`` when
+    ``(E_{k-1} - E_k) / max(|E_k|, |E_{k-1}|, floor) < tol``, with ``E_k`` the
+    energy of stage ``k``. Never stops before two stages have run. It sets no
+    stage budget: combine it with :class:`MaxStages` through :class:`AnyOf`.
+
+    Args:
+        tol (float): Relative-gain threshold below which enrichment stops.
+        floor (float): Lower bound on the relative denominator, so energies
+            close to zero do not blow up the relative gain.
+    """
+
+    def __init__(self, tol=1e-4, floor=1.0):
+        self.tol = tol
+        self.floor = floor
+
+    def stop_reason(self, stages):
+        if len(stages) < 2:
+            return None
+        previous = stages[-2].energy
+        current = stages[-1].energy
+        denom = max(abs(current), abs(previous), self.floor)
+        if (previous - current) / denom < self.tol:
+            return "converged"
+        return None
+
+
 class MaxStages(EnrichmentCriterion):
     """Stop after ``n_stages`` stages.
 
@@ -92,3 +121,25 @@ class MaxStages(EnrichmentCriterion):
 
     def stop_reason(self, stages):
         return "n_stages" if len(stages) >= self.n_stages else None
+
+
+class AnyOf(EnrichmentCriterion):
+    """Stop as soon as any of the given criteria asks to stop.
+
+    The criteria are queried in order; the reason of the first one that stops
+    is returned, so the history still says which rule ended the run.
+
+    Args:
+        *criteria (EnrichmentCriterion): Criteria to combine, e.g.
+            ``AnyOf(RelativeGain(1e-4), MaxStages(10))``.
+    """
+
+    def __init__(self, *criteria):
+        self.criteria = criteria
+
+    def stop_reason(self, stages):
+        for criterion in self.criteria:
+            reason = criterion.stop_reason(stages)
+            if reason:
+                return reason
+        return None

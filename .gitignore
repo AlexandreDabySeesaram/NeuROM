@@ -21,5 +21,5 @@ wheels/
 pgd_convergence.png
 pgd_vs_analytical.png
 
-# Branch-selection sweep outputs
-examples/1d_beam_hermite/results/
+# Outputs of the numerical experiments
+examples/1d_beam_hermite/experiments/*/results/

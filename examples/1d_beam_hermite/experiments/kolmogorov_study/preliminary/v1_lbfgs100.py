@@ -9,9 +9,9 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path("/Users/solal/Desktop/neurom/nl_pgd_beam_buckling/examples/1d_beam_hermite")
+ROOT = Path(__file__).resolve().parents[3]  # examples/1d_beam_hermite
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "kolmogorov_study"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
 

@@ -5,8 +5,8 @@ import time
 import pickle
 from pathlib import Path
 
-ROOT = Path("/Users/solal/Desktop/neurom/nl_pgd_beam_buckling/examples/1d_beam_hermite")
-sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "kolmogorov_study"))
+ROOT = Path(__file__).resolve().parents[3]  # examples/1d_beam_hermite
+sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
 from torch.nn.utils import parametrize
@@ -19,7 +19,7 @@ from moving_load import bspline_load, critical_load, load_scale
 from reference import reference_solution
 
 K, S, A_LOAD, N_EL, NPE = 1e4, 0.02, 0.5, 100, 12
-OUT = Path(__file__).parent
+OUT = Path(__file__).resolve().parents[1] / "results"  # git-ignored
 
 
 class Linear(torch.nn.Module):

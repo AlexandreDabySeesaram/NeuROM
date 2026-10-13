@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
-ROOT = Path("/Users/solal/Desktop/neurom/nl_pgd_beam_buckling/examples/1d_beam_hermite")
-sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT / "kolmogorov_study"))
+ROOT = Path(__file__).resolve().parents[3]  # examples/1d_beam_hermite
+sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from torch.nn.utils import parametrize
 from neurom.quadratures import FourPoints1D

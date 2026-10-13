@@ -71,6 +71,25 @@ MODES = {
 }
 
 
+def exact_solution(x, P, mode="psi1"):
+    """Exact deflection w(x, P) = c(P) psi(x) on the branch of `mode`.
+
+    c(P) = 2 sqrt(P / Gamma^2 - 1) above the critical load Gamma^2 and 0
+    below it (unbuckled branch). The positive sign of c is taken.
+
+    Args:
+        x (torch.Tensor): positions, shape (N_x,).
+        P (torch.Tensor): non-dimensional loads, shape (N_P,).
+        mode (str): key of `MODES`; "psi1" is the branch of lowest energy.
+
+    Returns:
+        torch.Tensor: w on the grid, shape (N_x, N_P).
+    """
+    psi, gamma = MODES[mode]
+    c = 2 * torch.sqrt(torch.clamp(P / gamma**2 - 1, min=0.0))
+    return psi(x)[:, None] * c[None, :]
+
+
 def exact_amplitude(P, gamma):
     """c_n = 2 sqrt(P / Gamma_n^2 - 1), or nan below the critical load."""
     return 2 * (P / gamma**2 - 1) ** 0.5 if P > gamma**2 else float("nan")

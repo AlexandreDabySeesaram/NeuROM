@@ -6,7 +6,9 @@ from neurom.training.criteria import (
     EnrichmentCriterion,
     RelativeChange,
     FixedIterations,
+    RelativeGain,
     MaxStages,
+    AnyOf,
 )
 from neurom.training.base import Phase, PGDTrainer
 from neurom.training.greedy import GreedyTrainer
@@ -18,7 +20,9 @@ __all__ = [
     "EnrichmentCriterion",
     "RelativeChange",
     "FixedIterations",
+    "RelativeGain",
     "MaxStages",
+    "AnyOf",
     "Phase",
     "PGDTrainer",
     "GreedyTrainer",

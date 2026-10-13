@@ -1,6 +1,7 @@
 """Minimization and post-processing helpers for the von Karman beam."""
 
 import torch
+from torch.nn.utils import parametrize
 
 from neurom.interpolation import PointWiseInterpolator
 
@@ -88,6 +89,53 @@ def grad_hessian(model, hessian=True):
         return p, g.detach(), None
     H = torch.stack([torch.autograd.grad(gi, p, retain_graph=True)[0].flatten() for gi in g])
     return p, g.detach(), H.detach()
+
+
+def cholesky_preconditioner(K):
+    """Change of variable q = T z with T = L^-T, K = L L^T (K symmetric positive definite).
+
+    Use: LBFGS on z sees the Hessian T^T H T, equal to the identity when H = K;
+    with K the linear stiffness of the problem, its condition number no longer
+    grows like 1/h^4 (e.g. 3.5e7 -> 1.8 for the beam on a foundation, 100 elements).
+
+    Returns:
+        torch.Tensor: T, shape (n, n).
+    """
+    L = torch.linalg.cholesky(K)
+    return torch.linalg.solve_triangular(L, torch.eye(K.shape[0]), upper=False).T
+
+
+class _LinearMap(torch.nn.Module):
+    """Parametrization values_reduced = T z (the trainable tensor becomes z)."""
+
+    def __init__(self, T):
+        super().__init__()
+        self.register_buffer("T", T)
+
+    def forward(self, z):
+        return (self.T @ z.flatten()).view_as(z)
+
+    def right_inverse(self, q):
+        return torch.linalg.solve(self.T, q.flatten()).view_as(q)
+
+
+def precondition(field, T):
+    """Optimize the free DOFs q of `field` through z, with q = T z.
+
+    Use: preconditioning of `minimize` without touching it: the model's
+    parameter becomes z (initialized to T^-1 q), Pi is unchanged. Undo with
+    `unprecondition` before working on q again (e.g. `grad_hessian`).
+
+    Args:
+        field (TrainableField): field whose `values_reduced` are the DOFs q.
+        T (torch.Tensor): invertible matrix (n, n), e.g. `cholesky_preconditioner`.
+    """
+    parametrize.register_parametrization(field, "values_reduced", _LinearMap(T))
+
+
+def unprecondition(field):
+    """Remove the q = T z change of variable, keeping the current q as parameter."""
+    parametrize.remove_parametrizations(field, "values_reduced", leave_parametrized=True)
 
 
 def newton(model, tol=1e-9, max_iter=50):

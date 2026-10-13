@@ -1,0 +1,68 @@
+k = 0e+00: P_cr = 39.4784, F = 192.2260
+  P/P_cr = 0.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.6e-03, max|w| in [0.034, 0.949], 1 s
+  P/P_cr = 0.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.2e-02, max|w| in [0.058, 1.541], 1 s
+  P/P_cr = 0.90: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.6e-02, max|w| in [0.247, 2.311], 1 s
+  P/P_cr = 0.95: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.9e-03, max|w| in [0.418, 2.416], min lambda_min 3.01e-02, max jump 6.98e-01
+  P/P_cr = 1.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.6e-03, max|w| in [0.741, 2.523], min lambda_min 3.74e-02, max jump 7.80e-01
+  P/P_cr = 1.05: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.7e-03, max|w| in [1.086, 2.629], min lambda_min 6.21e-02, max jump 4.67e-01
+  P/P_cr = 1.10: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.7e-03, max|w| in [1.379, 2.735], min lambda_min 9.34e-02, max jump 2.71e-01
+  P/P_cr = 1.15: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.5e-03, max|w| in [1.631, 2.840], min lambda_min 1.27e-01, max jump 1.83e-01
+  P/P_cr = 1.20: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.6e-03, max|w| in [1.852, 2.945], min lambda_min 1.62e-01, max jump 1.36e-01
+  P/P_cr = 1.25: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.4e-03, max|w| in [2.052, 3.048], min lambda_min 1.97e-01, max jump 1.08e-01
+  P/P_cr = 1.30: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.0e-03, max|w| in [2.235, 3.150], min lambda_min 2.32e-01, max jump 8.94e-02
+  P/P_cr = 1.35: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.1e-03, max|w| in [2.405, 3.251], min lambda_min 2.68e-01, max jump 7.61e-02
+  P/P_cr = 1.40: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.6e-03, max|w| in [2.565, 3.351], min lambda_min 3.04e-01, max jump 6.63e-02
+  P/P_cr = 1.45: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.9e-03, max|w| in [2.715, 3.449], min lambda_min 3.40e-01, max jump 5.86e-02
+  P/P_cr = 1.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.7e-03, max|w| in [2.857, 3.546], min lambda_min 3.76e-01, max jump 5.25e-02
+  continuation: 125 s
+k = 1e+02: P_cr = 47.0066, F = 229.2008
+  P/P_cr = 0.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.0e-03, max|w| in [0.035, 0.956], 1 s
+  P/P_cr = 0.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-02, max|w| in [0.058, 1.581], 1 s
+  P/P_cr = 0.90: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.0e-02, max|w| in [0.233, 2.432], 1 s
+  P/P_cr = 0.95: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.1e-03, max|w| in [0.403, 2.550], min lambda_min 3.28e-02, max jump 7.41e-01
+  P/P_cr = 1.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.8e-03, max|w| in [0.765, 2.670], min lambda_min 3.99e-02, max jump 9.07e-01
+  P/P_cr = 1.05: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.7e-03, max|w| in [1.157, 2.789], min lambda_min 6.99e-02, max jump 5.17e-01
+  P/P_cr = 1.10: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.5e-03, max|w| in [1.485, 2.907], min lambda_min 1.08e-01, max jump 2.85e-01
+  P/P_cr = 1.15: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.2e-03, max|w| in [1.764, 3.025], min lambda_min 1.48e-01, max jump 1.88e-01
+  P/P_cr = 1.20: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.6e-03, max|w| in [2.008, 3.142], min lambda_min 1.90e-01, max jump 1.39e-01
+  P/P_cr = 1.25: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.9e-03, max|w| in [2.227, 3.258], min lambda_min 2.32e-01, max jump 1.09e-01
+  P/P_cr = 1.30: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.9e-03, max|w| in [2.428, 3.372], min lambda_min 2.74e-01, max jump 9.03e-02
+  P/P_cr = 1.35: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-03, max|w| in [2.614, 3.485], min lambda_min 3.17e-01, max jump 7.67e-02
+  P/P_cr = 1.40: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.6e-03, max|w| in [2.788, 3.596], min lambda_min 3.51e-01, max jump 6.67e-02
+  P/P_cr = 1.45: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.2e-03, max|w| in [2.952, 3.705], min lambda_min 3.54e-01, max jump 5.89e-02
+  P/P_cr = 1.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.4e-03, max|w| in [3.107, 3.813], min lambda_min 3.54e-01, max jump 5.28e-02
+  continuation: 127 s
+k = 1e+03: P_cr = 101.1915, F = 543.9771
+  P/P_cr = 0.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 8.5e-04, max|w| in [0.049, 0.980], 1 s
+  P/P_cr = 0.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.7e-02, max|w| in [0.073, 1.655], 1 s
+  P/P_cr = 0.90: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.1e-02, max|w| in [0.210, 2.824], 2 s
+  P/P_cr = 0.95: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 7.5e-03, max|w| in [0.334, 3.005], min lambda_min 7.43e-02, max jump 7.36e-01
+  P/P_cr = 1.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 7.1e-03, max|w| in [0.596, 3.188], min lambda_min 6.92e-02, max jump 9.05e-01
+  P/P_cr = 1.05: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.0e-02, max|w| in [0.878, 3.372], min lambda_min 5.92e-02, max jump 5.17e-01
+  P/P_cr = 1.10: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 8.3e-03, max|w| in [1.113, 3.556], min lambda_min 5.49e-02, max jump 2.85e-01
+  P/P_cr = 1.15: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.1e-02, max|w| in [1.312, 3.739], min lambda_min 5.25e-02, max jump 1.88e-01
+  P/P_cr = 1.20: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 7.5e-03, max|w| in [1.487, 3.920], min lambda_min 5.10e-02, max jump 1.39e-01
+  P/P_cr = 1.25: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 5.0e-03, max|w| in [1.644, 4.098], min lambda_min 4.99e-02, max jump 1.10e-01
+  P/P_cr = 1.30: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 9.5e-03, max|w| in [1.788, 4.273], min lambda_min 4.91e-02, max jump 9.03e-02
+  P/P_cr = 1.35: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 7.2e-03, max|w| in [1.921, 4.445], min lambda_min 4.84e-02, max jump 7.67e-02
+  P/P_cr = 1.40: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.5e-03, max|w| in [2.045, 4.614], min lambda_min 4.79e-02, max jump 6.67e-02
+  P/P_cr = 1.45: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 7.7e-03, max|w| in [2.163, 4.780], min lambda_min 4.74e-02, max jump 5.89e-02
+  P/P_cr = 1.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.9e-03, max|w| in [2.274, 4.942], min lambda_min 4.71e-02, max jump 5.28e-02
+  continuation: 133 s
+k = 1e+04: P_cr = 233.7856, F = 2851.3520
+  P/P_cr = 0.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.2e-03, max|w| in [0.129, 0.993], 1 s
+  P/P_cr = 0.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 2.6e-02, max|w| in [0.174, 1.428], 2 s
+  P/P_cr = 0.90: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 3.6e-02, max|w| in [0.342, 2.302], 2 s
+  P/P_cr = 0.95: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.5e-02, max|w| in [0.451, 2.446], min lambda_min 2.07e-01, max jump 5.47e-01
+  P/P_cr = 1.00: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.4e-02, max|w| in [0.747, 2.591], min lambda_min 2.07e-01, max jump 6.22e-01
+  P/P_cr = 1.05: LBFGS it. mean 3.0 (max 4), not converged 0, max||grad|| 2.5e-02, max|w| in [1.072, 2.736], min lambda_min 1.92e-01, max jump 4.16e-01
+  P/P_cr = 1.10: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.4e-02, max|w| in [1.358, 2.880], min lambda_min 1.81e-01, max jump 2.58e-01
+  P/P_cr = 1.15: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-02, max|w| in [1.605, 3.024], min lambda_min 1.75e-01, max jump 1.78e-01
+  P/P_cr = 1.20: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.5e-02, max|w| in [1.824, 3.171], min lambda_min 1.70e-01, max jump 1.34e-01
+  P/P_cr = 1.25: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.8e-02, max|w| in [2.017, 3.315], min lambda_min 1.67e-01, max jump 1.07e-01
+  P/P_cr = 1.30: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.8e-02, max|w| in [2.170, 3.455], min lambda_min 1.64e-01, max jump 8.89e-02
+  P/P_cr = 1.35: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-02, max|w| in [2.324, 3.592], min lambda_min 1.62e-01, max jump 7.59e-02
+  P/P_cr = 1.40: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-02, max|w| in [2.459, 3.724], min lambda_min 1.61e-01, max jump 6.61e-02
+  P/P_cr = 1.45: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.2e-02, max|w| in [2.588, 3.853], min lambda_min 1.59e-01, max jump 5.85e-02
+  P/P_cr = 1.50: LBFGS it. mean 3.0 (max 3), not converged 0, max||grad|| 1.3e-02, max|w| in [2.721, 3.979], min lambda_min 1.58e-01, max jump 5.25e-02
+  continuation: 166 s

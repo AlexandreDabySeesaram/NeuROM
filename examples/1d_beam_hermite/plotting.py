@@ -172,3 +172,88 @@ def plot_amplitude(P, w, *, P_critical=None):
         template="plotly_white",
     )
     return fig
+
+
+def plot_pod_decay(pod, *, noise_floor=None):
+    """Plot eps(n) of the POD, one panel per k, one curve per P / P_cr.
+
+    Args:
+        pod (pandas.DataFrame): rows of `kolmogorov_study/results/pod.csv`
+            (columns k, ratio, sigma_1, sigma_2, ...).
+        noise_floor (float, optional): eps below it is within the snapshot
+            error; drawn as a grey band.
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, make_subplots = _plotly()
+    import numpy as np
+
+    k_values = sorted(pod.k.unique())
+    ratios = sorted(pod.ratio.unique())
+    sigma_columns = [c for c in pod.columns if c.startswith("sigma_")]
+    fig = make_subplots(rows=1, cols=len(k_values), shared_yaxes=True,
+                        subplot_titles=[f"k = {k:g}" for k in k_values])
+    for col, k in enumerate(k_values, start=1):
+        for i, ratio in enumerate(ratios):
+            sigma = pod[(pod.k == k) & (pod.ratio == ratio)][sigma_columns].to_numpy(dtype=float)[0]
+            tail = np.cumsum((sigma**2)[::-1])[::-1]
+            eps = np.sqrt(np.append(tail, 0.0)[1:] / tail[0])
+            fig.add_trace(go.Scatter(
+                x=np.arange(1, len(eps) + 1), y=eps, mode="lines", name=f"P/P_cr = {ratio:.2f}",
+                legendgroup=f"{ratio}", showlegend=col == 1,
+                line=dict(color=f"hsl({240 * i / max(len(ratios) - 1, 1):.0f}, 70%, 45%)"),
+            ), row=1, col=col)
+        if noise_floor is not None:
+            fig.add_hrect(y0=1e-16, y1=noise_floor, fillcolor="gray", opacity=0.2, line_width=0,
+                          row=1, col=col)
+        fig.update_xaxes(title_text="n", range=[0, 40], row=1, col=col)
+    fig.update_yaxes(type="log", range=[-8, 0], title_text="eps(n)", row=1, col=1)
+    fig.update_layout(title="POD: relative error of the best rank-n approximation",
+                      template="plotly_white")
+    return fig
+
+
+def plot_pod_map(pod, column="n_1e-03"):
+    """Heatmap of a POD summary (e.g. n(1e-3)) on the (k, P / P_cr) grid.
+
+    Args:
+        pod (pandas.DataFrame): rows of `kolmogorov_study/results/pod.csv`.
+        column (str): summary to show.
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, _ = _plotly()
+
+    table = pod.pivot(index="k", columns="ratio", values=column)
+    fig = go.Figure(go.Heatmap(
+        z=table.to_numpy(), x=[f"{r:.2f}" for r in table.columns], y=[f"{k:g}" for k in table.index],
+        text=table.to_numpy(), texttemplate="%{text:.3g}", colorscale="Viridis",
+        colorbar=dict(title=column),
+    ))
+    fig.update_layout(title=f"POD: {column}", xaxis_title="P / P_cr", yaxis_title="k",
+                      template="plotly_white")
+    return fig
+
+
+def plot_snapshot_map(x, a, W, *, title="w(x, a)"):
+    """Heatmap of the snapshots w(x, a).
+
+    Args:
+        x (array-like): sampling in x, shape (N_x,).
+        a (array-like): load positions, shape (N_a,).
+        W (array-like): snapshots, shape (N_x, N_a).
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, _ = _plotly()
+    import numpy as np
+
+    fig = go.Figure(go.Heatmap(
+        z=np.asarray(W, dtype=float), x=np.asarray(a, dtype=float), y=np.asarray(x, dtype=float),
+        colorscale="RdBu", zmid=0.0, colorbar=dict(title="w"),
+    ))
+    fig.update_layout(title=title, xaxis_title="a", yaxis_title="x", template="plotly_white")
+    return fig

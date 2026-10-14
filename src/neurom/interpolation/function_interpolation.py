@@ -19,10 +19,10 @@ from neurom.meshes.topology import EntityDim
 def _dof_kinds_by_dim(element):
     """Map ``entity_dim -> ordered list of DOF kinds`` on one entity of that dimension."""
     out: dict[int, list] = {}
-    for entity_dim, _, kind in element.dof_layout:
-        out.setdefault(entity_dim, [])
-        if kind not in out[entity_dim]:
-            out[entity_dim].append(kind)
+    for dof in element.dof_layout:
+        out.setdefault(dof.entity_dim, [])
+        if dof.kind not in out[dof.entity_dim]:
+            out[dof.entity_dim].append(dof.kind)
     return out
 
 

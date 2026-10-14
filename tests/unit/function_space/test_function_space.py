@@ -88,15 +88,15 @@ def test_interpolate_sets_value_and_derivative_dofs():
 def test_interpolate_raises_for_a_dof_kind_without_a_functional():
     # interpolate is honestly limited to point-functional elements; a flux/normal-derivative
     # kind has no functional yet, so it raises -- and field init never depends on it.
-    from neurom.elements import FiniteElement, NORMAL_DERIVATIVE, EntityDim
+    from neurom.elements import FiniteElement, DoF, NORMAL_DERIVATIVE, EntityDim
     from neurom.shape_functions import LinearBar
 
     mesh, _, _ = _mesh(3)
     exotic = FiniteElement(
         LinearBar(),
         [
-            (EntityDim.VERTEX, 0, NORMAL_DERIVATIVE),
-            (EntityDim.VERTEX, 1, NORMAL_DERIVATIVE),
+            DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=NORMAL_DERIVATIVE),
+            DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=NORMAL_DERIVATIVE),
         ],
     )
     space = FunctionSpace(mesh.topology, exotic)

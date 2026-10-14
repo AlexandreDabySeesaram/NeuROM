@@ -41,13 +41,15 @@ class DofMap(nn.Module):
         self.element = element
         layout = element.dof_layout
 
-        dims_present = sorted({ed for ed, _, _ in layout})
+        dims_present = sorted({dof.entity_dim for dof in layout})
 
         # DOFs per entity and the ordered kinds on one entity, per dimension.
         self._dofs_per_entity: dict[int, int] = {}
         self._kinds_per_entity: dict[int, list] = {}
         for d in dims_present:
-            entries = [(lei, kind) for ed, lei, kind in layout if ed == d]
+            entries = [
+                (dof.local_index, dof.kind) for dof in layout if dof.entity_dim == d
+            ]
             lei0 = min(lei for lei, _ in entries)
             kinds0 = [kind for lei, kind in entries if lei == lei0]
             self._dofs_per_entity[d] = len(kinds0)
@@ -60,17 +62,19 @@ class DofMap(nn.Module):
             self._offset[d] = total
             total += topology.n_entities(d) * self._dofs_per_entity[d]
 
-        # Rank of each local DOF within its (entity_dim, local_entity_index) group.
+        # Rank of each local DOF within its (entity_dim, local_index) group.
         rank, seen = [], {}
-        for ed, lei, _ in layout:
-            r = seen.get((ed, lei), 0)
+        for dof in layout:
+            key = (dof.entity_dim, dof.local_index)
+            r = seen.get(key, 0)
             rank.append(r)
-            seen[(ed, lei)] = r + 1
+            seen[key] = r + 1
 
         # cell_dofs[e, i] = offset[d] + global_entity(e, i) * dofs_per_entity[d] + rank[i]
         n_cells = topology.n_cells
         cell_dofs = torch.empty(n_cells, len(layout), dtype=torch.int64)
-        for i, (ed, lei, _) in enumerate(layout):
+        for i, dof in enumerate(layout):
+            ed, lei = dof.entity_dim, dof.local_index
             global_entity = topology.cell_entities(ed)[:, lei]  # (n_cells,)
             cell_dofs[:, i] = (
                 self._offset[ed] + global_entity * self._dofs_per_entity[ed] + rank[i]

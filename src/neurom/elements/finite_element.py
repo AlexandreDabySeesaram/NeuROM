@@ -1,5 +1,8 @@
 """Finite element: owns the DOF layout, so DOF counts/locations are deduced, not passed."""
 
+import math
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
 
@@ -10,6 +13,24 @@ VALUE = "value"  # nodal value
 D1 = "d1"  # nodal first derivative (gradient)
 FLUX = "flux"  # edge/face normal flux (RT0)
 NORMAL_DERIVATIVE = "normal_derivative"  # Morley/HCT/Argyris (coupled)
+
+
+@dataclass(frozen=True)
+class DoF:
+    """One degree of freedom in an element's declarative layout (what & where, mesh-independent).
+
+    Attributes:
+        entity_dim (EntityDim): Dimension of the cell sub-entity the DOF is attached to
+            (``VERTEX``/``EDGE``/``FACE``/``VOLUME``).
+        local_index (int): Ordinal of that entity within the reference cell (e.g. which of a
+            triangle's three vertices or edges).
+        kind (str): The functional defining the DOF -- one of ``VALUE``, ``D1``, ``FLUX``,
+            ``NORMAL_DERIVATIVE``.
+    """
+
+    entity_dim: EntityDim
+    local_index: int
+    kind: str
 
 
 class FiniteElement(nn.Module):
@@ -23,12 +44,10 @@ class FiniteElement(nn.Module):
     Args:
         reference_basis (ShapeFunction): Evaluates the reference basis ``N(ξ)``;
             supplies the reference element (``reference_basis.reference_element``).
-        dof_layout (Sequence): Ordered DOFs as ``(entity_dim, local_entity_index, kind)``
-            triples, in the same order as the columns of ``N``. ``entity_dim`` is an
-            :class:`~neurom.meshes.EntityDim` (``VERTEX``/``EDGE``/``FACE``/``VOLUME``);
-            ``local_entity_index`` is the entity's local ordinal within the cell (e.g. which
-            of a triangle's three vertices). E.g. the Hermite beam is
-            ``[(VERTEX,0,VALUE),(VERTEX,0,D1),(VERTEX,1,VALUE),(VERTEX,1,D1)]``.
+        dof_layout (Sequence[DoF]): Ordered DOFs, in the same order as the columns of ``N``.
+            Each entry is a :class:`DoF` (``(entity_dim, local_index, kind)`` triples are also
+            accepted and coerced). E.g. the Hermite beam is ``[DoF(VERTEX,0,VALUE),
+            DoF(VERTEX,0,D1), DoF(VERTEX,1,VALUE), DoF(VERTEX,1,D1)]``.
         value_shape (tuple[int, ...]): Component shape of the field value; ``()``
             scalar, ``(2,)`` a 2-vector. Orthogonal to ``dof_layout``.
         pullback (str): ``"identity"`` (scalar/Lagrange/Hermite) or ``"piola"`` (RT0).
@@ -43,10 +62,12 @@ class FiniteElement(nn.Module):
         super().__init__()
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_element
-        # Normalise so the layout always carries a typed EntityDim, however it was declared.
+        # Normalise to DoF with a typed EntityDim, accepting either DoF or a raw triple.
         self.dof_layout = tuple(
-            (EntityDim(int(entity_dim)), int(local_entity_index), kind)
-            for entity_dim, local_entity_index, kind in dof_layout
+            DoF(EntityDim(int(d.entity_dim)), int(d.local_index), d.kind)
+            if isinstance(d, DoF)
+            else DoF(EntityDim(int(d[0])), int(d[1]), d[2])
+            for d in dof_layout
         )
         self.value_shape = tuple(value_shape)
         self.pullback = pullback
@@ -63,22 +84,24 @@ class FiniteElement(nn.Module):
 
     @property
     def n_ref(self) -> int:
-        """Number of reference basis functions (``n_ref``); may differ from ``n_dofs``."""
-        probe = self.cell.simplex[:1].unsqueeze(0)  # (1, 1, dim_ref)
+        """Number of reference basis functions = number of columns of ``N(ξ)``.
+
+        Obtained by evaluating the basis at a single probe point -- the first reference vertex,
+        shaped ``(1, 1, dim_ref)`` to match ``N``'s ``(N_e, N_q, dim_ref)`` input -- and reading
+        the trailing axis. May differ from ``n_dofs`` (e.g. a hierarchical/bubble basis).
+        """
+        probe = self.cell.simplex[:1].unsqueeze(0)  # (1, 1, dim_ref), first vertex
         return self.reference_basis.N(probe).shape[-1]
 
     @property
     def n_components(self) -> int:
-        """Number of value components (product of ``value_shape``; 1 if scalar)."""
-        n = 1
-        for s in self.value_shape:
-            n *= s
-        return n
+        """Number of scalar value components = product of ``value_shape`` (1 when scalar)."""
+        return math.prod(self.value_shape)
 
     @property
     def dof_kinds(self) -> tuple:
         """The ``kind`` of each DOF, in layout order."""
-        return tuple(kind for (_, _, kind) in self.dof_layout)
+        return tuple(d.kind for d in self.dof_layout)
 
     def N(self, xi: torch.Tensor) -> torch.Tensor:
         """Evaluate the reference basis at ``xi`` (delegates to ``reference_basis``)."""
@@ -95,14 +118,17 @@ class FiniteElement(nn.Module):
         """
         verts = self.cell.simplex  # (n_verts, dim_ref)
         out = []
-        for entity_dim, local_entity_index, _ in self.dof_layout:
-            if entity_dim == EntityDim.VERTEX:
-                out.append(verts[local_entity_index])
-            elif entity_dim == self.dim_ref:  # cell DOF -> centroid
-                out.append(verts.mean(dim=0))
-            elif entity_dim == EntityDim.EDGE:  # edge DOF -> reference edge midpoint
-                edge = self.cell.local_edges[local_entity_index]  # (2,) local vertices
+        for d in self.dof_layout:
+            if d.entity_dim == EntityDim.VERTEX:
+                out.append(verts[d.local_index])
+            elif d.entity_dim == EntityDim.EDGE and self.dim_ref >= 2:
+                # a true sub-edge (triangle and up): midpoint of its two local vertices
+                edge = self.cell.local_edges[d.local_index]  # (2,) local vertices
                 out.append(verts[edge].mean(dim=0))
+            elif d.entity_dim == self.dim_ref:
+                # the top-dimensional cell itself -- incl. a bar, whose sole edge IS the cell,
+                # so its centroid coincides with the edge midpoint -> centroid
+                out.append(verts.mean(dim=0))
             else:
                 raise NotImplementedError(
                     "face DOF reference coordinates are not built yet"

@@ -55,12 +55,12 @@ def test_element_deduces_dof_nodes_and_counts():
 
 def test_dof_layout_entity_dim_is_entity_dim():
     # entity_dim in the layout is a typed EntityDim (not a bare int).
-    assert HERMITE.dof_layout[0][0] is EntityDim.VERTEX
-    assert all(isinstance(e, EntityDim) for e, _, _ in HERMITE.dof_layout)
+    assert HERMITE.dof_layout[0].entity_dim is EntityDim.VERTEX
+    assert all(isinstance(d.entity_dim, EntityDim) for d in HERMITE.dof_layout)
     # a cell DOF carries the cell's *absolute* dimension: bar cell = EDGE, triangle = FACE.
-    assert DG0_BAR.dof_layout[0][0] == EntityDim.EDGE
-    assert DG0_TRIANGLE.dof_layout[0][0] == EntityDim.FACE
-    assert isinstance(DG0_TRIANGLE.dof_layout[0][0], EntityDim)
+    assert DG0_BAR.dof_layout[0].entity_dim == EntityDim.EDGE
+    assert DG0_TRIANGLE.dof_layout[0].entity_dim == EntityDim.FACE
+    assert isinstance(DG0_TRIANGLE.dof_layout[0].entity_dim, EntityDim)
 
 
 def test_p1_dofmap_equals_vertex_connectivity():

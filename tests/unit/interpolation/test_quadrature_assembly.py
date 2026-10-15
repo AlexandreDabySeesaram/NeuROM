@@ -3,7 +3,7 @@ import torch
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D, QuadratureRule
-from neurom.reference_elements.bar import Bar
+from neurom.reference_cells import BAR
 from neurom.shape_functions import LinearBar
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace
@@ -28,11 +28,11 @@ class Endpoints(QuadratureRule):
     """
 
     def __init__(self):
-        super().__init__(Bar())
-        self.register_buffer(
-            "points_barycentric", torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+        super().__init__(
+            BAR,
+            points=torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
+            weights=torch.tensor([1.0, 1.0]),
         )
-        self.register_buffer("weights_ref", torch.tensor([1.0, 1.0]))
 
 
 def _mesh(x_nodes):

@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.triangle import Triangle
+from neurom.reference_cells import TRIANGLE
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -20,14 +20,12 @@ class MidPoint2D(QuadratureRule):
     """
 
     def __init__(self):
-        """Initialise the midpoint rule on the standard ``Triangle`` element."""
-        ref = Triangle()
-        super().__init__(ref)
+        """Initialise the midpoint rule on the reference triangle."""
+        ref = TRIANGLE
 
         # midpoint barycentric
         points = torch.tensor([[1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]])  # (1,3)
 
         weights = ref.measure[None]  # (1,)
 
-        self.register_buffer("points_barycentric", points)
-        self.register_buffer("weights_ref", weights)
+        super().__init__(ref, points, weights)

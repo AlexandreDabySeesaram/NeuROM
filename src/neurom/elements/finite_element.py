@@ -4,7 +4,6 @@ import math
 from dataclasses import dataclass
 
 import torch
-import torch.nn as nn
 
 from neurom.meshes.topology import EntityDim
 
@@ -33,8 +32,13 @@ class DoF:
     kind: str
 
 
-class FiniteElement(nn.Module):
-    """A finite element = reference basis + a declarative DOF layout.
+class FiniteElement:
+    r"""A finite element = reference basis + a declarative DOF layout.
+
+    A plain immutable object (not an ``nn.Module``): it holds only the reference basis, the
+    declarative DOF layout and the value shape -- no geometry, no trainable state, no dtype-pinned
+    tensors -- so a single shared instance (the library singletons) serves every mesh and dtype,
+    and casting one model never mutates another's element.
 
     The ``dof_layout`` is the single source of truth for *what* and *where* the
     DOFs are; everything the user previously had to pass (DOFs-per-node, the field
@@ -42,8 +46,8 @@ class FiniteElement(nn.Module):
     ``DofMap``/``FunctionSpace``.
 
     Args:
-        reference_basis (ShapeFunction): Evaluates the reference basis ``N(ξ)``;
-            supplies the reference element (``reference_basis.reference_element``).
+        reference_basis (ShapeFunction): Evaluates the reference basis :math:`N(\xi)`;
+            supplies the reference element (``reference_basis.reference_cell``).
         dof_layout (Sequence[DoF]): Ordered DOFs, in the same order as the columns of ``N``.
             Each entry is a :class:`DoF` (``(entity_dim, local_index, kind)`` triples are also
             accepted and coerced). E.g. the Hermite beam is ``[DoF(VERTEX,0,VALUE),
@@ -59,9 +63,8 @@ class FiniteElement(nn.Module):
     def __init__(
         self, reference_basis, dof_layout, value_shape=(), pullback="identity"
     ):
-        super().__init__()
         self.reference_basis = reference_basis
-        self.cell = reference_basis.reference_element
+        self.cell = reference_basis.reference_cell
         # Normalise to DoF with a typed EntityDim, accepting either DoF or a raw triple.
         self.dof_layout = tuple(
             DoF(EntityDim(int(d.entity_dim)), int(d.local_index), d.kind)
@@ -75,7 +78,7 @@ class FiniteElement(nn.Module):
     @property
     def dim_ref(self) -> int:
         """Reference (parametric) dimension: 1 for a bar, 2 for a triangle."""
-        return self.cell.simplex.shape[1]
+        return self.cell.dim_ref
 
     @property
     def n_dofs(self) -> int:
@@ -84,7 +87,7 @@ class FiniteElement(nn.Module):
 
     @property
     def n_ref(self) -> int:
-        """Number of reference basis functions = number of columns of ``N(ξ)``.
+        r"""Number of reference basis functions = number of columns of :math:`N(\xi)`.
 
         Obtained by evaluating the basis at a single probe point -- the first reference vertex,
         shaped ``(1, 1, dim_ref)`` to match ``N``'s ``(N_e, N_q, dim_ref)`` input -- and reading
@@ -123,7 +126,9 @@ class FiniteElement(nn.Module):
                 out.append(verts[d.local_index])
             elif d.entity_dim == EntityDim.EDGE and self.dim_ref >= 2:
                 # a true sub-edge (triangle and up): midpoint of its two local vertices
-                edge = self.cell.local_edges[d.local_index]  # (2,) local vertices
+                edge = self.cell.local_entities(EntityDim.EDGE)[
+                    d.local_index
+                ]  # (2,) local vertices
                 out.append(verts[edge].mean(dim=0))
             elif d.entity_dim == self.dim_ref:
                 # the top-dimensional cell itself -- incl. a bar, whose sole edge IS the cell,

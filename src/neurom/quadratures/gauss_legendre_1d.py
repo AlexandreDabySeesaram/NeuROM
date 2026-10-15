@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from neurom.reference_elements.bar import Bar
+from neurom.reference_cells import BAR
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -18,8 +18,7 @@ class GaussLegendre1D(QuadratureRule):
     """
 
     def __init__(self, n_points: int):
-        ref = Bar()
-        super().__init__(ref)
+        ref = BAR
 
         nodes, weights = np.polynomial.legendre.leggauss(
             n_points
@@ -30,6 +29,4 @@ class GaussLegendre1D(QuadratureRule):
         lam1 = 0.5 * (nodes + 1.0)  # barycentric weight of vertex at +1
         points = torch.stack([1.0 - lam1, lam1], dim=1)  # (n, 2)
 
-        # Register
-        self.register_buffer("points_barycentric", points)
-        self.register_buffer("weights_ref", weights)  # sum = 2 = bar measure
+        super().__init__(ref, points, weights)  # weights sum = 2 = bar measure

@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.bar import Bar
+from neurom.reference_cells import BAR
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
@@ -18,8 +18,8 @@ class LinearBar(ShapeFunction):
     """
 
     def __init__(self):
-        """Initialise using the standard ``Bar`` reference element."""
-        super().__init__(Bar())
+        """Initialise using the reference bar."""
+        super().__init__(BAR)
 
     def N(self, xi):
         """Evaluate the two linear shape functions at reference coordinates.

@@ -9,7 +9,7 @@ per-cell constants.
 
 from neurom.elements.finite_element import FiniteElement, DoF, VALUE, D1
 from neurom.meshes.topology import EntityDim
-from neurom.reference_elements import ReferenceElement, Bar, Triangle
+from neurom.reference_cells import ReferenceCell, BAR, TRIANGLE
 from neurom.shape_functions import (
     LinearBar,
     LinearTriangle,
@@ -40,7 +40,7 @@ def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
     )
 
 
-def DG0(cell: ReferenceElement, value_shape=()) -> FiniteElement:
+def DG0(cell: ReferenceCell, value_shape=()) -> FiniteElement:
     r"""Piecewise-constant (:math:`P_0`) element: a single cell-value DOF (dimension-agnostic).
 
     One DOF, the constant cell value -- basis :math:`N_0\equiv1`, functional :math:`\ell(v)=v|_K`
@@ -112,10 +112,10 @@ first derivative, :math:`(\,v\mapsto v(x_i),\ v\mapsto v'(x_i)\,)`, at :math:`\x
 (geometry-dependent, unlike the nodal Lagrange elements)."""
 
 
-DG0_BAR = DG0(Bar())
+DG0_BAR = DG0(BAR)
 r"""**DG0 (piecewise constant) on the bar.** Space :math:`P_0`, a single cell-value DOF
 (:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). See :func:`DG0`."""
 
-DG0_TRIANGLE = DG0(Triangle())
+DG0_TRIANGLE = DG0(TRIANGLE)
 r"""**DG0 (piecewise constant) on the triangle.** Space :math:`P_0`, a single cell-value DOF
 (:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). See :func:`DG0`."""

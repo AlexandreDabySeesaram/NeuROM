@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from neurom.reference_elements.triangle import Triangle
+from neurom.reference_cells import TRIANGLE
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -20,8 +20,7 @@ class GaussTriangle(QuadratureRule):
     """
 
     def __init__(self, n_per_dir: int):
-        ref = Triangle()
-        super().__init__(ref)
+        ref = TRIANGLE
         nodes, w = np.polynomial.legendre.leggauss(n_per_dir)  # [-1, 1], sum w = 2
         s = 0.5 * (nodes + 1.0)  # -> [0, 1]
         w01 = 0.5 * w  # weights on [0, 1], sum = 1
@@ -38,8 +37,5 @@ class GaussTriangle(QuadratureRule):
         lam0 = 1.0 - lam1 - lam2
         points = torch.stack([lam0, lam1, lam2], dim=1)  # (n^2, 3) barycentric
 
-        # Register
-        self.register_buffer("points_barycentric", points)
-        self.register_buffer(
-            "weights_ref", torch.as_tensor(weights, dtype=dtype)
-        )  # sum = 0.5 = triangle measure
+        # weights sum = 0.5 = triangle measure
+        super().__init__(ref, points, torch.as_tensor(weights, dtype=dtype))

@@ -14,17 +14,17 @@ class Constant(ShapeFunction):
 
     Used as the reference basis of :func:`neurom.elements.DG0`, which declares the
     single cell DOF; a ``FunctionSpace`` then gives one unshared DOF per element.
-    Works on any reference element (``Bar``, ``Triangle``).
+    Works on any reference element (bar, triangle).
     """
 
-    def __init__(self, reference_element):
+    def __init__(self, reference_cell):
         """Initialise on a given reference element.
 
         Args:
-            reference_element (ReferenceElement): The reference element (e.g.
-                ``Bar`` in 1-D, ``Triangle`` in 2-D).
+            reference_cell (ReferenceCell): The reference element (e.g.
+                bar in 1-D, triangle in 2-D).
         """
-        super().__init__(reference_element)
+        super().__init__(reference_cell)
 
     def N(self, xi: torch.Tensor) -> torch.Tensor:
         """Evaluate the single constant basis function.

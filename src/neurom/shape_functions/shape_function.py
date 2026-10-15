@@ -2,37 +2,35 @@
 
 from abc import ABC, abstractmethod
 import torch
-import torch.nn as nn
 
-from neurom.reference_elements.reference_element import ReferenceElement
+from neurom.reference_cells.reference_cell import ReferenceCell
 
 
-class ShapeFunction(nn.Module, ABC):
-    """Abstract base class for finite-element shape functions.
+class ShapeFunction(ABC):
+    r"""Abstract base class for finite-element shape functions.
 
-    Subclasses implement the ``N`` method for a specific element type and
-    polynomial order.  The class inherits from ``torch.nn.Module`` so that
-    registered buffers (e.g. quadrature data) are handled automatically by
-    PyTorch.
+    Subclasses implement the ``N`` method for a specific element type and polynomial order.
+    A ``ShapeFunction`` is a plain immutable object (not an ``nn.Module``): :math:`N(\xi)` is
+    computed directly from the input :math:`\xi`, so it carries no dtype/device state and a single
+    instance is shared across meshes.
 
     The DOF layout (which DOF is a value, a derivative, etc., and where it lives)
     is owned by the :class:`~neurom.elements.FiniteElement`, not the shape function;
-    a ``ShapeFunction`` only evaluates the reference basis ``N(ξ)``.
+    a ``ShapeFunction`` only evaluates the reference basis :math:`N(\xi)`.
 
     Attributes:
-        reference_element (ReferenceElement): The reference element on which
+        reference_cell (ReferenceCell): The reference element on which
             the shape function is defined.
     """
 
-    def __init__(self, reference_element: ReferenceElement):
+    def __init__(self, reference_cell: ReferenceCell):
         """Initialise the shape function with its reference element.
 
         Args:
-            reference_element (ReferenceElement): The reference element on
+            reference_cell (ReferenceCell): The reference element on
                 which the shape function is defined.
         """
-        super().__init__()
-        self.reference_element = reference_element
+        self.reference_cell = reference_cell
 
     @abstractmethod
     def N(self, xi: torch.Tensor) -> torch.Tensor:

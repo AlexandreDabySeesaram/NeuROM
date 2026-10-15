@@ -39,7 +39,7 @@ def _f64():
 
 def _ref_points(quad):
     """Map a rule's barycentric points to reference coordinates (``sum_n lambda_n v_n``)."""
-    return barycentric_to_reference(quad.points_barycentric, quad.reference_element)
+    return barycentric_to_reference(quad.points_barycentric, quad.reference_cell)
 
 
 # ----------------------------------------------------------------- invariants
@@ -57,8 +57,8 @@ def test_weights_sum_to_reference_measure(factory):
     ``|K_hat|`` is 2 for the bar ``[-1,1]`` and 1/2 for the reference triangle.
     """
     quad = factory()  # built under the float64 fixture (not at collection time)
-    assert quad.weights().sum().item() == pytest.approx(
-        quad.reference_element.measure.item(), abs=1e-12
+    assert quad.weights_ref.sum().item() == pytest.approx(
+        quad.reference_cell.measure.item(), abs=1e-12
     )
 
 

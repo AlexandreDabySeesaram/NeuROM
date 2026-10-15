@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.triangle import Triangle
+from neurom.reference_cells import TRIANGLE
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -26,9 +26,8 @@ class ThreePoints2D(QuadratureRule):
     """
 
     def __init__(self):
-        """Initialise the 3-point rule on the standard ``Triangle`` element."""
-        ref = Triangle()
-        super().__init__(ref)
+        """Initialise the 3-point rule on the reference triangle."""
+        ref = TRIANGLE
 
         # three points barycentrics barycentric
         points = torch.tensor(
@@ -41,5 +40,4 @@ class ThreePoints2D(QuadratureRule):
 
         weights = ref.measure / 3.0 * torch.ones(3)  # (3,)
 
-        self.register_buffer("points_barycentric", points)
-        self.register_buffer("weights_ref", weights)
+        super().__init__(ref, points, weights)

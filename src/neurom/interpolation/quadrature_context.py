@@ -98,7 +98,7 @@ class QuadratureContext(nn.Module):
         ``(N_e, N_q, 1)``.
         """
         # Compute weighted measure
-        w = self._quad.weights()
+        w = self._quad.weights_ref
         dx = self._mapping.det_jacobian
         m = torch.abs(dx) * w
         n_e = dx.shape[0]

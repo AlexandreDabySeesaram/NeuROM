@@ -67,9 +67,15 @@ class Topology(nn.Module):
 
     @staticmethod
     def _simplex_local_edges(n_verts_per_cell: int) -> torch.Tensor:
-        """Local vertex-index pairs of a simplex cell's edges (shared with reference cells)."""
-        if n_verts_per_cell == 3:  # triangle: cyclic (0,1),(1,2),(2,0)
-            return torch.tensor([[0, 1], [1, 2], [2, 0]])
+        """Local vertex-index pairs of a simplex cell's edges, from the reference cell.
+
+        The reference cell is the *single source* of the local-edge convention; Topology borrows
+        it here rather than redefining ``(0,1),(1,2),(2,0)`` a second time.
+        """
+        if n_verts_per_cell == 3:  # triangle
+            from neurom.reference_cells import TRIANGLE
+
+            return TRIANGLE.local_entities(EntityDim.EDGE)
         raise NotImplementedError(
             f"edge enumeration is only built for triangles; got "
             f"{n_verts_per_cell}-vertex cells."

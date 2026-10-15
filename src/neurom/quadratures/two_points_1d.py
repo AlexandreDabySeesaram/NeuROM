@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.bar import Bar
+from neurom.reference_cells import BAR
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 
@@ -21,9 +21,8 @@ class TwoPoints1D(QuadratureRule):
     """
 
     def __init__(self):
-        """Initialise the 2-point Gauss rule on the standard ``Bar`` element."""
-        ref = Bar()
-        super().__init__(ref)
+        """Initialise the 2-point Gauss rule on the reference bar."""
+        ref = BAR
 
         # Gauss points in barycentric coordinates
         a = 0.5 * (1.0 - 1.0 / torch.sqrt(torch.tensor(3.0)))
@@ -38,5 +37,4 @@ class TwoPoints1D(QuadratureRule):
 
         weights = 0.5 * ref.measure * torch.ones(2)  # (2,)
 
-        self.register_buffer("points_barycentric", points)
-        self.register_buffer("weights_ref", weights)
+        super().__init__(ref, points, weights)

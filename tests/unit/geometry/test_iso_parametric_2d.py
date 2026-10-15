@@ -80,7 +80,7 @@ def test_map_reproduces_vertices(unit_square_mesh):
     mapping = IsoparametricMapping2D(unit_square_mesh)
 
     # Reference vertices as one "quadrature" set per element: (N_e, 3, 2)
-    xi_vertices = sf.reference_element.simplex.unsqueeze(0).expand(2, -1, -1)
+    xi_vertices = sf.reference_cell.simplex.unsqueeze(0).expand(2, -1, -1)
     x = mapping.map(xi_vertices)
 
     expected = unit_square_mesh.coordinates.at_elements()

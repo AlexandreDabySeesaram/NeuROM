@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.triangle import Triangle
+from neurom.reference_cells import TRIANGLE
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
@@ -20,8 +20,8 @@ class LinearTriangle(ShapeFunction):
     """
 
     def __init__(self):
-        """Initialise using the standard ``Triangle`` reference element."""
-        super().__init__(Triangle())
+        """Initialise using the reference triangle."""
+        super().__init__(TRIANGLE)
 
     def N(self, xi):
         """Evaluate the three linear shape functions at reference coordinates.

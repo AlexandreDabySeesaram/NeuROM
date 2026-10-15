@@ -1,56 +1,46 @@
 """Base class for quadrature rules (points and weights on a reference element)."""
 
 from abc import ABC
-import torch.nn as nn
 
-from neurom.reference_elements.reference_element import ReferenceElement
+import torch
+
+from neurom.reference_cells.reference_cell import ReferenceCell
 
 
-class QuadratureRule(nn.Module, ABC):
+class QuadratureRule(ABC):
     """Abstract base class for quadrature rules stored in barycentric coordinates.
 
-    Concrete subclasses register two buffers:
-
-    - ``points_barycentric`` — quadrature points as barycentric coordinates,
-      shape ``(N_q, N_nodes)``.
-    - ``weights_ref`` — integration weights in the reference element,
-      shape ``(N_q,)``.
-
-    The class inherits from ``torch.nn.Module`` so that the buffers are
-    managed by PyTorch (device placement, serialisation, etc.).
+    A plain immutable object: the points and weights are constant
+    reference data, stored as a float64 master and returned on access in
+    ``torch.get_default_dtype()``. Concrete subclasses build
+    the barycentric points ``(N_q, N_nodes)`` and reference weights ``(N_q,)`` and hand them to
+    ``super().__init__``.
 
     Attributes:
-        reference_element (ReferenceElement): The reference element on which
-            the quadrature rule is defined.
-        points_barycentric (torch.Tensor): Barycentric coordinates of the
-            quadrature points, shape ``(N_q, N_nodes)``.
-        weights_ref (torch.Tensor): Integration weights in the reference
-            element, shape ``(N_q,)``.
+        reference_cell (ReferenceCell): The reference element the rule is defined on.
+        points_barycentric (torch.Tensor): Barycentric quadrature points ``(N_q, N_nodes)`` in the
+            active dtype.
+        weights_ref (torch.Tensor): Reference integration weights ``(N_q,)`` in the active dtype.
     """
 
-    def __init__(self, reference_element: ReferenceElement):
-        """Initialise the base quadrature rule.
+    def __init__(self, reference_cell: ReferenceCell, points, weights):
+        """Store the reference element and the rule's points/weights as float64 masters.
 
         Args:
-            reference_element (ReferenceElement): The reference element on
-                which the quadrature rule is defined.
+            reference_cell (ReferenceCell): The reference element the rule is defined on.
+            points: Barycentric quadrature points ``(N_q, N_nodes)``.
+            weights: Reference integration weights ``(N_q,)``.
         """
-        super().__init__()
-        self.reference_element = reference_element
+        self.reference_cell = reference_cell
+        self._points_barycentric = torch.as_tensor(points, dtype=torch.float64)
+        self._weights_ref = torch.as_tensor(weights, dtype=torch.float64)
 
-    def points(self):
-        """Return the quadrature points in barycentric coordinates.
+    @property
+    def points_barycentric(self) -> torch.Tensor:
+        """Barycentric quadrature points ``(N_q, N_nodes)`` in the active default dtype."""
+        return self._points_barycentric.to(torch.get_default_dtype())
 
-        Returns:
-            torch.Tensor: Barycentric coordinates of shape
-            ``(N_q, N_nodes)``.
-        """
-        return self.points_barycentric
-
-    def weights(self):
-        """Return the quadrature weights in the reference element.
-
-        Returns:
-            torch.Tensor: Integration weights of shape ``(N_q,)``.
-        """
-        return self.weights_ref
+    @property
+    def weights_ref(self) -> torch.Tensor:
+        """Reference integration weights ``(N_q,)`` in the active default dtype."""
+        return self._weights_ref.to(torch.get_default_dtype())

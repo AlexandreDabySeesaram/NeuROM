@@ -18,7 +18,38 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness, InternalEnergy_StochasticShape
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness, InternalEnergy_StochasticShape, InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK
+
+# Default ordering of the extra-coordinates of the "PressureGravityBoundaryStiffness" problem (overridden by config["loads"]["parameters"])
+PressureGravity_default_parameters = {  3: ["E", "theta", "phi"],
+                                        4: ["E", "theta", "phi", "P0"],
+                                        5: ["E", "theta", "P0", "H", "K"],
+                                        6: ["E", "theta", "phi", "P0", "H", "K"]}
+
+def PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config):
+    """Potential energy of the lung problem (gravity + pressure P0 + H*(z-z0) + K*(y-y0) + normal springs).
+    Parameters that are not extra-coordinates are taken as constants from the [loads] section of the config file."""
+    loads   = config.get("loads", {})
+    names   = loads.get("parameters", PressureGravity_default_parameters[config["solver"]["N_ExtraCoordinates"]])
+    idx     = {name: names.index(name) if name in names else None for name in ["E", "theta", "phi", "P0", "H", "K"]}
+    options = {}
+    match config["material"].get("constitutive", "linear"):
+        case "linear":
+            energy = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness
+            options["fast_path"] = config["solver"].get("FastPath", False)         # assembled sparse operators (frozen mesh)
+        case "SVK":                                                                 # Saint Venant-Kirchhoff, follower pressure
+            energy = InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK
+    return energy(**options, model=model, lmbda=Mat.lmbda, mu=Mat.mu, E=Training_para_coordinates_list,
+                E_idx       = idx["E"], theta_idx = idx["theta"], phi_idx = idx["phi"],
+                p0_idx      = idx["P0"], h_idx    = idx["H"],     k_idx   = idx["K"],
+                p0_val      = loads.get("P0", 0.0),
+                h_val       = loads.get("H", 0.0),
+                k_val       = loads.get("K", 0.0),
+                k_spring    = loads.get("k_spring", 1e-3),
+                BoundaryNormals = loads.get("BoundaryNormals", True),
+                z0          = loads.get("z0", 0.0),
+                y0          = loads.get("y0", 0.0),
+                rho         = loads.get("rho", 1e-9))
 
 def plot_everything(A,E,InitialCoordinates,Coordinates,
                     TrialCoordinates,AnalyticSolution,BeamModel,Coord_trajectories, error, error2):
@@ -536,22 +567,14 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             case "BiangleStiffnessKSV":
                                 loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "PressureGravityBoundaryStiffness":
-                                loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                    p0_val=10, k_spring=1e1, BoundaryNormals=True)
+                                loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
             case 4:
                 match config["interpolation"]["dimension"]:
                     case 3:  
                         match config["solver"]["Problem"]:
                             case "PressureGravityBoundaryStiffness":
-                                # loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                #     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                #     E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
-                                loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=None, k_idx=None,
-                                    k_spring=1e-3, BoundaryNormals=True)
+                                # loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
+                                loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
 
 
             case 5:
@@ -561,9 +584,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                             case "BiStiffnessBiAngle":
                                 loss = InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                             case "PressureGravityBoundaryStiffness":
-                                loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    E_idx=0, theta_idx=1, phi_idx=None, p0_idx=2, h_idx=3, k_idx=4, BoundaryNormals=True)
+                                loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
                             case "StochasticShapeOptimization":
                                 loss = InternalEnergy_StochasticShape(
                                     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
@@ -573,9 +594,7 @@ def Training_NeuROM(model, config, optimizer, Mat = 'NaN'):
                     case 3:  
                         match config["solver"]["Problem"]:
                             case "PressureGravityBoundaryStiffness":
-                                loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                    model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=4, k_idx=5, BoundaryNormals=True)
+                                loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
         trainable_params_optimizer = [p for group in optimizer.param_groups for p in group['params'] if p.requires_grad] #DEBUG
         sum_trainable_params_optimizer = sum(p.numel() for p in trainable_params_optimizer) #DEBUG
         # print(f"trainable param: {trainable_params_optimizer}")#DEBUG
@@ -838,22 +857,14 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "BiangleStiffnessKSV":
                                     loss = InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "PressureGravityBoundaryStiffness":
-                                    loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                        E_idx=0, theta_idx=1, phi_idx=2, p0_idx=None, h_idx=None, k_idx=None,
-                                    p0_val=0, k_spring=1e-2, BoundaryNormals=True)
+                                    loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
                 case 4:
                     match config["interpolation"]["dimension"]:
                         case 3:  
                             match config["solver"]["Problem"]:
                                 case "PressureGravityBoundaryStiffness":
-                                    # loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                    #     model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                    #     E_idx=0, theta_idx=None, phi_idx=None, p0_idx=1, h_idx=2, k_idx=3, BoundaryNormals=True)
-                                    loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                        E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=None, k_idx=None,
-                                    p0_val=0, k_spring=1e-2, BoundaryNormals=True)
+                                    # loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
+                                    loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
                 case 5:
                     match config["interpolation"]["dimension"]:
                         case 3:  
@@ -861,9 +872,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                                 case "BiStiffnessBiAngle":
                                     loss = InternalEnergy_2_3D_einsum_BiStiffnessBiangle(model,Mat.lmbda, Mat.mu,Training_para_coordinates_list)
                                 case "PressureGravityBoundaryStiffness":
-                                    loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                        E_idx=0, theta_idx=1, phi_idx=None, p0_idx=2, h_idx=3, k_idx=4, BoundaryNormals=True)
+                                    loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
                                 case "StochasticShapeOptimization":
                                     loss = InternalEnergy_StochasticShape(
                                         model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
@@ -873,9 +882,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
                         case 3:  
                             match config["solver"]["Problem"]:
                                 case "PressureGravityBoundaryStiffness":
-                                    loss = InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
-                                        model, Mat.lmbda, Mat.mu, Training_para_coordinates_list,
-                                        E_idx=0, theta_idx=1, phi_idx=2, p0_idx=3, h_idx=4, k_idx=5, BoundaryNormals=True)
+                                    loss = PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
 
             loss.backward()
             return loss
@@ -913,7 +920,7 @@ def Training_NeuROM_FinalStageLBFGS(model,config, Mat = 'NaN'):
             if config["solver"]["N_ExtraCoordinates"] == 1:
                 print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)} error = {numpy.format_float_scientific(100*model.training_recap["L2_error"][-1], precision=4)}%')
             else:
-                print(f'epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=4)}')
+                print(f'LBFGS epoch {epoch+1} loss = {numpy.format_float_scientific(loss.item(), precision=6)} modes = {int(model.n_modes_truncated)} time = {time.time()-time_start:.0f}s', flush=True)
 
     time_stop = time.time()
     model.training_recap["training_time"]+=time_stop-time_start
@@ -2033,10 +2040,12 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
             case 3:
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
-                init_n_epochs = config["training"]["n_epochs"]                    #DEBUG
-                config["training"]["n_epochs"]  = 50                    #DEBUG
-                # Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS) #DEBUG
-                # config["training"]["n_epochs"]   = init_n_epochs                 #DEBUG
+                n_epochs_LBFGS = config["training"].get("n_epochs_LBFGS", 0)
+                if n_epochs_LBFGS > 0:
+                    init_n_epochs = config["training"]["n_epochs"]
+                    config["training"]["n_epochs"]  = n_epochs_LBFGS
+                    Training_NeuROM_FinalStageLBFGS(model,config, Mat)  # Second stage of training (LBFGS)
+                    config["training"]["n_epochs"]  = init_n_epochs
 
         if n_refinement < config["training"]["multiscl_max_refinment"]:
             MaxElemSize      = MaxElemSize/config["training"]["multiscl_refinment_cf"]  # Update max elem size

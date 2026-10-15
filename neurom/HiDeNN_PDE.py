@@ -2220,7 +2220,7 @@ class ElementBlock3D_Lin(nn.Module):
         self.n_integr_points = n_integr_points
         gp, w_g = self.GP(self.n_integr_points)
         self.register_buffer('GaussPoint', gp)
-        self.register_buffer('w_g', w_g)
+        self.register_buffer('w_g', w_g/6)                  # Weights in GP() sum to 1, the reference tetrahedron volume is 1/6
 
     def UpdateConnectivity(self,connectivity):
         self.connectivity = connectivity.astype(int)

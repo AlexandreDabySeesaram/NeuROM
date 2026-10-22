@@ -6,7 +6,8 @@ the `k` and `load` arguments:
 - `bspline_load`: the transverse load density F b_s(x - a);
 - `linear_stiffness`: K_0, Hessian of Pi at w = 0, P = 0 (preconditioner);
 - `membrane_stiffness`: G, Hessian of 1/2 int w'^2;
-- `buckling_modes`: the buckling loads P_n(k) and modes phi_n;
+- `buckling_modes`: the buckling loads P_n(k) and modes phi_n (`generalized_modes`
+  from the assembled matrices);
 - `critical_load`: P_cr(k) and the critical mode (first of `buckling_modes`);
 - `load_scale`: the intensity F(k) of the "strong" load.
 """
@@ -107,7 +108,22 @@ def buckling_modes(k, n_elements, n_modes, quadrature=None):
     """
     K = linear_stiffness(k, n_elements, quadrature)
     G = membrane_stiffness(n_elements, quadrature)
+    return generalized_modes(K, G, n_modes)
 
+
+def generalized_modes(K, G, n_modes):
+    """First eigenpairs of K phi = P G phi (the computation of `buckling_modes`).
+
+    Use: called directly with K = K_b + k M when many k are needed, K_b, M and
+    G being assembled once (K_0 is affine in k).
+
+    How: symmetric problem through the Cholesky factor of G.
+
+    Returns:
+        tuple: P_n (n_modes,) in increasing order, phi_n on the free DOFs
+        (n, n_modes), each normalized to max |w| = 1 over the nodes, positive
+        at its extremum.
+    """
     L = torch.linalg.cholesky(G)
     A = torch.linalg.solve_triangular(L, torch.linalg.solve_triangular(L, K, upper=False).T, upper=False)
     eigvals, eigvecs = torch.linalg.eigh(0.5 * (A + A.T))

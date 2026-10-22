@@ -174,14 +174,19 @@ def plot_amplitude(P, w, *, P_critical=None):
     return fig
 
 
-def plot_pod_decay(pod, *, noise_floor=None):
-    """Plot eps(n) of the POD, one panel per k, one curve per P / P_cr.
+def plot_pod_decay(pod, *, noise_floor=None, panel="k", curve="ratio", curve_label="P/P_cr", n_max=40):
+    """Plot eps(n) of the POD, one panel per value of `panel`, one curve per value of `curve`.
 
     Args:
-        pod (pandas.DataFrame): rows of `kolmogorov_study/results/pod.csv`
-            (columns k, ratio, sigma_1, sigma_2, ...).
+        pod (pandas.DataFrame): rows of a `pod.csv` of `experiments/kolmogorov_study`
+            (columns `panel`, `curve`, sigma_1, sigma_2, ...). Default: E2
+            (`results/pod.csv`, panels k, curves P / P_cr).
         noise_floor (float, optional): eps below it is within the snapshot
             error; drawn as a grey band.
+        panel (str, optional): column giving the panels; None for one panel.
+        curve (str): column giving the curves.
+        curve_label (str): name of `curve` in the legend.
+        n_max (int): largest n shown.
 
     Returns:
         plotly.graph_objects.Figure
@@ -189,25 +194,27 @@ def plot_pod_decay(pod, *, noise_floor=None):
     go, make_subplots = _plotly()
     import numpy as np
 
-    k_values = sorted(pod.k.unique())
-    ratios = sorted(pod.ratio.unique())
+    panels = [None] if panel is None else sorted(pod[panel].unique())
+    curves = sorted(pod[curve].unique())
     sigma_columns = [c for c in pod.columns if c.startswith("sigma_")]
-    fig = make_subplots(rows=1, cols=len(k_values), shared_yaxes=True,
-                        subplot_titles=[f"k = {k:g}" for k in k_values])
-    for col, k in enumerate(k_values, start=1):
-        for i, ratio in enumerate(ratios):
-            sigma = pod[(pod.k == k) & (pod.ratio == ratio)][sigma_columns].to_numpy(dtype=float)[0]
+    fig = make_subplots(rows=1, cols=len(panels), shared_yaxes=True,
+                        subplot_titles=None if panel is None else [f"{panel} = {v:g}" for v in panels])
+    for col, value in enumerate(panels, start=1):
+        rows = pod if panel is None else pod[pod[panel] == value]
+        for i, c in enumerate(curves):
+            sigma = rows[rows[curve] == c][sigma_columns].to_numpy(dtype=float)[0]
+            sigma = sigma[~np.isnan(sigma)]
             tail = np.cumsum((sigma**2)[::-1])[::-1]
             eps = np.sqrt(np.append(tail, 0.0)[1:] / tail[0])
             fig.add_trace(go.Scatter(
-                x=np.arange(1, len(eps) + 1), y=eps, mode="lines", name=f"P/P_cr = {ratio:.2f}",
-                legendgroup=f"{ratio}", showlegend=col == 1,
-                line=dict(color=f"hsl({240 * i / max(len(ratios) - 1, 1):.0f}, 70%, 45%)"),
+                x=np.arange(1, len(eps) + 1), y=eps, mode="lines", name=f"{curve_label} = {c:g}",
+                legendgroup=f"{c}", showlegend=col == 1,
+                line=dict(color=f"hsl({240 * i / max(len(curves) - 1, 1):.0f}, 70%, 45%)"),
             ), row=1, col=col)
         if noise_floor is not None:
             fig.add_hrect(y0=1e-16, y1=noise_floor, fillcolor="gray", opacity=0.2, line_width=0,
                           row=1, col=col)
-        fig.update_xaxes(title_text="n", range=[0, 40], row=1, col=col)
+        fig.update_xaxes(title_text="n", range=[0, n_max], row=1, col=col)
     fig.update_yaxes(type="log", range=[-8, 0], title_text="eps(n)", row=1, col=1)
     fig.update_layout(title="POD: relative error of the best rank-n approximation",
                       template="plotly_white")
@@ -256,4 +263,123 @@ def plot_snapshot_map(x, a, W, *, title="w(x, a)"):
         colorscale="RdBu", zmid=0.0, colorbar=dict(title="w"),
     ))
     fig.update_layout(title=title, xaxis_title="a", yaxis_title="x", template="plotly_white")
+    return fig
+
+
+def plot_branches_k(branches, points, P, *, mu_critical=None, series=None, title=None):
+    """Bifurcation diagram w(1/4) against mu = k^(1/4) of the unloaded beam, at fixed P.
+
+    Every branch (w = +-c phi, followed by continuity in k) is a thin line; the
+    global minimum (branch of smallest P_n, the only stable one) is a thick
+    line, broken where it jumps from one branch to another; the NeuROM
+    solutions are markers.
+
+    Args:
+        branches (pandas.DataFrame): rows of `kolmogorov_study/results/c1/branches.csv`.
+        points (pandas.DataFrame or None): rows of `kolmogorov_study/results/c1/neurom_points.csv`.
+        P (float): axial load.
+        mu_critical (float, optional): mu_cr = k_cr^(1/4), where P_1(k) = P
+            (unbuckled beyond it); drawn as a vertical dashed line.
+        series (dict, optional): label -> DataFrame (columns mu, w_quarter,
+            lambda_min) of other NeuROM solutions, e.g. one sweep in k; the
+            saddles (lambda_min <= 0) are drawn as red crosses.
+        title (str, optional): replaces the default title.
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, _ = _plotly()
+    import numpy as np
+
+    branches = branches[branches.P == P]
+    fig = go.Figure()
+    for label, df in branches.groupby("branch"):
+        df = df.sort_values("mu")
+        for sign in (1, -1):
+            fig.add_trace(go.Scatter(
+                x=df.mu, y=sign * df.w_quarter, mode="lines", name=f"branch {label}",
+                legendgroup=f"{label}", showlegend=sign == 1,
+                line=dict(color=f"hsl({(47 * label) % 360}, 60%, 55%)", width=1),
+            ))
+    best = branches[branches["global"]].sort_values("mu")
+    jump = best.branch.diff().fillna(0).to_numpy() != 0
+    for sign in (1, -1):
+        x, y = [], []
+        for mu, w, cut in zip(best.mu, sign * best.w_quarter, jump):
+            if cut:
+                x.append(np.nan)
+                y.append(np.nan)
+            x.append(mu)
+            y.append(w)
+        fig.add_trace(go.Scatter(
+            x=x, y=y, mode="lines", name="global minimum", legendgroup="global",
+            showlegend=sign == 1, line=dict(color="black", width=3),
+        ))
+    if points is not None:
+        points = points[points.P == P]
+        for label, df, symbol in (("NeuROM, start 0.1 phi_n (lowest energy of n = 1, 2, 3)", points[points.kept], "circle-open"),
+                                  ("NeuROM, start from a noise", points[points.start == "noise"], "x")):
+            fig.add_trace(go.Scatter(
+                x=df.mu, y=df.w_quarter, mode="markers", name=label,
+                marker=dict(symbol=symbol, size=9, color="crimson"),
+            ))
+    for label, df in (series or {}).items():
+        for name, part, marker in ((label, df[df.lambda_min > 0], dict(symbol="circle", size=5, color="royalblue")),
+                                   (f"{label}: saddle", df[df.lambda_min <= 0], dict(symbol="x", size=10, color="red"))):
+            if len(part):
+                fig.add_trace(go.Scatter(x=part.mu, y=part.w_quarter, mode="markers", name=name, marker=marker))
+    if mu_critical is not None:
+        fig.add_vline(x=float(mu_critical), line=dict(color="gray", dash="dash"),
+                      annotation_text=f"mu_cr = {mu_critical:.3f} (k_cr = {mu_critical**4:.4g})")
+    fig.update_layout(
+        title=title or f"Unloaded beam, P = {P:g}: branches against the foundation stiffness",
+        xaxis_title="mu = k^(1/4)  (k: foundation stiffness)",
+        yaxis_title="w(1/4): deflection at x = 1/4", template="plotly_white",
+    )
+    return fig
+
+
+def plot_deflection_stack(x, mu, deflections, *, jumps=(), counts=None, n_show=15, title=None):
+    """Deflections w(x) stacked by increasing mu, one panel per variant.
+
+    Each curve is shifted upwards by its rank among the n_show values of mu
+    shown (evenly picked in `mu`) and labelled with its mu; a grey horizontal
+    line marks each jump of the global minimum, placed between the curves
+    around it.
+
+    Args:
+        x (array-like): sampling in x, shape (N_x,).
+        mu (array-like): parameter values, shape (N_mu,).
+        deflections (dict): variant name -> deflections, shape (N_x, N_mu).
+        jumps (sequence of float): values of mu where the global minimum jumps.
+        counts (dict, optional): variant name -> number shown under its panel
+            (e.g. side changes within a segment).
+        n_show (int): number of deflections drawn per panel.
+        title (str, optional): figure title.
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, make_subplots = _plotly()
+    import numpy as np
+
+    x, mu = np.asarray(x, dtype=float), np.asarray(mu, dtype=float)
+    shown = np.unique(np.linspace(0, len(mu) - 1, n_show).round().astype(int))
+    W_all = {name: np.asarray(W, dtype=float) for name, W in deflections.items()}
+    step = 2.2 * max(np.abs(W[:, shown]).max() for W in W_all.values())
+    titles = [name if counts is None else f"{name}: {counts[name]} side change(s) within a segment"
+              for name in W_all]
+    fig = make_subplots(rows=1, cols=len(W_all), shared_yaxes=True, subplot_titles=titles)
+    for col, W in enumerate(W_all.values(), start=1):
+        for rank, j in enumerate(shown):
+            fig.add_trace(go.Scatter(x=x, y=W[:, j] + rank * step, mode="lines", showlegend=False,
+                                     line=dict(color="black", width=1.5)), row=1, col=col)
+            fig.add_annotation(x=1.0, y=rank * step, text=f"mu = {mu[j]:.2f}", showarrow=False,
+                               xanchor="left", font=dict(size=10), row=1, col=col)
+        for jump in jumps:
+            level = (np.interp(jump, mu[shown], np.arange(len(shown)))) * step
+            fig.add_hline(y=level, line=dict(color="gray", width=1, dash="dot"), row=1, col=col)
+        fig.update_xaxes(title_text="x", row=1, col=col)
+    fig.update_yaxes(showticklabels=False, title_text="w(x), shifted by increasing mu", row=1, col=1)
+    fig.update_layout(title=title, template="plotly_white", height=900)
     return fig

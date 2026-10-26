@@ -59,10 +59,9 @@ class QuadratureAssembly(nn.Module):
         measure = self.context.measure
         quad_pos = self.context.interpolate
 
-        # Physical element DOFs to reference coefficients (identity when no transform)
+        # Physical element DOFs to reference coefficients (identity for nodal elements)
         u_elem = self.field.at_elements()
-        if self._dof_transformation is not None:
-            u_elem = self._dof_transformation.to_reference(u_elem)
+        u_elem = self._dof_transformation.to_reference(u_elem)
 
         # Interpolate field
         u_q = QuadratureSampling(

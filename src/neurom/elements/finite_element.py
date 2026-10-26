@@ -65,12 +65,9 @@ class FiniteElement:
     ):
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_cell
-        # Normalise to DoF with a typed EntityDim, accepting either DoF or a raw triple.
+        # DoF normalises its own fields (__post_init__); a raw triple is accepted as a shorthand.
         self.dof_layout = tuple(
-            DoF(EntityDim(int(d.entity_dim)), int(d.local_index), d.kind)
-            if isinstance(d, DoF)
-            else DoF(EntityDim(int(d[0])), int(d[1]), d[2])
-            for d in dof_layout
+            d if isinstance(d, DoF) else DoF(*d) for d in dof_layout
         )
         self.value_shape = tuple(value_shape)
         self.pullback = pullback

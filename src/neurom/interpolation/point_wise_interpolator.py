@@ -83,9 +83,8 @@ class PointWiseInterpolator(nn.Module):
         element_ids = self.mesh.elements_at(x)
         # Field values of those elements, through the field's own connectivity
         u_elem = self.field.at_elements()[element_ids]
-        # Physical element DOFs to reference coefficients (identity when no transform)
-        if self._dof_transformation is not None:
-            u_elem = self._dof_transformation.to_reference(u_elem, element_ids)
+        # Physical element DOFs to reference coefficients (identity for nodal elements)
+        u_elem = self._dof_transformation.to_reference(u_elem, element_ids)
 
         # `inverse_map_at` and the shape functions work on the quadrature
         # layout (N_e, N_q, dim); a point-wise query is that layout with a

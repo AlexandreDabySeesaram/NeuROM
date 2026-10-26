@@ -9,6 +9,7 @@ import torch
 
 from neurom.training.criteria import MaxStages, RelativeChange, StageCriterion
 from neurom.training.history import StageRecord, TrainingHistory
+from neurom.training.progress import ProgressReporter
 
 
 @dataclass
@@ -58,6 +59,9 @@ class PGDTrainer(ABC):
             :class:`~neurom.training.criteria.RelativeChange`.
         enrichment_criterion (EnrichmentCriterion, optional): When to stop
             starting stages. Defaults to ``MaxStages(1)``.
+        progress (ProgressReporter, optional): Told about every stage, phase
+            and iteration, e.g. :class:`~neurom.training.progress.ProgressLog`.
+            Defaults to the silent ``ProgressReporter()``.
 
     Attributes:
         optimizer (torch.optim.Optimizer): The current phase's optimizer, None
@@ -65,10 +69,11 @@ class PGDTrainer(ABC):
         history (TrainingHistory): Accumulates across :meth:`enrich` calls.
     """
 
-    def __init__(self, model, phases=None, enrichment_criterion=None):
+    def __init__(self, model, phases=None, enrichment_criterion=None, progress=None):
         self.model = model
         self.phases = phases or _default_phases()
         self.enrichment_criterion = enrichment_criterion or MaxStages(1)
+        self.progress = progress or ProgressReporter()
         self.optimizer = None
         self.history = TrainingHistory()
 
@@ -119,9 +124,11 @@ class PGDTrainer(ABC):
             self.prepare_stage(stage_index)
             record = self.stage(stage_index)
             self.history.append(record)
+            self.progress.stage_end(record)
             if record.stop_reason == "diverged":
                 self.history.stop_reason = "diverged"
                 break
+        self.progress.close(self.history)
         return self.history
 
     def stage(self, stage_index):
@@ -137,19 +144,24 @@ class PGDTrainer(ABC):
             StageRecord: The stage's losses and outcome.
         """
         record = StageRecord(stage=stage_index)
+        self.progress.stage_start(stage_index)
         for phase in self.phases:
             self.make_optimizer(phase.optimizer_factory)
+            self.progress.phase_start(phase.name)
             losses = []
             while not (reason := phase.criterion.stop_reason(losses)):
                 loss = self.step()
                 losses.append(loss)
                 record.losses.append(loss)
                 record.phases.append(phase.name)
+                self.progress.update(len(losses), loss)
                 if not math.isfinite(loss):
                     record.stop_reason = "diverged"
                     record.final_energy = loss
+                    self.progress.phase_end(phase.name, len(losses), "diverged", loss)
                     return record
             record.stop_reason = reason
+            self.progress.phase_end(phase.name, len(losses), reason, losses[-1] if losses else None)
         record.final_energy = float(self.model.loss(self.model()).detach())
         if not math.isfinite(record.final_energy):
             record.stop_reason = "diverged"

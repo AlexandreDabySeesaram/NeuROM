@@ -13,7 +13,7 @@ class GreedyTrainer(PGDTrainer):
 
     Args:
         model (NeuROMModel): Model whose ``decomposition`` is a ``CPPGD``.
-        phases, enrichment_criterion: See
+        phases, enrichment_criterion, progress: See
             :class:`~neurom.training.base.PGDTrainer`.
     """
 

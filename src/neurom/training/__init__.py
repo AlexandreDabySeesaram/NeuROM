@@ -10,6 +10,7 @@ from neurom.training.criteria import (
     MaxStages,
     AnyOf,
 )
+from neurom.training.progress import ProgressReporter, ProgressLog
 from neurom.training.base import Phase, PGDTrainer
 from neurom.training.greedy import GreedyTrainer
 
@@ -26,4 +27,6 @@ __all__ = [
     "Phase",
     "PGDTrainer",
     "GreedyTrainer",
+    "ProgressReporter",
+    "ProgressLog",
 ]

@@ -62,6 +62,11 @@ class PGDTrainer(ABC):
         progress (ProgressReporter, optional): Told about every stage, phase
             and iteration, e.g. :class:`~neurom.training.progress.ProgressLog`.
             Defaults to the silent ``ProgressReporter()``.
+        final_phases (list[Phase], optional): Run once after the enrichment,
+            e.g. the LBFGS polish of §3.2.2 in Daby-Seesaram et al. (2026),
+            Part II. They train what the last stage left trainable (every mode
+            for the simultaneous strategy, the last mode only for the greedy
+            one) and add no mode. Defaults to none.
 
     Attributes:
         optimizer (torch.optim.Optimizer): The current phase's optimizer, None
@@ -69,11 +74,14 @@ class PGDTrainer(ABC):
         history (TrainingHistory): Accumulates across :meth:`enrich` calls.
     """
 
-    def __init__(self, model, phases=None, enrichment_criterion=None, progress=None):
+    def __init__(
+        self, model, phases=None, enrichment_criterion=None, progress=None, final_phases=None
+    ):
         self.model = model
         self.phases = phases or _default_phases()
         self.enrichment_criterion = enrichment_criterion or MaxStages(1)
         self.progress = progress or ProgressReporter()
+        self.final_phases = final_phases or []
         self.optimizer = None
         self.history = TrainingHistory()
 
@@ -111,9 +119,11 @@ class PGDTrainer(ABC):
         return self.optimizer
 
     def enrich(self):
-        """Run stages until :meth:`should_add_stage` stops or a stage diverges.
+        """Run stages until :meth:`should_add_stage` stops or a stage diverges,
+        then the final phases (see :meth:`finish`).
 
-        Resumable: the next stage index is ``len(self.history.stages)``.
+        Resumable: the next stage index is ``len(self.history.stages)``. The
+        final phases run again at the end of every call.
 
         Returns:
             TrainingHistory: The accumulated history (also ``self.history``).
@@ -128,6 +138,8 @@ class PGDTrainer(ABC):
             if record.stop_reason == "diverged":
                 self.history.stop_reason = "diverged"
                 break
+        if self.history.stop_reason != "diverged":
+            self.finish()
         self.progress.close(self.history)
         return self.history
 
@@ -145,7 +157,39 @@ class PGDTrainer(ABC):
         """
         record = StageRecord(stage=stage_index)
         self.progress.stage_start(stage_index)
-        for phase in self.phases:
+        return self._run_phases(record, self.phases)
+
+    def finish(self):
+        """Run the final phases once, without adding a stage.
+
+        Their record goes to ``history.final``, not to ``history.stages``, so
+        the stage count still equals the mode count.
+
+        Returns:
+            StageRecord or None: The final record, None without final phases.
+        """
+        if not self.final_phases:
+            return None
+        record = StageRecord(stage=len(self.history.stages))
+        self.progress.final_start()
+        self._run_phases(record, self.final_phases)
+        self.history.final = record
+        self.progress.final_end(record)
+        if record.stop_reason == "diverged":
+            self.history.stop_reason = "diverged"
+        return record
+
+    def _run_phases(self, record, phases):
+        """Run ``phases`` in order into ``record``, then evaluate its final energy.
+
+        Args:
+            record (StageRecord): Filled in place.
+            phases (list[Phase]): The phases to run.
+
+        Returns:
+            StageRecord: ``record``.
+        """
+        for phase in phases:
             self.make_optimizer(phase.optimizer_factory)
             self.progress.phase_start(phase.name)
             losses = []

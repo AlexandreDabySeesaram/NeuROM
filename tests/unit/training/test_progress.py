@@ -93,3 +93,16 @@ def test_log_writes_one_line_per_event(make_model):
 def test_silent_by_default(make_model, capsys):
     GreedyTrainer(make_model(), phases=[_phase("adam", 3)], enrichment_criterion=MaxStages(2)).enrich()
     assert capsys.readouterr().out == ""
+
+
+def test_log_reports_the_final_phases(make_model):
+    stream = io.StringIO()
+    GreedyTrainer(
+        make_model(), phases=[_phase("adam", 2)], enrichment_criterion=MaxStages(1),
+        final_phases=[_phase("polish", 3)], progress=ProgressLog(every=None, stream=stream),
+    ).enrich()
+    lines = stream.getvalue().splitlines()
+    assert lines[-4] == "final: start"
+    assert lines[-3].startswith("  polish done: 3 it, n_iter")
+    assert lines[-2].startswith("final: done in 3 it, n_iter, energy =")
+    assert lines[-1].startswith("run done: 1 modes, n_stages,")

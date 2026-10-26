@@ -22,7 +22,8 @@ class StageRecord:
         phases (list[str]): Name of the phase that ran each iteration, aligned
             with ``losses``.
         stop_reason (str): Why the last phase of the stage ended
-            (``"converged"``, ``"max_iter"``, ``"n_iter"``, ``"diverged"``).
+            (``"converged"``, ``"max_iter"``, ``"n_iter"``, ``"stagnated"``,
+            ``"no_improvement"``, ``"diverged"``).
         final_energy (float): Loss of the state the stage ended in, evaluated
             once after the last update. None until the stage has run.
     """

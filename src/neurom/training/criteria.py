@@ -63,6 +63,61 @@ class RelativeChange(StageCriterion):
         return None
 
 
+def _relative_decrease(previous, current):
+    """``2 (L_{k-1} - L_k) / |L_{k-1} + L_k|``, the loss decrease of eq. (16) in
+    Daby-Seesaram et al. (2026), Part II. Positive when the loss went down."""
+    return (previous - current) / max(abs(0.5 * (previous + current)), 1e-30)
+
+
+class Stagnation(StageCriterion):
+    """Stop when the loss stagnates, the mode-addition rule of Algorithm 1 in
+    Daby-Seesaram et al. (2026), Part II.
+
+    With ``d_k`` the relative decrease ``2 (L_{k-1} - L_k) / |L_{k-1} + L_k|``,
+    an iteration stagnates when ``|d_k| < tol``. Stops with:
+
+    * ``"stagnated"`` after more than ``patience`` stagnating iterations in a
+      row;
+    * ``"no_improvement"`` after more than ``no_improvement`` iterations in a
+      row without a new minimum of the loss (the second trigger of
+      ``Training_NeuROM`` on ``origin/Develop_Daby``, not in the paper);
+    * ``"max_iter"`` after ``max_iter`` iterations.
+
+    The defaults are those of ``Training_NeuROM``, except ``max_iter``, which
+    takes :class:`RelativeChange`'s.
+
+    Args:
+        tol (float): Stagnation threshold ``eta_c`` on ``|d_k|``.
+        patience (int): Stagnating iterations tolerated in a row.
+        no_improvement (int or None): Iterations without a new minimum
+            tolerated in a row; None disables this trigger.
+        max_iter (int): Hard cap, so a stage always terminates.
+    """
+
+    def __init__(self, tol=1e-4, patience=5, no_improvement=90, max_iter=1000):
+        self.tol = tol
+        self.patience = patience
+        self.no_improvement = no_improvement
+        self.max_iter = max_iter
+
+    def stop_reason(self, losses):
+        if len(losses) >= self.max_iter:
+            return "max_iter"
+        # Count the trailing stagnating iterations, no further than needed.
+        count = 0
+        for k in range(len(losses) - 1, 0, -1):
+            if abs(_relative_decrease(losses[k - 1], losses[k])) >= self.tol:
+                break
+            count += 1
+            if count > self.patience:
+                return "stagnated"
+        if self.no_improvement is not None:
+            window = self.no_improvement + 1
+            if len(losses) > window and min(losses[-window:]) >= min(losses[:-window]):
+                return "no_improvement"
+        return None
+
+
 class FixedIterations(StageCriterion):
     """Run exactly ``n_iter`` iterations per stage.
 
@@ -107,6 +162,47 @@ class RelativeGain(EnrichmentCriterion):
         if (previous - current) / denom < self.tol:
             return "converged"
         return None
+
+
+class Usefulness(EnrichmentCriterion):
+    """Stop enriching when the last mode did not help, the stopping rule of
+    Algorithm 1 in Daby-Seesaram et al. (2026), Part II.
+
+    A stage is *useful* when its loss went down for ``min_useful`` iterations
+    in a row, each a relative decrease ``d_k >= tol`` (see
+    :class:`Stagnation`). A stagnating iteration (``|d_k| < tol``) restarts the
+    count; an increase neither counts nor restarts it, as in
+    ``Training_NeuROM`` on ``origin/Develop_Daby``. Stops with
+    ``"useless_mode"`` when the last stage was not useful. The first stage is
+    never judged, so at least two stages run.
+
+    The paper writes the test as ``L > 0``; the code tests the decrease, which
+    is what is implemented.
+
+    Args:
+        tol (float): Stagnation threshold, the ``tol`` of :class:`Stagnation`.
+        min_useful (int): Decreasing iterations in a row that make a stage
+            useful.
+    """
+
+    def __init__(self, tol=1e-4, min_useful=15):
+        self.tol = tol
+        self.min_useful = min_useful
+
+    def stop_reason(self, stages):
+        if len(stages) < 2:
+            return None
+        run = 0
+        losses = stages[-1].losses
+        for previous, current in zip(losses, losses[1:]):
+            decrease = _relative_decrease(previous, current)
+            if abs(decrease) < self.tol:
+                run = 0
+            elif decrease > 0:
+                run += 1
+                if run >= self.min_useful:
+                    return None
+        return "useless_mode"
 
 
 class MaxStages(EnrichmentCriterion):

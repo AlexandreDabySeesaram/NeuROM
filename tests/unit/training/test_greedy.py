@@ -169,3 +169,38 @@ def test_lbfgs_after_adam_lowers_the_energy(make_model):
     # Same Adam phase on the same seed: identical losses up to the switch.
     assert record.losses[:20] == adam_only.history.stages[0].losses
     assert record.energy < e_adam
+
+
+# --- final phases -------------------------------------------------------
+
+
+def test_final_phases_run_once_after_the_enrichment(make_model):
+    model = make_model()
+    history = GreedyTrainer(
+        model,
+        phases=[_adam(FixedIterations(5))],
+        enrichment_criterion=MaxStages(2),
+        final_phases=[_lbfgs(FixedIterations(3))],
+    ).enrich()
+    assert len(history.stages) == 2
+    assert model.decomposition.n_modes == 2
+    assert history.final.phases == ["lbfgs"] * 3
+    assert history.losses == history.stages[0].losses + history.stages[1].losses + history.final.losses
+
+
+def test_no_final_phases_by_default(make_model):
+    history = GreedyTrainer(make_model(), phases=[_adam(FixedIterations(2))]).enrich()
+    assert history.final is None
+
+
+def test_final_phases_train_what_the_last_stage_left_trainable(make_model):
+    model = make_model()
+    trainer = GreedyTrainer(
+        model, phases=[_adam(FixedIterations(5))], enrichment_criterion=MaxStages(2)
+    )
+    trainer.enrich()
+    before = _values(model.decomposition, 0)
+    trainer.final_phases = [_adam(FixedIterations(5))]
+    trainer.finish()
+    # Greedy: mode 0 stays frozen during the final phases.
+    assert all(torch.equal(b, a) for b, a in zip(before, _values(model.decomposition, 0)))

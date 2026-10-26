@@ -62,6 +62,17 @@ class ProgressReporter:
             record (StageRecord): The stage that just ran.
         """
 
+    def final_start(self):
+        """The final phases are about to run (see
+        :meth:`~neurom.training.base.PGDTrainer.finish`)."""
+
+    def final_end(self, record):
+        """The final phases finished.
+
+        Args:
+            record (StageRecord): Their record (``history.final``).
+        """
+
     def close(self, history):
         """The run finished.
 
@@ -86,6 +97,10 @@ class ProgressLog(ProgressReporter):
           adam   done: 2339 it, converged, loss = -3.4352e+07, 12.3 s
           lbfgs  done: 10 it, max_iter, loss = -3.4352e+07, 0.9 s
         mode 0: done in 2349 it, max_iter, energy = -3.4352e+07, 13.2 s
+        ...
+        final: start
+          lbfgs  done: 50 it, converged, loss = -3.4400e+07, 4.0 s
+        final: done in 50 it, converged, energy = -3.4400e+07, 4.0 s
         run done: 15 modes, n_stages, 3 min 12 s
 
     A stage is called a mode: one stage adds one mode for both the greedy and
@@ -135,6 +150,17 @@ class ProgressLog(ProgressReporter):
         elapsed = time.monotonic() - self.stage_started
         self._print(
             f"mode {record.stage}: done in {record.n_iter} it, {record.stop_reason}, "
+            f"energy = {record.energy: .4e}, {_duration(elapsed)}"
+        )
+
+    def final_start(self):
+        self.stage_started = time.monotonic()
+        self._print("final: start")
+
+    def final_end(self, record):
+        elapsed = time.monotonic() - self.stage_started
+        self._print(
+            f"final: done in {record.n_iter} it, {record.stop_reason}, "
             f"energy = {record.energy: .4e}, {_duration(elapsed)}"
         )
 

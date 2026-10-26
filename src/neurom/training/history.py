@@ -61,10 +61,14 @@ class TrainingHistory:
         stages (list[StageRecord]): One record per completed stage.
         stop_reason (str): Why the whole run ended (``"n_stages"``,
             ``"diverged"``, ...).
+        final (StageRecord): The final phases run after the enrichment (see
+            ``PGDTrainer.finish``), None if there were none. Its ``stage`` is
+            the number of stages before it.
     """
 
     stages: list = field(default_factory=list)
     stop_reason: str = ""
+    final: StageRecord = None
 
     def append(self, record: StageRecord) -> None:
         """Append a completed stage."""
@@ -72,5 +76,6 @@ class TrainingHistory:
 
     @property
     def losses(self) -> list:
-        """Every iteration's loss, all stages concatenated (for plotting)."""
-        return [value for stage in self.stages for value in stage.losses]
+        """Every iteration's loss, all stages then the final phases (for plotting)."""
+        records = self.stages + ([self.final] if self.final is not None else [])
+        return [value for record in records for value in record.losses]

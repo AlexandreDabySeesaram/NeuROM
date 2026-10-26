@@ -33,20 +33,3 @@ class GreedyTrainer(PGDTrainer):
             self.decomposition.freeze_all()
             self.decomposition.add_mode()
             self.decomposition.register_into(self.model.field_layout)
-
-    def should_add_stage(self, stage_index):
-        """Run stage 0 unconditionally, then ask the enrichment criterion.
-
-        Args:
-            stage_index (int): Index of the stage that would run next.
-
-        Returns:
-            bool: True to run the stage, False to stop the run.
-        """
-        if stage_index == 0:
-            return True
-        reason = self.enrichment_criterion.stop_reason(self.history.stages)
-        if reason:
-            self.history.stop_reason = reason
-            return False
-        return True

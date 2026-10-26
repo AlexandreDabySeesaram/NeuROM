@@ -18,7 +18,8 @@ class Phase:
 
     A stage runs its phases in order, e.g. Adam until a plateau, then a few
     LBFGS iterations. Each phase builds a fresh optimizer over the parameters
-    trainable at that moment.
+    trainable at that moment, unless the trainer keeps it (see
+    :class:`~neurom.training.simultaneous.SimultaneousTrainer`).
 
     Attributes:
         optimizer_factory (Callable): ``params -> Optimizer``. LBFGS works too
@@ -247,11 +248,10 @@ class PGDTrainer(ABC):
             stage_index (int): Index of the stage about to run.
         """
 
-    @abstractmethod
     def should_add_stage(self, stage_index):
-        """Whether to run stage ``stage_index``.
+        """Run stage 0 unconditionally, then ask the enrichment criterion.
 
-        Implementations that stop should set ``self.history.stop_reason``.
+        Overrides that stop should set ``self.history.stop_reason``.
 
         Args:
             stage_index (int): Index of the stage that would run next.
@@ -259,3 +259,10 @@ class PGDTrainer(ABC):
         Returns:
             bool: True to run the stage, False to stop the run.
         """
+        if stage_index == 0:
+            return True
+        reason = self.enrichment_criterion.stop_reason(self.history.stages)
+        if reason:
+            self.history.stop_reason = reason
+            return False
+        return True

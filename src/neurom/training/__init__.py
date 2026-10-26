@@ -15,6 +15,7 @@ from neurom.training.criteria import (
 from neurom.training.progress import ProgressReporter, ProgressLog
 from neurom.training.base import Phase, PGDTrainer
 from neurom.training.greedy import GreedyTrainer
+from neurom.training.simultaneous import SimultaneousTrainer
 
 __all__ = [
     "StageRecord",
@@ -31,6 +32,7 @@ __all__ = [
     "Phase",
     "PGDTrainer",
     "GreedyTrainer",
+    "SimultaneousTrainer",
     "ProgressReporter",
     "ProgressLog",
 ]

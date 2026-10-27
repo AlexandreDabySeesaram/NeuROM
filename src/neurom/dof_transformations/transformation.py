@@ -1,4 +1,4 @@
-r"""The one transformation: assemble :math:`L_e` from per-kind functionals, invert to :math:`M_e`.
+r"""The one transformation: assemble :math:`L_e` from the per-DOF functionals, invert to :math:`M_e`.
 
 The field on a cell is written from *reference coefficients* :math:`q_{\mathrm{ref}}`, but the
 stored DOFs are *physical* values :math:`u_{\mathrm{phys}}` (e.g. a physical derivative for Hermite).
@@ -38,9 +38,8 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 
-from neurom.dof_transformations.functionals import FUNCTIONALS
-
 if TYPE_CHECKING:
+    from neurom.dof_transformations.functionals import DofFunctional
     from neurom.elements.finite_element import FiniteElement
 
 
@@ -68,8 +67,8 @@ class Transformation(nn.Module):
     Attributes:
         element (FiniteElement): The element being transformed.
         mapping: The geometry mapping.
-        _groups (dict[str, torch.Tensor]): kind -> local DOF indices of that kind, each an index
-            tensor of shape ``(n_rows_kind,)``.
+        _groups (dict[DofFunctional, torch.Tensor]): functional -> the local DOF indices sharing
+            it, each an index tensor of shape ``(n_rows,)``.
         _xi (torch.Tensor): Reference node of each DOF, shape ``(n_phys, dim_ref)``.
         _n_phys (int): Physical DOFs per element.
         _n_ref (int): Reference basis functions.
@@ -84,27 +83,23 @@ class Transformation(nn.Module):
         self.element = element
         self.mapping = mapping
 
-        # Check that every DOF kind has a functional implemented.
-        kinds = element.dof_kinds
-        unknown = set(kinds) - set(FUNCTIONALS)
-        if unknown:
-            raise NotImplementedError(
-                f"No functional for DOF kind(s) {sorted(unknown)}."
-            )
+        # Every DOF must carry a functional.
+        layout = element.dof_layout
+        missing = sorted({d.kind for d in layout if d.functional is None})
+        if missing:
+            raise NotImplementedError(f"No functional for DOF kind(s) {missing}.")
 
-        # Group the local DOF indices by kind (same functional serves all rows of a kind).
-        groups: dict[str, list[int]] = {}
-        for i, k in enumerate(kinds):
-            groups.setdefault(k, []).append(i)
-        self._groups = {k: torch.tensor(idx) for k, idx in groups.items()}
+        # Group the local DOF indices by functional (DOFs sharing one are batched).
+        groups: dict[DofFunctional, list[int]] = {}
+        for i, d in enumerate(layout):
+            groups.setdefault(d.functional, []).append(i)
+        self._groups = {func: torch.tensor(idx) for func, idx in groups.items()}
         self._xi = element.dof_nodes_xi()  # (n_phys, dim_ref)
         self._n_phys = element.n_dofs
         self._n_ref = element.n_ref
 
         # Does any functional depend on the geometry (the mapping)?
-        self._geometry_dependent = any(
-            FUNCTIONALS[k].geometry_dependent for k in groups
-        )
+        self._geometry_dependent = any(f.geometry_dependent for f in groups)
 
         # Geometry-independent -> M_e is constant; precompute it once (and detect identity).
         self._identity = False
@@ -140,9 +135,9 @@ class Transformation(nn.Module):
             torch.Tensor: :math:`L_e`, shape ``(n_e, n_phys, n_ref)``.
         """
         L = torch.zeros(n_e, self._n_phys, self._n_ref, dtype=dtype, device=device)
-        for kind, rows in self._groups.items():
+        for func, rows in self._groups.items():
             xi = self._xi[rows].to(dtype=dtype, device=device)  # (n_rows, dim_ref)
-            L[:, rows, :] = FUNCTIONALS[kind].l_rows(
+            L[:, rows, :] = func.l_rows(
                 self.element, self.mapping, xi, element_ids, n_e
             )  # (n_e, n_rows, n_ref)
         return L

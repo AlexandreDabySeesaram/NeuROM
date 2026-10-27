@@ -12,17 +12,19 @@ supported; a DOF kind without a functional (``flux``/``normal_derivative``) rais
 
 import torch
 
-from neurom.dof_transformations.functionals import FUNCTIONALS
 from neurom.meshes.topology import EntityDim
 
 
-def _dof_kinds_by_dim(element):
-    """Map ``entity_dim -> ordered list of DOF kinds`` on one entity of that dimension."""
+def _functionals_by_dim(element):
+    """Map ``entity_dim -> ordered list of (kind, functional)`` for one entity of that dimension.
+
+    ``kind`` routes the DOF-map placement (``locate``); ``functional`` computes the DOF value.
+    """
     out: dict[int, list] = {}
     for dof in element.dof_layout:
-        out.setdefault(dof.entity_dim, [])
-        if dof.kind not in out[dof.entity_dim]:
-            out[dof.entity_dim].append(dof.kind)
+        lst = out.setdefault(dof.entity_dim, [])
+        if not any(kind == dof.kind for kind, _ in lst):
+            lst.append((dof.kind, dof.functional))
     return out
 
 
@@ -68,18 +70,19 @@ def interpolate(space, mesh, f) -> torch.Tensor:
     out = torch.zeros(
         space.n_scalar_dofs, n_comp, dtype=coordinates.full_values().dtype
     )
-    for entity_dim, kinds in _dof_kinds_by_dim(space.element).items():
+    for entity_dim, kinds in _functionals_by_dim(space.element).items():
         x = _entity_points(
             space.topology, coordinates, entity_dim
         )  # (n_entities, gdim)
         entities = range(x.shape[0])
-        for kind in kinds:
-            if kind not in FUNCTIONALS:
+        for kind, functional in kinds:
+            if functional is None:
                 raise NotImplementedError(
                     f"interpolate: no functional for DOF kind {kind!r}; the FE interpolant "
                     "of a function is only defined for point-functional elements "
                     "(Lagrange, Hermite) so far."
                 )
-            vals = FUNCTIONALS[kind].on_function(f, x).reshape(x.shape[0], n_comp)
+            # (n_entities, n_components)
+            vals = functional.on_function(f, x).reshape(x.shape[0], n_comp)
             out[space.dof_map.locate(entity_dim, entities, [kind])] = vals.detach()
     return out

@@ -17,6 +17,7 @@ import torch
 from neurom.meshes.topology import EntityDim
 
 if TYPE_CHECKING:
+    from neurom.dof_transformations.functionals import DofFunctional
     from neurom.shape_functions.shape_function import ShapeFunction
 
 # DOF kinds (the functional defining each DOF).
@@ -30,13 +31,20 @@ NORMAL_DERIVATIVE = "normal_derivative"  # Morley/HCT/Argyris (coupled)
 class DoF:
     """One degree of freedom in an element's declarative layout (what & where, mesh-independent).
 
+    A pure databag: the stored payload is just ``(entity_dim, local_index, kind)``. The DOF's
+    functional (what it *means*) is a **derived view** of ``kind`` -- see the :attr:`functional`
+    property -- not a stored field, so a DOF is complete the moment it is constructed and no external
+    code has to resolve anything.
+
     Attributes:
         entity_dim (EntityDim): Dimension of the cell sub-entity the DOF is attached to
             (``VERTEX``/``EDGE``/``FACE``/``VOLUME``).
         local_index (int): Ordinal of that entity within the reference cell (e.g. which of a
             triangle's three vertices or edges).
-        kind (str): The functional defining the DOF -- one of ``VALUE``, ``D1``, ``FLUX``,
-            ``NORMAL_DERIVATIVE``.
+        kind (str): The DOF's label (``VALUE``/``D1``/``FLUX``/``NORMAL_DERIVATIVE``) -- the single
+            stored payload. Routes the DOF (``locate`` / BCs / ``dof_kinds``) *and* selects its
+            functional. Per-DOF variation within a kind is carried by the other fields that the
+            (shared) functional reads -- e.g. a flux functional reads ``local_index`` for which edge.
     """
 
     entity_dim: EntityDim
@@ -47,6 +55,23 @@ class DoF:
         # Keep a typed EntityDim and an int index, however the DoF was built.
         object.__setattr__(self, "entity_dim", EntityDim(int(self.entity_dim)))
         object.__setattr__(self, "local_index", int(self.local_index))
+
+    @property
+    def functional(self) -> DofFunctional | None:
+        """The DOF's functional, derived from ``kind`` (``None`` if the kind has no functional yet).
+
+        A derived view, not a stored field: ``FUNCTIONALS[kind]`` returns the *same shared instance*
+        on every access, so grouping DOFs by functional identity (in :class:`~neurom.dof_transformations.transformation.Transformation`
+        and :meth:`FiniteElement.duality_matrix`) still batches same-kind DOFs together. A kind with
+        no functional yet (``flux``/``normal_derivative``) returns ``None``; the consumers that need
+        one (interpolation, the DOF transformation, the duality check) handle that explicitly.
+
+        Returns:
+            DofFunctional | None: The shared functional for ``kind``, or ``None``.
+        """
+        from neurom.dof_transformations.functionals import FUNCTIONALS
+
+        return FUNCTIONALS.get(self.kind)
 
 
 class FiniteElement:
@@ -95,7 +120,7 @@ class FiniteElement:
     ) -> None:
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_cell
-        # DoF normalises its own fields (__post_init__); a raw triple is accepted as a shorthand.
+        # Normalise each entry to a DoF (a raw triple is accepted).
         self.dof_layout = tuple(
             d if isinstance(d, DoF) else DoF(*d) for d in dof_layout
         )
@@ -115,23 +140,21 @@ class FiniteElement:
         Returns:
             torch.Tensor | None: ``(n_dofs, n_ref)``, or ``None``.
         """
-        from neurom.dof_transformations.functionals import FUNCTIONALS
-
-        if any(d.kind not in FUNCTIONALS for d in self.dof_layout):
+        if any(d.functional is None for d in self.dof_layout):
             return None
 
         # (n_dofs, dim_ref) -- reference point of each DOF
         xi = self.dof_nodes_xi()
 
-        # Associate to each kind a list of indices
-        by_kind: dict[str, list[int]] = {}
+        # Group the DOF row-indices by their functional (DOFs sharing one are batched)
+        by_func: dict[DofFunctional, list[int]] = {}
         for i, d in enumerate(self.dof_layout):
-            by_kind.setdefault(d.kind, []).append(i)
+            by_func.setdefault(d.functional, []).append(i)
 
-        # Fill the duality matrix with reference functionals
-        V = torch.empty(self.n_dofs, self.n_ref, dtype=xi.dtype)
-        for kind, rows in by_kind.items():
-            V[rows, :] = FUNCTIONALS[kind].reference_row(self, xi[rows])
+        # Fill the duality matrix with the reference functionals
+        V = torch.empty(self.n_dofs, self.n_ref, dtype=xi.dtype)  # (n_dofs, n_ref)
+        for func, rows in by_func.items():
+            V[rows, :] = func.reference_row(self, xi[rows])
 
         return V
 

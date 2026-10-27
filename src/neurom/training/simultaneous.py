@@ -29,7 +29,7 @@ class SimultaneousTrainer(PGDTrainer):
             model,
             phases=[Phase(adam, Stagnation(tol=1e-4), "adam")],
             enrichment_criterion=AnyOf(Usefulness(tol=1e-4), MaxStages(n_max)),
-            final_phases=[Phase(lbfgs, RelativeChange(), "lbfgs")],
+            final_phases=[Phase(lbfgs, Stagnation(patience=0, no_improvement=None), "lbfgs")],
         )
 
     :class:`~neurom.training.criteria.Stagnation` ends a stage (new mode),

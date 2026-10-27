@@ -4,7 +4,6 @@ from neurom.training import (
     AnyOf,
     FixedIterations,
     MaxStages,
-    RelativeChange,
     RelativeGain,
     StageRecord,
     Stagnation,
@@ -13,36 +12,18 @@ from neurom.training import (
 )
 
 
-# --- RelativeChange -----------------------------------------------------
-
-
-def test_relative_change_needs_two_losses():
-    assert RelativeChange(tol=1.0).stop_reason([1.0]) is None
-
-
-def test_relative_change_converged_below_tol():
-    assert RelativeChange(tol=1e-3).stop_reason([1.0, 1.0005]) == "converged"
-
-
-def test_relative_change_continues_above_tol():
-    assert RelativeChange(tol=1e-3).stop_reason([1.0, 1.01]) is None
-
-
-def test_relative_change_is_relative_to_current_loss():
-    # |dL| = 1, |L| = 1e4: relative change 1e-4.
-    assert RelativeChange(tol=2e-4).stop_reason([1e4 + 1, 1e4]) == "converged"
-    assert RelativeChange(tol=5e-5).stop_reason([1e4 + 1, 1e4]) is None
-
-
-def test_relative_change_zero_loss_does_not_divide_by_zero():
-    assert RelativeChange(tol=1e-6).stop_reason([0.0, 0.0]) == "converged"
-
-
-def test_relative_change_max_iter_wins():
-    assert RelativeChange(tol=0.0, max_iter=3).stop_reason([3.0, 2.0, 1.0]) == "max_iter"
-
-
 # --- Stagnation ---------------------------------------------------------
+
+
+def test_stagnation_without_patience_stops_at_the_first_flat_iteration():
+    criterion = Stagnation(tol=1e-3, patience=0, no_improvement=None)
+    assert criterion.stop_reason([1.0]) is None
+    assert criterion.stop_reason([1.0, 1.01]) is None
+    assert criterion.stop_reason([1.0, 1.0005]) == "stagnated"
+
+
+def test_stagnation_zero_loss_does_not_divide_by_zero():
+    assert Stagnation(tol=1e-6, patience=0).stop_reason([0.0, 0.0]) == "stagnated"
 
 
 def test_stagnation_needs_more_than_patience_flat_iterations():

@@ -6,7 +6,7 @@ from neurom.training import (
     GreedyTrainer,
     MaxStages,
     Phase,
-    RelativeChange,
+    Stagnation,
 )
 
 torch.set_default_dtype(torch.float32)
@@ -69,7 +69,7 @@ def test_energy_decreases_and_reaches_rank_two_minimum(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        phases=[_lbfgs(RelativeChange(tol=1e-7, max_iter=50))],
+        phases=[_lbfgs(Stagnation(tol=1e-7, patience=0, no_improvement=None, max_iter=50))],
         enrichment_criterion=MaxStages(2),
     )
     history = trainer.enrich()

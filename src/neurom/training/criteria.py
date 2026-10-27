@@ -36,33 +36,6 @@ class EnrichmentCriterion(ABC):
         """
 
 
-class RelativeChange(StageCriterion):
-    """Stop when the relative change of the loss between two iterations is small.
-
-    Stops with ``"converged"`` when
-    ``|L_k - L_{k-1}| <= tol * max(|L_k|, 1e-30)``, or with ``"max_iter"`` after
-    ``max_iter`` iterations.
-
-    Args:
-        tol (float): Relative-change threshold.
-        max_iter (int): Hard cap, so a stage always terminates.
-    """
-
-    def __init__(self, tol=1e-6, max_iter=1000):
-        self.tol = tol
-        self.max_iter = max_iter
-
-    def stop_reason(self, losses):
-        if len(losses) >= self.max_iter:
-            return "max_iter"
-        if len(losses) < 2:
-            return None
-        current, previous = losses[-1], losses[-2]
-        if abs(current - previous) <= self.tol * max(abs(current), 1e-30):
-            return "converged"
-        return None
-
-
 def _relative_decrease(previous, current):
     """``2 (L_{k-1} - L_k) / |L_{k-1} + L_k|``, the loss decrease of eq. (16) in
     Daby-Seesaram et al. (2026), Part II. Positive when the loss went down."""
@@ -83,8 +56,10 @@ class Stagnation(StageCriterion):
       ``Training_NeuROM`` on ``origin/Develop_Daby``, not in the paper);
     * ``"max_iter"`` after ``max_iter`` iterations.
 
-    The defaults are those of ``Training_NeuROM``, except ``max_iter``, which
-    takes :class:`RelativeChange`'s.
+    With ``patience=0`` and ``no_improvement=None``, a stage stops at the first
+    stagnating iteration: a plain relative-change test, e.g. for an LBFGS.
+
+    The defaults are those of ``Training_NeuROM``, except ``max_iter``.
 
     Args:
         tol (float): Stagnation threshold ``eta_c`` on ``|d_k|``.

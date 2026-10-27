@@ -7,7 +7,6 @@ from neurom.training import (
     GreedyTrainer,
     MaxStages,
     Phase,
-    RelativeChange,
     SimultaneousTrainer,
     Stagnation,
     Usefulness,
@@ -99,7 +98,7 @@ def test_final_lbfgs_reaches_the_rank_two_minimum(make_model):
         model,
         phases=[_adam(FixedIterations(50))],
         enrichment_criterion=MaxStages(2),
-        final_phases=[_lbfgs(RelativeChange(tol=1e-7, max_iter=50))],
+        final_phases=[_lbfgs(Stagnation(tol=1e-7, patience=0, no_improvement=None, max_iter=50))],
     ).enrich()
     assert model.decomposition.n_modes == 2
     assert history.final.energy == pytest.approx(-4.0 / 3.0, rel=1e-5)

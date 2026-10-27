@@ -7,7 +7,7 @@ from typing import Callable
 
 import torch
 
-from neurom.training.criteria import MaxStages, RelativeChange, StageCriterion
+from neurom.training.criteria import MaxStages, StageCriterion, Stagnation
 from neurom.training.history import StageRecord, TrainingHistory
 from neurom.training.progress import ProgressReporter
 
@@ -37,7 +37,7 @@ class Phase:
 
 def _default_phases():
     return [
-        Phase(lambda params: torch.optim.Adam(params, lr=0.1), RelativeChange(), "adam")
+        Phase(lambda params: torch.optim.Adam(params, lr=0.1), Stagnation(), "adam")
     ]
 
 
@@ -57,7 +57,7 @@ class PGDTrainer(ABC):
             training mode and exposing ``loss(output)``.
         phases (list[Phase], optional): The phases of every stage. Defaults to
             a single Adam(lr=0.1) phase stopped by
-            :class:`~neurom.training.criteria.RelativeChange`.
+            :class:`~neurom.training.criteria.Stagnation` (defaults of Algorithm 1).
         enrichment_criterion (EnrichmentCriterion, optional): When to stop
             starting stages. Defaults to ``MaxStages(1)``.
         progress (ProgressReporter, optional): Told about every stage, phase

@@ -4,7 +4,6 @@ from neurom.training.history import StageRecord, TrainingHistory
 from neurom.training.criteria import (
     StageCriterion,
     EnrichmentCriterion,
-    RelativeChange,
     Stagnation,
     FixedIterations,
     RelativeGain,
@@ -22,7 +21,6 @@ __all__ = [
     "TrainingHistory",
     "StageCriterion",
     "EnrichmentCriterion",
-    "RelativeChange",
     "Stagnation",
     "FixedIterations",
     "RelativeGain",

@@ -1,11 +1,23 @@
-"""Finite element: owns the DOF layout, so DOF counts/locations are deduced, not passed."""
+"""Finite element: owns the DOF layout, so DOF counts/locations are deduced, not passed.
+
+Shape glossary: ``n_dofs`` (= ``n_phys``) physical DOFs per element, ``n_ref`` reference basis
+functions, ``dim_ref`` the reference/parametric dimension (1 bar, 2 triangle), ``gdim`` the
+geometric (ambient) dimension, ``N_e`` elements, ``N_q`` quadrature/evaluation points.
+"""
+
+from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 
 from neurom.meshes.topology import EntityDim
+
+if TYPE_CHECKING:
+    from neurom.shape_functions.shape_function import ShapeFunction
 
 # DOF kinds (the functional defining each DOF).
 VALUE = "value"  # nodal value
@@ -31,6 +43,11 @@ class DoF:
     local_index: int
     kind: str
 
+    def __post_init__(self):
+        # Keep a typed EntityDim and an int index, however the DoF was built.
+        object.__setattr__(self, "entity_dim", EntityDim(int(self.entity_dim)))
+        object.__setattr__(self, "local_index", int(self.local_index))
+
 
 class FiniteElement:
     r"""A finite element = reference basis + a declarative DOF layout.
@@ -55,14 +72,27 @@ class FiniteElement:
         value_shape (tuple[int, ...]): Component shape of the field value; ``()``
             scalar, ``(2,)`` a 2-vector. Orthogonal to ``dof_layout``.
         pullback (str): ``"identity"`` (scalar/Lagrange/Hermite) or ``"piola"`` (RT0).
+        nodal (bool): Whether the coded basis is dual to the DOFs (default ``True``). If ``True``,
+            the construction-time duality check requires ``V == I``; set ``False`` for a non-nodal
+            (e.g. hierarchical) basis, whose ``C = V^{-1}`` is folded into the tabulation later.
 
     Attributes:
-        reference_basis, cell, dof_layout, value_shape, pullback.
+        reference_basis (ShapeFunction): The reference basis.
+        cell (ReferenceCell): The reference cell (``reference_basis.reference_cell``).
+        dof_layout (tuple[DoF, ...]): The normalised DOF layout.
+        value_shape (tuple[int, ...]): Field component shape.
+        pullback (str): The push-forward label.
+        nodal (bool): Whether the element is declared nodal.
     """
 
     def __init__(
-        self, reference_basis, dof_layout, value_shape=(), pullback="identity"
-    ):
+        self,
+        reference_basis: ShapeFunction,
+        dof_layout: Sequence[DoF | tuple],
+        value_shape: tuple[int, ...] = (),
+        pullback: str = "identity",
+        nodal: bool = True,
+    ) -> None:
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_cell
         # DoF normalises its own fields (__post_init__); a raw triple is accepted as a shorthand.
@@ -71,10 +101,72 @@ class FiniteElement:
         )
         self.value_shape = tuple(value_shape)
         self.pullback = pullback
+        self.nodal = nodal
+        self._check_duality()
+
+    def duality_matrix(self) -> torch.Tensor | None:
+        r"""The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)`, or ``None``.
+
+        Each DOF's *reference* functional (geometry-free, local orientation) applied to the coded
+        reference basis at the DOF's reference point. ``V == I`` means the basis is nodal-dual to
+        the DOFs; a non-nodal element instead folds ``C = V^{-1}`` into its tabulation. Returns
+        ``None`` when any DOF kind has no functional yet (duality is then unverifiable here).
+
+        Returns:
+            torch.Tensor | None: ``(n_dofs, n_ref)``, or ``None``.
+        """
+        from neurom.dof_transformations.functionals import FUNCTIONALS
+
+        if any(d.kind not in FUNCTIONALS for d in self.dof_layout):
+            return None
+
+        # (n_dofs, dim_ref) -- reference point of each DOF
+        xi = self.dof_nodes_xi()
+
+        # Associate to each kind a list of indices
+        by_kind: dict[str, list[int]] = {}
+        for i, d in enumerate(self.dof_layout):
+            by_kind.setdefault(d.kind, []).append(i)
+
+        # Fill the duality matrix with reference functionals
+        V = torch.empty(self.n_dofs, self.n_ref, dtype=xi.dtype)
+        for kind, rows in by_kind.items():
+            V[rows, :] = FUNCTIONALS[kind].reference_row(self, xi[rows])
+
+        return V
+
+    def _check_duality(self) -> None:
+        """Construction-time unisolvence / nodality check.
+
+        For a ``nodal`` element (the default), the duality matrix must be the identity: that means
+        ``n_dofs == n_ref`` (unisolvent) and the coded basis really is dual to the DOFs. A mismatch
+        -- a wrong basis or a wrong DOF definition -- is caught here rather than silently producing
+        garbage downstream. (Non-nodal elements fold ``C = V^{-1}`` into the tabulation instead --
+        a later step.)
+        """
+        V = self.duality_matrix()
+        if V is None or not self.nodal:
+            return
+        if self.n_dofs != self.n_ref:
+            raise ValueError(
+                f"nodal element is not unisolvent: {self.n_dofs} DOFs but {self.n_ref} basis "
+                f"functions (n_dofs must equal n_ref)."
+            )
+        if not torch.allclose(V, torch.eye(self.n_dofs, dtype=V.dtype), atol=1e-6):
+            raise ValueError(
+                "element declared nodal, but its basis is not dual to its DOFs "
+                "(the duality matrix V = l_a(phi_b) is not the identity); check the basis "
+                "or the DOF definitions, or declare the element non-nodal."
+            )
 
     @property
     def dim_ref(self) -> int:
-        """Reference (parametric) dimension: 1 for a bar, 2 for a triangle."""
+        r"""Reference (parametric) dimension: the number of reference coordinates :math:`\xi`.
+
+        ``1`` for a bar, ``2`` for a triangle (``= cell.simplex.shape[1]``). This is **not** the
+        vertex count (a triangle has 3 vertices, a bar 2) and **not** the geometric/ambient
+        dimension ``gdim`` (a bar may live in 2-D: ``dim_ref = 1`` while ``gdim = 2``).
+        """
         return self.cell.dim_ref
 
     @property
@@ -99,12 +191,19 @@ class FiniteElement:
         return math.prod(self.value_shape)
 
     @property
-    def dof_kinds(self) -> tuple:
-        """The ``kind`` of each DOF, in layout order."""
+    def dof_kinds(self) -> tuple[str, ...]:
+        """The ``kind`` of each DOF, in layout order, shape ``(n_dofs,)``."""
         return tuple(d.kind for d in self.dof_layout)
 
     def N(self, xi: torch.Tensor) -> torch.Tensor:
-        """Evaluate the reference basis at ``xi`` (delegates to ``reference_basis``)."""
+        """Evaluate the reference basis at ``xi`` (delegates to ``reference_basis``).
+
+        Args:
+            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+
+        Returns:
+            torch.Tensor: Basis values, shape ``(N_e, N_q, n_ref)``.
+        """
         return self.reference_basis.N(xi)
 
     def dof_nodes_xi(self) -> torch.Tensor:

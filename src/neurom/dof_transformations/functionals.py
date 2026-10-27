@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Callable
 import torch
 
 if TYPE_CHECKING:
-    from neurom.elements.finite_element import FiniteElement
+    from neurom.shape_functions.shape_function import ShapeFunction
 
 
 class DofFunctional(ABC):
@@ -32,6 +32,12 @@ class DofFunctional(ABC):
 
     Each subclass implements one DOF *kind* (point value, first derivative, ...) by overriding the
     three methods below with the specific operator it applies.
+
+    A functional operates on a *reference basis* (a :class:`~neurom.shape_functions.shape_function.ShapeFunction`)
+    and a geometry *mapping* -- never on a :class:`~neurom.elements.finite_element.FiniteElement`.
+    It is pure infrastructure: a library of operators that elements *reference* (by DOF kind), with
+    no knowledge of the elements that use it, so the dependency runs one way (element -> functional
+    -> basis).
     """
 
     #: Whether :meth:`l_rows` depends on the geometry (the mapping). ``False`` lets the
@@ -41,7 +47,7 @@ class DofFunctional(ABC):
     @abstractmethod
     def l_rows(
         self,
-        element: FiniteElement,
+        basis: ShapeFunction,
         mapping,
         xi: torch.Tensor,
         element_ids: torch.Tensor | None,
@@ -50,7 +56,7 @@ class DofFunctional(ABC):
         r"""Rows of :math:`L_e` for this kind's DOFs: :math:`\ell_i` applied to every basis function.
 
         Args:
-            element (FiniteElement): The element (for its reference basis).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             mapping: Geometry mapping (``IsoparametricMapping1D``/``2D``), used by
                 geometry-dependent kinds via ``mapping.jacobian_at``.
             xi (torch.Tensor): Reference nodes of this kind's DOFs, shape ``(n_rows, dim_ref)``.
@@ -84,7 +90,7 @@ class DofFunctional(ABC):
         ...
 
     @abstractmethod
-    def reference_row(self, element: FiniteElement, xi: torch.Tensor) -> torch.Tensor:
+    def reference_row(self, basis: ShapeFunction, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference (geometry-free) functional applied to the reference basis at ``xi``.
 
         Builds rows of the duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)` used by the
@@ -93,7 +99,7 @@ class DofFunctional(ABC):
         orientation.
 
         Args:
-            element (FiniteElement): The element (for its reference basis).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             xi (torch.Tensor): Reference points of these DOFs, shape ``(n_rows, dim_ref)``.
 
         Returns:
@@ -109,7 +115,7 @@ class ValueFunctional(DofFunctional):
 
     def l_rows(
         self,
-        element: FiniteElement,
+        basis: ShapeFunction,
         mapping,
         xi: torch.Tensor,
         element_ids: torch.Tensor | None,
@@ -122,7 +128,7 @@ class ValueFunctional(DofFunctional):
         are unused.
 
         Args:
-            element (FiniteElement): The element (for its reference basis ``N``).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             mapping: Unused (point value is geometry-independent).
             xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, dim_ref)``.
             element_ids (torch.Tensor | None): Unused.
@@ -132,7 +138,7 @@ class ValueFunctional(DofFunctional):
             torch.Tensor: ``N(\xi)`` broadcast over elements, shape ``(n_e, n_rows, n_ref)``.
         """
         xi_e = xi.unsqueeze(0).expand(n_e, -1, -1)  # (n_e, n_rows, dim_ref)
-        return element.N(xi_e)  # (n_e, n_rows, n_ref)
+        return basis.N(xi_e)  # (n_e, n_rows, n_ref)
 
     def on_function(
         self, f: Callable[[torch.Tensor], torch.Tensor], x_phys: torch.Tensor
@@ -152,18 +158,18 @@ class ValueFunctional(DofFunctional):
         """
         return f(x_phys).reshape(x_phys.shape[0], -1)  # (n_rows, n_components)
 
-    def reference_row(self, element: FiniteElement, xi: torch.Tensor) -> torch.Tensor:
+    def reference_row(self, basis: ShapeFunction, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference duality row :math:`N_a(\xi_i)` -- as :meth:`l_rows` but for a single element,
         geometry-free.
 
         Args:
-            element (FiniteElement): The element (for its reference basis ``N``).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, dim_ref)``.
 
         Returns:
             torch.Tensor: ``N(\xi)`` on the reference cell, shape ``(n_rows, n_ref)``.
         """
-        return element.N(xi.unsqueeze(0))[0]  # (n_rows, n_ref)
+        return basis.N(xi.unsqueeze(0))[0]  # (n_rows, n_ref)
 
 
 class GradientFunctional(DofFunctional):
@@ -173,7 +179,7 @@ class GradientFunctional(DofFunctional):
 
     def l_rows(
         self,
-        element: FiniteElement,
+        basis: ShapeFunction,
         mapping,
         xi: torch.Tensor,
         element_ids: torch.Tensor | None,
@@ -186,7 +192,7 @@ class GradientFunctional(DofFunctional):
         ``dim_ref > 1`` (2-D would need :math:`J_e^{-\top}`).
 
         Args:
-            element (FiniteElement): The element (for its reference basis ``N``).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             mapping: Geometry mapping; ``mapping.jacobian_at(xi, element_ids)`` supplies ``J_e``.
             xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, dim_ref)`` with ``dim_ref == 1``.
             element_ids (torch.Tensor | None): Element subset ``(n_e,)``, or ``None`` for all.
@@ -196,14 +202,14 @@ class GradientFunctional(DofFunctional):
             torch.Tensor: The rows of :math:`L_e` for this kind, shape ``(n_e, n_rows, n_ref)``.
 
         Raises:
-            NotImplementedError: If ``element.dim_ref != 1``.
+            NotImplementedError: If ``basis.reference_cell.dim_ref != 1``.
         """
-        if element.dim_ref != 1:
+        if basis.reference_cell.dim_ref != 1:
             raise NotImplementedError(
                 "GradientFunctional is 1-D only (2-D needs J^{-T})."
             )
         xi_e = xi.unsqueeze(0).expand(n_e, -1, -1).clone().requires_grad_(True)
-        N = element.N(xi_e)  # (n_e, n_rows, n_ref)
+        N = basis.N(xi_e)  # (n_e, n_rows, n_ref)
         n_ref = N.shape[-1]
         dN = torch.stack(
             [
@@ -241,13 +247,13 @@ class GradientFunctional(DofFunctional):
         (dy,) = torch.autograd.grad(y.sum(), x, create_graph=False)
         return dy  # (n_rows, 1) -- the 1-D derivative, component axis kept explicit
 
-    def reference_row(self, element: FiniteElement, xi: torch.Tensor) -> torch.Tensor:
+    def reference_row(self, basis: ShapeFunction, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference duality row :math:`N_a'(\xi_i) = \mathrm dN_a/\mathrm d\xi` at the DOF nodes --
         the reference derivative with **no** :math:`J` (unlike :meth:`l_rows`). Raises for
         ``dim_ref > 1``.
 
         Args:
-            element (FiniteElement): The element (for its reference basis ``N``).
+            basis (ShapeFunction): The reference basis (evaluates ``N``).
             xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, 1)``.
 
         Returns:
@@ -255,14 +261,14 @@ class GradientFunctional(DofFunctional):
             ``(n_rows, n_ref)``.
 
         Raises:
-            NotImplementedError: If ``element.dim_ref != 1``.
+            NotImplementedError: If ``basis.reference_cell.dim_ref != 1``.
         """
-        if element.dim_ref != 1:
+        if basis.reference_cell.dim_ref != 1:
             raise NotImplementedError(
                 "reference GradientFunctional is 1-D only (2-D: J^{-T})."
             )
         x = xi.unsqueeze(0).clone().requires_grad_(True)  # (1, n_rows, 1)
-        N = element.N(x)  # (1, n_rows, n_ref)
+        N = basis.N(x)  # (1, n_rows, n_ref)
         n_ref = N.shape[-1]
         dN = torch.stack(
             [

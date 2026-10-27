@@ -138,7 +138,7 @@ class Transformation(nn.Module):
         for func, rows in self._groups.items():
             xi = self._xi[rows].to(dtype=dtype, device=device)  # (n_rows, dim_ref)
             L[:, rows, :] = func.l_rows(
-                self.element, self.mapping, xi, element_ids, n_e
+                self.element.reference_basis, self.mapping, xi, element_ids, n_e
             )  # (n_e, n_rows, n_ref)
         return L
 

@@ -154,7 +154,7 @@ class FiniteElement:
         # Fill the duality matrix with the reference functionals
         V = torch.empty(self.n_dofs, self.n_ref, dtype=xi.dtype)  # (n_dofs, n_ref)
         for func, rows in by_func.items():
-            V[rows, :] = func.reference_row(self, xi[rows])
+            V[rows, :] = func.reference_row(self.reference_basis, xi[rows])
 
         return V
 

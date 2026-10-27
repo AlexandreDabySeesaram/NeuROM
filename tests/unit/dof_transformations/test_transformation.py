@@ -1,4 +1,3 @@
-import pytest
 import torch
 
 from neurom.meshes import Mesh, Topology
@@ -46,18 +45,22 @@ def test_hermite_scales_slope_dofs_by_jacobian():
 
 
 def test_value_functional_on_function():
+    # The component axis is kept explicit: a scalar f returning (n,) is normalised to (n, 1).
     f = lambda x: (x**2).squeeze(-1)
     x = torch.tensor([[1.0], [2.0], [3.0]], dtype=F64)
     assert torch.allclose(
-        ValueFunctional().on_function(f, x), torch.tensor([1.0, 4.0, 9.0], dtype=F64)
+        ValueFunctional().on_function(f, x),
+        torch.tensor([[1.0], [4.0], [9.0]], dtype=F64),
     )
 
 
 def test_gradient_functional_on_function_is_derivative():
-    f = lambda x: (x**2).squeeze(-1)  # f' = 2x
+    # f' = 2x, returned with the spatial axis kept explicit: shape (n, 1), not (n,).
+    f = lambda x: (x**2).squeeze(-1)
     x = torch.tensor([[1.0], [2.0], [3.0]], dtype=F64)
     assert torch.allclose(
-        GradientFunctional().on_function(f, x), torch.tensor([2.0, 4.0, 6.0], dtype=F64)
+        GradientFunctional().on_function(f, x),
+        torch.tensor([[2.0], [4.0], [6.0]], dtype=F64),
     )
 
 

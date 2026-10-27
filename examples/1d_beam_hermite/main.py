@@ -71,7 +71,7 @@ def main():
     u0 = interpolate(
         space,
         mesh,
-        lambda z: (eps_init * (1 - torch.cos(2 * torch.pi * z))).squeeze(-1),
+        lambda z: eps_init * (1 - torch.cos(2 * torch.pi * z)),
     )
     u = field_layout.add(
         TrainableField(

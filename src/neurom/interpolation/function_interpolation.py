@@ -48,7 +48,9 @@ def interpolate(space, mesh, f) -> torch.Tensor:
     Args:
         space (FunctionSpace): The target space.
         mesh (Mesh): The mesh placing the DOFs (must share ``space.topology``).
-        f (callable): ``x (n, gdim) -> value (n[, *value_shape])``.
+        f (callable): ``x (n, gdim) -> value (n, n_components)`` -- the component axis is explicit
+            (a scalar field is ``(n, 1)``). A scalar ``f`` returning ``(n,)`` is also accepted and
+            normalised to the explicit axis.
 
     Returns:
         torch.Tensor: DOF values of shape ``(n_scalar_dofs, n_components)`` (detached).

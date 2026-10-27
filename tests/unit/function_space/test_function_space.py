@@ -57,7 +57,7 @@ def test_hermite_space_matches_hand_built_interpolation():
 
     # --- FunctionSpace: element in, init seeded by interpolate(f), BCs by meaning ---
     init_new = interpolate(
-        space, mesh, lambda z: 1e-2 * (1 - torch.cos(2 * torch.pi * z)).squeeze(-1)
+        space, mesh, lambda z: 1e-2 * (1 - torch.cos(2 * torch.pi * z))
     )
     u_new = TrainableField(
         space,
@@ -77,7 +77,7 @@ def test_interpolate_sets_value_and_derivative_dofs():
     mesh, _, _ = _mesh(N)
     space = FunctionSpace(mesh.topology, HERMITE)
     # f = x^3 -> value DOFs x^3, slope DOFs 3x^2
-    init = interpolate(space, mesh, lambda z: (z**3).squeeze(-1))
+    init = interpolate(space, mesh, lambda z: z**3)
     xn = torch.linspace(0, 1, N)
     assert torch.allclose(init[space.locate(0, range(N), ["value"])].squeeze(-1), xn**3)
     assert torch.allclose(
@@ -101,7 +101,7 @@ def test_interpolate_raises_for_a_dof_kind_without_a_functional():
     )
     space = FunctionSpace(mesh.topology, exotic)
     with pytest.raises(NotImplementedError, match="no functional"):
-        interpolate(space, mesh, lambda z: z.squeeze(-1))
+        interpolate(space, mesh, lambda z: z)
 
 
 def test_dg0_space_interpolates_constant_per_cell():

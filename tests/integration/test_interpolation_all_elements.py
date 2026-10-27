@@ -186,7 +186,8 @@ def _poly1d(seed, deg):
     """
     g = torch.Generator().manual_seed(seed)
     c = torch.rand(deg + 1, generator=g)
-    return lambda X: sum(c[k] * X[:, 0] ** k for k in range(deg + 1))
+    # X[:, 0:1] keeps the component axis explicit -> value shape (N, 1).
+    return lambda X: sum(c[k] * X[:, 0:1] ** k for k in range(deg + 1))
 
 
 def _poly2d(seed, deg):
@@ -198,8 +199,9 @@ def _poly2d(seed, deg):
     g = torch.Generator().manual_seed(seed)
     terms = [(i, j) for i in range(deg + 1) for j in range(deg + 1 - i)]
     c = torch.rand(len(terms), generator=g)
+    # X[:, 0:1] / X[:, 1:2] keep the component axis explicit -> value shape (N, 1).
     return lambda X: sum(
-        c[k] * X[:, 0] ** i * X[:, 1] ** j for k, (i, j) in enumerate(terms)
+        c[k] * X[:, 0:1] ** i * X[:, 1:2] ** j for k, (i, j) in enumerate(terms)
     )
 
 
@@ -210,19 +212,20 @@ def _vec2d(seed, deg):
     seeds so they differ, catching a component mix-up in the vectorised DOF layout.
     """
     fx, fy = _poly2d(seed, deg), _poly2d(seed + 1, deg)
-    return lambda X: torch.stack([fx(X), fy(X)], dim=1)
+    # cat two explicit (N, 1) components -> (N, 2).
+    return lambda X: torch.cat([fx(X), fy(X)], dim=1)
 
 
 # Fixed "arbitrary" functions for the type-2 convergence tests: deliberately *outside* every
 # element's polynomial space (a transcendental part + a high-degree monomial) so no element
 # reproduces them exactly and the L2 error genuinely decays at the element's rate.
-_ARB_1D = lambda X: torch.cos(math.pi * X[:, 0]) + 3 * X[:, 0] ** 7
+_ARB_1D = lambda X: torch.cos(math.pi * X[:, 0:1]) + 3 * X[:, 0:1] ** 7
 _ARB_2D = lambda X: (
-    torch.cos(math.pi * X[:, 0]) * torch.sin(math.pi * X[:, 1])
-    + 3 * X[:, 0] ** 7
-    + X[:, 0] ** 2 * X[:, 1] ** 5
+    torch.cos(math.pi * X[:, 0:1]) * torch.sin(math.pi * X[:, 1:2])
+    + 3 * X[:, 0:1] ** 7
+    + X[:, 0:1] ** 2 * X[:, 1:2] ** 5
 )
-_ARB_VEC = lambda X: torch.stack(
+_ARB_VEC = lambda X: torch.cat(
     [_ARB_2D(X), _ARB_2D(torch.stack([X[:, 1], X[:, 0]], dim=1))], dim=1
 )
 

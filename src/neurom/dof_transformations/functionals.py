@@ -69,12 +69,17 @@ class DofFunctional(ABC):
     ) -> torch.Tensor:
         r"""Apply :math:`\ell` to a user function ``f`` at this kind's physical DOF points.
 
+        The component axis is kept **explicit**: the result is always ``(n_rows, n_components)``
+        (a scalar field is ``(n_rows, 1)``), matching the rest of the value pipeline -- no squeezed
+        ``(n_rows,)``.
+
         Args:
-            f (Callable): ``x (..., gdim) -> value (..., *value_shape)``.
+            f (Callable): ``x (n_rows, gdim) -> value (n_rows, n_components)`` (a scalar field may
+                also return ``(n_rows,)``; it is normalised to an explicit component axis).
             x_phys (torch.Tensor): Physical DOF points, shape ``(n_rows, gdim)``.
 
         Returns:
-            torch.Tensor: :math:`\ell_i(f)`, shape ``(n_rows, *value_shape)``.
+            torch.Tensor: :math:`\ell_i(f)`, shape ``(n_rows, n_components)``.
         """
         ...
 
@@ -134,14 +139,18 @@ class ValueFunctional(DofFunctional):
     ) -> torch.Tensor:
         r"""Evaluate the user function at the physical DOF points: :math:`\ell_i(f) = f(\mathbf x_i)`.
 
+        The trailing axis is kept explicit: a scalar ``f`` returning ``(n_rows,)`` is normalised to
+        ``(n_rows, 1)`` (flatten any ``value_shape`` to ``n_components``).
+
         Args:
-            f (Callable): ``x (n_rows, gdim) -> value (n_rows, *value_shape)``.
+            f (Callable): ``x (n_rows, gdim) -> value (n_rows, n_components)`` (``(n_rows,)`` scalar
+                also accepted).
             x_phys (torch.Tensor): Physical DOF points, shape ``(n_rows, gdim)``.
 
         Returns:
-            torch.Tensor: ``f`` at the points, shape ``(n_rows, *value_shape)``.
+            torch.Tensor: ``f`` at the points, shape ``(n_rows, n_components)``.
         """
-        return f(x_phys)
+        return f(x_phys).reshape(x_phys.shape[0], -1)  # (n_rows, n_components)
 
     def reference_row(self, element: FiniteElement, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference duality row :math:`N_a(\xi_i)` -- as :meth:`l_rows` but for a single element,
@@ -212,20 +221,25 @@ class GradientFunctional(DofFunctional):
         self, f: Callable[[torch.Tensor], torch.Tensor], x_phys: torch.Tensor
     ) -> torch.Tensor:
         r"""First derivative of the user function at the physical DOF points,
-        :math:`\ell_i(f) = f'(\mathbf x_i)`, via autograd; drops the single spatial axis to match
-        the value convention.
+        :math:`\ell_i(f) = f'(\mathbf x_i)`, via autograd.
+
+        The spatial axis is kept **explicit**: the 1-D derivative is returned as ``(n_rows, 1)``,
+        not squeezed to ``(n_rows,)`` (for 1-D, ``gdim == n_components == 1``). The 2-D directional
+        derivative :math:`\mathbf d\cdot\nabla f` -- a projection, not a squeeze -- is a later step;
+        here ``dy`` with ``gdim > 1`` would not match ``n_components``, correctly flagging it.
 
         Args:
-            f (Callable): ``x (n_rows, 1) -> value (n_rows,)``.
+            f (Callable): ``x (n_rows, 1) -> value (n_rows, 1)`` (``(n_rows,)`` scalar also
+                accepted).
             x_phys (torch.Tensor): Physical DOF points, shape ``(n_rows, 1)``.
 
         Returns:
-            torch.Tensor: :math:`f'` at the points, shape ``(n_rows,)``.
+            torch.Tensor: :math:`f'` at the points, shape ``(n_rows, 1)``.
         """
         x = x_phys.clone().requires_grad_(True)
         y = f(x)
         (dy,) = torch.autograd.grad(y.sum(), x, create_graph=False)
-        return dy[..., 0]
+        return dy  # (n_rows, 1) -- the 1-D derivative, component axis kept explicit
 
     def reference_row(self, element: FiniteElement, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference duality row :math:`N_a'(\xi_i) = \mathrm dN_a/\mathrm d\xi` at the DOF nodes --

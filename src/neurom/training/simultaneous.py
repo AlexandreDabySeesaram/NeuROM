@@ -21,9 +21,9 @@ class SimultaneousTrainer(PGDTrainer):
     added to it as a parameter group
     (:meth:`~neurom.neurom_model.NeuROMModel.add_mode_to_optimizer`), so the
     state of the earlier modes (e.g. Adam's moments) carries over, as with
-    ``AddMode2Optimizer`` in ``Training_NeuROM`` on ``origin/Develop_Daby``.
+    ``AddMode2Optimizer`` in Algorithm 1.
 
-    Algorithm 1 with the settings of that code reads::
+    Algorithm 1 reads::
 
         SimultaneousTrainer(
             model,
@@ -37,8 +37,8 @@ class SimultaneousTrainer(PGDTrainer):
     mode did not help, and the final LBFGS is the second stage of §3.2.2. One
     difference: Algorithm 1 tests the end of the run inside the iteration loop,
     with its own patience ``max_stgn``; here it is tested between stages, so a
-    useless mode stops after the stage criterion's patience. The reference
-    code uses the same value (5) for both.
+    useless mode stops after the stage criterion's patience. The paper reports
+    the result insensitive to both patiences between 5 and 100.
 
     Worth expecting:
 

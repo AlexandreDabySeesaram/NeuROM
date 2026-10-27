@@ -52,14 +52,15 @@ class Stagnation(StageCriterion):
     * ``"stagnated"`` after more than ``patience`` stagnating iterations in a
       row;
     * ``"no_improvement"`` after more than ``no_improvement`` iterations in a
-      row without a new minimum of the loss (the second trigger of
-      ``Training_NeuROM`` on ``origin/Develop_Daby``, not in the paper);
+      row without a new minimum of the loss (an extra trigger, not in the
+      paper);
     * ``"max_iter"`` after ``max_iter`` iterations.
 
     With ``patience=0`` and ``no_improvement=None``, a stage stops at the first
-    stagnating iteration: a plain relative-change test, e.g. for an LBFGS.
+    stagnating iteration: a plain relative-change test.
 
-    The defaults are those of ``Training_NeuROM``, except ``max_iter``.
+    The paper leaves ``tol`` and ``patience`` free, and reports the result
+    insensitive to the patience between 5 and 100.
 
     Args:
         tol (float): Stagnation threshold ``eta_c`` on ``|d_k|``.
@@ -146,13 +147,12 @@ class Usefulness(EnrichmentCriterion):
     A stage is *useful* when its loss went down for ``min_useful`` iterations
     in a row, each a relative decrease ``d_k >= tol`` (see
     :class:`Stagnation`). A stagnating iteration (``|d_k| < tol``) restarts the
-    count; an increase neither counts nor restarts it, as in
-    ``Training_NeuROM`` on ``origin/Develop_Daby``. Stops with
+    count; an increase neither counts nor restarts it. Stops with
     ``"useless_mode"`` when the last stage was not useful. The first stage is
     never judged, so at least two stages run.
 
-    The paper writes the test as ``L > 0``; the code tests the decrease, which
-    is what is implemented.
+    The paper writes the test as ``L > 0``, read here as a decrease of the
+    loss.
 
     Args:
         tol (float): Stagnation threshold, the ``tol`` of :class:`Stagnation`.

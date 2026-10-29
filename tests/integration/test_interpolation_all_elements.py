@@ -28,6 +28,7 @@ from neurom.elements import (
     P1_BAR,
     P1_TRIANGLE,
     P2_TRIANGLE,
+    HIERARCHICAL_P2_TRIANGLE,
     HERMITE,
     DG0_BAR,
     DG0_TRIANGLE,
@@ -238,6 +239,13 @@ EXACT_CASES = [
     ExactCase("DG0_TRIANGLE", DG0_TRIANGLE, 2, _poly2d(0, 0)),
     ExactCase("P1_TRIANGLE", P1_TRIANGLE, 2, _poly2d(0, 1), check_gradient=True),
     ExactCase("P2_TRIANGLE", P2_TRIANGLE, 2, _poly2d(0, 2), check_gradient=True),
+    ExactCase(
+        "HIERARCHICAL_P2_TRIANGLE",
+        HIERARCHICAL_P2_TRIANGLE,
+        2,
+        _poly2d(0, 2),
+        check_gradient=True,
+    ),
     ExactCase("P1_TRIANGLE_vector", VectorElement(P1_TRIANGLE, 2), 2, _vec2d(0, 1)),
 ]
 
@@ -251,6 +259,15 @@ CONV_CASES = [
     ConvCase("DG0_TRIANGLE", DG0_TRIANGLE, 2, _ARB_2D, rate=1, acc_n=32, max_err=0.10),
     ConvCase("P1_TRIANGLE", P1_TRIANGLE, 2, _ARB_2D, rate=2, acc_n=32, max_err=0.01),
     ConvCase("P2_TRIANGLE", P2_TRIANGLE, 2, _ARB_2D, rate=3, acc_n=8, max_err=0.01),
+    ConvCase(
+        "HIERARCHICAL_P2_TRIANGLE",
+        HIERARCHICAL_P2_TRIANGLE,
+        2,
+        _ARB_2D,
+        rate=3,
+        acc_n=8,
+        max_err=0.01,
+    ),
     ConvCase(
         "P1_TRIANGLE_vector",
         VectorElement(P1_TRIANGLE, 2),

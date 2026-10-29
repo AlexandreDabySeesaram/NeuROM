@@ -102,12 +102,18 @@ class FiniteElement:
             (e.g. hierarchical) basis, whose ``C = V^{-1}`` is folded into the tabulation later.
 
     Attributes:
-        reference_basis (ShapeFunction): The reference basis.
+        reference_basis (ShapeFunction): The basis presented downstream. The *coded* basis for a
+            nodal element; a :class:`~neurom.shape_functions.folded_basis.FoldedBasis` wrapping the
+            coded basis with ``C`` for a non-nodal one.
         cell (ReferenceCell): The reference cell (``reference_basis.reference_cell``).
         dof_layout (tuple[DoF, ...]): The normalised DOF layout.
         value_shape (tuple[int, ...]): Field component shape.
         pullback (str): The push-forward label.
         nodal (bool): Whether the element is declared nodal.
+        V (torch.Tensor | None): The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)` of the
+            *coded* basis, computed at construction (``None`` if a DOF kind has no functional).
+        C (torch.Tensor | None): The duality correction :math:`C = V^{-1}` folded into the
+            tabulation for a non-nodal element; ``None`` for a nodal element (``C = I`` implicitly).
     """
 
     def __init__(
@@ -127,7 +133,9 @@ class FiniteElement:
         self.value_shape = tuple(value_shape)
         self.pullback = pullback
         self.nodal = nodal
-        self._check_duality()
+        self.V: torch.Tensor | None = None
+        self.C: torch.Tensor | None = None
+        self._resolve_duality()
 
     def duality_matrix(self) -> torch.Tensor | None:
         r"""The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)`, or ``None``.
@@ -158,29 +166,56 @@ class FiniteElement:
 
         return V
 
-    def _check_duality(self) -> None:
-        """Construction-time unisolvence / nodality check.
+    def _resolve_duality(self) -> None:
+        r"""Construction-time unisolvence / nodality check, and the :math:`C`-fold for non-nodal bases.
 
-        For a ``nodal`` element (the default), the duality matrix must be the identity: that means
-        ``n_dofs == n_ref`` (unisolvent) and the coded basis really is dual to the DOFs. A mismatch
-        -- a wrong basis or a wrong DOF definition -- is caught here rather than silently producing
-        garbage downstream. (Non-nodal elements fold ``C = V^{-1}`` into the tabulation instead --
-        a later step.)
+        Computes the coded basis's duality matrix :math:`V` (stored as :attr:`V`) and then, per
+        section 5 of the architecture plan:
+
+        - if a DOF kind has no functional yet (e.g. ``flux``/``normal_derivative`` before their
+          functionals exist), :math:`V` cannot be built, so the check is skipped: the element may
+          still be *declared* -- its DOF layout drives the DOF map / ``locate``, which need only the
+          ``kind`` and entity -- but every functional-requiring use (interpolation *and* the DOF
+          transformation, hence assembly) raises until the functional is supplied;
+        - require ``n_dofs == n_ref`` (a non-square :math:`V` means the basis cannot be unisolvent
+          with the DOFs) -- otherwise raise;
+        - **nodal** (the default): require :math:`V = I`, else raise (the duality test -- a wrong
+          basis or wrong DOF definition caught at construction, not as silent garbage downstream);
+        - **non-nodal**: set :math:`C = V^{-1}` (:attr:`C`) and fold it into the tabulation by
+          wrapping the coded basis in a :class:`~neurom.shape_functions.folded_basis.FoldedBasis`,
+          so the element presents the nodal basis :math:`\hat H = \hat\Phi\,C` downstream and the
+          runtime DOF transformation stays :math:`G_e\,T_e`.
         """
         V = self.duality_matrix()
-        if V is None or not self.nodal:
+        if V is None:
             return
+        self.V = V
         if self.n_dofs != self.n_ref:
             raise ValueError(
-                f"nodal element is not unisolvent: {self.n_dofs} DOFs but {self.n_ref} basis "
+                f"element is not unisolvent: {self.n_dofs} DOFs but {self.n_ref} basis "
                 f"functions (n_dofs must equal n_ref)."
             )
-        if not torch.allclose(V, torch.eye(self.n_dofs, dtype=V.dtype), atol=1e-6):
+        if self.nodal:
+            if not torch.allclose(V, torch.eye(self.n_dofs, dtype=V.dtype), atol=1e-6):
+                raise ValueError(
+                    "element declared nodal, but its basis is not dual to its DOFs "
+                    "(the duality matrix V = l_a(phi_b) is not the identity); check the basis "
+                    "or the DOF definitions, or declare the element non-nodal."
+                )
+            return
+
+        # Non-nodal: fold C = V^{-1} into the tabulation (computed in float64 for robustness).
+        try:
+            C = torch.linalg.inv(V.double())
+        except torch.linalg.LinAlgError as exc:
             raise ValueError(
-                "element declared nodal, but its basis is not dual to its DOFs "
-                "(the duality matrix V = l_a(phi_b) is not the identity); check the basis "
-                "or the DOF definitions, or declare the element non-nodal."
-            )
+                "non-nodal element: the duality matrix V = l_a(phi_b) is singular, so the coded "
+                "basis does not span the element's space; check the basis or the DOF definitions."
+            ) from exc
+        from neurom.shape_functions.folded_basis import FoldedBasis
+
+        self.C = C
+        self.reference_basis = FoldedBasis(self.reference_basis, C)
 
     @property
     def dim_ref(self) -> int:

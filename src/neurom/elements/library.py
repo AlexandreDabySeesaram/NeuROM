@@ -14,6 +14,7 @@ from neurom.shape_functions import (
     LinearBar,
     LinearTriangle,
     QuadraticTriangle,
+    HierarchicalP2Triangle,
     HermiteBeam,
     Constant,
 )
@@ -92,6 +93,19 @@ r"""**P2 (quadratic Lagrange) on the triangle.** Space :math:`P_2`, 6 DOFs. Noda
 barycentric coordinates: vertices :math:`N_{v_i}=\lambda_i(2\lambda_i-1)` and edge midpoints
 :math:`N_{e_{ij}}=4\lambda_i\lambda_j`, edges ordered :math:`(0,1),(1,2),(2,0)`. DOFs: the value
 at the three vertices and the three edge midpoints. Identity DOF transformation."""
+
+
+HIERARCHICAL_P2_TRIANGLE = FiniteElement(
+    HierarchicalP2Triangle(), P2_TRIANGLE.dof_layout, nodal=False
+)
+r"""**Non-nodal P2 on the triangle** -- same :math:`P_2` space and nodal P2 DOFs as
+:data:`P2_TRIANGLE`, but a *hierarchical* coded basis (three linear vertex hats
+:math:`\lambda_i` plus three quadratic edge bubbles :math:`4\lambda_i\lambda_j`) that is **not**
+dual to the DOFs. Declared ``nodal=False``, so construction computes :math:`C = V^{-1}` and folds
+it into the tabulation (see :class:`~neurom.shape_functions.folded_basis.FoldedBasis`), recovering
+the nodal P2 basis exactly. Not a production element: it exists to exercise and verify the
+non-nodal :math:`C`-folding path (every other library element is nodal, so its coded basis equals
+the basis it presents)."""
 
 
 HERMITE = FiniteElement(

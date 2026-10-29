@@ -1,10 +1,11 @@
 """Concrete finite elements as ready-to-use singletons.
 
 Each element is a pure reference-space object (no geometry, no trainable state), so a single
-shared instance serves every mesh and dtype -- hence module-level constants rather than
-factory functions. Vector-valued elements are a scalar element wrapped by
-:func:`VectorElement`; ``DG0`` needs a cell, so it keeps a small factory alongside the
-per-cell constants.
+shared instance serves every mesh and dtype -- hence the public surface is module-level
+constants, one per concrete element. Vector-valued elements are a scalar element wrapped by the
+one public combinator, :func:`VectorElement`. The DG0 construction is *cell-generic* (one recipe
+for any cell), so a private :func:`_dg0` helper builds the per-cell DG0 constants without
+duplication; every other element has a cell-specific basis and is written out directly.
 """
 
 from neurom.elements.finite_element import FiniteElement, DoF, VALUE, D1
@@ -41,17 +42,18 @@ def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
     )
 
 
-def DG0(cell: ReferenceCell, value_shape=()) -> FiniteElement:
-    r"""Piecewise-constant (:math:`P_0`) element: a single cell-value DOF (dimension-agnostic).
+def _dg0(cell: ReferenceCell) -> FiniteElement:
+    r"""Build the piecewise-constant (:math:`P_0`) element on ``cell`` (the cell-generic DG0 recipe).
 
     One DOF, the constant cell value -- basis :math:`N_0\equiv1`, functional :math:`\ell(v)=v|_K`
     -- attached to the top-dimensional cell entity (``EDGE`` for a bar, ``FACE`` for a triangle).
+    Private: the public surface is the per-cell constants :data:`DG0_BAR` / :data:`DG0_TRIANGLE`
+    (and a vector DG0 is :func:`VectorElement` over one of them, as for any element).
     """
     cell_dim = EntityDim(cell.simplex.shape[1])  # EDGE for a bar, FACE for a triangle
     return FiniteElement(
         Constant(cell),
         [DoF(entity_dim=cell_dim, local_index=0, kind=VALUE)],
-        value_shape=value_shape,
     )
 
 
@@ -126,10 +128,10 @@ first derivative, :math:`(\,v\mapsto v(x_i),\ v\mapsto v'(x_i)\,)`, at :math:`\x
 (geometry-dependent, unlike the nodal Lagrange elements)."""
 
 
-DG0_BAR = DG0(BAR)
+DG0_BAR = _dg0(BAR)
 r"""**DG0 (piecewise constant) on the bar.** Space :math:`P_0`, a single cell-value DOF
-(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). See :func:`DG0`."""
+(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). Built by :func:`_dg0`."""
 
-DG0_TRIANGLE = DG0(TRIANGLE)
+DG0_TRIANGLE = _dg0(TRIANGLE)
 r"""**DG0 (piecewise constant) on the triangle.** Space :math:`P_0`, a single cell-value DOF
-(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). See :func:`DG0`."""
+(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). Built by :func:`_dg0`."""

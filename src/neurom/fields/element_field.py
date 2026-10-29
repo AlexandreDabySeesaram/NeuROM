@@ -14,8 +14,8 @@ class ElementField(nn.Module):
     cell data) -- not an interpolatable finite-element space.
 
     A *trainable* piecewise-constant (DG0) unknown is instead a field on a
-    ``FunctionSpace`` built from the :func:`neurom.elements.DG0` element -- it needs
-    no dedicated field type.
+    ``FunctionSpace`` built from a DG0 element (:data:`neurom.elements.DG0_BAR` /
+    :data:`neurom.elements.DG0_TRIANGLE`) -- it needs no dedicated field type.
 
     Attributes:
         name (str): Human-readable identifier for the field.

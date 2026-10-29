@@ -11,7 +11,6 @@ from neurom.elements.finite_element import (
 from neurom.meshes.topology import EntityDim
 from neurom.elements.library import (
     VectorElement,
-    DG0,
     P1_BAR,
     P1_TRIANGLE,
     P2_TRIANGLE,
@@ -30,7 +29,6 @@ __all__ = [
     "FLUX",
     "NORMAL_DERIVATIVE",
     "VectorElement",
-    "DG0",
     "P1_BAR",
     "P1_TRIANGLE",
     "P2_TRIANGLE",

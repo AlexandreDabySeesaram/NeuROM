@@ -12,9 +12,10 @@ class Constant(ShapeFunction):
     constant per element.  The physical DOF is the cell average, whose transformation
     is the identity (:math:`M_e = 1`).
 
-    Used as the reference basis of :func:`neurom.elements.DG0`, which declares the
-    single cell DOF; a ``FunctionSpace`` then gives one unshared DOF per element.
-    Works on any reference element (bar, triangle).
+    Used as the reference basis of the DG0 elements (:data:`neurom.elements.DG0_BAR` /
+    :data:`neurom.elements.DG0_TRIANGLE`), which declare the single cell DOF; a
+    ``FunctionSpace`` then gives one unshared DOF per element. Works on any reference
+    element (bar, triangle).
     """
 
     def __init__(self, reference_cell):

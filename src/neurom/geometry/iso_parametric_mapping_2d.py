@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 
+from neurom.math.jacobian import jacobian
 from neurom.meshes.mesh import Mesh
 
 
@@ -152,6 +153,34 @@ class IsoparametricMapping2D(nn.Module):
             self.J_inv[element_ids].unsqueeze(1).expand(-1, N_q, -1, -1),
         )
         return xi
+
+    def jacobian_at(self, xi, element_ids=None):
+        r"""Jacobian of the reference-to-physical map at given reference points.
+
+        Evaluates :math:`J = \partial x / \partial \xi` (``J[i, j] = \partial x_i/\partial \xi_j``)
+        by differentiating :math:`x = \sum_n N_n(\xi)\, x_n` with autograd, so it holds for any
+        geometric shape function and keeps the graph to the node positions (gradients flow to
+        trainable nodes). This mirrors the 1-D mapping's interface; the cached :attr:`J_inv` /
+        :attr:`det_jacobian` remain the fast affine-triangle path used by the inverse map.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates of shape ``(N_e, N_p, 2)``.
+            element_ids (torch.Tensor, optional): Indices of the elements to use, shape ``(N_e,)``.
+                All elements when ``None``.
+
+        Returns:
+            torch.Tensor: Jacobian of shape ``(N_e, N_p, 2, 2)``.
+        """
+        x_nodes = self.x_nodes if element_ids is None else self.x_nodes[element_ids]
+
+        # Reference points are constants: only the dependence on xi is traced.
+        xi = xi.detach().requires_grad_(True)
+
+        # (N_e, N_p, 2)
+        x = torch.einsum("en...,eqn...->eq...", x_nodes, self.sf.N(xi))
+
+        # (N_e, N_p, 2, 2)
+        return jacobian(xi, x)
 
     def update(self):
         """Refresh cached node positions and Jacobian from the underlying mesh.

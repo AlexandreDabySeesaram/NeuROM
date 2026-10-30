@@ -173,9 +173,23 @@ class ValueFunctional(DofFunctional):
 
 
 class GradientFunctional(DofFunctional):
-    r"""Nodal first derivative :math:`\ell_i(w) = w'(\mathbf x_i)` -- 1-D, geometry-dependent."""
+    r"""Directional first derivative :math:`\ell_i(w) = \mathbf d\cdot\nabla w(\mathbf x_i)`.
+
+    One functional family (plan section 3.3): the derivative of :math:`w` along a fixed physical
+    direction :math:`\mathbf d`. Geometry-dependent (the physical gradient needs the mapping).
+
+    Args:
+        direction (Sequence[float] | None): The physical direction :math:`\mathbf d`, length
+            ``gdim``. ``None`` (the default) selects the plain 1-D derivative
+            :math:`\ell_i(w) = w'(\mathbf x_i)` -- the Hermite-beam ``d1`` case, where the single
+            axis makes a direction redundant. A vector (e.g. ``[1, 0]`` for :math:`\mathbf e_x`)
+            selects :math:`\mathbf d\cdot\nabla` in any dimension, via :math:`J_e^{-\top}`.
+    """
 
     geometry_dependent: bool = True
+
+    def __init__(self, direction=None) -> None:
+        self.direction = None if direction is None else tuple(float(d) for d in direction)
 
     def l_rows(
         self,
@@ -185,16 +199,17 @@ class GradientFunctional(DofFunctional):
         element_ids: torch.Tensor | None,
         n_e: int,
     ) -> torch.Tensor:
-        r"""Physical-derivative rows :math:`(L_e)_{ia} = N_a'(\xi_i)\,/\,J_e`.
+        r"""Directional-derivative rows :math:`(L_e)_{ia} = \mathbf d\cdot\nabla N_a(\xi_i)`.
 
-        The reference basis derivative :math:`\mathrm dN_a/\mathrm d\xi` at the DOF nodes (via
-        autograd) divided by the (1-D) cell Jacobian :math:`J_e` from ``mapping``. Raises for
-        ``dim_ref > 1`` (2-D would need :math:`J_e^{-\top}`).
+        The reference gradient :math:`\partial N_a/\partial\xi` (autograd) pushed to the physical
+        gradient with :math:`\nabla_x N = J_e^{-\top}\,\nabla_\xi N` and contracted with
+        :math:`\mathbf d`. For the ``None`` (1-D plain-derivative) case this reduces to
+        :math:`N_a'(\xi_i)/J_e`.
 
         Args:
             basis (ShapeFunction): The reference basis (evaluates ``N``).
             mapping: Geometry mapping; ``mapping.jacobian_at(xi, element_ids)`` supplies ``J_e``.
-            xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, dim_ref)`` with ``dim_ref == 1``.
+            xi (torch.Tensor): DOF reference nodes, shape ``(n_rows, dim_ref)``.
             element_ids (torch.Tensor | None): Element subset ``(n_e,)``, or ``None`` for all.
             n_e (int): Number of elements.
 
@@ -202,55 +217,59 @@ class GradientFunctional(DofFunctional):
             torch.Tensor: The rows of :math:`L_e` for this kind, shape ``(n_e, n_rows, n_ref)``.
 
         Raises:
-            NotImplementedError: If ``basis.reference_cell.dim_ref != 1``.
+            NotImplementedError: If ``direction is None`` and ``dim_ref != 1``, or if a directional
+                derivative is requested on a non-square Jacobian (``gdim != dim_ref``).
         """
-        if basis.reference_cell.dim_ref != 1:
+        xi_e = xi.unsqueeze(0).expand(n_e, -1, -1)  # (n_e, n_rows, dim_ref)
+        ref_grad = basis.grad_N(xi_e)  # (n_e, n_rows, n_ref, dim_ref)
+
+        if self.direction is None:
+            if basis.reference_cell.dim_ref != 1:
+                raise NotImplementedError(
+                    "GradientFunctional without a direction is 1-D only; pass a direction "
+                    "vector for the d.grad functional in higher dimensions."
+                )
+            J = mapping.jacobian_at(xi_e, element_ids)[..., 0, 0]  # (n_e, n_rows)
+            return ref_grad[..., 0] / J.unsqueeze(-1)  # (n_e, n_rows, n_ref)
+
+        J = mapping.jacobian_at(xi_e, element_ids)  # (n_e, n_rows, gdim, dim_ref)
+        if J.shape[-1] != J.shape[-2]:
             raise NotImplementedError(
-                "GradientFunctional is 1-D only (2-D needs J^{-T})."
+                "directional derivative needs a square Jacobian (gdim == dim_ref)."
             )
-        xi_e = xi.unsqueeze(0).expand(n_e, -1, -1).clone().requires_grad_(True)
-        N = basis.N(xi_e)  # (n_e, n_rows, n_ref)
-        n_ref = N.shape[-1]
-        dN = torch.stack(
-            [
-                torch.autograd.grad(
-                    N[..., a].sum(), xi_e, create_graph=True, retain_graph=True
-                )[0][..., 0]
-                for a in range(n_ref)
-            ],
-            dim=-1,
-        )  # (n_e, n_rows, n_ref)
-        J = mapping.jacobian_at(xi_e, element_ids)[..., 0, 0]  # (n_e, n_rows)
-        return dN / J.unsqueeze(-1)  # (n_e, n_rows, n_ref)
+        J_inv = torch.linalg.inv(J)  # (n_e, n_rows, dim_ref, gdim)
+        # grad_x N_i = sum_j (J^{-1})_{ji} dN/dxi_j  (= (J^{-T} grad_xi N)_i)
+        grad_x = torch.einsum("eqji,eqaj->eqai", J_inv, ref_grad)  # (n_e,n_rows,n_ref,gdim)
+        d = torch.tensor(self.direction, dtype=J.dtype, device=J.device)  # (gdim,)
+        return torch.einsum("eqai,i->eqa", grad_x, d)  # (n_e, n_rows, n_ref)
 
     def on_function(
         self, f: Callable[[torch.Tensor], torch.Tensor], x_phys: torch.Tensor
     ) -> torch.Tensor:
-        r"""First derivative of the user function at the physical DOF points,
-        :math:`\ell_i(f) = f'(\mathbf x_i)`, via autograd.
+        r"""Directional derivative of ``f`` at the physical DOF points, via autograd.
 
-        The spatial axis is kept **explicit**: the 1-D derivative is returned as ``(n_rows, 1)``,
-        not squeezed to ``(n_rows,)`` (for 1-D, ``gdim == n_components == 1``). The 2-D directional
-        derivative :math:`\mathbf d\cdot\nabla f` -- a projection, not a squeeze -- is a later step;
-        here ``dy`` with ``gdim > 1`` would not match ``n_components``, correctly flagging it.
+        :math:`\ell_i(f) = \mathbf d\cdot\nabla f(\mathbf x_i)` (or :math:`f'(\mathbf x_i)` when
+        ``direction is None``). The spatial axis is kept **explicit**: the result is ``(n_rows, 1)``
+        -- for the 1-D case ``gdim == 1`` so the gradient already is ``(n_rows, 1)``; for a
+        direction it is the projection :math:`\nabla f\cdot\mathbf d`, summed to ``(n_rows, 1)``.
 
         Args:
-            f (Callable): ``x (n_rows, 1) -> value (n_rows, 1)`` (``(n_rows,)`` scalar also
-                accepted).
-            x_phys (torch.Tensor): Physical DOF points, shape ``(n_rows, 1)``.
+            f (Callable): ``x (n_rows, gdim) -> value (n_rows, 1)`` (a scalar field).
+            x_phys (torch.Tensor): Physical DOF points, shape ``(n_rows, gdim)``.
 
         Returns:
-            torch.Tensor: :math:`f'` at the points, shape ``(n_rows, 1)``.
+            torch.Tensor: :math:`\mathbf d\cdot\nabla f` at the points, shape ``(n_rows, 1)``.
         """
         x = x_phys.clone().requires_grad_(True)
         y = f(x)
-        (dy,) = torch.autograd.grad(y.sum(), x, create_graph=False)
-        return dy  # (n_rows, 1) -- the 1-D derivative, component axis kept explicit
+        (dy,) = torch.autograd.grad(y.sum(), x, create_graph=False)  # (n_rows, gdim)
+        if self.direction is None:
+            return dy  # (n_rows, 1) -- 1-D derivative, component axis kept explicit
+        d = torch.tensor(self.direction, dtype=dy.dtype, device=dy.device)  # (gdim,)
+        return (dy * d).sum(dim=-1, keepdim=True)  # (n_rows, 1)
 
     def reference_row(self, basis: ShapeFunction, xi: torch.Tensor) -> torch.Tensor:
-        r"""Reference duality row :math:`N_a'(\xi_i) = \mathrm dN_a/\mathrm d\xi` at the DOF nodes --
-        the reference derivative with **no** :math:`J` (unlike :meth:`l_rows`). Raises for
-        ``dim_ref > 1``.
+        r"""Reference duality row :math:`N_a'(\xi_i) = \mathrm dN_a/\mathrm d\xi` (1-D, no :math:`J`).
 
         Args:
             basis (ShapeFunction): The reference basis (evaluates ``N``).
@@ -261,25 +280,20 @@ class GradientFunctional(DofFunctional):
             ``(n_rows, n_ref)``.
 
         Raises:
-            NotImplementedError: If ``basis.reference_cell.dim_ref != 1``.
+            NotImplementedError: If a direction is set (the reference duality convention for 2-D
+                directional DOFs lands with the elements that use them, WP9) or ``dim_ref != 1``.
         """
+        if self.direction is not None:
+            raise NotImplementedError(
+                "reference duality for a directional derivative is not defined yet "
+                "(the 2-D directional elements that need it land in WP9)."
+            )
         if basis.reference_cell.dim_ref != 1:
             raise NotImplementedError(
-                "reference GradientFunctional is 1-D only (2-D: J^{-T})."
+                "reference GradientFunctional without a direction is 1-D only."
             )
-        x = xi.unsqueeze(0).clone().requires_grad_(True)  # (1, n_rows, 1)
-        N = basis.N(x)  # (1, n_rows, n_ref)
-        n_ref = N.shape[-1]
-        dN = torch.stack(
-            [
-                torch.autograd.grad(
-                    N[..., a].sum(), x, create_graph=False, retain_graph=True
-                )[0][..., 0]
-                for a in range(n_ref)
-            ],
-            dim=-1,
-        )  # (1, n_rows, n_ref) -- reference derivative dN/dxi (no J)
-        return dN[0]  # (n_rows, n_ref)
+        ref_grad = basis.grad_N(xi.unsqueeze(0))  # (1, n_rows, n_ref, 1)
+        return ref_grad[0, ..., 0]  # (n_rows, n_ref)
 
 
 #: DOF kind -> functional. Extend with flux / normal_derivative for RT0 / Morley.

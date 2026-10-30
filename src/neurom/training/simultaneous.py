@@ -49,33 +49,40 @@ class SimultaneousTrainer(PGDTrainer):
     * **Stage budgets do not transfer from greedy.** A stage spends part of its
       iterations re-fitting the old modes.
 
-    Only one phase per stage for now. Lifting this needs two decisions: LBFGS
-    cannot be kept (``torch.optim.LBFGS`` caches its single parameter group, so
-    a group added later would be silently ignored), so phases need a flag
-    saying whether their optimizer is kept or rebuilt; and a kept Adam would
-    resume with moments made stale by the LBFGS steps in between.
+    With ``keep_optimizer=False``, every phase of every stage gets a fresh
+    optimizer over all the modes instead, as in
+    :class:`~neurom.training.base.PGDTrainer`. Each stage still trains the whole
+    decomposition, but no optimizer state carries over. This allows an LBFGS
+    per stage, and several phases per stage (e.g. Adam then LBFGS), which a
+    kept optimizer cannot: ``torch.optim.LBFGS`` caches its single parameter
+    group, so a group added later would be silently ignored, and a kept Adam
+    would resume with moments made stale by the LBFGS steps in between.
 
     Args:
         model (NeuROMModel): Model whose ``decomposition`` is a ``CPPGD``.
-        phases (list[Phase], optional): Exactly one phase, the one whose
-            optimizer is kept. See :class:`~neurom.training.base.PGDTrainer`.
+        keep_optimizer (bool): Keep the stage optimizer across stages
+            (Algorithm 1), or build a fresh one for every phase.
+        phases (list[Phase], optional): The phases of every stage; exactly one
+            when ``keep_optimizer`` is True. See
+            :class:`~neurom.training.base.PGDTrainer`.
         enrichment_criterion, progress, final_phases: See
             :class:`~neurom.training.base.PGDTrainer`. The final phases get
             fresh optimizers; give them a factory other than the stage
             phase's, or they would reuse its optimizer.
 
     Raises:
-        ValueError: If there is not exactly one phase, or if its optimizer is
-            an LBFGS.
+        ValueError: With ``keep_optimizer`` True, if there is not exactly one
+            phase, or if its optimizer is an LBFGS.
     """
 
-    def __init__(self, model, **kwargs):
+    def __init__(self, model, *, keep_optimizer=True, **kwargs):
         super().__init__(model, **kwargs)
-        if len(self.phases) != 1:
+        self.keep_optimizer = keep_optimizer
+        if keep_optimizer and len(self.phases) != 1:
             raise ValueError(
                 "SimultaneousTrainer keeps one optimizer across stages, so it takes "
                 f"exactly one phase per stage (got {len(self.phases)}); put a "
-                "polishing optimizer in final_phases."
+                "polishing optimizer in final_phases, or pass keep_optimizer=False."
             )
         self.decomposition = model.decomposition
         self.kept_optimizer = None
@@ -99,7 +106,8 @@ class SimultaneousTrainer(PGDTrainer):
     def make_optimizer(self, optimizer_factory):
         """Build the stage optimizer once, then add the new modes to it.
 
-        Any other factory (the final phases) gets a fresh optimizer.
+        Any other factory (the final phases), or any factory when
+        ``keep_optimizer`` is False, gets a fresh optimizer.
 
         Args:
             optimizer_factory (Callable): ``params -> Optimizer``.
@@ -109,16 +117,17 @@ class SimultaneousTrainer(PGDTrainer):
             ``self.optimizer``.
 
         Raises:
-            ValueError: If the stage optimizer is an LBFGS.
+            ValueError: If the kept stage optimizer is an LBFGS.
         """
-        if optimizer_factory is not self.phases[0].optimizer_factory:
+        kept = optimizer_factory is self.phases[0].optimizer_factory
+        if not (self.keep_optimizer and kept):
             return super().make_optimizer(optimizer_factory)
         if self.kept_optimizer is None:
             optimizer = super().make_optimizer(optimizer_factory)
             if isinstance(optimizer, torch.optim.LBFGS):
                 raise ValueError(
                     "LBFGS cannot take the parameters of a new mode; use it in "
-                    "final_phases."
+                    "final_phases, or pass keep_optimizer=False."
                 )
             self.kept_optimizer = optimizer
         else:

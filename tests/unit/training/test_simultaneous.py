@@ -92,6 +92,45 @@ def test_rejects_lbfgs_as_the_stage_optimizer(make_model):
         trainer.enrich()
 
 
+
+# --- keep_optimizer=False -----------------------------------------------
+
+
+def test_fresh_optimizer_trains_every_mode_with_a_new_one_per_stage(make_model):
+    trainer = SimultaneousTrainer(
+        make_model(),
+        keep_optimizer=False,
+        phases=[_adam(FixedIterations(20))],
+        enrichment_criterion=MaxStages(2),
+    )
+    trainer.enrich()
+    decomposition = trainer.model.decomposition
+    mode0 = decomposition.mode_parameters(0)[0]
+    assert int(trainer.optimizer.state[mode0]["step"]) == 20  # restarted at stage 1
+    mode1 = decomposition.mode_parameters(1)[0]
+    assert int(trainer.optimizer.state[mode1]["step"]) == 20
+
+
+def test_fresh_optimizer_allows_an_lbfgs_per_stage(make_model):
+    history = SimultaneousTrainer(
+        make_model(),
+        keep_optimizer=False,
+        phases=[_lbfgs(Stagnation(tol=1e-7, patience=0, no_improvement=None, max_iter=50))],
+        enrichment_criterion=MaxStages(2),
+    ).enrich()
+    assert history.stages[-1].energy == pytest.approx(-4.0 / 3.0, rel=1e-5)
+
+
+def test_fresh_optimizer_allows_several_phases_per_stage(make_model):
+    history = SimultaneousTrainer(
+        make_model(),
+        keep_optimizer=False,
+        phases=[_adam(FixedIterations(5)), _lbfgs(FixedIterations(3))],
+        enrichment_criterion=MaxStages(2),
+    ).enrich()
+    for record in history.stages:
+        assert record.phases == ["adam"] * 5 + ["lbfgs"] * 3
+
 def test_final_lbfgs_reaches_the_rank_two_minimum(make_model):
     model = make_model()
     history = SimultaneousTrainer(

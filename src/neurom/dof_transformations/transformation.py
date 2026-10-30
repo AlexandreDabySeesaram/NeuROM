@@ -61,7 +61,7 @@ class Transformation(nn.Module):
 
     Args:
         element (FiniteElement): Supplies ``dof_kinds`` / ``dof_nodes_xi`` / the reference basis.
-        mapping: Geometry mapping (``IsoparametricMapping1D``/``2D``) passed to geometry-dependent
+        mapping: Geometry mapping (``AffineSimplexMapping``) passed to geometry-dependent
             functionals (used via ``mapping.jacobian_at``).
 
     Attributes:

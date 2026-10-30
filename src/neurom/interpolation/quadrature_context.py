@@ -47,10 +47,10 @@ class QuadratureContext(nn.Module):
 
     def __init__(self, mesh: Mesh, quad: QuadratureRule):
         super().__init__()
-        from neurom.geometry import isoparametric_mapping
+        from neurom.geometry import AffineSimplexMapping
 
         self._mesh = mesh
-        self._mapping = isoparametric_mapping(mesh)
+        self._mapping = AffineSimplexMapping(mesh)
         self._quad = quad
         self._xi_ref = reference_coordinates(
             self._mesh.connectivity.n_elements, self._quad

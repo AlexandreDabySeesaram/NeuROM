@@ -3,7 +3,7 @@ import torch
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace
 from neurom.fields import Field
-from neurom.geometry import IsoparametricMapping1D
+from neurom.geometry import AffineSimplexMapping
 from neurom.elements import P1_BAR, HERMITE, VectorElement
 from neurom.dof_transformations import (
     Transformation,
@@ -22,7 +22,7 @@ def _graded_mapping():
     topology = Topology(cell_vertices)
     geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
     mesh = Mesh(topology, Field(geometry, points))
-    return IsoparametricMapping1D(mesh)
+    return AffineSimplexMapping(mesh)
 
 
 def test_lagrange_is_identity_shortcircuit():

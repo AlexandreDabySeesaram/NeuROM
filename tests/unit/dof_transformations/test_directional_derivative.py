@@ -12,7 +12,7 @@ import torch
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace
 from neurom.fields import Field
-from neurom.geometry import IsoparametricMapping1D, IsoparametricMapping2D
+from neurom.geometry import AffineSimplexMapping
 from neurom.elements import P1_BAR, P1_TRIANGLE, VectorElement
 from neurom.dof_transformations import GradientFunctional
 from neurom.shape_functions import LinearBar, LinearTriangle
@@ -27,7 +27,7 @@ def _one_bar_mapping():
     topology = Topology(cell_vertices)
     geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
     mesh = Mesh(topology, Field(geometry, points))
-    return IsoparametricMapping1D(mesh)
+    return AffineSimplexMapping(mesh)
 
 
 def _one_triangle_mapping():
@@ -37,7 +37,7 @@ def _one_triangle_mapping():
     topology = Topology(cell_vertices)
     geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
     mesh = Mesh(topology, Field(geometry, points))
-    return IsoparametricMapping2D(mesh), points
+    return AffineSimplexMapping(mesh), points
 
 
 def test_on_function_matches_analytic_partials():

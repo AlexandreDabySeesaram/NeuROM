@@ -37,12 +37,12 @@ class PointWiseInterpolator(nn.Module):
 
     def __init__(self, mesh: Mesh, field: FieldBase):
         super().__init__()
-        from neurom.geometry import isoparametric_mapping
+        from neurom.geometry import AffineSimplexMapping
 
         self.mesh = mesh
         self.field = field
         self.sf = field.space.element.reference_basis
-        self._mapping = isoparametric_mapping(mesh)
+        self._mapping = AffineSimplexMapping(mesh)
         self._dof_transformation = Transformation(field.space.element, self._mapping)
 
     def at_position(self, x: torch.Tensor):

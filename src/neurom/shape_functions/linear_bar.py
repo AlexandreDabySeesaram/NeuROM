@@ -41,3 +41,18 @@ class LinearBar(ShapeFunction):
             ],
             dim=-1,
         )
+
+    def grad_N(self, xi):
+        r"""Constant reference gradient :math:`\mathrm dN/\mathrm d\xi = [-\tfrac12, \tfrac12]`.
+
+        Overrides the autograd default with the closed form (P1 is affine, so the gradient does not
+        depend on :math:`\xi`), broadcast to the input batch.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, 1)``.
+
+        Returns:
+            torch.Tensor: :math:`\partial N/\partial\xi`, shape ``(N_e, N_q, 2, 1)``.
+        """
+        g = torch.tensor([[-0.5], [0.5]], dtype=xi.dtype, device=xi.device)  # (2, 1)
+        return g.expand(*xi.shape[:-1], 2, 1)

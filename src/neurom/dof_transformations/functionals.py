@@ -57,7 +57,7 @@ class DofFunctional(ABC):
 
         Args:
             basis (ShapeFunction): The reference basis (evaluates ``N``).
-            mapping: Geometry mapping (``IsoparametricMapping1D``/``2D``), used by
+            mapping: Geometry mapping (``AffineSimplexMapping``), used by
                 geometry-dependent kinds via ``mapping.jacobian_at``.
             xi (torch.Tensor): Reference nodes of this kind's DOFs, shape ``(n_rows, dim_ref)``.
             element_ids (torch.Tensor | None): Element subset of shape ``(n_e,)``, or ``None`` for

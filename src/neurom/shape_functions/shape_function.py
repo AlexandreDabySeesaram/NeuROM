@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 import torch
 
+from neurom.math.jacobian import jacobian
 from neurom.reference_cells.reference_cell import ReferenceCell
 
 
@@ -45,3 +46,21 @@ class ShapeFunction(ABC):
             ``(N_e, N_q, N_nodes)``.
         """
         pass
+
+    def grad_N(self, xi: torch.Tensor) -> torch.Tensor:
+        r"""Reference gradient of the basis: :math:`\partial N_a/\partial\xi_j`.
+
+        Default implementation differentiates :meth:`N` with autograd (so it holds for any basis,
+        including high-order ones nonlinear in :math:`\xi`); a subclass with a known closed form may
+        override it. ``xi`` is detached and re-marked ``requires_grad`` internally -- the reference
+        gradient depends only on :math:`\xi`, never on node positions -- so callers need not manage
+        the graph.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+
+        Returns:
+            torch.Tensor: :math:`\partial N/\partial\xi`, shape ``(N_e, N_q, n_ref, dim_ref)``.
+        """
+        xi = xi.detach().requires_grad_(True)
+        return jacobian(xi, self.N(xi))  # (N_e, N_q, n_ref, dim_ref)

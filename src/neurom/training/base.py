@@ -192,7 +192,7 @@ class PGDTrainer(ABC):
         """
         for phase in phases:
             self.make_optimizer(phase.optimizer_factory)
-            self.progress.phase_start(phase.name)
+            self.progress.phase_start(phase.name, getattr(phase.criterion, "max_iter", None))
             losses = []
             while not (reason := phase.criterion.stop_reason(losses)):
                 loss = self.step()

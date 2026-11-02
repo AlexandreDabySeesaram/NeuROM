@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from neurom.fields.field_base import FieldBase
 from neurom.meshes.mesh import Mesh
+from neurom.samplings import QuadratureSampling
 from neurom.dof_transformations import Transformation
 
 
@@ -90,7 +91,9 @@ class PointWiseInterpolator(nn.Module):
         # layout (N_e, N_q, dim); a point-wise query is that layout with a
         # single "quadrature point" per element, dropped again on the way out.
         # (N_pts, 1, dim)
-        xi = self._mapping.inverse_map_at(x.unsqueeze(1), element_ids)
+        xi = self._mapping.inverse_map_at(
+            QuadratureSampling(x.unsqueeze(1)), element_ids
+        ).values
         N = self.sf.N(xi)
         u = torch.einsum("en...,eqn...->eq...", u_elem, N)
 

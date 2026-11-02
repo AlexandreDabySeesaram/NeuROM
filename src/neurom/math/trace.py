@@ -3,7 +3,7 @@
 import torch
 
 from neurom.samplings import Sampling
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 def trace_point(u: torch.Tensor) -> torch.Tensor:
@@ -41,4 +41,4 @@ def trace(u: Sampling) -> Sampling:
         Sampling: A Sampling of the same type as ``u`` with field shape
         ``(*batch_shape, 1)`` containing the per-point trace values.
     """
-    return apply(trace_point, u)
+    return apply_pointwise(trace_point, u)

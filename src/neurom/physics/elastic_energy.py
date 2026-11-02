@@ -7,7 +7,7 @@ from neurom.math.jacobian import jacobian
 from neurom.math.inner import inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 class ElasticEnergy(Term):
@@ -67,4 +67,4 @@ class ElasticEnergy(Term):
         def elastic_energy_point(du_dx, dx):
             return 0.5 * inner_point(du_dx, du_dx) * dx
 
-        return apply(elastic_energy_point, du_dx, dx).values
+        return apply_pointwise(elastic_energy_point, du_dx, dx).values

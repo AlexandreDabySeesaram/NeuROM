@@ -3,7 +3,7 @@
 import torch
 
 from neurom.samplings import Sampling
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 def identity_point(u: torch.Tensor) -> torch.Tensor:
@@ -57,4 +57,4 @@ def identity(s: Sampling) -> Sampling:
     Raises:
         ValueError: If ``f_shape`` is not ``(1,)`` or ``(d, d)``.
     """
-    return apply(identity_point, s)
+    return apply_pointwise(identity_point, s)

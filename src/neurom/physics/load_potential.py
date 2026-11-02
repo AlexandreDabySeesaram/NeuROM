@@ -6,7 +6,7 @@ from neurom.math.inner import inner_point
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 class LoadPotential(Term):
@@ -77,4 +77,4 @@ class LoadPotential(Term):
         def load_energy(load, u, dx):
             return -inner_point(load, u) * dx
 
-        return apply(load_energy, load, u, dx).values
+        return apply_pointwise(load_energy, load, u, dx).values

@@ -6,7 +6,7 @@ from neurom.physics.term import Term
 from neurom.math.inner import inner_point
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 class SolidElasticEnergy(Term):
@@ -73,4 +73,4 @@ class SolidElasticEnergy(Term):
         def elastic_energy_point(eps, dx):
             return 0.5 * inner_point(self.stress_point(eps), eps) * dx
 
-        return apply(elastic_energy_point, epsilon, dx).values
+        return apply_pointwise(elastic_energy_point, epsilon, dx).values

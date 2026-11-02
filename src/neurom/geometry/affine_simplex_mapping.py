@@ -24,7 +24,11 @@ autograd or Newton inverse -- the name "isoparametric" is reserved for that case
 import torch
 import torch.nn as nn
 
+from dataclasses import replace
+
+from neurom.apply import apply
 from neurom.meshes.mesh import Mesh
+from neurom.samplings import ElementSampling, Sampling
 
 
 def _det_and_inv(J: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -54,25 +58,6 @@ def _det_and_inv(J: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         inv = inv / det.unsqueeze(-1).unsqueeze(-1)
         return det.unsqueeze(-1), inv
     return torch.linalg.det(J).unsqueeze(-1), torch.linalg.inv(J)
-
-
-def _apply_J_inv(J_inv: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
-    r"""Contract :math:`\xi_i = \sum_j (J^{-1})_{ij}\,\mathrm{offset}_j` with elementwise ops.
-
-    A broadcast multiply-and-sum rather than ``einsum``/``matmul``: ``inverse_map`` sits in the
-    double-backward path of r-adaptivity (the field gradient ``du/dx`` is differentiated, then
-    backpropagated to node positions), where elementwise ops have a much lighter second-order graph
-    than a contraction. For a 1-D map this is a plain scalar multiply.
-
-    Args:
-        J_inv (torch.Tensor): Inverse Jacobian, shape ``(N_e, dim_ref, gdim)``.
-        offset (torch.Tensor): ``x - x0``, shape ``(N_e, N_q, gdim)``.
-
-    Returns:
-        torch.Tensor: Reference offset :math:`J^{-1}(x - x_0)`, shape ``(N_e, N_q, dim_ref)``.
-    """
-    # (N_e, 1, dim_ref, gdim) * (N_e, N_q, 1, gdim) -> sum over gdim -> (N_e, N_q, dim_ref)
-    return (J_inv.unsqueeze(1) * offset.unsqueeze(-2)).sum(dim=-1)
 
 
 class AffineSimplexMapping(nn.Module):
@@ -107,87 +92,108 @@ class AffineSimplexMapping(nn.Module):
         """Recompute the per-element Jacobian / inverse / determinant from the current node positions.
 
         Called per :meth:`update`; uses the cached constant reference gradient ``self._grad0`` so only
-        the ``x_nodes``-dependent work is redone. ``J`` is constant per element (affine).
+        the ``x_nodes``-dependent work is redone. ``J`` is constant per element (affine). The per-element
+        quantities are stored as :class:`~neurom.samplings.ElementSampling` (batch ``(N_e,)``) so the
+        point-wise methods combine them with a points :class:`~neurom.samplings.Sampling` of *any*
+        batch shape via :func:`~neurom.apply.apply`.
         """
         self.x_nodes = self._mesh.coordinates.at_elements()  # (N_e, n_nodes, gdim)
         grad0 = self._grad0.to(dtype=self.x_nodes.dtype, device=self.x_nodes.device)
 
         # J[e, i, j] = sum_n x_n[e, i] dN_n/dxi_j  -> (N_e, gdim, dim_ref), constant per element.
-        self._J = torch.einsum("eni,nj->eij", self.x_nodes, grad0)
-        self._det_J, self._J_inv = _det_and_inv(self._J)  # (N_e, 1), (N_e, dim_ref, gdim)
+        J = torch.einsum("eni,nj->eij", self.x_nodes, grad0)
+        det, J_inv = _det_and_inv(J)  # (N_e, 1), (N_e, dim_ref, gdim)
+        self._J = ElementSampling(J)
+        self._J_inv = ElementSampling(J_inv)
+        self._det = ElementSampling(det)
+        self._x0 = ElementSampling(self.x_nodes[:, 0, :])  # (N_e, gdim), local vertex 0
 
-    def map(self, xi: torch.Tensor) -> torch.Tensor:
+    def map(self, points: Sampling) -> Sampling:
         r"""Map reference coordinates to physical positions, :math:`x = \sum_n N_n(\xi)\,x_n`.
 
+        Point-wise over whatever batch ``points`` carries (quadrature, arbitrary points, ...); the
+        element axis is shared, every trailing axis is agnostic.
+
         Args:
-            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+            points (Sampling): Reference coordinates, ``f_shape == (dim_ref,)`` and a leading element
+                batch axis.
 
         Returns:
-            torch.Tensor: Physical positions, shape ``(N_e, N_q, gdim)``.
+            Sampling: Physical positions, same subtype/batch as ``points``, ``f_shape == (gdim,)``.
         """
-        return torch.einsum("en...,eqn...->eq...", self.x_nodes, self.sf.N(xi))
+        # Contract the nodes (n); the element axis (e) is shared and every further axis ("...") just
+        # rides along -- batch-rank-agnostic. N comes from the basis, so this isn't an `apply` op.
+        N = self.sf.N(points.values)  # (N_e, *pts, n_nodes)
+        return replace(points, values=torch.einsum("eng,e...n->e...g", self.x_nodes, N))
 
-    def jacobian_at(self, xi: torch.Tensor, element_ids: torch.Tensor | None = None) -> torch.Tensor:
-        r"""Jacobian :math:`J_e=\partial x/\partial\xi`, broadcast over the query points.
-
-        Constant per element (affine), so the cached :math:`J_e` is simply broadcast to the number of
-        query points in ``xi``; the values do not depend on ``xi``.
+    def jacobian_at(self, points: Sampling, element_ids: torch.Tensor | None = None) -> Sampling:
+        r"""Jacobian :math:`J_e=\partial x/\partial\xi` at each of ``points`` (constant per element).
 
         Args:
-            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)`` (only ``N_q`` is
-                read, to size the broadcast).
+            points (Sampling): Query points; only their batch shape matters (affine :math:`J` does not
+                depend on the point coordinates).
             element_ids (torch.Tensor | None): Element subset ``(N_e,)``, or ``None`` for all.
 
         Returns:
-            torch.Tensor: Jacobian, shape ``(N_e, N_q, gdim, dim_ref)``.
+            Sampling: Jacobian at each point, same subtype/batch as ``points``,
+            ``f_shape == (gdim, dim_ref)``.
         """
-        J = self._J if element_ids is None else self._J[element_ids]  # (N_e, gdim, dim_ref)
-        return J.unsqueeze(1).expand(-1, xi.shape[1], -1, -1)  # (N_e, N_q, gdim, dim_ref)
+        J = self._J.values if element_ids is None else self._J.values[element_ids]  # (N_e, gdim, dim_ref)
+        # J is constant per element: broadcast it over the points' batch (singletons after the element
+        # axis, then expand to the full batch so consumers see one J per query point).
+        for _ in range(len(points.batch_shape) - 1):
+            J = J.unsqueeze(1)
+        J = J.expand(*points.batch_shape, *J.shape[-2:])
+        return replace(points, values=J)
 
     @property
-    def det_jacobian(self) -> torch.Tensor:
-        r"""Per-element Jacobian determinant :math:`\det J_e`, shape ``(N_e, 1)``.
+    def det_jacobian(self) -> Sampling:
+        r"""Per-element Jacobian determinant :math:`\det J_e` as an ``ElementSampling`` (``f_shape (1,)``).
 
         For a bar this is :math:`(x_1-x_0)/2`; for a triangle :math:`(b-a)\times(c-a)` (twice the
         signed area). Used by the quadrature measure as :math:`|\det J_e|\,w_q`.
         """
-        return self._det_J
+        return self._det
 
-    @property
-    def J_inv(self) -> torch.Tensor:
-        r"""Per-element inverse Jacobian :math:`J_e^{-1}`, shape ``(N_e, dim_ref, gdim)``."""
-        return self._J_inv
-
-    def inverse_map(self, x: torch.Tensor) -> torch.Tensor:
+    def inverse_map(self, x: Sampling) -> Sampling:
         r"""Map physical positions to reference coordinates, :math:`\xi=\xi_0+J_e^{-1}(x-x_0)`.
 
-        Exact for the affine map. ``x_0`` is local vertex 0's physical position, ``xi_0`` its
-        reference position.
+        Point-wise and batch-agnostic: the element-level :math:`J_e^{-1}` and :math:`x_0` are
+        broadcast over every trailing axis of ``x``.
 
         Args:
-            x (torch.Tensor): Physical coordinates, shape ``(N_e, N_q, gdim)``.
+            x (Sampling): Physical coordinates, ``f_shape == (gdim,)`` and a leading element axis.
 
         Returns:
-            torch.Tensor: Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+            Sampling: Reference coordinates, same subtype/batch as ``x``, ``f_shape == (dim_ref,)``.
         """
-        x0 = self.x_nodes[:, 0, :].unsqueeze(1)  # (N_e, 1, gdim)
-        xi0 = self._xi0.to(dtype=x.dtype, device=x.device)
-        return xi0 + _apply_J_inv(self._J_inv, x - x0)
+        xi0 = self._xi0.to(dtype=x.values.dtype, device=x.values.device)
+        return apply(
+            lambda Ji, xq, x0: xi0 + torch.einsum("...ij,...j->...i", Ji, xq - x0),
+            self._J_inv,
+            x,
+            self._x0,
+        )
 
-    def inverse_map_at(self, x: torch.Tensor, element_ids: torch.Tensor) -> torch.Tensor:
-        r"""Inverse map restricted to ``element_ids`` (same closed form as :meth:`inverse_map`).
+    def inverse_map_at(self, x: Sampling, element_ids: torch.Tensor) -> Sampling:
+        r"""Inverse map restricted to ``element_ids`` (same point-wise form as :meth:`inverse_map`).
 
         Args:
-            x (torch.Tensor): Physical coordinates, shape ``(n, N_q, gdim)`` (``n == len(element_ids)``).
-            element_ids (torch.Tensor): Indices of the elements to use, shape ``(n,)``.
+            x (Sampling): Physical coordinates, leading axis of length ``len(element_ids)``.
+            element_ids (torch.Tensor): Indices of the elements to use.
 
         Returns:
-            torch.Tensor: Reference coordinates, shape ``(n, N_q, dim_ref)``.
+            Sampling: Reference coordinates, same subtype/batch as ``x``.
         """
-        x0 = self.x_nodes[element_ids, 0, :].unsqueeze(1)  # (n, 1, gdim)
-        J_inv = self._J_inv[element_ids]  # (n, dim_ref, gdim)
-        xi0 = self._xi0.to(dtype=x.dtype, device=x.device)
-        return xi0 + _apply_J_inv(J_inv, x - x0)
+        xi0 = self._xi0.to(dtype=x.values.dtype, device=x.values.device)
+        J_inv = ElementSampling(self._J_inv.values[element_ids])
+        x0 = ElementSampling(self._x0.values[element_ids])
+        return apply(
+            lambda Ji, xq, x0: xi0 + torch.einsum("...ij,...j->...i", Ji, xq - x0),
+            J_inv,
+            x,
+            x0,
+        )
 
     def update(self) -> None:
         """Refresh cached node positions and Jacobian from the underlying mesh.

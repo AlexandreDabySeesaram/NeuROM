@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Callable
 
 import torch
 
+from neurom.samplings import QuadratureSampling
+
 if TYPE_CHECKING:
     from neurom.shape_functions.shape_function import ShapeFunction
 
@@ -229,10 +231,14 @@ class GradientFunctional(DofFunctional):
                     "GradientFunctional without a direction is 1-D only; pass a direction "
                     "vector for the d.grad functional in higher dimensions."
                 )
-            J = mapping.jacobian_at(xi_e, element_ids)[..., 0, 0]  # (n_e, n_rows)
+            J = mapping.jacobian_at(QuadratureSampling(xi_e), element_ids).values[
+                ..., 0, 0
+            ]  # (n_e, n_rows)
             return ref_grad[..., 0] / J.unsqueeze(-1)  # (n_e, n_rows, n_ref)
 
-        J = mapping.jacobian_at(xi_e, element_ids)  # (n_e, n_rows, gdim, dim_ref)
+        J = mapping.jacobian_at(
+            QuadratureSampling(xi_e), element_ids
+        ).values  # (n_e, n_rows, gdim, dim_ref)
         if J.shape[-1] != J.shape[-2]:
             raise NotImplementedError(
                 "directional derivative needs a square Jacobian (gdim == dim_ref)."

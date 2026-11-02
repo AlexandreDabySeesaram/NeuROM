@@ -9,6 +9,7 @@ from neurom.training import (
     Phase,
     ProgressLog,
     ProgressReporter,
+    Stagnation,
 )
 
 torch.set_default_dtype(torch.float32)
@@ -29,7 +30,7 @@ class Recorder(ProgressReporter):
     def stage_start(self, stage_index):
         self.calls.append(("stage_start", stage_index))
 
-    def phase_start(self, name):
+    def phase_start(self, name, max_iter=None):
         self.calls.append(("phase_start", name))
 
     def update(self, iteration, loss):
@@ -106,3 +107,39 @@ def test_log_reports_the_final_phases(make_model):
     assert lines[-3].startswith("  polish done: 3 it, n_iter")
     assert lines[-2].startswith("final: done in 3 it, n_iter, energy =")
     assert lines[-1].startswith("run done: 1 modes, n_stages,")
+
+
+def _logged_iterations(stream, name="adam"):
+    return [int(line.split()[2]) for line in stream.getvalue().splitlines()
+            if line.startswith(f"  {name:<6} it")]
+
+
+def test_log_every_fraction_of_max_iter(make_model):
+    stream = io.StringIO()
+    criterion = Stagnation(tol=0.0, patience=0, no_improvement=None, max_iter=20)
+    GreedyTrainer(
+        make_model(), phases=[Phase(lambda p: torch.optim.Adam(p, lr=0.1), criterion, "adam")],
+        enrichment_criterion=MaxStages(1), progress=ProgressLog(every=0.1, stream=stream),
+    ).enrich()
+    assert _logged_iterations(stream) == list(range(2, 21, 2))
+
+
+def test_log_every_fraction_without_max_iter_prints_no_iteration(make_model):
+    stream = io.StringIO()
+    GreedyTrainer(
+        make_model(), phases=[_phase("adam", 4)], enrichment_criterion=MaxStages(1),
+        progress=ProgressLog(every=0.5, stream=stream),
+    ).enrich()
+    assert _logged_iterations(stream) == []
+
+
+def test_log_every_per_phase(make_model):
+    stream = io.StringIO()
+    GreedyTrainer(
+        make_model(), phases=[_phase("adam", 4), _phase("second", 3), _phase("quiet", 2)],
+        enrichment_criterion=MaxStages(1),
+        progress=ProgressLog(every={"adam": 2, "second": 1}, stream=stream),
+    ).enrich()
+    assert _logged_iterations(stream) == [2, 4]
+    assert _logged_iterations(stream, "second") == [1, 2, 3]
+    assert _logged_iterations(stream, "quiet") == []

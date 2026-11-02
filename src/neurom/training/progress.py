@@ -28,11 +28,13 @@ class ProgressReporter:
             stage_index (int): Index of the stage within the run.
         """
 
-    def phase_start(self, name):
+    def phase_start(self, name, max_iter=None):
         """A phase of the current stage is about to run.
 
         Args:
             name (str): The phase's name (``Phase.name``).
+            max_iter (int or None): Its criterion's iteration cap
+                (``criterion.max_iter``), None if the criterion has none.
         """
 
     def update(self, iteration, loss):
@@ -107,8 +109,13 @@ class ProgressLog(ProgressReporter):
     the simultaneous strategies.
 
     Args:
-        every (int or None): Print the loss every ``every`` iterations of a
-            phase; None prints only the start and end lines.
+        every (int, float, dict or None): Print the loss every ``every``
+            iterations of a phase. A float in (0, 1) is a fraction of the
+            phase's ``max_iter``, e.g. 0.1 prints ten lines for a phase that
+            reaches its cap. A dict sets it per phase name, e.g.
+            ``{"adam": 500, "lbfgs": 0.1}``. None, a phase missing from the
+            dict, or a fraction for a phase without ``max_iter`` prints only
+            the start and end lines.
         stream (IO, optional): Where to write. Defaults to ``sys.stdout``.
     """
 
@@ -119,6 +126,7 @@ class ProgressLog(ProgressReporter):
         self.stage_started = None
         self.phase_started = None
         self.phase_name = None
+        self.phase_every = None
 
     def _print(self, text):
         print(text, file=self.stream if self.stream is not None else sys.stdout, flush=True)
@@ -130,12 +138,16 @@ class ProgressLog(ProgressReporter):
         self.stage_started = now
         self._print(f"mode {stage_index}: start")
 
-    def phase_start(self, name):
+    def phase_start(self, name, max_iter=None):
         self.phase_name = name
         self.phase_started = time.monotonic()
+        every = self.every.get(name) if isinstance(self.every, dict) else self.every
+        if isinstance(every, float) and 0 < every < 1:
+            every = max(1, round(every * max_iter)) if max_iter else None
+        self.phase_every = every
 
     def update(self, iteration, loss):
-        if self.every and iteration % self.every == 0:
+        if self.phase_every and iteration % self.phase_every == 0:
             elapsed = time.monotonic() - self.phase_started
             self._print(
                 f"  {self.phase_name:<6} it {iteration:>5}  loss = {loss: .4e}  {_duration(elapsed)}"

@@ -171,7 +171,7 @@ class ValueFunctional(DofFunctional):
         Returns:
             torch.Tensor: ``N(\xi)`` on the reference cell, shape ``(n_rows, n_ref)``.
         """
-        return basis.N(xi.unsqueeze(0))[0]  # (n_rows, n_ref)
+        return basis.N(xi)  # (n_rows, n_ref) -- N is batch-rank-agnostic, no fake batch axis needed
 
 
 class GradientFunctional(DofFunctional):
@@ -298,8 +298,8 @@ class GradientFunctional(DofFunctional):
             raise NotImplementedError(
                 "reference GradientFunctional without a direction is 1-D only."
             )
-        ref_grad = basis.grad_N(xi.unsqueeze(0))  # (1, n_rows, n_ref, 1)
-        return ref_grad[0, ..., 0]  # (n_rows, n_ref)
+        # grad_N is batch-rank-agnostic: no fake batch axis. (n_rows, n_ref, dim_ref=1) -> take it.
+        return basis.grad_N(xi)[..., 0]  # (n_rows, n_ref)
 
 
 #: DOF kind -> functional. Extend with flux / normal_derivative for RT0 / Morley.

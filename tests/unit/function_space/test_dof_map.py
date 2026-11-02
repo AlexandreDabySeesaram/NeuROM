@@ -7,6 +7,7 @@ from neurom.elements import (
     DG0_BAR,
     DG0_TRIANGLE,
     P2_TRIANGLE,
+    DoF,
     EntityDim,
 )
 from neurom.function_space.dof_map import DofMap
@@ -65,14 +66,14 @@ def test_dof_layout_entity_dim_is_entity_dim():
 
 def test_p1_dofmap_equals_vertex_connectivity():
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, P1_BAR)
+    dm = DofMap(topo, P1_BAR.dof_layout)
     assert dm.n_scalar_dofs == N
     assert torch.equal(dm.cell_dofs, topo.cell_vertices)  # one DOF per vertex
 
 
 def test_hermite_dofmap_two_dofs_per_vertex():
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, HERMITE)
+    dm = DofMap(topo, HERMITE.dof_layout)
     assert dm.n_scalar_dofs == 2 * N
     # cell e gathers [2e, 2e+1, 2e+2, 2e+3]
     expected = torch.stack([torch.arange(2 * e, 2 * e + 4) for e in range(N - 1)])
@@ -81,14 +82,14 @@ def test_hermite_dofmap_two_dofs_per_vertex():
 
 def test_dg0_dofmap_one_dof_per_cell():
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, DG0_BAR)
+    dm = DofMap(topo, DG0_BAR.dof_layout)
     assert dm.n_scalar_dofs == N - 1
     assert torch.equal(dm.cell_dofs, torch.arange(N - 1).unsqueeze(-1))
 
 
 def test_locate_hermite_clamped_ends():
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, HERMITE)
+    dm = DofMap(topo, HERMITE.dof_layout)
     dofs = dm.locate(0, entities=[0, N - 1], kinds=["value", "d1"])
     assert torch.equal(dofs, torch.tensor([0, 1, 2 * N - 2, 2 * N - 1]))
     # value only (pinned, slope free)
@@ -99,7 +100,7 @@ def test_locate_hermite_clamped_ends():
 def test_periodic_p1_identifies_end_vertices():
     # Identify the last vertex with the first: one fewer DOF, both ends share it.
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, P1_BAR, periodic=[(0, N - 1)])
+    dm = DofMap(topo, P1_BAR.dof_layout, periodic=[(0, N - 1)])
     assert dm.n_scalar_dofs == N - 1  # one vertex collapsed
     # the first and last cell now reference the SAME global DOF at the seam
     assert dm.cell_dofs[0, 0].item() == dm.cell_dofs[-1, 1].item()
@@ -110,7 +111,7 @@ def test_periodic_p1_identifies_end_vertices():
 def test_periodic_hermite_identifies_value_and_slope():
     # Both DOFs (value and slope) of the seam vertices are matched by rank.
     topo, N = _bar_topology(5)
-    dm = DofMap(topo, HERMITE, periodic=[(0, N - 1)])
+    dm = DofMap(topo, HERMITE.dof_layout, periodic=[(0, N - 1)])
     assert dm.n_scalar_dofs == 2 * N - 2  # 2 DOFs collapsed
     first = dm.locate(0, [0], kinds=["value", "d1"])
     last = dm.locate(0, [N - 1], kinds=["value", "d1"])
@@ -169,7 +170,7 @@ def test_edge_orientation_is_signed():
 
 def test_p2_dofmap_numbers_vertices_then_edges():
     topo = _two_triangle_square()
-    dm = DofMap(topo, P2_TRIANGLE)
+    dm = DofMap(topo, P2_TRIANGLE.dof_layout)
     # 4 vertices + 5 edges, one value DOF each
     assert dm.n_scalar_dofs == 4 + 5
     # each cell gathers its 3 vertex DOFs then its 3 edge DOFs (edges offset past vertices)
@@ -187,3 +188,47 @@ def test_p2_dof_nodes_xi_places_edge_dofs_at_reference_midpoints():
         [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
     )
     assert torch.allclose(xi, expected)
+
+
+def _p3_like_layout():
+    """A synthetic P3-like dof_layout: 3 vertex values + two value DOFs on each of the 3 local edges.
+
+    DofMap takes a ``dof_layout`` directly (no basis needed to test the numbering); the two edge DOFs
+    stand for P3's edge points at 1/3 and 2/3.
+    """
+    verts = [DoF(EntityDim.VERTEX, i, "value") for i in range(3)]
+    edges = [DoF(EntityDim.EDGE, e, "value") for e in range(3) for _ in range(2)]
+    return tuple(verts + edges)
+
+
+def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
+    """Two cells sharing a reversed edge read its two DOFs in OPPOSITE order (T-WP3.2).
+
+    Without the reversal both cells would map their local rank-0 DOF to the same global DOF, even
+    though those are physically opposite points (1/3-from-a vs 1/3-from-b) -- a discontinuity.
+    """
+    topo = _two_triangle_square()
+    dm = DofMap(topo, _p3_like_layout())
+    assert dm.n_scalar_dofs == 4 + 5 * 2  # 4 vertices x1 + 5 edges x2
+
+    ce = topo.cell_entities(EntityDim.EDGE)  # (2, 3)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+    s0 = ce[0].tolist().index(shared)  # shared edge's local index in cell 0
+    s1 = ce[1].tolist().index(shared)  # ... and in cell 1
+    # 3 vertex DOFs precede the edge block; each edge owns 2 consecutive local DOFs.
+    c0 = dm.cell_dofs[0, [3 + 2 * s0, 3 + 2 * s0 + 1]]
+    c1 = dm.cell_dofs[1, [3 + 2 * s1, 3 + 2 * s1 + 1]]
+    assert set(c0.tolist()) == set(c1.tolist())  # the same two global DOFs (shared edge)
+    assert c0.tolist() == c1.flip(0).tolist()  # but read in reversed order (orientation applied)
+    assert c0.tolist() != c1.tolist()  # and NOT the same order -- the bug this fixes
+
+
+def test_locate_returns_both_dofs_of_a_repeated_kind():
+    """locate(EDGE, [g], ['value']) returns BOTH value DOFs of the edge (T-WP3.3)."""
+    topo = _two_triangle_square()
+    dm = DofMap(topo, _p3_like_layout())
+    ce = topo.cell_entities(EntityDim.EDGE)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+    dofs = dm.locate(EntityDim.EDGE, [shared], ["value"])
+    assert len(dofs) == 2
+    assert set(dofs.tolist()) == {4 + shared * 2, 4 + shared * 2 + 1}

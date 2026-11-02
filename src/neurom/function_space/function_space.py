@@ -108,7 +108,7 @@ class FunctionSpace(nn.Module):
         super().__init__()
         self.topology = topology
         self.element = element
-        self.dof_map = DofMap(topology, element, periodic=periodic)
+        self.dof_map = DofMap(topology, element.dof_layout, periodic=periodic)
         self._connectivity = Connectivity(
             torch.arange(self.dof_map.n_scalar_dofs), self.dof_map.cell_dofs
         )

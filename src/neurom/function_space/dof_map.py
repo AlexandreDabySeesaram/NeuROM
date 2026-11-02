@@ -23,9 +23,13 @@ class DofMap(nn.Module):
     parameter, gradients flowing to it -- the natural home for periodic BCs in the
     entity layer (orthogonal to the essential ``DirichletBC``).
 
+    Numbering is purely combinatorial -- it needs only *what* DOFs exist and where they attach
+    (``dof_layout``) and *how* entities are shared across cells (``topology``). It evaluates no basis,
+    so it takes the element's ``dof_layout`` rather than the whole ``FiniteElement``.
+
     Args:
-        topology (Topology): The mesh topology.
-        element (FiniteElement): The element whose ``dof_layout`` is numbered.
+        topology (Topology): The mesh topology (used at construction for entity sharing/counts).
+        dof_layout (Sequence[DoF]): The element's ordered DOF declarations (``element.dof_layout``).
         periodic (Sequence[tuple[int, int]], optional): Vertex pairs ``(a, b)`` to
             identify (``b``'s DOFs collapse onto ``a``'s). Defaults to none.
 
@@ -35,11 +39,9 @@ class DofMap(nn.Module):
         n_scalar_dofs (int): Total scalar DOFs (after any periodic identification).
     """
 
-    def __init__(self, topology, element, periodic=None):
+    def __init__(self, topology, dof_layout, periodic=None):
         super().__init__()
-        self.topology = topology
-        self.element = element
-        layout = element.dof_layout
+        layout = dof_layout
 
         dims_present = sorted({dof.entity_dim for dof in layout})
 
@@ -56,6 +58,7 @@ class DofMap(nn.Module):
             self._kinds_per_entity[d] = kinds0
 
         # Base offset of each dimension's DOF block, and the global total.
+        # Order block by block based on DoF dimension: vertices first, then edges, etc.
         self._offset: dict[int, int] = {}
         total = 0
         for d in dims_present:
@@ -63,6 +66,7 @@ class DofMap(nn.Module):
             total += topology.n_entities(d) * self._dofs_per_entity[d]
 
         # Rank of each local DOF within its (entity_dim, local_index) group.
+        # For case of having multiple type of DoFs on the same index, e.g. Hermite
         rank, seen = [], {}
         for dof in layout:
             key = (dof.entity_dim, dof.local_index)
@@ -70,15 +74,25 @@ class DofMap(nn.Module):
             rank.append(r)
             seen[key] = r + 1
 
-        # cell_dofs[e, i] = offset[d] + global_entity(e, i) * dofs_per_entity[d] + rank[i]
+        # cell_dofs[e, i] = offset[d] + global_entity(e, i) * dofs_per_entity[d] + effective_rank
         n_cells = topology.n_cells
         cell_dofs = torch.empty(n_cells, len(layout), dtype=torch.int64)
         for i, dof in enumerate(layout):
             ed, lei = dof.entity_dim, dof.local_index
+            dpe = self._dofs_per_entity[ed]
             global_entity = topology.cell_entities(ed)[:, lei]  # (n_cells,)
-            cell_dofs[:, i] = (
-                self._offset[ed] + global_entity * self._dofs_per_entity[ed] + rank[i]
-            )
+            # Reversal (A1 orientation): on an entity the cell traverses backwards
+            # (``entity_orientation == -1``) its DOF ranks run in reverse, so both cells sharing
+            # the entity agree on which global DOF each point owns. A no-op for an entity with a
+            # single DOF (``dpe == 1``) or no orientation (vertices/cells, sign ``+1``) -- hence
+            # P1/P2/DG0/Hermite numbering is unchanged; it only acts on >=2 DOFs per reversed edge.
+            sign = topology.entity_orientation(ed)[:, lei]  # (n_cells,) +/-1
+            eff_rank = torch.where(
+                sign == 1,
+                torch.full_like(sign, rank[i]),
+                torch.full_like(sign, dpe - 1 - rank[i]),
+            )  # (n_cells,)
+            cell_dofs[:, i] = self._offset[ed] + global_entity * dpe + eff_rank
 
         # Periodic identification + compaction: remap[old_global] -> new_global.
         remap = self._build_remap(total, periodic)
@@ -137,7 +151,9 @@ class DofMap(nn.Module):
         if kinds is None:
             ranks = range(len(all_kinds))
         else:
-            ranks = [all_kinds.index(k) for k in kinds]
+            # Every DOF whose kind is requested -- so a repeated kind (e.g. two P3 edge values)
+            # returns both its ranks, not just the first.
+            ranks = [r for r, k in enumerate(all_kinds) if k in kinds]
         dpe, off = self._dofs_per_entity[entity_dim], self._offset[entity_dim]
         naive = [off + int(g) * dpe + r for g in entities for r in ranks]
         # Route through the periodic/compaction remap, then dedup (merged DOFs collapse).

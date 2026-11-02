@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from neurom.reference_cells import BAR
+from neurom.reference_cell import BAR
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 

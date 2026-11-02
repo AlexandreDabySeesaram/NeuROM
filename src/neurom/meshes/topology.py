@@ -73,7 +73,7 @@ class Topology(nn.Module):
         it here rather than redefining ``(0,1),(1,2),(2,0)`` a second time.
         """
         if n_verts_per_cell == 3:  # triangle
-            from neurom.reference_cells import TRIANGLE
+            from neurom.reference_cell import TRIANGLE
 
             return TRIANGLE.local_entities(EntityDim.EDGE)
         raise NotImplementedError(

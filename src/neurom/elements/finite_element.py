@@ -234,13 +234,13 @@ class FiniteElement:
 
     @property
     def n_ref(self) -> int:
-        r"""Number of reference basis functions = number of columns of :math:`N(\xi)`.
+        r"""Number of reference basis functions = size of :math:`N(\xi)`'s trailing axis.
 
-        Obtained by evaluating the basis at a single probe point -- the first reference vertex,
-        shaped ``(1, 1, dim_ref)`` to match ``N``'s ``(N_e, N_q, dim_ref)`` input -- and reading
-        the trailing axis. May differ from ``n_dofs`` (e.g. a hierarchical/bubble basis).
+        Obtained by evaluating the (batch-rank-agnostic) basis at a single probe point -- the first
+        reference vertex, shape ``(1, dim_ref)`` -- and reading the trailing axis. May differ from
+        ``n_dofs`` (e.g. a hierarchical/bubble basis).
         """
-        probe = self.cell.simplex[:1].unsqueeze(0)  # (1, 1, dim_ref), first vertex
+        probe = self.cell.simplex[:1]  # (1, dim_ref), first vertex -- any batch shape works
         return self.reference_basis.N(probe).shape[-1]
 
     @property
@@ -256,40 +256,30 @@ class FiniteElement:
     def N(self, xi: torch.Tensor) -> torch.Tensor:
         """Evaluate the reference basis at ``xi`` (delegates to ``reference_basis``).
 
+        Batch-rank-agnostic (the basis only touches the trailing ``dim_ref`` axis): any number of
+        leading batch axes passes through unchanged.
+
         Args:
-            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+            xi (torch.Tensor): Reference coordinates, shape ``(*batch, dim_ref)``.
 
         Returns:
-            torch.Tensor: Basis values, shape ``(N_e, N_q, n_ref)``.
+            torch.Tensor: Basis values, shape ``(*batch, n_ref)``.
         """
         return self.reference_basis.N(xi)
 
     def dof_nodes_xi(self) -> torch.Tensor:
-        """Reference coordinate carrying each DOF, deduced from ``dof_layout`` + ``cell``.
+        """Reference coordinate carrying each DOF, gathered one per DOF in layout order.
 
-        A vertex DOF sits at that vertex; an edge DOF at the edge midpoint; a cell DOF at
-        the cell centroid. (Face DOF coordinates are added later.)
+        The per-entity geometry (vertex coordinate / edge midpoint / cell centroid) lives on the
+        :class:`~neurom.reference_cell.ReferenceCell` (:meth:`~neurom.reference_cell.ReferenceCell.reference_point`);
+        the element only gathers it -- it no longer deduces the geometry itself.
 
         Returns:
             torch.Tensor: ``(n_dofs, dim_ref)``.
         """
-        verts = self.cell.simplex  # (n_verts, dim_ref)
-        out = []
-        for d in self.dof_layout:
-            if d.entity_dim == EntityDim.VERTEX:
-                out.append(verts[d.local_index])
-            elif d.entity_dim == EntityDim.EDGE and self.dim_ref >= 2:
-                # a true sub-edge (triangle and up): midpoint of its two local vertices
-                edge = self.cell.local_entities(EntityDim.EDGE)[
-                    d.local_index
-                ]  # (2,) local vertices
-                out.append(verts[edge].mean(dim=0))
-            elif d.entity_dim == self.dim_ref:
-                # the top-dimensional cell itself -- incl. a bar, whose sole edge IS the cell,
-                # so its centroid coincides with the edge midpoint -> centroid
-                out.append(verts.mean(dim=0))
-            else:
-                raise NotImplementedError(
-                    "face DOF reference coordinates are not built yet"
-                )
-        return torch.stack(out)
+        return torch.stack(
+            [
+                self.cell.reference_point(d.entity_dim, d.local_index)
+                for d in self.dof_layout
+            ]
+        )

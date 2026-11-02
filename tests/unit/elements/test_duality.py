@@ -23,7 +23,7 @@ from neurom.elements import (
 )
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.shape_functions.quadratic_bar import QuadraticBar
-from neurom.reference_cells import BAR
+from neurom.reference_cell import BAR
 
 LIBRARY = [
     P1_BAR,

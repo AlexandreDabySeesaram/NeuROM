@@ -3,7 +3,7 @@ import torch
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D, QuadratureRule
-from neurom.reference_cells import BAR
+from neurom.reference_cell import BAR
 from neurom.shape_functions import LinearBar
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace

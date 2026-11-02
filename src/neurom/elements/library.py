@@ -10,7 +10,7 @@ duplication; every other element has a cell-specific basis and is written out di
 
 from neurom.elements.finite_element import FiniteElement, DoF, VALUE, D1
 from neurom.meshes.topology import EntityDim
-from neurom.reference_cells import ReferenceCell, BAR, TRIANGLE
+from neurom.reference_cell import ReferenceCell, BAR, TRIANGLE
 from neurom.shape_functions import (
     LinearBar,
     LinearTriangle,

@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from neurom.elements import P1_BAR, P1_TRIANGLE, P2_TRIANGLE, HERMITE, EntityDim
-from neurom.reference_cells import BAR, TRIANGLE
+from neurom.reference_cell import BAR, TRIANGLE
 from neurom.meshes.topology import Topology
 
 ELEMENTS = [P1_BAR, P1_TRIANGLE, P2_TRIANGLE, HERMITE]

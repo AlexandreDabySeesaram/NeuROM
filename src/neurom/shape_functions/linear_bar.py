@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_cells import BAR
+from neurom.reference_cell import BAR
 from neurom.shape_functions.shape_function import ShapeFunction
 
 

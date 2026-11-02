@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import torch
 
 from neurom.math.jacobian import jacobian
-from neurom.reference_cells.reference_cell import ReferenceCell
+from neurom.reference_cell import ReferenceCell
 
 
 class ShapeFunction(ABC):

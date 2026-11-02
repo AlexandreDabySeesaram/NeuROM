@@ -20,7 +20,7 @@ No library element singleton ships for this basis: it exists to exercise the non
 
 import torch
 
-from neurom.reference_cells import TRIANGLE
+from neurom.reference_cell import TRIANGLE
 from neurom.shape_functions.shape_function import ShapeFunction
 
 

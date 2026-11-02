@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_cells import TRIANGLE
+from neurom.reference_cell import TRIANGLE
 from neurom.quadratures.quadrature_rule import QuadratureRule
 
 

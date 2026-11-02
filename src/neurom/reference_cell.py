@@ -108,6 +108,28 @@ class ReferenceCell:
             f"reference cell of dimension {self.dim_ref} has no entities of dimension {d}"
         )
 
+    def reference_point(self, entity_dim: EntityDim, local_index: int) -> torch.Tensor:
+        r"""Reference coordinate of one sub-entity: the mean of its local vertices.
+
+        Uniformly gives a vertex's own coordinate, an edge's midpoint, or the cell centroid --
+        whichever ``(entity_dim, local_index)`` selects -- since each is the mean of that entity's
+        vertices (see :meth:`local_entities`). Entity geometry lives here on the cell, not on the
+        :class:`~neurom.elements.FiniteElement`.
+
+        Args:
+            entity_dim (EntityDim): Topological dimension of the sub-entity
+                (``VERTEX``/``EDGE``/``FACE``/``VOLUME``).
+            local_index (int): Ordinal of the entity within the cell.
+
+        Returns:
+            torch.Tensor: Reference coordinate ``(dim_ref,)`` in the active dtype.
+
+        Raises:
+            ValueError: If the cell has no entity of that dimension.
+        """
+        local_verts = self.local_entities(entity_dim)[local_index]  # (n_verts_of_entity,)
+        return self.simplex[local_verts].mean(dim=0)  # (dim_ref,)
+
 
 BAR = ReferenceCell(simplex=[[-1.0], [1.0]], measure=2.0)
 r"""**Reference bar** on :math:`[-1, 1]`: two vertices, length 2, no proper sub-edges (its only

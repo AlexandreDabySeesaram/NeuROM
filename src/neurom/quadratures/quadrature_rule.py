@@ -4,7 +4,7 @@ from abc import ABC
 
 import torch
 
-from neurom.reference_cells.reference_cell import ReferenceCell
+from neurom.reference_cell import ReferenceCell
 
 
 class QuadratureRule(ABC):

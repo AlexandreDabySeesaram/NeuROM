@@ -18,7 +18,7 @@ from .PDE_Library import RHS, PotentialEnergy, \
                         InternalEnergy_2D_einsum_para,InternalEnergy_2D_einsum_Bipara, Strain, Stress, PotentialEnergyVectorisedParametric_Gauss,\
                             InternalEnergy_2D_einsum_BiStiffness,\
                             InternalEnergy_1D, WeakEquilibrium_1D, InternalEnergy_2D_einsum_Bipara_NeoHookean,InternalEnergy_2D_einsum_Bipara_KirchhoffSaintVenant,InternalEnergy_2D_einsum_NeoHookean, InternalEnergy_2D_einsum_SaintVenantKirchhoff, \
-                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness, InternalEnergy_StochasticShape, InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK
+                                InternalEnergy_2_3D_einsum_Bipara, InternalEnergy_2_3D_einsum_Tripara, InternalEnergy_2_3D_einsum, InternalEnergy_2_3D_einsum_BiStiffnessBiangle, InternalEnergy_2D_einsum_Tripara_KirchhoffSaintVenant, InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness, BoundaryStiffnessEnergy_para_normal, InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness, InternalEnergy_StochasticShape, InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK, LinearOperators3D
 
 # Default ordering of the extra-coordinates of the "PressureGravityBoundaryStiffness" problem (overridden by config["loads"]["parameters"])
 PressureGravity_default_parameters = {  3: ["E", "theta", "phi"],
@@ -2003,6 +2003,399 @@ def Training_2_3D_FEM(model, config, Mat):
 
 Training_2D_FEM = Training_2_3D_FEM                                                                                                                             # for retrocompatibility reasons #DEBUG
 
+#%% Greedy PGD trained by gradient descent
+
+def NeuROM_loss_3D(model, config, Mat, Training_para_coordinates_list):
+    """Loss of the 3D parametric problems supported by the greedy training"""
+    match config["solver"]["Problem"]:
+        case "PressureGravityBoundaryStiffness":
+            return PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config)
+        case _:
+            raise NotImplementedError(f'Greedy training is not implemented for the problem {config["solver"]["Problem"]}')
+
+
+class StiffnessPreconditioner:
+    r"""Block-diagonal preconditioner for gradient steps on a separated (PGD) energy in 3D, frozen meshes.
+
+    It is the block diagonal of the Hessian of the linear elastic energy at a reference stiffness E_ref, each block
+    taken with the other factors of the tensor decomposition fixed:
+        - space mode m:                 (s_m K_ref)^{-1},   K_ref = E_ref K + k_spring Ks,  s_m = \prod_i <lambda_i^m 2>
+        - parametric function (m, i):   (h_mi M_i)^{-1},    M_i = <phi_a phi_b> on the training grid,
+                                                             h_mi = U_m^T K_ref U_m \prod_{l != i} <lambda_l^m 2>
+    K and Ks are the sparse operators of the fast path (assembled once by automatic differentiation of the energy
+    densities, LinearOperators3D), and K_ref is factorised once. Nothing in the energy is linearised by hand: the
+    preconditioner only changes the metric of the gradient steps (any SPD matrix is valid), so the same object can be
+    used for non-linear energies, where it is the Hessian of the linearised energy at u = 0."""
+
+    def __init__(self, model, config, Mat, Training_para_coordinates_list):
+        import scipy.sparse as sp
+        import scipy.sparse.linalg as spla
+        loads       = config.get("loads", {})
+        names       = loads.get("parameters", PressureGravity_default_parameters[config["solver"]["N_ExtraCoordinates"]])
+        E_idx       = names.index("E") if "E" in names else None
+        E_ref       = config["training"].get("precond_E_ref", None)
+        if E_ref is None:
+            E_ref   = float(numpy.sqrt(config["parameters"][f"para_{E_idx+1}_min"]*config["parameters"][f"para_{E_idx+1}_max"])) if E_idx is not None else 1.0
+        ops         = LinearOperators3D(model, Mat.lmbda, Mat.mu, loads.get("BoundaryNormals", True), loads.get("z0", 0.0), loads.get("y0", 0.0))
+        to_scipy    = lambda A: sp.csr_matrix((A.values().cpu().double().numpy(), A.col_indices().cpu().numpy(), A.crow_indices().cpu().numpy()), shape=A.shape)  # LU in float64, whatever the model precision
+        K_ref       = (E_ref*to_scipy(ops["K"]) + loads.get("k_spring", 1e-3)*to_scipy(ops["Ks"])).tocsr()
+        # Free dofs of the space modes, in the order of the parameters [x_free, y_free, z_free] (nodal layout 3*node + component)
+        space       = model.Space_modes[0]
+        self.free   = numpy.concatenate([3*numpy.nonzero(getattr(space, 'dofs_free_'+x).cpu().numpy())[0] + c for c, x in enumerate(['x', 'y', 'z'])])
+        self.K_ref  = K_ref[self.free][:, self.free].tocsc()
+        t0          = time.time()
+        self.lu     = spla.splu(self.K_ref, permc_spec="MMD_AT_PLUS_A", diag_pivot_thresh=0.0, options=dict(SymmetricMode=True))  # symmetric ordering: less fill than the default
+        from concurrent.futures import ThreadPoolExecutor
+        self.pool   = ThreadPoolExecutor(max(1, torch.get_num_threads()))           # the LU solves release the GIL: one thread per right-hand side
+        print(f'* Preconditioner: K_ref factorised at E_ref = {E_ref:.3e} ({time.time()-t0:.1f}s, {self.K_ref.shape[0]} dofs)')
+        self.model  = model
+        # Parametric P1 bases on the training grids, and the inverse of their mass matrices
+        self.Phi, self.M_inv = [], []
+        for i in range(model.n_para):
+            nodes   = torch.cat([c.view(-1) for c in model.Para_modes[0][i].coordinates]).detach()
+            grid    = Training_para_coordinates_list[i][:, 0].detach()
+            h       = nodes[1:] - nodes[:-1]
+            Phi     = torch.zeros(len(grid), len(nodes), dtype=grid.dtype, device=grid.device)
+            for a in range(len(nodes)):
+                if a > 0:
+                    Phi[:, a] += torch.clamp((grid - nodes[a-1])/h[a-1], 0, 1) * (grid <= nodes[a])
+                if a < len(nodes) - 1:
+                    Phi[:, a] += torch.clamp((nodes[a+1] - grid)/h[a], 0, 1) * (grid > nodes[a])
+            self.Phi.append(Phi)
+            self.M_inv.append(torch.linalg.inv(Phi.T @ Phi / len(grid)))
+        self.update()
+
+    def parameters(self):
+        """Trainable parameters, ordered per mode: space nodal values [x, y, z], then the parametric functions"""
+        params, self.layout = [], []
+        for m in range(self.model.n_modes_truncated):
+            nv = self.model.Space_modes[m].nodal_values
+            if nv['x_free'].requires_grad:
+                params += [nv['x_free'], nv['y_free'], nv['z_free']]
+                self.layout += [('space', m, c) for c in range(3)]
+            for i in range(self.model.n_para):
+                w = self.model.Para_modes[m][i].InterpoLayer.weight
+                if w.requires_grad:
+                    params.append(w)
+                    self.layout.append(('para', m, i))
+        return params
+
+    def update(self):
+        """Block scalings from the current factors"""
+        with torch.no_grad():
+            M       = int(self.model.n_modes_truncated)
+            self.L2 = torch.stack([torch.stack([torch.mean((self.Phi[i] @ self.model.Para_modes[m][i].InterpoLayer.weight.view(-1))**2)
+                                    for i in range(self.model.n_para)]) for m in range(M)])                      # <lambda_i^m 2> [m, i]
+            self.UKU = []
+            for m in range(M):
+                nv  = self.model.Space_modes[m].nodal_values
+                u   = torch.cat([nv['x_free'], nv['y_free'], nv['z_free']]).cpu().double().numpy()
+                self.UKU.append(float(u @ (self.K_ref @ u)))
+
+    def __call__(self, chunks):
+        """Preconditioned directions for the list of gradients ordered as self.parameters()"""
+        out, k = [None]*len(chunks), 0
+        # Space blocks: the K_ref solves of all the modes, in parallel threads (SuperLU itself is sequential)
+        space = [j for j, (kind, _, c) in enumerate(self.layout) if kind == 'space' and c == 0]
+        if space:
+            G = numpy.stack([torch.cat([chunks[j+c].reshape(-1) for c in range(3)]).detach().cpu().double().numpy() for j in space], axis=1)
+            D = numpy.stack(list(self.pool.map(lambda j: self.lu.solve(G[:, j]), range(G.shape[1]))), axis=1)
+            for col, j in enumerate(space):
+                m   = self.layout[j][1]
+                s_m = float(torch.prod(self.L2[m]))
+                d   = torch.as_tensor(D[:, col], dtype=chunks[j].dtype, device=chunks[j].device) / max(s_m, 1e-300)
+                n   = chunks[j].numel()
+                for c in range(3):
+                    out[j+c] = d[c*n:(c+1)*n].view_as(chunks[j+c])
+        while k < len(chunks):
+            kind, m, i = self.layout[k]
+            if kind == 'space':
+                k  += 3
+            else:
+                h   = self.UKU[m] * float(torch.prod(self.L2[m][torch.arange(self.model.n_para) != i]))
+                self.h_max = max(getattr(self, "h_max", 0.0), h)
+                h   = max(h, 1e-6 * self.h_max)                                   # floor: a nearly vanishing space mode must not give huge parametric steps
+                g   = chunks[k].reshape(-1)
+                out[k] = ((self.M_inv[i] @ g) / h).view_as(chunks[k]) if h > 0 else torch.zeros_like(chunks[k])
+                k  += 1
+        return out
+
+
+class PreconditionedLBFGS:
+    """L-BFGS (two-loop recursion) with a preconditioned initial inverse Hessian H0 = gamma P, and the strong Wolfe
+    line search of torch.optim.LBFGS. P is applied to the list of gradients of the parameters (e.g. StiffnessPreconditioner).
+    Same use as torch.optim.LBFGS: loss = optimizer.step(closure), the closure computing the loss and its gradients."""
+
+    def __init__(self, params, precond, history_size=20, max_iter=20, tolerance_change=1e-12):
+        self.params, self.precond = list(params), precond
+        self.history_size, self.max_iter, self.tolerance_change = history_size, max_iter, tolerance_change
+        self.S, self.Y, self.rho, self.gamma = [], [], [], 1.0
+        self.n_evals = 0
+
+    def _flat_grad(self):
+        return torch.cat([(p.grad if p.grad is not None else torch.zeros_like(p)).reshape(-1) for p in self.params])
+
+    def _split(self, v):
+        out, k = [], 0
+        for p in self.params:
+            out.append(v[k:k+p.numel()].view_as(p)); k += p.numel()
+        return out
+
+    def _P(self, v):
+        return torch.cat([d.reshape(-1) for d in self.precond(self._split(v))])
+
+    def _add(self, t, d):
+        with torch.no_grad():
+            for p, dp in zip(self.params, self._split(d)):
+                p.add_(dp, alpha=t)
+
+    def _set(self, x):
+        with torch.no_grad():
+            for p, xp in zip(self.params, x):
+                p.copy_(xp)
+
+    def _evaluate(self, closure):
+        with torch.enable_grad():
+            loss = closure()
+        self.n_evals += 1
+        return float(loss), self._flat_grad()
+
+    def step(self, closure):
+        from torch.optim.lbfgs import _strong_wolfe
+        f, g = self._evaluate(closure)
+        for _ in range(self.max_iter):
+            self.precond.update()
+            q, alphas = -g.clone(), []                                              # two-loop recursion
+            for s, y, rho in zip(reversed(self.S), reversed(self.Y), reversed(self.rho)):
+                a = rho * s.dot(q); alphas.append(a); q.add_(y, alpha=-a)
+            r = self.gamma * self._P(q)
+            for s, y, rho, a in zip(self.S, self.Y, self.rho, reversed(alphas)):
+                r.add_(s, alpha=float(a - rho * y.dot(r)))
+            gtd = g.dot(r)
+            if not gtd < 0:                                                         # not a descent direction: restart
+                self.S, self.Y, self.rho, self.gamma = [], [], [], 1.0
+                r = -self._P(g); gtd = g.dot(r)
+                if not gtd < 0:
+                    break
+            x0 = [p.detach().clone() for p in self.params]
+            def obj_func(x, t, d):
+                self._add(t, d)
+                f_t, g_t = self._evaluate(closure)
+                self._set(x)
+                if not (numpy.isfinite(f_t) and bool(torch.isfinite(g_t).all())):     # overflow (e.g. in float32): treated as a very bad trial step,
+                    f_t, g_t = abs(f) * 1e6 + 1e6, torch.zeros_like(g_t)              # so that the line search backtracks instead of propagating NaN
+                return f_t, g_t
+            f_new, g_new, t, _ = _strong_wolfe(obj_func, x0, 1.0, r, f, g, gtd)
+            self._add(t, r)
+            s, y = t*r, g_new - g
+            ys = y.dot(s)
+            if ys > 1e-12 * torch.abs(gtd) * t:
+                if len(self.S) == self.history_size:
+                    self.S.pop(0); self.Y.pop(0); self.rho.pop(0)
+                self.S.append(s); self.Y.append(y); self.rho.append(1/ys)
+                self.gamma = float(ys / y.dot(self._P(y)))
+            converged = abs(f_new - f) < self.tolerance_change * abs(f_new)
+            f, g = f_new, g_new
+            if converged:
+                break
+        return torch.tensor(f)
+
+
+def Training_NeuROM_greedy(model, config, Mat = 'NaN'):
+    r"""Greedy PGD trained by gradient descent: modes are added one at a time, and the current modes are trained
+    (all of them if multi_mode_training, else only the last one) until convergence before the next mode is added.
+
+    Convergence of the current modes: relative decrease of the loss over the last W iterations below mode_conv_tol
+        (loss[k-W] - loss[k]) / |loss[k]| < mode_conv_tol                                  (or max_epochs_per_mode reached)
+    Stopping of the enrichment: gain of mode m, gain_m = (loss_{m-1} - loss_m) / |loss_m|, below greedy_tol for
+        greedy_patience consecutive modes (or n_modes_max reached). With Pi(u_h) - Pi(u) = 1/2 ||u - u_h||_K^2,
+        greedy_tol ~ (relative energy norm error)^2. The patience is needed because greedy gains are not monotonic.
+
+    [training] options (defaults):
+        greedy_optimizer    = "adam" | "lbfgs" | "plbfgs" ("adam"): plbfgs = L-BFGS preconditioned by the stiffness
+        mode_conv_window    = W (100 for adam, 2 for (p)lbfgs, in iterations = optimizer steps)
+        mode_conv_tol       = 1e-6
+        greedy_tol          = 1e-6
+        greedy_patience     = 4
+        max_epochs_per_mode = n_epochs
+        new_mode_init       = "smooth" | "random" ("smooth")
+        reset_optimizer_per_mode = true | false (true): Adam restarted for each new mode, or kept (moments of the converged modes kept)
+        greedy_max_modes    = maximum number of modes of the greedy enrichment (n_modes_max)
+        greedy_checkpoint   = path where the model is saved after each converged mode (none)
+        new_mode_candidates = K (1): K starts are tried for each new mode (each trained alone for a short probe), the best one is kept
+        new_mode_probe      = probe length per candidate (1 optimizer step for (p)lbfgs, 50 epochs for adam)
+        adam_warmup_epochs  = N (0): before the main optimizer, the new mode alone is trained N epochs with Adam (lr adam_warmup_lr = 1e-3)
+    The loss history is stored in model.training_recap: Loss_vect, Mode_vect, Time_vect (s since the start) for each iteration,
+    and Mode_summary (one entry per converged mode: modes, iterations, time, loss, gain).
+    """
+    tr              = config["training"]
+    opt_name        = tr.get("greedy_optimizer", "adam")
+    W               = tr.get("mode_conv_window", 100 if opt_name == "adam" else 2)
+    tol_conv        = tr.get("mode_conv_tol", 1e-6)
+    tol_gain        = tr.get("greedy_tol", 1e-6)
+    patience        = tr.get("greedy_patience", 4)
+    max_epochs_mode = tr.get("max_epochs_per_mode", tr["n_epochs"])
+    init            = tr.get("new_mode_init", "smooth")
+    multi_mode      = tr.get("multi_mode_training", True)
+
+    N_ExtraCoordinates = config["solver"]["N_ExtraCoordinates"]
+    Training_para_coordinates_list = nn.ParameterList([
+        torch.linspace(config["parameters"][f"para_{i+1}_min"], config["parameters"][f"para_{i+1}_max"], 5 * config["parameters"][f"N_para_{i+1}"],
+                        dtype=model.float_config.dtype, device=model.float_config.device, requires_grad=True).unsqueeze(1)
+        for i in range(N_ExtraCoordinates)])
+    loss_fn = lambda: NeuROM_loss_3D(model, config, Mat, Training_para_coordinates_list)
+
+    if not hasattr(model, "training_recap"):
+        model.training_recap = {"Loss_vect":[], "L2_error":[], "training_time":0, "Mode_vect":[], "Loss_decrease_vect":[]}
+    for key in ["Time_vect", "Mode_summary"]:
+        model.training_recap.setdefault(key, [])
+    if init == "smooth" and not tr.get("LoadPreviousModel", False):
+        for m in range(int(model.n_modes_truncated)):
+            model.SmoothInitParaMode(m)
+            with torch.no_grad():                                                   # space modes start from zero, as the modes added later (AddMode):
+                for x in ['x_free', 'y_free', 'z_free']:                            # the first step is then a pure space step (no parametric overshoot)
+                    model.Space_modes[m].nodal_values[x].zero_()
+    precond = StiffnessPreconditioner(model, config, Mat, Training_para_coordinates_list) if opt_name == "plbfgs" else None
+
+    print(f"************* START GREEDY TRAINING ({opt_name}) *************\n")
+    time_start  = time.time()
+    loss_prev   = 0.0                                                               # energy of the zero field
+    n_low, it_total, n_evals = 0, 0, 0
+    def make_optimizer(params):
+        match opt_name:
+            case "adam":
+                return torch.optim.Adam(params, lr=tr["learning_rate"])
+            case "lbfgs":
+                return torch.optim.LBFGS(params, line_search_fn="strong_wolfe", max_iter=20, history_size=20)
+            case "plbfgs":
+                return PreconditionedLBFGS(params, precond, max_iter=20, history_size=20)
+    def closure_for(params):
+        def closure():
+            for p in params:
+                p.grad = None
+            loss = loss_fn()
+            loss.backward()
+            return loss
+        return closure
+
+    def train_new_mode_alone(run):
+        """Runs run(params, closure) with only the parameters of the newest mode trainable"""
+        m = int(model.n_modes_truncated) - 1
+        model.FreezeAll()
+        model.Space_modes[m].UnFreeze_FEM()
+        for i in range(model.n_para):
+            model.Para_modes[m][i].UnFreeze_FEM()
+        params = precond.parameters() if precond is not None else [p for p in model.parameters() if p.requires_grad]
+        out = run(params, closure_for(params))
+        model.UnfreezeTruncated()
+        if not multi_mode:
+            model.Freeze_N_1()
+        return out
+
+    def probe(params, closure, opt=None, steps=None):
+        opt = opt or (torch.optim.Adam(params, lr=tr.get("adam_warmup_lr", 1e-3)) if opt_name == "adam" else make_optimizer(params))
+        steps = steps or tr.get("new_mode_probe", 50 if opt_name == "adam" else 1)
+        for _ in range(steps):
+            if isinstance(opt, torch.optim.Adam):
+                closure(); opt.step()
+            else:
+                opt.step(closure)
+        with torch.no_grad():
+            return loss_fn().item()
+
+    def choose_new_mode_start():
+        """Tries new_mode_candidates starts for the newest mode (zero space mode, random smooth parametric functions) and keeps the best"""
+        K = tr.get("new_mode_candidates", 1)
+        if K <= 1:
+            return
+        m = int(model.n_modes_truncated) - 1
+        best = None
+        for c in range(K):
+            with torch.no_grad():
+                for x in ['x_free', 'y_free', 'z_free']:
+                    model.Space_modes[m].nodal_values[x].zero_()
+            model.SmoothInitParaMode(m)
+            loss_c = train_new_mode_alone(probe)
+            print(f'  candidate {c+1}/{K} for mode {m+1}: loss = {loss_c:.8e}', flush=True)
+            if best is None or loss_c < best[0]:
+                best = (loss_c, [p.detach().clone() for p in model.Space_modes[m].parameters()] + [model.Para_modes[m][i].InterpoLayer.weight.detach().clone() for i in range(model.n_para)])
+        with torch.no_grad():
+            for p, v in zip(list(model.Space_modes[m].parameters()) + [model.Para_modes[m][i].InterpoLayer.weight for i in range(model.n_para)], best[1]):
+                p.copy_(v)
+        print(f'  kept the candidate with loss = {best[0]:.8e}', flush=True)
+
+    def adam_warmup():
+        """Trains the newest mode alone with Adam for adam_warmup_epochs epochs (escape from the zero space mode saddle)"""
+        n = tr.get("adam_warmup_epochs", 0)
+        if n > 0:
+            loss_w = train_new_mode_alone(lambda params, closure: probe(params, closure, opt=torch.optim.Adam(params, lr=tr.get("adam_warmup_lr", 1e-3)), steps=n))
+            print(f'  Adam warm-up of mode {int(model.n_modes_truncated)} ({n} epochs): loss = {loss_w:.8e}', flush=True)
+
+    optimizer = None
+    while True:
+        if model.n_modes_truncated > 1 and (len(model.training_recap["Mode_summary"]) > 0):
+            choose_new_mode_start()
+            adam_warmup()
+        if not multi_mode:
+            model.Freeze_N_1()
+        params = precond.parameters() if precond is not None else [p for p in model.parameters() if p.requires_grad]
+        if optimizer is None or opt_name != "adam" or not multi_mode or tr.get("reset_optimizer_per_mode", True):
+            optimizer = make_optimizer(params)                                      # new optimizer for each mode (L-BFGS: the curvature pairs change with the number of modes)
+        else:
+            known = {id(p) for g in optimizer.param_groups for p in g['params']}
+            new_params = [p for p in params if id(p) not in known]
+            if new_params:
+                optimizer.add_param_group({'params': new_params})                   # Adam: keep the moments of the converged modes
+        def closure():
+            for p in params:
+                p.grad = None
+            loss = loss_fn()
+            loss.backward()
+            return loss
+        hist, best, t_mode = [], [], time.time()
+        while len(hist) < max_epochs_mode:
+            if opt_name == "adam":
+                loss = closure()
+                optimizer.step()
+            else:
+                loss = optimizer.step(closure)
+            hist.append(loss.item()); it_total += 1
+            if not numpy.isfinite(hist[-1]):
+                raise FloatingPointError(f"non-finite loss at iteration {it_total} ({int(model.n_modes_truncated)} modes)")
+            best.append(min(hist[-1], best[-1]) if best else hist[-1])             # running minimum (Adam is not monotonic)
+            model.training_recap["Loss_vect"].append(hist[-1])
+            model.training_recap["Mode_vect"].append(model.n_modes_truncated.detach().clone())
+            model.training_recap["Time_vect"].append(time.time() - time_start)
+            if opt_name != "adam" or len(hist) % 50 == 0:
+                print(f'epoch {it_total} loss = {numpy.format_float_scientific(hist[-1], precision=6)} modes = {int(model.n_modes_truncated)} time = {time.time()-time_start:.0f}s', flush=True)
+            if len(best) > W and (best[-W-1] - best[-1]) / abs(best[-1]) < tol_conv:
+                break
+        if opt_name == "adam":
+            with torch.no_grad():
+                loss_mode = loss_fn().item()                                        # loss after the last update
+        else:
+            loss_mode = hist[-1]
+        gain = (loss_prev - loss_mode) / abs(loss_mode)
+        n_low = n_low + 1 if gain < tol_gain else 0
+        loss_prev = loss_mode
+        print(f'* mode {int(model.n_modes_truncated)} converged: {len(hist)} iterations ({time.time()-t_mode:.0f}s), loss = {loss_mode:.8e}, '
+              f'gain = {gain:.3e}, modes in a row below greedy_tol: {n_low}', flush=True)
+        model.training_recap["Mode_summary"].append({"modes": int(model.n_modes_truncated), "iterations": len(hist), "time": time.time()-t_mode,
+                                                     "loss": loss_mode, "gain": gain, "elapsed": time.time()-time_start})
+        if tr.get("greedy_checkpoint", None):                                       # save the model (and its loss history) after each converged mode
+            torch.save(model.state_dict(), tr["greedy_checkpoint"])
+            torch.save(model.training_recap, tr["greedy_checkpoint"]+"_recap")
+        if n_low >= patience or model.n_modes_truncated >= min(model.n_modes, tr.get("greedy_max_modes", model.n_modes)):
+            break
+        model.AddMode(init=init)
+        if multi_mode:
+            model.UnfreezeTruncated()
+    model.training_recap["training_time"] += time.time() - time_start
+    print(f"*************** END OF GREEDY TRAINING ***************\n")
+    print(f'* {int(model.n_modes_truncated)} modes, {it_total} iterations, training time: {time.time()-time_start:.0f}s')
+    return
+
+
 def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
     n_refinement                = 0
     MaxElemSize                 = pre.ElementSize(
@@ -2039,7 +2432,10 @@ def Training_NeuROM_multi_level(model, config, Mat = 'NaN'):
                 Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
                 Training_NeuROM_FinalStageLBFGS(model,config, Mat)      # Second stage of training (LBFGS)
             case 3:
-                Training_NeuROM(model, config, optimizer, Mat)          # First stage of training (ADAM)
+                if config["training"].get("greedy", False):
+                    Training_NeuROM_greedy(model, config, Mat)          # Greedy enrichment, each mode trained to convergence
+                else:
+                    Training_NeuROM(model, config, optimizer, Mat)      # First stage of training (ADAM)
                 n_epochs_LBFGS = config["training"].get("n_epochs_LBFGS", 0)
                 if n_epochs_LBFGS > 0:
                     init_n_epochs = config["training"]["n_epochs"]

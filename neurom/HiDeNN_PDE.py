@@ -453,8 +453,12 @@ class NeuROM(nn.Module):
             self.Space_modes[m].coord_old = [self.Space_modes[m].coordinates[i].data.item() for i in range(len(self.Space_modes[m].coordinates))]
 
     
-    def AddMode(self):
-        """This method allows to freeze the already computed modes and free the new mode when a new mode is required"""
+    def AddMode(self, init = None):
+        """This method allows to freeze the already computed modes and free the new mode when a new mode is required
+        init = "smooth": the parametric functions of the new mode start from smooth functions
+            1 + a (x - 1/2) + b sin(2 pi x) + c cos(2 pi x) (x in [0, 1] on each parameter range, small random a, b, c)
+            instead of their random nodal values, so that the new mode has a non-zero projection
+            on constant, linear and periodic (e.g. gravity angle) loads."""
         self.n_modes_truncated += 1     # Increment the number of modes used in the truncated tensor decomposition
         Mesh_status = self.Mesh_status  # Remember Mesh status
         self.FreezeAll()
@@ -467,7 +471,18 @@ class NeuROM(nn.Module):
         for j in range(self.n_para):
             # self.Para_modes[self.n_modes_truncated-1][j].InterpoLayer.weight.data = *self.Para_modes[0][j].InterpoLayer.weight.data.clone() #DEBUG
             # self.Para_modes[self.n_modes_truncated-1][j].InterpoLayer.weight.data = 1*self.Para_modes[0][j].InterpoLayer.weight.data.clone() #DEBUG
-            self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()  
+            self.Para_modes[self.n_modes_truncated-1][j].UnFreeze_FEM()
+        if init == "smooth":
+            self.SmoothInitParaMode(self.n_modes_truncated-1)
+
+    def SmoothInitParaMode(self, m):
+        """Smooth initial parametric functions of mode m: 1 + a (x - 1/2) + b sin(2 pi x) + c cos(2 pi x), x in [0, 1]"""
+        with torch.no_grad():
+            for j in range(self.n_para):
+                w = self.Para_modes[m][j].InterpoLayer.weight
+                x = torch.linspace(0, 1, w.shape[1], dtype=w.dtype, device=w.device)
+                a, b, c = 0.3*torch.randn(3, dtype=w.dtype, device=w.device)
+                w.copy_((1 + a*(x - 0.5) + b*torch.sin(2*torch.pi*x) + c*torch.cos(2*torch.pi*x)).view_as(w))
 
     def AddMode2Optimizer(self,optim):
         "This method adds the newly freed parameters to the optimizer"

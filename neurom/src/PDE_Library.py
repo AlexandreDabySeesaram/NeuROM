@@ -763,10 +763,13 @@ def LinearOperators3D(model, lmbda, mu, BoundaryNormals=True, z0=0.0, y0=0.0):
     energies (Hessian of the quadratic terms, gradient of the linear ones), vectorised over the elements with torch.func.vmap.
     Only the energy densities are written, with the same strain (Strain_sqrt convention) and stiffness matrix as the einsum path."""
     mesh = model.Space_modes[0].mesh
-    key = (float(lmbda), float(mu), bool(BoundaryNormals), float(z0), float(y0), str(model.float_config.device))
+    key = (float(lmbda), float(mu), bool(BoundaryNormals), float(z0), float(y0), str(model.float_config.device), str(model.float_config.dtype))
     if getattr(mesh, 'linear_operators_key', None) != key:
         c = {k: (v.cpu() if torch.is_tensor(v) else v) for k, v in SVK_GeometricCache(model).items()}
-        dtype, X, tets, dN, vol, tri, n, area = model.float_config.dtype, c["X"], c["tets"], c["dN"], c["vol"], c["tri"], c["n"], c["area"]
+        # assembled in float64 on the CPU whatever the model precision, then cast (fp32 element Hessians by autodiff fail on some back-ends)
+        dtype = torch.float64
+        X, dN, vol, n, area = [c[k].to(dtype) for k in ["X", "dN", "vol", "n", "area"]]
+        tets, tri = c["tets"], c["tri"]
         n_dofs = 3 * len(X)
         C = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]], dtype=dtype)
 
@@ -800,7 +803,9 @@ def LinearOperators3D(model, lmbda, mu, BoundaryNormals=True, z0=0.0, y0=0.0):
                "nodal_volume": c["nodal_volume"]}
         for name, field in [("f_P0", torch.ones_like(area)), ("f_H", xc[:, 2] - z0), ("f_K", xc[:, 1] - y0)]:
             ops[name] = assemble_vector(dofs_f, gradient(pressure_work, 3, n, area, field))
-        mesh.linear_operators = {k: v.to(model.float_config.device) for k, v in ops.items()}
+        device = model.float_config.device
+        sparse_device = torch.device("cpu") if device.type == "mps" else device       # no sparse tensors on MPS: the matrices stay on the CPU (preconditioner only)
+        mesh.linear_operators = {k: v.to(model.float_config.dtype).to(sparse_device if v.layout != torch.strided else device) for k, v in ops.items()}
         mesh.linear_operators_key = key
     return mesh.linear_operators
 
@@ -879,10 +884,7 @@ def InternalEnergy_2_3D_einsum_Multipara_PressureGravityBoundaryStiffness(
         ref     = u_i
 
     # Parametric modes L_q[m, p], and their grid averages
-    L = [
-        torch.cat([model.Para_modes[m][q](E[q][:,0].view(-1,1)).view(1,-1) for m in range(n_m)], dim=0)
-        for q in range(model.n_para)
-        ]
+    L = [ParametricModeValues(model, q, E[q][:,0]) for q in range(model.n_para)]
     L_mean = [L_q.mean(dim=1) for L_q in L]                                 # [m]
 
     def mean_except(excluded):
@@ -973,14 +975,33 @@ def BoundaryNormalsTensor(model):
 #                                  G_kl = prod_q mean_p [w_q(p_q) mu_kq(p_q) mu_lq(p_q)]   (separable grid average)
 # so the parametric solution is never evaluated on the (huge) parametric hypercube.
 
+def ParametricModeValues(model, q, x):
+    """Values [M, P] of the parametric functions of direction q of the M truncated modes at the points x [P].
+    With a frozen parametric mesh, the P1 basis functions at x are computed once and cached (they do not depend on the
+    nodal values), and the M functions are a single product W_q Phi_q^T, instead of evaluating each mode's
+    interpolation network (which costs many small, single-threaded operations). Same values and gradients."""
+    n_m  = int(model.n_modes_truncated)
+    para = model.Para_modes[0][q]
+    if any(c.requires_grad for c in para.coordinates):
+        return torch.cat([model.Para_modes[m][q](x.view(-1,1)).view(1,-1) for m in range(n_m)], dim=0)
+    cache = model.__dict__.setdefault('_para_basis_cache', {})
+    key = (q, x.data_ptr(), x.shape[0], x.dtype, str(x.device))
+    if key not in cache:
+        if len(cache) > 64:
+            cache.clear()
+        with torch.no_grad():
+            cache[key] = para.AssemblyLayer(para.ElementBlock(x.view(-1,1), para.coordinates, para.ElemList)).detach()   # [P, N]
+    W = torch.cat([model.Para_modes[m][q].InterpoLayer.weight for m in range(n_m)], dim=0)                       # [M, N]
+    return W @ cache[key].T
+
 def ExtendedParametricModes(model, E):
     """Parametric factors mu_kq of the extended modes, for each parameter q: [K, P_q], K = 1 + M + M(M+1)/2"""
     n_m = model.n_modes_truncated
     mi, ni = torch.triu_indices(n_m, n_m, device=model.float_config.device)
     Mu = []
     for q in range(model.n_para):
-        L_q = torch.cat([model.Para_modes[m][q](E[q][:,0].view(-1,1)).view(1,-1) for m in range(n_m)], dim=0)    # [M, P_q]
-        Mu.append(torch.cat([torch.ones_like(L_q[:1]), L_q, L_q[mi]*L_q[ni]], dim=0))
+        L_q = ParametricModeValues(model, q, E[q][:,0])                                                           # [M, P_q]
+        Mu.append(torch.cat([torch.ones_like(L_q[:1]), L_q, L_q.index_select(0, mi)*L_q.index_select(0, ni)], dim=0))
     return Mu
 
 def SeparableGram(Mu, E, weighted_idx=None):
@@ -1032,28 +1053,42 @@ def SVK_GeometricCache(model):
         nodal_volume = torch.zeros(len(X), dtype=dtype).index_add_(0, tets.reshape(-1), vol.repeat_interleave(4) / 4)  # \int u dV = sum_n w_n u_n
         cache = {"X": X, "tets": tets, "dN": dN, "vol": vol, "tri": tri, "n": n_out.cpu(),
                  "area": 0.5 * torch.norm(cr, dim=1), "Grad": Grad, "nodal_volume": nodal_volume}
+        cache["Grad_T"] = Grad.to_sparse_coo().t().coalesce().to_sparse_csr()          # for the backward of Grad @ U
         if device.type == "mps":                                                        # no sparse tensors on MPS: gather path instead
             cache["Grad"] = None
+            cache["Grad_T"] = None
         mesh.svk_cache = {k: (v.to(device) if v is not None else None) for k, v in cache.items()}  # computed on the CPU, used on the model device
         mesh.svk_cache["device"] = device
     return mesh.svk_cache
 
+class SparseOperatorProduct(torch.autograd.Function):
+    """A @ X for a constant sparse CSR matrix A, with the backward A^T @ G computed with a precomputed CSR transpose
+    (autograd through a CSR product transposes it row by row, which is slow and single-threaded)"""
+    @staticmethod
+    def forward(ctx, X, A, A_T):
+        ctx.A_T = A_T
+        return A @ X
+    @staticmethod
+    def backward(ctx, G):
+        return ctx.A_T @ G, None, None
+
 def _voigt_sqrt(S):
     """[..., 3, 3] symmetric -> [..., 6] (E11, E22, E33, sqrt2 E23, sqrt2 E13, sqrt2 E12), consistent with Strain_sqrt"""
-    r2 = np.sqrt(2)
+    r2 = float(np.sqrt(2))                                                              # python float: keeps the tensor dtype (fp32 on MPS)
     return torch.stack([S[..., 0, 0], S[..., 1, 1], S[..., 2, 2], r2*S[..., 1, 2], r2*S[..., 0, 2], r2*S[..., 0, 1]], dim=-1)
 
 def _SVK_stiffness_chunk(g, vol, C, mi, ni):
     """Space operator A_kl = int E_k : C : E_l over a chunk of elements, for the extended strain modes k,l in {m} U {(m,n)}
     g = grad U_m [m, e, i, j] on the chunk"""
-    r2 = np.sqrt(2)
+    r2 = float(np.sqrt(2))                                                              # python float: keeps the tensor dtype (fp32 on MPS)
     E_lin = _voigt_sqrt(0.5 * (g + g.transpose(-1, -2)))                                # eps(U_m)  [m, e, 6]
     # Pair modes of 1/2 grad u^T grad u: 1/2 (grad U_m^T grad U_n + grad U_n^T grad U_m) (halved for m = n), component-wise
-    T = g[mi].transpose(-1, -2) @ g[ni]                                                  # grad U_m^T grad U_n  [pairs, e, 3, 3]
+    gm, gn = g.index_select(0, mi), g.index_select(0, ni)                               # (index_select: cheaper backward than advanced indexing)
+    T = (gm.unsqueeze(-1) * gn.unsqueeze(-2)).sum(dim=-3)                                # grad U_m^T grad U_n  [pairs, e, 3, 3] (broadcast instead of a bmm of 3x3 blocks)
     S = 0.5 * (T + T.transpose(-1, -2)) * (1 - 0.5 * (mi == ni).to(g.dtype))[:, None, None, None]
     E_quad = _voigt_sqrt(S)                                                             # [pairs, e, 6]
     E_k = torch.cat([E_lin, E_quad], dim=0)                                             # [K-1, e, 6]
-    CE_k = torch.einsum('kev,vw,e->kew', E_k, C, vol)
+    CE_k = (E_k @ C) * vol[None, :, None]                                               # (a matmul is much faster than the equivalent einsum here)
     return E_k.reshape(E_k.shape[0], -1) @ CE_k.reshape(E_k.shape[0], -1).T             # single GEMM
 
 def InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK(
@@ -1095,7 +1130,7 @@ def InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK(
     K = torch.tensor([[2*mu+lmbda, lmbda, lmbda, 0, 0, 0],[lmbda, 2*mu+lmbda, lmbda, 0, 0, 0], [lmbda, lmbda, 2*mu+lmbda, 0, 0, 0],[0, 0, 0, 2*mu, 0, 0],[0, 0, 0, 0, 2*mu, 0],[0, 0, 0, 0, 0, 2*mu]],dtype=dtype, device=U.device)
     n_e = len(cache["tets"])
     if cache["Grad"] is not None:
-        g = (cache["Grad"] @ U.permute(1, 0, 2).reshape(U.shape[1], -1)).view(n_e, 3, n_m, 3).permute(2, 0, 3, 1)   # grad U_m [m, e, i, j]
+        g = SparseOperatorProduct.apply(U.permute(1, 0, 2).reshape(U.shape[1], -1), cache["Grad"], cache["Grad_T"]).view(n_e, 3, n_m, 3).permute(2, 0, 3, 1)   # grad U_m [m, e, i, j]
     else:
         g = torch.einsum('meai,eaj->meij', U[:, cache["tets"]], cache["dN"])
     A = 0

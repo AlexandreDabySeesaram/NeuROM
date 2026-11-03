@@ -223,6 +223,48 @@ def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
     assert c0.tolist() != c1.tolist()  # and NOT the same order -- the bug this fixes
 
 
+def test_p3_like_shared_edge_single_valued_under_the_permutation():
+    """A field of arbitrary per-DOF values is single-valued on the shared edge (T-WP3.2).
+
+    The end-to-end consequence of the reversal: for every physical point carrying an edge DOF,
+    the two cells meeting on that edge read the SAME global DOF -- so any field built from
+    arbitrary global-DOF values is continuous there. Without the reversal both cells' local
+    rank-0 DOF would share a global id while sitting at DIFFERENT physical points (1/3-from-a vs
+    1/3-from-b), and the coincidence assertion below fails.
+    """
+    from neurom.reference_cell import TRIANGLE
+
+    topo = _two_triangle_square()
+    coords = torch.tensor(
+        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=F64
+    )  # the unit square's vertices
+    dm = DofMap(topo, _p3_like_layout())
+    local_edges = TRIANGLE.local_entities(EntityDim.EDGE)  # (3, 2) local vertex pairs
+
+    ce = topo.cell_entities(EntityDim.EDGE)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+
+    # For the shared edge, gather (global DOF -> physical point) and a random per-DOF value from
+    # BOTH cells; a repeat global DOF must agree on both.
+    values = torch.randn(dm.n_scalar_dofs, dtype=F64)
+    point_of, value_of = {}, {}
+    for e in (0, 1):
+        s = ce[e].tolist().index(shared)  # shared edge's local index in cell e
+        a, b = local_edges[s].tolist()  # its local endpoints (local direction a -> b)
+        xa, xb = coords[topo.cell_vertices[e, a]], coords[topo.cell_vertices[e, b]]
+        for rank, t in enumerate((1.0 / 3.0, 2.0 / 3.0)):  # the two edge-DOF points
+            p = xa + t * (xb - xa)
+            g = int(dm.cell_dofs[e, 3 + 2 * s + rank])  # 3 vertex DOFs precede the edge block
+            if g in point_of:
+                assert torch.allclose(point_of[g], p), (
+                    "same global DOF mapped to different physical points -- permutation wrong"
+                )
+                assert values[g] == value_of[g]  # same DOF -> one field value (continuous)
+            point_of[g], value_of[g] = p, values[g]
+
+    assert len(point_of) == 2  # the edge's two DOFs are shared (4 contributions -> 2 globals)
+
+
 def test_locate_returns_both_dofs_of_a_repeated_kind():
     """locate(EDGE, [g], ['value']) returns BOTH value DOFs of the edge (T-WP3.3)."""
     topo = _two_triangle_square()

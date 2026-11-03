@@ -15,6 +15,7 @@ from neurom.shape_functions import (
     LinearBar,
     LinearTriangle,
     QuadraticTriangle,
+    CubicTriangle,
     HierarchicalP2Triangle,
     HermiteBeam,
     Constant,
@@ -39,6 +40,7 @@ def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
         base.dof_layout,
         value_shape=(dim,),
         pullback=base.pullback,
+        dof_nodes=base._dof_nodes,
     )
 
 
@@ -108,6 +110,43 @@ it into the tabulation (see :class:`~neurom.shape_functions.folded_basis.FoldedB
 the nodal P2 basis exactly. Not a production element: it exists to exercise and verify the
 non-nodal :math:`C`-folding path (every other library element is nodal, so its coded basis equals
 the basis it presents)."""
+
+
+_T = 1.0 / 3.0  # the P3 edge nodes sit at 1/3 and 2/3 along each edge
+P3_TRIANGLE = FiniteElement(
+    CubicTriangle(),
+    [
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=2, kind=VALUE),
+        DoF(entity_dim=EntityDim.EDGE, local_index=0, kind=VALUE),  # e01, nearer v0
+        DoF(entity_dim=EntityDim.EDGE, local_index=0, kind=VALUE),  # e01, nearer v1
+        DoF(entity_dim=EntityDim.EDGE, local_index=1, kind=VALUE),  # e12, nearer v1
+        DoF(entity_dim=EntityDim.EDGE, local_index=1, kind=VALUE),  # e12, nearer v2
+        DoF(entity_dim=EntityDim.EDGE, local_index=2, kind=VALUE),  # e20, nearer v2
+        DoF(entity_dim=EntityDim.EDGE, local_index=2, kind=VALUE),  # e20, nearer v0
+        DoF(entity_dim=EntityDim.FACE, local_index=0, kind=VALUE),  # centroid
+    ],
+    dof_nodes=[
+        [0.0, 0.0],  # v0
+        [1.0, 0.0],  # v1
+        [0.0, 1.0],  # v2
+        [_T, 0.0],  # e01, nearer v0 (1/3 from v0)
+        [2.0 * _T, 0.0],  # e01, nearer v1 (2/3 from v0)
+        [2.0 * _T, _T],  # e12, nearer v1
+        [_T, 2.0 * _T],  # e12, nearer v2
+        [0.0, 2.0 * _T],  # e20, nearer v2
+        [0.0, _T],  # e20, nearer v0
+        [_T, _T],  # centroid
+    ],
+)
+r"""**P3 (cubic Lagrange) on the triangle.** Space :math:`P_3`, 10 DOFs: the value at the three
+vertices, two points on each edge (at :math:`1/3` and :math:`2/3`) and one at the centroid. Nodal
+basis (:class:`~neurom.shape_functions.CubicTriangle`), identity DOF transformation. The two DOFs
+per edge make it the first library element with a *repeated* kind on one entity, so its reference
+node coordinates are given explicitly (``dof_nodes``) rather than gathered as entity centroids, and
+the DOF-map edge-reversal permutation (orientation, WP3) keeps the two edge DOFs continuous across
+a shared, oppositely-traversed edge."""
 
 
 HERMITE = FiniteElement(

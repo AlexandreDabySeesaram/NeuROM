@@ -5,6 +5,7 @@ from neurom.shape_functions.linear_bar import LinearBar
 from neurom.shape_functions.quadratic_bar import QuadraticBar
 from neurom.shape_functions.linear_triangle import LinearTriangle
 from neurom.shape_functions.quadratic_triangle import QuadraticTriangle
+from neurom.shape_functions.cubic_triangle import CubicTriangle
 from neurom.shape_functions.hierarchical_p2_triangle import HierarchicalP2Triangle
 from neurom.shape_functions.hermite_beam import HermiteBeam
 from neurom.shape_functions.constant import Constant
@@ -16,6 +17,7 @@ __all__ = [
     "QuadraticBar",
     "LinearTriangle",
     "QuadraticTriangle",
+    "CubicTriangle",
     "HierarchicalP2Triangle",
     "HermiteBeam",
     "Constant",

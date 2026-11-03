@@ -123,12 +123,18 @@ class FiniteElement:
         value_shape: tuple[int, ...] = (),
         pullback: str = "identity",
         nodal: bool = True,
+        dof_nodes=None,
     ) -> None:
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_cell
         # Normalise each entry to a DoF (a raw triple is accepted).
         self.dof_layout = tuple(
             d if isinstance(d, DoF) else DoF(*d) for d in dof_layout
+        )
+        # Optional explicit reference DOF-node coordinates (see dof_nodes_xi). Kept raw so a
+        # vectorised copy can forward it; stored as a float64 master, cast on access.
+        self._dof_nodes = (
+            None if dof_nodes is None else torch.as_tensor(dof_nodes, dtype=torch.float64)
         )
         self.value_shape = tuple(value_shape)
         self.pullback = pullback
@@ -268,15 +274,25 @@ class FiniteElement:
         return self.reference_basis.N(xi)
 
     def dof_nodes_xi(self) -> torch.Tensor:
-        """Reference coordinate carrying each DOF, gathered one per DOF in layout order.
+        """Reference coordinate carrying each DOF, one per DOF in layout order.
 
-        The per-entity geometry (vertex coordinate / edge midpoint / cell centroid) lives on the
-        :class:`~neurom.reference_cell.ReferenceCell` (:meth:`~neurom.reference_cell.ReferenceCell.reference_point`);
-        the element only gathers it -- it no longer deduces the geometry itself.
+        Two sources, in order of precedence:
+
+        * **explicit** -- when ``dof_nodes`` was given at construction (returned verbatim, cast to
+          the active dtype). Required whenever an entity hosts several DOFs at *distinct* points,
+          which the per-entity gather cannot express -- e.g. :math:`P_3`'s two edge nodes at
+          :math:`1/3` and :math:`2/3` (both share one ``(entity_dim, local_index)`` and would
+          otherwise collapse onto the edge midpoint).
+        * **gathered** -- otherwise the per-entity geometry (vertex coordinate / edge midpoint /
+          cell centroid) read off the :class:`~neurom.reference_cell.ReferenceCell`
+          (:meth:`~neurom.reference_cell.ReferenceCell.reference_point`); enough for one DOF-point
+          per entity (P1/P2/Hermite/DG0).
 
         Returns:
             torch.Tensor: ``(n_dofs, dim_ref)``.
         """
+        if self._dof_nodes is not None:
+            return self._dof_nodes.to(torch.get_default_dtype())
         return torch.stack(
             [
                 self.cell.reference_point(d.entity_dim, d.local_index)

@@ -1,15 +1,22 @@
+"""Integration of sampled fields over quadrature points."""
+
 import torch
 
 
-def integrate(integrand: torch.Tensor):
-    """Integration method
+def integrate(integrand: torch.Tensor) -> torch.Tensor:
+    """Integrate a field tensor over all elements and quadrature points.
 
-    Integrate a tensor over the elements and quadrature points. The integrand is expected to have shape (N_e, N_q, *field_shape). The integration is performed by summing over the first two dimensions (N_e and N_q).
+    The integrand is expected to have shape ``(N_e, N_q, *field_shape)``.
+    Integration is performed by contracting the first two dimensions
+    ``N_e`` and ``N_q`` via ``torch.einsum``, which is equivalent to
+    summing all element and quadrature contributions.
 
     Args:
-        integrand (torch.Tensor): The field to integrate (N_e, N_q).
+        integrand (torch.Tensor): The batched field tensor of shape
+            ``(N_e, N_q, *field_shape)`` to integrate.
 
     Returns:
-        Result of integration computed by summing over the elements and the quadrature points.
+        torch.Tensor: The integrated result of shape ``(*field_shape)``,
+        obtained by summing over the element and quadrature dimensions.
     """
     return torch.einsum("eq...->", integrand)

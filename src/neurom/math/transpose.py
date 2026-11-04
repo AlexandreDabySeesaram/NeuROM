@@ -1,15 +1,30 @@
+"""Transpose of sampled field tensors."""
+
 import torch
+
+from neurom.samplings import Sampling
+from neurom.apply import apply
 
 
 def transpose_point(u: torch.Tensor) -> torch.Tensor:
-    """Transpose a field tensor by swapping the last two dimensions.
+    """Transpose a single-point field tensor by swapping the last two dimensions.
+
+    For a 1-D tensor (scalar or vector) the tensor is returned unchanged
+    (clone).  For a tensor whose every dimension has the same size ``d``
+    (i.e. shape ``(d, ..., d)``), the last two axes are swapped via
+    ``u.transpose(-1, -2)``.
 
     Args:
-        u (torch.Tensor): Tensor to transpose, expected shape (d,...,d)
+        u (torch.Tensor): Field tensor to transpose, expected to have shape
+            ``(d,)`` (vector, returned as-is) or ``(d, ..., d)`` (uniform
+            square tensor).
+
     Returns:
-        u.transpose(-1,-2) if tensor has same dimensions for all shape entries, clone of itself, if there is one dimension.
+        torch.Tensor: Transposed tensor with the last two dimensions swapped,
+        or a clone of ``u`` when ``u`` is 1-D.
+
     Raises:
-        ValueError: If the tensor does not have the expected shape (d,...,d).
+        ValueError: If the tensor does not have shape ``(d,)`` or ``(d, ..., d)``.
     """
     # Scalar or vector case -> return itself
     if u.ndim == 1:
@@ -25,37 +40,23 @@ def transpose_point(u: torch.Tensor) -> torch.Tensor:
     )
 
 
-def transpose(u: torch.Tensor) -> torch.Tensor:
-    """Transpose a field tensor by swapping the last two dimensions.
+def transpose(u: Sampling) -> Sampling:
+    """Transpose a field by swapping the last two field dimensions.
 
-    Rules:
-    - Scalars (N_e, N_q, 1): unchanged
-    - Vectors (N_e, N_q, d): unchanged
-    - Matrices (N_e, N_q, d, d): last two dims swapped
-    - Higher-order tensors: swap last two axes
+    Applies :func:`transpose_point` to every point in the sampling's batch
+    dimensions.  The per-point rules are:
+
+    - Scalars ``(1,)``: returned unchanged.
+    - Vectors ``(d,)``: returned unchanged.
+    - Matrices ``(d, d)``: last two dimensions swapped.
+    - Higher-order uniform tensors ``(d, ..., d)``: last two axes swapped.
 
     Args:
-        u (torch.Tensor): Tensor to transpose, expected shape (N_e, N_q, *u_dim)
+        u (Sampling): Sampling whose field tensors will be transposed.
+            The underlying tensor has shape ``(*batch_shape, *f_shape)``.
+
     Returns:
-        A torch.Tensor with the same shape as u, but with the last two dimensions swapped if u is a matrix or higher-order tensor.
+        Sampling: A Sampling with the same type and ``batch_shape`` as ``u``,
+        with the last two field dimensions swapped for non-1-D field shapes.
     """
-
-    if u.ndim < 3:
-        raise ValueError(f"Expected (N_e, N_q, *u_dim), got '{u.shape}'")
-
-    dim = u.shape[2:]
-
-    # scalar case
-    if dim == (1,):
-        return u.clone()
-
-    # vector case → no meaningful transpose
-    if len(dim) == 1:
-        return u.clone()
-
-    # matrix case → standard transpose
-    if len(dim) == 2:
-        return u.transpose(-1, -2)
-
-    # higher-order tensor → swap last two indices
-    return u.transpose(-1, -2)
+    return apply(transpose_point, u)

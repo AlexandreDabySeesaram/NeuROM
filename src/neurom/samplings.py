@@ -25,22 +25,66 @@ class Sampling(ABC):
     values: torch.Tensor
 
     def __add__(self, o):
+        """Return element-wise sum of two samplings of the same type.
+
+        Args:
+            o (Sampling): Another ``Sampling`` to add.  Must be a ``Sampling``
+                instance; otherwise ``NotImplemented`` is returned.
+
+        Returns:
+            Sampling: A new instance of the same concrete class whose
+            ``values`` equal ``self.values + o.values``.
+        """
         if not isinstance(o, Sampling):
             return NotImplemented
         return self.__class__(self.values + o.values)
 
     def __sub__(self, o):
+        """Return element-wise difference of two samplings of the same type.
+
+        Args:
+            o (Sampling): Another ``Sampling`` to subtract.  Must be a
+                ``Sampling`` instance; otherwise ``NotImplemented`` is returned.
+
+        Returns:
+            Sampling: A new instance of the same concrete class whose
+            ``values`` equal ``self.values - o.values``.
+        """
         if not isinstance(o, Sampling):
             return NotImplemented
         return self.__class__(self.values - o.values)
 
     def __neg__(self):
+        """Return the element-wise negation of this sampling.
+
+        Returns:
+            Sampling: A new instance of the same concrete class whose
+            ``values`` equal ``-self.values``.
+        """
         return self.__class__(-self.values)
 
     def __mul__(self, s: float):
+        """Return this sampling scaled by a scalar factor.
+
+        Args:
+            s (float): The scalar multiplier applied to ``self.values``.
+
+        Returns:
+            Sampling: A new instance of the same concrete class whose
+            ``values`` equal ``s * self.values``.
+        """
         return self.__class__(s * self.values)
 
     def __rmul__(self, s: float):
+        """Return this sampling scaled by a scalar factor (right-hand side).
+
+        Args:
+            s (float): The scalar multiplier applied to ``self.values``.
+
+        Returns:
+            Sampling: A new instance of the same concrete class whose
+            ``values`` equal ``s * self.values``.
+        """
         return self.__class__(s * self.values)
 
     @property
@@ -96,10 +140,10 @@ class NodalSampling(Sampling):
 
     @property
     def n_nodes(self) -> int:
-        """Number of nodes in the quadrature sampling.
+        """Number of nodes in the nodal sampling.
 
         Returns:
-            torch.Size: Size of the first dimension of ``values``.
+            int: Size of the first dimension of ``values``.
         """
         return self.shape[0]
 
@@ -128,10 +172,10 @@ class ElementSampling(Sampling):
 
     @property
     def n_elements(self) -> int:
-        """Number of elements in the quadrature sampling.
+        """Number of elements in the element sampling.
 
         Returns:
-            torch.Size: Size of the first dimension of ``values``.
+            int: Size of the first dimension of ``values``.
         """
         return self.shape[0]
 
@@ -167,7 +211,7 @@ class QuadratureSampling(Sampling):
         """Number of elements in the quadrature sampling.
 
         Returns:
-            torch.Size: Size of the first dimension of ``values``.
+            int: Size of the first dimension of ``values``.
         """
         return self.shape[0]
 
@@ -176,7 +220,7 @@ class QuadratureSampling(Sampling):
         """Number of quadrature points per element.
 
         Returns:
-            torch.Size: Size of the second dimension of ``values``.
+            int: Size of the second dimension of ``values``.
         """
         return self.shape[1]
 

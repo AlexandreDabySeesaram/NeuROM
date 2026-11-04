@@ -113,7 +113,7 @@ def main():
             self.losses = losses
 
         def forward(self) -> float:
-            result = sum([l.forward() for l in self.losses])
+            result = sum([loss_term.forward() for loss_term in self.losses])
             return result
 
     # Potential energy part of the loss

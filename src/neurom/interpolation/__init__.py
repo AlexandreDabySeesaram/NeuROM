@@ -1,3 +1,10 @@
+"""Interpolation utilities for the neurom FEM framework.
+
+This package provides classes for interpolating fields at quadrature points and
+arbitrary physical positions, as well as the data structures that hold quadrature
+contexts, positions, and assembly results.
+"""
+
 from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyResult
 from neurom.interpolation.quadrature_positions import QuadraturePositions
 from neurom.interpolation.field_interpolator import FieldInterpolator
@@ -5,3 +12,13 @@ from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.integration_domain import IntegrationDomain
+
+__all__ = [
+    "QuadratureAssemblyResult",
+    "QuadraturePositions",
+    "FieldInterpolator",
+    "QuadratureContext",
+    "PointWiseInterpolator",
+    "QuadratureAssembly",
+    "IntegrationDomain",
+]

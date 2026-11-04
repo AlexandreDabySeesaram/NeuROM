@@ -1,13 +1,20 @@
+"""Mesh data structure and point-location utilities."""
+
 import torch.nn as nn
 
 
 def is_in_triangle(pts, vertices):
-    """Find if points are in a triangle defined by its vertices
+    """Find if points are inside a triangle defined by its vertices.
+
     Args:
-        pts (torch.Tensor): The points we want to check (N_pts, 2).
-        vertices (torch.Tensor): The triangle vertices (3, N_e)
+        pts (torch.Tensor): The points to check, shape ``(N_pts, 2)``.
+        vertices (torch.Tensor): The triangle vertices, shape ``(N_e, 3, 2)``
+            where the second dimension indexes the three vertices ``a``,
+            ``b``, ``c`` and the last dimension holds the 2-D coordinates.
+
     Returns:
-        A boolean torch.Tensor of shape (N_pts, N_e)
+        torch.Tensor: Boolean tensor of shape ``(N_pts, N_e)`` indicating
+        whether each point lies inside each triangle.
     """
     # a ---- c
     #  \   /
@@ -35,14 +42,21 @@ def is_in_triangle(pts, vertices):
 
 
 def elements_at_1d(x, nodes_positions, connectivity):
-    """Find all elements corresponding in which pts lie
+    """Find the 1-D element indices containing each query point.
 
     Args:
-        x (torch.Tensor): The points to look for (N_pts, 1)
-        nodes_positions (torch.Tensor): The nodes positions (N_nodes, 1)
-        connectivity: The vertices indices (N_e, 3)
+        x (torch.Tensor): The query points, shape ``(N_pts, 1)``.
+        nodes_positions (torch.Tensor): The node positions, shape
+            ``(N_nodes, 1)``.
+        connectivity (torch.Tensor): The element connectivity (node indices
+            per element), shape ``(N_e, 2)``.
+
     Returns:
-        elem_ids (torch.Tensor): The element indices found that correspond to the positions of the points (N_pts,)
+        torch.Tensor: Element indices of shape ``(N_pts,)`` giving the index
+        of the element that contains each query point.
+
+    Raises:
+        ValueError: If one or more query points do not lie in any element.
     """
     # (N_nodes,) -> element intervals
     x_nodes = nodes_positions[connectivity]  # (N_e, 2, 1)
@@ -63,14 +77,21 @@ def elements_at_1d(x, nodes_positions, connectivity):
 
 
 def elements_at_2d(x, nodes_positions, connectivity):
-    """Find all elements corresponding in which pts lie
+    """Find the 2-D element indices containing each query point.
 
     Args:
-        x (torch.Tensor): The points to look for (N_pts, 2)
-        nodes_positions (torch.Tensor): The nodes positions (N_nodes, 2)
-        connectivity: The vertices indices (N_e, 3)
+        x (torch.Tensor): The query points, shape ``(N_pts, 2)``.
+        nodes_positions (torch.Tensor): The node positions, shape
+            ``(N_nodes, 2)``.
+        connectivity (torch.Tensor): The element connectivity (node indices
+            per element), shape ``(N_e, 3)``.
+
     Returns:
-        elem_ids (torch.Tensor): The element indices found that correspond to the positions of the points (N_pts,)
+        torch.Tensor: Element indices of shape ``(N_pts,)`` giving the index
+        of the element that contains each query point.
+
+    Raises:
+        ValueError: If one or more query points do not lie in any element.
     """
     vertices = nodes_positions[connectivity]  # (N_e, 3, 2)
     inside = is_in_triangle(x, vertices)  # (N_pts, N_e)
@@ -88,21 +109,27 @@ def elements_at_2d(x, nodes_positions, connectivity):
 
 
 class Mesh(nn.Module):
-    """
-    A mesh is defined by:
-    * Its topoloy (nodes indices and nodes indices defining connectivity)
-    * Its nodes' positions
+    """A finite-element mesh combining topology and node positions.
+
+    A mesh is defined by its topology (node indices and element connectivity)
+    together with the spatial positions of each node.
 
     Args:
-        connectivity (Connectivity): The mesh connectivity.
-        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
+        connectivity (Connectivity): The mesh connectivity (node indices and
+            element-to-node mapping).
+        nodes_positions (Field or TrainableField): A ``Field`` or
+            ``TrainableField`` holding the spatial coordinates of every node.
 
     Attributes:
         connectivity (Connectivity): The mesh connectivity.
-        nodes_positions (Field | TrainableField): A Field or TrainableField representing nodes positions.
+        nodes_positions (Field or TrainableField): The spatial coordinates of
+            every node.
+        dim (int): Spatial dimension of the mesh, taken from
+            ``nodes_positions.dim``.
 
     Raises:
-        ValueError: If self.connectivity differs from nodes_positions.connectivity.
+        ValueError: If ``connectivity`` is not the same object as
+            ``nodes_positions.connectivity``.
     """
 
     def __init__(self, connectivity, nodes_positions):
@@ -119,13 +146,39 @@ class Mesh(nn.Module):
 
     @property
     def n_nodes(self):
+        """The number of nodes in the mesh.
+
+        Returns:
+            int: The number of nodes.
+        """
         return self.connectivity.n_nodes
 
     @property
     def n_elements(self):
+        """The number of elements in the mesh.
+
+        Returns:
+            int: The number of elements.
+        """
         return self.connectivity.n_elements
 
     def elements_at(self, x):
+        """Find the element index containing each query point.
+
+        Dispatches to :func:`elements_at_1d` or :func:`elements_at_2d`
+        depending on ``self.dim``.
+
+        Args:
+            x (torch.Tensor): The query points, shape ``(N_pts, dim)`` or
+                broadcastable to it.
+
+        Returns:
+            torch.Tensor: Element indices of shape ``(N_pts,)`` giving the
+            index of the element that contains each query point.
+
+        Raises:
+            ValueError: If one or more query points do not lie in any element.
+        """
         nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
         connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
 

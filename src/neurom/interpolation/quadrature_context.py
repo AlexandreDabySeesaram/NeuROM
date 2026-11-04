@@ -1,3 +1,5 @@
+"""Per-element quadrature context: reference positions, mapping and integration measure."""
+
 import torch
 import torch.nn as nn
 
@@ -10,23 +12,37 @@ from neurom.samplings import QuadratureSampling
 
 
 class QuadratureContext(nn.Module):
-    """Provides context of interpolation at quadrature points
+    """Provides geometric context for interpolation at quadrature points.
 
-    Provides physical positions and positions on reference element.
-    The mapping back from physical to reference space is necessary because in order to later compute autograd on function u(x), there has to be a direct link between ``x`` and ``u``.
+    Computes and caches physical positions, reference-element positions, and
+    integration measures for all quadrature points on a mesh.  The round-trip
+    mapping (physical space -> reference space) is required so that autograd
+    can trace the dependency of ``u(x)`` back through ``x``.
 
     Args:
         mesh (Mesh): The mesh on which to interpolate.
-        mapping (object): The mapping to use to translate positions from physical to reference space.
-        quad (QuadratureRule): The QuadratureRule to use for setting the points.
+        quad (QuadratureRule): The quadrature rule that defines the reference
+            positions and weights.
+        mapping: The geometric mapping that provides ``map``,
+            ``inverse_map``, and ``det_jacobian`` for translating between
+            physical and reference coordinates.
 
     Attributes:
         _mesh (Mesh): The mesh on which to interpolate.
-        _mapping (object): The mapping to use to translate positions from physical to reference space.
-        _quad (QuadratureRule): The QuadratureRule to use for setting the points.
-        _xi_ref (torch.Tensor): The positions in reference space duplicated over the number of elements in the mesh.
-        _quad_pos (QuadraturePositions): The quadrature positions at physical, reference, and back from physical to reference.
-        _measure (torch.Tensor): The measure for the all elements and quadrature points, weight * |det_J|. Tensor of shape (N_e,N_q,1).
+        _mapping: The geometric mapping used for physical-to-reference
+            coordinate translation.
+        _quad (QuadratureRule): The quadrature rule defining reference
+            positions and weights.
+        _xi_ref (torch.Tensor): Reference-space quadrature coordinates
+            broadcast over all elements, tensor of shape
+            ``(N_e, N_q, dim)``.
+        _quad_pos (QuadraturePositions): Cached quadrature positions at
+            physical, original reference, and back-mapped reference
+            coordinates.
+        _measure (QuadratureSampling): Integration measure for every element
+            and quadrature point — the product of the quadrature weight and
+            the absolute Jacobian determinant ``|det(J)|``, tensor of shape
+            ``(N_e, N_q, 1)``.
     """
 
     def __init__(self, mesh: Mesh, quad: QuadratureRule, mapping):
@@ -43,16 +59,20 @@ class QuadratureContext(nn.Module):
     def _setup(self):
         """Compute all geometry-dependent quantities.
 
-        Re-compute measure and quadrature positions.
+        Recomputes the integration measure and the quadrature positions.
+        Called during construction and again by ``update()`` whenever the
+        mesh geometry changes.
         """
         self._compute_measure()
         self._compute_quad_pos()
 
     def _compute_quad_pos(self) -> None:
-        """Interpolate the positions on the mesh
+        """Compute and cache the quadrature positions on the mesh.
 
-        Interpolates the positions from reference to physical positions and then back from physcial to reference.
-        Set self._quad_pos with interpolated positions.
+        Maps ``self._xi_ref`` to physical space via ``self._mapping.map``,
+        then applies ``self._mapping.inverse_map`` to obtain back-mapped
+        reference coordinates. Stores the result in ``self._quad_pos`` as a
+        ``QuadraturePositions`` instance.
         """
         # map to physical space for all quadrature points
         # Tensor of shape (N_e, N_q, dim)
@@ -67,11 +87,13 @@ class QuadratureContext(nn.Module):
             xi_back=QuadratureSampling(xi_back),
         )
 
-    def _compute_measure(self) -> torch.Tensor:
-        """Helper method to compute the 'measure'
+    def _compute_measure(self) -> None:
+        """Compute and cache the integration measure for all quadrature points.
 
-        Computes the product of the determinant of the jacobian from physical to reference coordinates mapping times the quadrature weights. Tensor of shape (N_e, N_q, 1).
-        Set self._measure with computed measure.
+        The measure is the product of the quadrature weight and the absolute
+        value of the Jacobian determinant ``|det(J)|``.  Stores the result in
+        ``self._measure`` as a ``QuadratureSampling`` of shape
+        ``(N_e, N_q, 1)``.
         """
         # Compute weighted measure
         w = self._quad.weights()
@@ -83,23 +105,34 @@ class QuadratureContext(nn.Module):
         self._measure = QuadratureSampling(m.reshape(n_e, n_q, 1))
 
     @property
-    def measure(self) -> torch.Tensor:
-        """Compute measure
+    def measure(self) -> QuadratureSampling:
+        """Return the cached integration measure.
 
         Returns:
-            (torch.Tensor) of shape (N_e,N_q,1) representing weight * |det_J|.
+            QuadratureSampling: Integration measure for every element and
+            quadrature point — the product of the quadrature weight and
+            ``|det(J)|``, tensor of shape ``(N_e, N_q, 1)``.
         """
         return self._measure
 
     @property
     def interpolate(self) -> QuadraturePositions:
-        """Interpolate positions at quadrature points
+        """Return the cached quadrature positions.
 
         Returns:
-            (QuadraturePositions) with all positions at physical, reference and back from physical to reference.
+            QuadraturePositions: Positions at all quadrature points in
+            reference space (``xi_ref``), physical space (``x_phys``), and
+            back-mapped reference space (``xi_back``).
         """
         return self._quad_pos
 
     def update(self):
+        """Refresh the mapping and recompute all geometry-dependent quantities.
+
+        Calls ``self._mapping.update()`` to propagate any changes to the mesh
+        node positions into the mapping, then recomputes the measure and
+        quadrature positions via ``_setup()``.  Call this at the start of each
+        forward pass when mesh nodes are trainable.
+        """
         self._mapping.update()
         self._setup()

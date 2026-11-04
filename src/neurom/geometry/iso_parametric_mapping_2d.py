@@ -1,3 +1,5 @@
+"""Isoparametric mapping between reference and physical coordinates for 2D elements."""
+
 import torch
 import torch.nn as nn
 
@@ -6,9 +8,28 @@ from neurom.meshes.mesh import Mesh
 
 
 class IsoparametricMapping2D(nn.Module):
-    """Class encapsulating mapping from physical to reference coordinates"""
+    """Isoparametric mapping between reference and physical space for 2-D elements.
+
+    Implements the forward map :math:`x = \\sum_n N_n(\\xi)\\, x_n` and
+    the analytic inverse for linear triangular elements.  The Jacobian and
+    its inverse are precomputed at construction time and refreshed by
+    :meth:`update`.
+
+    Attributes:
+        sf (ShapeFunction): Shape-function object used to evaluate basis
+            functions.
+        x_nodes (torch.Tensor): Physical node coordinates gathered per
+            element, shape ``(N_e, N_nodes, dim)``.
+    """
 
     def __init__(self, shape_function: ShapeFunction, mesh: Mesh):
+        """Initialise the mapping from a shape function and a mesh.
+
+        Args:
+            shape_function (ShapeFunction): Shape-function object compatible
+                with the mesh element type.
+            mesh (Mesh): Mesh whose node positions define the physical domain.
+        """
         super().__init__()
         self.sf = shape_function
         self._mesh = mesh
@@ -35,21 +56,37 @@ class IsoparametricMapping2D(nn.Module):
 
     @property
     def J_inv(self):
+        """Inverse Jacobian matrices for each element.
+
+        Returns:
+            torch.Tensor: Inverse Jacobian matrices, shape ``(N_e, 2, 2)``.
+        """
         return self._J_inv
 
     @property
     def det_jacobian(self):
+        """Determinant of the Jacobian for each element.
+
+        For a linear triangle element this equals twice the signed area of
+        the physical triangle: :math:`\\det J = (b-a) \\times (c-a)`.
+
+        Returns:
+            torch.Tensor: Per-element Jacobian determinants, shape
+            ``(N_e, 1)``.
+        """
         return self._det_J
 
     def map(self, xi):
-        """
-        Maps reference coordinate to physical position based on the elements positions
+        """Map reference coordinates to physical positions.
+
+        Evaluates :math:`x = \\sum_n N_n(\\xi)\\, x_n` element-wise.
 
         Args:
-            xi: The reference coordinate (N_e, N_q, dim)
+            xi (torch.Tensor): Reference coordinates of shape
+                ``(N_e, N_q, dim)``.
 
         Returns:
-            The positions interpolated in the physical space: (N_e, N_q, dim)
+            torch.Tensor: Physical positions of shape ``(N_e, N_q, dim)``.
         """
         # (N_e, N_q, N_nodes)
         N = self.sf.N(xi)
@@ -58,17 +95,21 @@ class IsoparametricMapping2D(nn.Module):
         return torch.einsum("en...,eqn...->eq...", self.x_nodes, N)
 
     def inverse_map(self, x):
-        """
-        Maps physical position to reference coordinate for linear simplex elements.
+        """Map physical positions to reference coordinates over all elements.
+
+        Applies :math:`\\xi = J^{-1}(x - a)` where :math:`a` is the first
+        node of each element.
 
         Args:
-            x:        (N_e, N_q, dim)      physical coordinates
+            x (torch.Tensor): Physical coordinates of shape
+                ``(N_e, N_q, dim)``.
 
         Returns:
-            xi:       (N_e, N_q, dim)      reference coordinates
+            torch.Tensor: Reference coordinates of shape ``(N_e, N_q, dim)``.
 
         Note:
-            This linear mapping only works for linear shape functions and bar element.
+            This inverse mapping is exact only for linear shape functions on
+            triangular elements.
         """
 
         # Recover x shape
@@ -82,18 +123,23 @@ class IsoparametricMapping2D(nn.Module):
         return xi
 
     def inverse_map_at(self, x, element_ids):
-        """
-        Maps physical position to reference coordinate for linear simplex elements.
+        """Map physical positions to reference coordinates using a subset of elements.
+
+        Same analytic inverse as :meth:`inverse_map`, but restricts the
+        Jacobian lookup to the elements identified by ``element_ids``.
 
         Args:
-            x:        (N_e, N_q, dim)      physical coordinates
-            element_ids:        (N_e,)     indices of elements to use to compute the inverse map
+            x (torch.Tensor): Physical coordinates of shape
+                ``(N_e, N_q, dim)``.
+            element_ids (torch.Tensor): Indices of the elements to use,
+                shape ``(N_e,)``.
 
         Returns:
-            xi:       (N_e, N_q, dim)      reference coordinates
+            torch.Tensor: Reference coordinates of shape ``(N_e, N_q, dim)``.
 
         Note:
-            This linear mapping only works for linear shape functions and bar element.
+            This inverse mapping is exact only for linear shape functions on
+            triangular elements.
         """
 
         # Recover x shape
@@ -111,5 +157,12 @@ class IsoparametricMapping2D(nn.Module):
         return xi
 
     def update(self):
+        """Refresh cached node positions and Jacobian from the underlying mesh.
+
+        Must be called whenever the mesh node positions change (e.g. after a
+        training step that moves the nodes) so that subsequent calls to
+        :meth:`map`, :meth:`inverse_map`, :attr:`J_inv`, and
+        :attr:`det_jacobian` use the updated geometry.
+        """
         self.x_nodes = self._mesh.nodes_positions.at_elements()
         self._compute_J_inv()

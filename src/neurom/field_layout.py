@@ -1,3 +1,5 @@
+"""Container mapping field names to their interpolation results."""
+
 import torch.nn as nn
 
 from neurom.fields.field_base import FieldBase
@@ -5,15 +7,17 @@ from neurom.interpolation.quadrature_assembly_result import QuadratureAssemblyRe
 
 
 class FieldLayout(nn.Module):
-    """Container managing fields
+    """Container managing registered fields and their interpolation results.
 
-    This container provides ways to access and manage the fields and their interpolations.
+    This container provides ways to register fields, update their quadrature
+    interpolation results, and retrieve those results by field name.
+    It is not allowed to register two fields with the same name, nor to update
+    the interpolation result of a field that has not been registered first.
 
     Attributes:
-        _fields : a nn.ModuleDict that holds all the fields that are added to the layout
-        _interp (dict[str, QuadratureAssemblyResult]) : Holds the interpolation results for each field.
-    Note:
-        One cannot add() two fields with the same name nor update() an interpolation result of an unregistered field.
+        _fields (nn.ModuleDict): Holds all fields registered via :meth:`add`.
+        _interp (dict[str, QuadratureAssemblyResult]): Maps field names to
+            their latest interpolation results, populated by :meth:`update`.
     """
 
     def __init__(self):
@@ -22,16 +26,19 @@ class FieldLayout(nn.Module):
         self._interp: dict[str, QuadratureAssemblyResult] = {}
 
     def add(self, field: FieldBase) -> FieldBase:
-        """Adds a field to the layout
+        """Add a field to the layout.
 
-        Creates an entry with field.name in self._fields.
+        Creates an entry keyed by ``field.name`` in ``self._fields``.
 
         Args:
             field (FieldBase): The field to register.
+
         Returns:
-            The field we just registered.
+            FieldBase: The field that was just registered.
+
         Raises:
-            ValueError if the field.name is already present in the self._fields dictionnary.
+            ValueError: If a field with the same name is already present in
+                ``self._fields``.
         """
         if field.name in self._fields:
             raise ValueError(f"Field '{field.name}' already registered.")
@@ -39,30 +46,43 @@ class FieldLayout(nn.Module):
         return field
 
     def update(self, field: FieldBase, result: QuadratureAssemblyResult) -> None:
-        """Update a field interpolation
+        """Update the interpolation result stored for a registered field.
 
-        Modifies the entry in self._interp with field.name with the new result.
+        Replaces (or creates) the entry in ``self._interp`` keyed by
+        ``field.name`` with the new ``result``.
 
         Args:
-            field (FieldBase): The field to which we will update the interpolation result.
-            result (QuadratureAssemblyResult): The interpolation result to associate to the field.
+            field (FieldBase): The field whose interpolation result should be
+                updated.
+            result (QuadratureAssemblyResult): The new interpolation result to
+                associate with the field.
+
         Raises:
-            KeyError if the field.name is not present in the self._fields dictionnary.
+            KeyError: If ``field.name`` is not present in ``self._fields``,
+                i.e. the field has not been registered via :meth:`add`.
         """
         if field.name not in self._fields:
             raise KeyError(f"No field named '{field.name}' registered.")
         self._interp[field.name] = result
 
     def __getitem__(self, name: str) -> QuadratureAssemblyResult:
-        """Get the result of interpolation of a field
+        """Return the interpolation result for a registered field.
 
-        Returns the entry in the self._interp dictionnary for the given name
+        Looks up the entry in ``self._interp`` keyed by ``name``.
 
         Args:
-            name (str): The name of the field to get.
+            name (str): The name of the field whose interpolation result is
+                requested.
+
+        Returns:
+            QuadratureAssemblyResult: The interpolation result previously
+            stored for the field with the given name.
+
         Raises:
-            KeyError if the field.name is not present in the self._fields dictionnary, i.e. it is not registered.
-            RuntimeError if the field.name is not present in the self._interp dictionnary, i.e. interpolation was not computed.
+            KeyError: If ``name`` is not present in ``self._fields``, i.e. the
+                field has not been registered via :meth:`add`.
+            RuntimeError: If ``name`` is registered but not yet present in
+                ``self._interp``, i.e. interpolation has not been computed yet.
         """
         if name not in self._fields:
             raise KeyError(f"No field named '{name}' registered.")

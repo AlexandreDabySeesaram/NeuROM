@@ -15,9 +15,11 @@ global minimum). Here:
   with the branch identified and the error against c_n phi_n.
 
 Usage:
-    uv run python branches_k.py
+    uv run python branches_k.py              # every P of P_VALUES
+    uv run python branches_k.py --P 250      # only these P; the rows of the other P are kept
 """
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -36,7 +38,7 @@ from pod import mass_matrix
 from snapshots import solve
 
 
-P_VALUES = [100.0, 500.0, 2000.0, 2200.0]
+P_VALUES = [100.0, 250.0, 500.0, 2000.0, 2200.0]
 K_MAX = 1.25e6        # mu_max = 33.4 > mu_cr(2200) = 32.9
 N_ELEMENTS = 100
 N_MODES = 30         # modes tracked (P_n < 2000 needs 13 at k = 0; margin for the matching)
@@ -77,7 +79,15 @@ def track(phi_prev, phi, G):
     return order, signs
 
 
-def exact_branches(G):
+def merge_csv(path, df, p_values):
+    """Write df to path, replacing only the rows of p_values (the rows of the other P are kept)."""
+    if path.exists():
+        old = pd.read_csv(path)
+        df = pd.concat([old[~old.P.isin(p_values)], df], ignore_index=True)
+    df.sort_values("P", kind="stable").to_csv(path, index=False)
+
+
+def exact_branches(G, p_values):
     """w(1/4) and energy of every branch, for every P, on the reference grid in mu.
 
     Columns: `branch` labels a branch by continuity in k (its rank at k = 0),
@@ -98,7 +108,7 @@ def exact_branches(G):
                 phi[:, j] *= sign
                 labels[j] = label
         phi_prev = phi[:, labels.argsort()]
-        for P in P_VALUES:
+        for P in p_values:
             c = amplitudes(P, P_n, phi, G)
             for n in range(N_MODES):
                 if torch.isnan(c[n]):
@@ -143,9 +153,9 @@ def identify(q, P, P_n, phi, G, M):
     return n + 1, err
 
 
-def neurom_points(branches, G, M):
+def neurom_points(branches, G, M, p_values):
     rows = []
-    for P in P_VALUES:
+    for P in p_values:
         mu_cr = mu_critical(branches, P)
         t0 = time.perf_counter()
         for mu in torch.linspace(0.0, mu_cr, N_K_NEUROM + 1, dtype=torch.float64)[:-1]:
@@ -171,20 +181,26 @@ def neurom_points(branches, G, M):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--P", type=float, nargs="+", default=P_VALUES,
+                        help="axial loads to compute (default: P_VALUES); the rows of the other P are kept")
+    p_values = parser.parse_args().P
+
     RESULTS.mkdir(parents=True, exist_ok=True)
     G = membrane_stiffness(N_ELEMENTS)
     M = mass_matrix(N_ELEMENTS)
 
     t0 = time.perf_counter()
-    branches = exact_branches(G)
-    branches.to_csv(RESULTS / "branches.csv", index=False)
+    branches = exact_branches(G, p_values)
+    merge_csv(RESULTS / "branches.csv", branches, p_values)
     print(f"exact branches: {time.perf_counter() - t0:.0f} s", flush=True)
 
-    pd.DataFrame([{"P": P, "k_cr": (k := critical_stiffness(P)), "mu_cr": k**0.25} for P in P_VALUES]
-                 ).to_csv(RESULTS / "critical.csv", index=False)
+    merge_csv(RESULTS / "critical.csv",
+              pd.DataFrame([{"P": P, "k_cr": (k := critical_stiffness(P)), "mu_cr": k**0.25} for P in p_values]),
+              p_values)
 
-    points = neurom_points(branches, G, M)
-    points.to_csv(RESULTS / "neurom_points.csv", index=False)
+    points = neurom_points(branches, G, M, p_values)
+    merge_csv(RESULTS / "neurom_points.csv", points, p_values)
     for P, df in points.groupby("P"):
         kept, noise = df[df.kept], df[df.start == "noise"]
         print(f"P = {P:g}: kept on branch 1 {int((kept.branch == 1).sum())}/{len(kept)}, "

@@ -14,8 +14,8 @@ Check on every file: the plain SVD of the fine sampling W (trapezoidal rule in
 x too) must give the same normalised sigma.
 
 Writes `results/pod.csv` (one row per (k, P / P_cr): sigma_1..sigma_91, n(1e-2),
-n(1e-3), eps(10)) and `results/pod_modes/k{k}_P{ratio}.pt` (first modes phi
-sampled on x, psi on a).
+n(1e-3), eps(10)) and `results/pod_modes/k{k}_P{ratio}.pt` (all sigma; first
+N_MODES_SAVED modes: phi sampled on x, phi_dofs as Hermite DOFs, psi on a).
 
 C1 (`--study c1`, plan `Plan-tests-cas-difficile-non-lineaire.md`): same POD
 in (x, mu), mu = k^(1/4), of the unloaded beam (`snapshots_k.py`), one row per
@@ -41,7 +41,8 @@ from moving_load import linear_stiffness
 
 
 TOLERANCES = [1e-2, 1e-3, 1e-4]
-N_REPORT = 10   # eps(10) in pod.csv, number of modes saved in pod_modes/
+N_REPORT = 10   # eps(10) in pod.csv
+N_MODES_SAVED = 30   # modes saved in pod_modes/ (e.g. to initialise a PGD)
 
 RESULTS = Path(__file__).parent / "results"
 
@@ -92,6 +93,15 @@ def rank_for(eps, tol):
 def pod_file(path, L, weights_x, param="a", meta=("k", "ratio", "P", "P_cr")):
     """POD of one snapshot file. Returns the row of pod.csv and the saved modes.
 
+    Saved modes, w(x, t) ~ sum_m sigma_m phi_m(x) psi_m(t):
+    - sigma: all singular values;
+    - phi_dofs (2 N_nodes, n): spatial modes as Hermite DOFs (w, w') interleaved,
+      zeros at the clamped ends, orthonormal in L2(0, 1) (phi^T M phi = I on
+      the free DOFs); phi: the same sampled on x, from W / sigma_m, so it loses
+      accuracy where sigma_m / sigma_1 is near round-off (use phi_dofs);
+    - psi (n_t, n): parametric modes on the snapshot grid t, orthonormal for
+      the trapezoidal rule in t.
+
     Args:
         path (Path): snapshot file (Q, W, x, the parameter values, metadata).
         L (torch.Tensor): Cholesky factor of the mass matrix M = L L^T.
@@ -103,12 +113,15 @@ def pod_file(path, L, weights_x, param="a", meta=("k", "ratio", "P", "P_cr")):
     Q, W, x, t = data["Q"], data["W"], data["x"], data[param]
     weights_t = trapezoid_weights(t)
 
-    sigma, _, psi = weighted_svd(L.T @ Q, weights_t)
+    sigma, U, psi = weighted_svd(L.T @ Q, weights_t)
     sigma_check, _, _ = weighted_svd(W * weights_x.sqrt()[:, None], weights_t)
     eps = decay(sigma)
 
-    n = min(N_REPORT, len(sigma))
+    n = min(N_MODES_SAVED, len(sigma))
     phi = (W * weights_t[None, :]) @ psi[:, :n] / sigma[:n]   # phi_m = int w psi_m dt / sigma_m
+    phi_free = torch.linalg.solve_triangular(L.T, U[:, :n], upper=True)   # L^T phi = U
+    zeros = phi_free.new_zeros(2, n)                                     # w = w' = 0 at both ends
+    phi_dofs = torch.cat([zeros, phi_free, zeros])
     row = {
         **{key: data[key] for key in meta},
         **summary(eps),
@@ -116,7 +129,7 @@ def pod_file(path, L, weights_x, param="a", meta=("k", "ratio", "P", "P_cr")):
         **{f"sigma_{m + 1}": s.item() for m, s in enumerate(sigma)},
     }
     modes = {**{key: data[key] for key in meta}, "x": x, param: t, "sigma": sigma,
-             "phi": phi, "psi": psi[:, :n]}
+             "phi": phi, "phi_dofs": phi_dofs, "psi": psi[:, :n]}
     return row, modes
 
 

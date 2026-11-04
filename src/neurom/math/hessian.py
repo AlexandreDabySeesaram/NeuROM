@@ -90,5 +90,9 @@ def _(x: Sampling, u: Sampling) -> Sampling:
     # constant first derivative: autograd drops its graph, the Hessian is zero
     if not du.values.requires_grad:
         x_dim = x.f_shape[0]
-        return du.__class__(values=torch.zeros(*du.values.shape, x_dim, dtype=du.values.dtype, device=du.values.device))
+        return du.__class__(
+            values=torch.zeros(
+                *du.values.shape, x_dim, dtype=du.values.dtype, device=du.values.device
+            )
+        )
     return jacobian(x, du)

@@ -189,9 +189,9 @@ class TestHessian:
             for j in range(2):
                 for k in range(2):
                     for l in range(2):
-                        expected[..., i, j, k, l] = (1.0 if (i == k and j == l) else 0.0) + (
-                            1.0 if (i == l and j == k) else 0.0
-                        )
+                        expected[..., i, j, k, l] = (
+                            1.0 if (i == k and j == l) else 0.0
+                        ) + (1.0 if (i == l and j == k) else 0.0)
         assert hess.detach() == pytest.approx(expected, self.relative_tolerance)
 
     # ------------------------------------------------------------------ #

@@ -23,3 +23,6 @@ pgd_vs_analytical.png
 
 # Outputs of the numerical experiments
 examples/1d_beam_hermite/experiments/*/results/
+
+# marimo session caches
+__marimo__/

@@ -105,6 +105,11 @@ class QuadratureContext(nn.Module):
         self._measure = QuadratureSampling(m.reshape(n_e, n_q, 1))
 
     @property
+    def mapping(self):
+        """The geometric mapping between reference and physical coordinates."""
+        return self._mapping
+
+    @property
     def measure(self) -> QuadratureSampling:
         """Return the cached integration measure.
 

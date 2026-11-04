@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.meshes.mesh import Mesh
+from neurom.math.jacobian import jacobian
 
 
 class IsoparametricMapping1D(nn.Module):
@@ -121,6 +122,34 @@ class IsoparametricMapping1D(nn.Module):
         xi = offset * det_F_inv.unsqueeze(1)
 
         return xi
+
+    def jacobian_at(self, xi, element_ids=None):
+        """Jacobian of the reference-to-physical map at given reference points.
+
+        Evaluates :math:`J = \\partial x / \\partial \\xi` by differentiating
+        :math:`x = \\sum_n N_n(\\xi)\\, x_n` with autograd, so it holds for any
+        geometric shape function.  The graph to the node positions is kept,
+        so gradients flow to trainable nodes.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates of shape
+                ``(N_e, N_p, dim)``.
+            element_ids (torch.Tensor, optional): Indices of the elements to
+                use, shape ``(N_e,)``.  All elements when ``None``.
+
+        Returns:
+            torch.Tensor: Jacobian of shape ``(N_e, N_p, dim, dim)``.
+        """
+        x_nodes = self.x_nodes if element_ids is None else self.x_nodes[element_ids]
+
+        # Reference points are constants: only the dependence on xi is traced
+        xi = xi.detach().requires_grad_(True)
+
+        # (N_e, N_p, dim)
+        x = torch.einsum("en...,eqn...->eq...", x_nodes, self.sf.N(xi))
+
+        # (N_e, N_p, dim, dim)
+        return jacobian(xi, x)
 
     @property
     def det_jacobian(self):

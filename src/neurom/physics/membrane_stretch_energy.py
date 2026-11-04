@@ -45,7 +45,9 @@ class MembraneStretchEnergy(Term):
         dx = interp.measure
 
         w_prime = jacobian(x, u)  # w'
-        stretch = apply(lambda g, m: inner_point(g, g) * m, w_prime, dx).values  # w'^2 dx
+        stretch = apply(
+            lambda g, m: inner_point(g, g) * m, w_prime, dx
+        ).values  # w'^2 dx
         S = integrate(stretch)  # ∫ w'^2 dx  (scalar, kept in the graph)
 
         return self.coefficient * S * stretch

@@ -27,7 +27,9 @@ def test_values(xi, expected):
     N = CubicHermiteBar().N(torch.tensor([[[xi]]]))  # (1, 1, 4)
 
     assert N.shape == (1, 1, 4)
-    assert N.flatten().tolist() == pytest.approx(expected, rel=relative_tolerance, abs=1e-12)
+    assert N.flatten().tolist() == pytest.approx(
+        expected, rel=relative_tolerance, abs=1e-12
+    )
 
 
 @pytest.mark.parametrize(
@@ -46,7 +48,9 @@ def test_nodal_derivatives(xi, expected):
     dN = jacobian(xi_t, CubicHermiteBar().N(xi_t))  # (1, 1, 4, 1)
 
     assert dN.shape == (1, 1, 4, 1)
-    assert dN.flatten().tolist() == pytest.approx(expected, rel=relative_tolerance, abs=1e-12)
+    assert dN.flatten().tolist() == pytest.approx(
+        expected, rel=relative_tolerance, abs=1e-12
+    )
 
 
 def test_value_functions_partition_of_unity():

@@ -32,11 +32,12 @@ A = b**2  # cross-section area [m^2]
 I = b**4 / 12  # second moment of area [m^4]
 L = 1.0  # beam length [m]
 
+
 def main():
 
-    # Mesh, shape functions, quadrature, mapping, boundary conditions. 
+    # Mesh, shape functions, quadrature, mapping, boundary conditions.
     ##################################################################
-    
+
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
 
@@ -51,7 +52,9 @@ def main():
     x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
 
     nodes = torch.arange(0, N)
-    elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T # [e, e+1] for e in range(N-1)
+    elements = torch.vstack(
+        [torch.arange(0, N - 1), torch.arange(1, N)]
+    ).T  # [e, e+1] for e in range(N-1)
 
     connectivity_geom = Connectivity(nodes, elements)
 
@@ -63,48 +66,47 @@ def main():
     # Generate mesh
     mesh = Mesh(connectivity=connectivity_geom, nodes_positions=x)
 
-     # Define mapping (for positions only)
-    sf_geom = LinearBar() 
-    mapping_geom = IsoparametricMapping1D(sf_geom, mesh) 
-
+    # Define mapping (for positions only)
+    sf_geom = LinearBar()
+    mapping_geom = IsoparametricMapping1D(sf_geom, mesh)
 
     ## Field
     # Initialize displacement values: slightly curved beam w = eps (1 - cos 2 pi x)
-    # 2 DOFs per node (w and its slope in xi, i.e. (h/2)*w')
+    # 2 DOFs per node (w and its physical slope w')
     eps_init = 1e-2
-    h = (x_max - x_min) / (N - 1)
     x_n = x_array.squeeze(-1)
-    u_init = torch.empty(2*N, 1) # We keep it 1D but with twice the number of nodes
+    u_init = torch.empty(2 * N, 1)  # We keep it 1D but with twice the number of nodes
 
-    # Use a stride of 2 because we store dofs intertwined 
+    # Use a stride of 2 because we store dofs intertwined
     # This is to match how shapes functions are ordered in the later sf_field = CubicHermiteBar())
     u_init[0::2, 0] = eps_init * (1 - torch.cos(2 * torch.pi * x_n))
-    u_init[1::2, 0] = (h / 2) * eps_init * 2 * torch.pi * torch.sin(2 * torch.pi * x_n)
+    u_init[1::2, 0] = eps_init * 2 * torch.pi * torch.sin(2 * torch.pi * x_n)
 
-    nodes = torch.arange(0, 2* N)
+    nodes = torch.arange(0, 2 * N)
 
     # elements[i] gives the list of the indices of the DoFs inside element i
-    elements = torch.vstack([
-    torch.arange(0, 2*N - 2, 2),   # 0, 2, ..., 2N-4
-    torch.arange(1, 2*N - 1, 2),   # 1, 3, ..., 2N-3
-    torch.arange(2, 2*N,     2),   # 2, 4, ..., 2N-2
-    torch.arange(3, 2*N + 1, 2),   # 3, 5, ..., 2N-1
-    ]).T
+    elements = torch.vstack(
+        [
+            torch.arange(0, 2 * N - 2, 2),  # 0, 2, ..., 2N-4
+            torch.arange(1, 2 * N - 1, 2),  # 1, 3, ..., 2N-3
+            torch.arange(2, 2 * N, 2),  # 2, 4, ..., 2N-2
+            torch.arange(3, 2 * N + 1, 2),  # 3, 5, ..., 2N-1
+        ]
+    ).T
 
     connectivity_field = Connectivity(nodes, elements)
 
     # Boundary conditions
     # Clamped - Clamped so that position and slopes are zeros on both ends.
-    nodes_u_bc = [0, 1, 2*N -2, 2*N - 1]
+    nodes_u_bc = [0, 1, 2 * N - 2, 2 * N - 1]
     u_bc = torch.zeros(4, 1)
-
 
     # Displacement
     u = field_layout.add(
         TrainableField(
             name="displacement",
             connectivity=connectivity_field,
-            init_values=u_init,                         #used to initialize the values # self.dim = init_values.shape[1]
+            init_values=u_init,  # used to initialize the values # self.dim = init_values.shape[1]
             constraint=Dirichlet(nodes=nodes_u_bc, values_imposed=u_bc),
         )
     )
@@ -118,22 +120,25 @@ def main():
     # Define interpolation at quadrature
     ## Quad context: meqsure and points of quadratures
     ctx = QuadratureContext(mesh, quad, mapping_geom)
-    ## Quad assembly, ready to be called 
+    ## Quad assembly, ready to be called
     assembly_u = QuadratureAssembly(ctx, sf_field, u)
     domain = IntegrationDomain([assembly_u])
-
 
     # Energy.
     #########################################################
 
     # Bending
-    bending_energy = SolidElasticEnergy(u, strain=hessian, stress_point=lambda kappa: kappa)
+    bending_energy = SolidElasticEnergy(
+        u, strain=hessian, stress_point=lambda kappa: kappa
+    )
 
     # Axial load (non-dimensional P, first clamped-clamped critical load is 4*pi^2)
     P = 1.5 * 4 * torch.pi**2
 
     # Axial load potential: -P/2 * int w'^2
-    axial_loading_energy = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: -P * eps)
+    axial_loading_energy = SolidElasticEnergy(
+        u, strain=jacobian, stress_point=lambda eps: -P * eps
+    )
 
     # Membrane stretching: 1/8 * (int w'^2)^2
 
@@ -144,9 +149,8 @@ def main():
 
     # Sum the pieces
     energy = bending_energy + axial_loading_energy + membrane_stretching_energy
-    #Define loss
+    # Define loss
     loss = PhysicsLoss(energy, field_layout)
-
 
     # FEM Model.
     #########################################################
@@ -159,13 +163,12 @@ def main():
         loss=loss,
     )
 
-
-
     # Optimizer.
     #########################################################
-    
+
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=1e-1, #line_search_fn="strong_wolfe"
+        model.parameters(),
+        lr=1e-1,  # line_search_fn="strong_wolfe"
     )
 
     def closure():
@@ -183,8 +186,9 @@ def main():
         print(i)
         loss = optimizer.step(closure)
         loss_history.append(loss.item())
-        print(f"i = {i} loss={loss.item():.3e}",)
-
+        print(
+            f"i = {i} loss={loss.item():.3e}",
+        )
 
     # Post-processing.
     #########################################################
@@ -230,7 +234,12 @@ def axial_displacement(stretch, field_layout, x_nodes, P):
         torch.Tensor: non-dimensional axial displacement, shape (N_nodes,).
     """
     # Per-element integrals of w'^2, then cumulative from x = 0
-    I_e = stretch.integrand(field_layout).detach().reshape(x_nodes.shape[0] - 1, -1).sum(dim=1)
+    I_e = (
+        stretch.integrand(field_layout)
+        .detach()
+        .reshape(x_nodes.shape[0] - 1, -1)
+        .sum(dim=1)
+    )
     cum = torch.cat([torch.zeros(1), torch.cumsum(I_e, dim=0)])
     S = cum[-1]
 

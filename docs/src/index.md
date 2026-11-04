@@ -227,5 +227,6 @@ optimizer.step(closure)
 :caption: Contents
 
 examples
+dof_transformations
 api/index
 ```

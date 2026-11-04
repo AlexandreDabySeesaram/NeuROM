@@ -18,7 +18,16 @@ class ShapeFunction(nn.Module, ABC):
     Attributes:
         reference_element (ReferenceElement): The reference element on which
             the shape function is defined.
+        dof_kinds (tuple[str, ...] | None): Kind of each element DOF, e.g.
+            ``"value"`` for a nodal value or ``"d1"`` for a nodal first
+            derivative.  ``None`` means every DOF is a nodal value (Lagrange).
+        dof_nodes_xi (tuple[float, ...] | None): Reference coordinate of the
+            node carrying each element DOF.  Only needed when some DOFs are
+            not nodal values.
     """
+
+    dof_kinds = None
+    dof_nodes_xi = None
 
     def __init__(self, reference_element: ReferenceElement):
         """Initialise the shape function with its reference element.

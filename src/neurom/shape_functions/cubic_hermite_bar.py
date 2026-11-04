@@ -25,7 +25,13 @@ class CubicHermiteBar(ShapeFunction):
     :math:`\\xi = -1` and :math:`\\xi = 1` respectively; :math:`H_2` and
     :math:`H_4` carry the slope :math:`\\mathrm{d}/\\mathrm{d}\\xi` at the
     same nodes.
+
+    The element DOFs are :math:`(w, \\mathrm{d}w/\\mathrm{d}\\xi)` at
+    :math:`\\xi = -1` then at :math:`\\xi = 1`.
     """
+
+    dof_kinds = ("value", "d1", "value", "d1")
+    dof_nodes_xi = (-1.0, -1.0, 1.0, 1.0)
 
     def __init__(self):
         """Initialise using the standard ``Bar`` reference element."""

@@ -40,12 +40,19 @@ def test_stagnation_count_restarts_after_a_move():
 def test_stagnation_uses_the_relative_decrease_of_the_paper():
     # |d| = 2 |L_{k-1} - L_k| / |L_{k-1} + L_k| = 2 * 2 / 2e4 = 2e-4 between 1e4 +- 1.
     flat = [1e4 + 1, 1e4 - 1] * 2
-    assert Stagnation(tol=3e-4, patience=2, no_improvement=None).stop_reason(flat) == "stagnated"
-    assert Stagnation(tol=1e-4, patience=2, no_improvement=None).stop_reason(flat) is None
+    assert (
+        Stagnation(tol=3e-4, patience=2, no_improvement=None).stop_reason(flat)
+        == "stagnated"
+    )
+    assert (
+        Stagnation(tol=1e-4, patience=2, no_improvement=None).stop_reason(flat) is None
+    )
 
 
 def test_stagnation_without_a_new_minimum():
-    criterion = Stagnation(tol=0.0, patience=0, no_improvement=3)  # stagnation never fires
+    criterion = Stagnation(
+        tol=0.0, patience=0, no_improvement=3
+    )  # stagnation never fires
     assert criterion.stop_reason([1.0, 3.0, 2.0, 3.0]) is None  # too short to tell
     assert criterion.stop_reason([1.0, 3.0, 2.0, 3.0, 2.0]) == "no_improvement"
     assert criterion.stop_reason([1.0, 3.0, 2.0, 3.0, 0.5]) is None
@@ -55,10 +62,10 @@ def test_stagnation_max_iter_wins():
     assert Stagnation(max_iter=3).stop_reason([3.0, 2.0, 1.0]) == "max_iter"
 
 
-
 def test_stagnation_tol_per_stage():
-    criterion = Stagnation(tol=lambda m: 1e-2 if m == 0 else 1e-4, patience=0,
-                           no_improvement=None)
+    criterion = Stagnation(
+        tol=lambda m: 1e-2 if m == 0 else 1e-4, patience=0, no_improvement=None
+    )
     losses = [1.0, 0.999]  # |d| ~ 1e-3
     criterion.start(0)
     assert criterion.stop_reason(losses) == "stagnated"
@@ -67,7 +74,9 @@ def test_stagnation_tol_per_stage():
 
 
 def test_stagnation_tol_function_before_start_is_tol_of_stage_zero():
-    criterion = Stagnation(tol=lambda m: 1e-2 * 10.0**-m, patience=0, no_improvement=None)
+    criterion = Stagnation(
+        tol=lambda m: 1e-2 * 10.0**-m, patience=0, no_improvement=None
+    )
     assert criterion.stage_tol == pytest.approx(1e-2, rel=1e-12)
     assert criterion.stop_reason([1.0, 0.999]) == "stagnated"
 
@@ -91,7 +100,9 @@ def test_fixed_iterations():
 
 
 def _records(*losses):
-    return [StageRecord(stage=k, losses=list(values)) for k, values in enumerate(losses)]
+    return [
+        StageRecord(stage=k, losses=list(values)) for k, values in enumerate(losses)
+    ]
 
 
 def test_usefulness_never_judges_the_first_stage():
@@ -148,7 +159,10 @@ def test_relative_gain_stops_when_energy_rises():
 
 def test_relative_gain_floor_bounds_the_denominator():
     # energies near zero: the gain 1e-3 is measured against floor = 1
-    assert RelativeGain(tol=1e-2, floor=1.0).stop_reason(_stages(0.0, -1e-3)) == "converged"
+    assert (
+        RelativeGain(tol=1e-2, floor=1.0).stop_reason(_stages(0.0, -1e-3))
+        == "converged"
+    )
     assert RelativeGain(tol=1e-4, floor=1.0).stop_reason(_stages(0.0, -1e-3)) is None
 
 
@@ -170,7 +184,9 @@ def test_any_of_returns_the_first_stop_reason():
 
 
 def test_stage_record_energy_prefers_final_energy():
-    assert StageRecord(0, losses=[3.0, 2.0], final_energy=1.0).energy == pytest.approx(1.0, rel=1e-12)
+    assert StageRecord(0, losses=[3.0, 2.0], final_energy=1.0).energy == pytest.approx(
+        1.0, rel=1e-12
+    )
     assert StageRecord(0, losses=[3.0, 2.0]).energy == pytest.approx(2.0, rel=1e-12)
     assert StageRecord(0).n_iter == 0
 

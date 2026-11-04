@@ -59,8 +59,13 @@ def test_hooks_are_called_in_order(make_model):
     def one_stage(m):
         return [
             ("stage_start", m),
-            ("phase_start", "adam"), ("update", 1), ("update", 2), ("phase_end", "adam", 2, "n_iter"),
-            ("phase_start", "second"), ("update", 1), ("phase_end", "second", 1, "n_iter"),
+            ("phase_start", "adam"),
+            ("update", 1),
+            ("update", 2),
+            ("phase_end", "adam", 2, "n_iter"),
+            ("phase_start", "second"),
+            ("update", 1),
+            ("phase_end", "second", 1, "n_iter"),
             ("stage_end", m),
         ]
 
@@ -70,7 +75,9 @@ def test_hooks_are_called_in_order(make_model):
 def test_update_count_matches_the_record(make_model):
     recorder = Recorder()
     history = GreedyTrainer(
-        make_model(), phases=[_phase("adam", 4)], enrichment_criterion=MaxStages(3),
+        make_model(),
+        phases=[_phase("adam", 4)],
+        enrichment_criterion=MaxStages(3),
         progress=recorder,
     ).enrich()
     n_updates = sum(1 for call in recorder.calls if call[0] == "update")
@@ -80,27 +87,39 @@ def test_update_count_matches_the_record(make_model):
 def test_log_writes_one_line_per_event(make_model):
     stream = io.StringIO()
     GreedyTrainer(
-        make_model(), phases=[_phase("adam", 4)], enrichment_criterion=MaxStages(2),
+        make_model(),
+        phases=[_phase("adam", 4)],
+        enrichment_criterion=MaxStages(2),
         progress=ProgressLog(every=2, stream=stream),
     ).enrich()
     lines = stream.getvalue().splitlines()
     assert lines[0] == "mode 0: start"
-    assert [line.split()[2] for line in lines if line.startswith("  adam   it")] == ["2", "4", "2", "4"]
+    assert [line.split()[2] for line in lines if line.startswith("  adam   it")] == [
+        "2",
+        "4",
+        "2",
+        "4",
+    ]
     assert sum(line.startswith("  adam   done: 4 it, n_iter") for line in lines) == 2
     assert lines[-2].startswith("mode 1: done in 4 it, n_iter, energy =")
     assert lines[-1].startswith("run done: 2 modes, n_stages,")
 
 
 def test_silent_by_default(make_model, capsys):
-    GreedyTrainer(make_model(), phases=[_phase("adam", 3)], enrichment_criterion=MaxStages(2)).enrich()
+    GreedyTrainer(
+        make_model(), phases=[_phase("adam", 3)], enrichment_criterion=MaxStages(2)
+    ).enrich()
     assert capsys.readouterr().out == ""
 
 
 def test_log_reports_the_final_phases(make_model):
     stream = io.StringIO()
     GreedyTrainer(
-        make_model(), phases=[_phase("adam", 2)], enrichment_criterion=MaxStages(1),
-        final_phases=[_phase("polish", 3)], progress=ProgressLog(every=None, stream=stream),
+        make_model(),
+        phases=[_phase("adam", 2)],
+        enrichment_criterion=MaxStages(1),
+        final_phases=[_phase("polish", 3)],
+        progress=ProgressLog(every=None, stream=stream),
     ).enrich()
     lines = stream.getvalue().splitlines()
     assert lines[-4] == "final: start"
@@ -110,16 +129,21 @@ def test_log_reports_the_final_phases(make_model):
 
 
 def _logged_iterations(stream, name="adam"):
-    return [int(line.split()[2]) for line in stream.getvalue().splitlines()
-            if line.startswith(f"  {name:<6} it")]
+    return [
+        int(line.split()[2])
+        for line in stream.getvalue().splitlines()
+        if line.startswith(f"  {name:<6} it")
+    ]
 
 
 def test_log_every_fraction_of_max_iter(make_model):
     stream = io.StringIO()
     criterion = Stagnation(tol=0.0, patience=0, no_improvement=None, max_iter=20)
     GreedyTrainer(
-        make_model(), phases=[Phase(lambda p: torch.optim.Adam(p, lr=0.1), criterion, "adam")],
-        enrichment_criterion=MaxStages(1), progress=ProgressLog(every=0.1, stream=stream),
+        make_model(),
+        phases=[Phase(lambda p: torch.optim.Adam(p, lr=0.1), criterion, "adam")],
+        enrichment_criterion=MaxStages(1),
+        progress=ProgressLog(every=0.1, stream=stream),
     ).enrich()
     assert _logged_iterations(stream) == list(range(2, 21, 2))
 
@@ -127,7 +151,9 @@ def test_log_every_fraction_of_max_iter(make_model):
 def test_log_every_fraction_without_max_iter_prints_no_iteration(make_model):
     stream = io.StringIO()
     GreedyTrainer(
-        make_model(), phases=[_phase("adam", 4)], enrichment_criterion=MaxStages(1),
+        make_model(),
+        phases=[_phase("adam", 4)],
+        enrichment_criterion=MaxStages(1),
         progress=ProgressLog(every=0.5, stream=stream),
     ).enrich()
     assert _logged_iterations(stream) == []
@@ -136,7 +162,8 @@ def test_log_every_fraction_without_max_iter_prints_no_iteration(make_model):
 def test_log_every_per_phase(make_model):
     stream = io.StringIO()
     GreedyTrainer(
-        make_model(), phases=[_phase("adam", 4), _phase("second", 3), _phase("quiet", 2)],
+        make_model(),
+        phases=[_phase("adam", 4), _phase("second", 3), _phase("quiet", 2)],
         enrichment_criterion=MaxStages(1),
         progress=ProgressLog(every={"adam": 2, "second": 1}, stream=stream),
     ).enrich()

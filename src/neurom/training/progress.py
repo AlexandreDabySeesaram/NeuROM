@@ -129,7 +129,11 @@ class ProgressLog(ProgressReporter):
         self.phase_every = None
 
     def _print(self, text):
-        print(text, file=self.stream if self.stream is not None else sys.stdout, flush=True)
+        print(
+            text,
+            file=self.stream if self.stream is not None else sys.stdout,
+            flush=True,
+        )
 
     def stage_start(self, stage_index):
         now = time.monotonic()
@@ -156,7 +160,9 @@ class ProgressLog(ProgressReporter):
     def phase_end(self, name, n_iter, reason, loss):
         elapsed = time.monotonic() - self.phase_started
         last = f"loss = {loss: .4e}" if loss is not None else "no iteration"
-        self._print(f"  {name:<6} done: {n_iter} it, {reason}, {last}, {_duration(elapsed)}")
+        self._print(
+            f"  {name:<6} done: {n_iter} it, {reason}, {last}, {_duration(elapsed)}"
+        )
 
     def stage_end(self, record):
         elapsed = time.monotonic() - self.stage_started
@@ -177,7 +183,9 @@ class ProgressLog(ProgressReporter):
         )
 
     def close(self, history):
-        elapsed = time.monotonic() - self.run_started if self.run_started is not None else 0.0
+        elapsed = (
+            time.monotonic() - self.run_started if self.run_started is not None else 0.0
+        )
         self._print(
             f"run done: {len(history.stages)} modes, {history.stop_reason}, {_duration(elapsed)}"
         )

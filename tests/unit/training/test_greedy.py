@@ -70,7 +70,9 @@ def test_energy_decreases_and_reaches_rank_two_minimum(make_model):
     model = make_model()
     trainer = GreedyTrainer(
         model,
-        phases=[_lbfgs(Stagnation(tol=1e-7, patience=0, no_improvement=None, max_iter=50))],
+        phases=[
+            _lbfgs(Stagnation(tol=1e-7, patience=0, no_improvement=None, max_iter=50))
+        ],
         enrichment_criterion=MaxStages(2),
     )
     history = trainer.enrich()
@@ -188,8 +190,10 @@ class _StageRecorder(StageCriterion):
 def test_criterion_is_told_the_stage_of_every_phase(make_model):
     stage_criterion, final_criterion = _StageRecorder(), _StageRecorder()
     GreedyTrainer(
-        make_model(), phases=[_adam(stage_criterion), _adam(stage_criterion)],
-        enrichment_criterion=MaxStages(3), final_phases=[_adam(final_criterion)],
+        make_model(),
+        phases=[_adam(stage_criterion), _adam(stage_criterion)],
+        enrichment_criterion=MaxStages(3),
+        final_phases=[_adam(final_criterion)],
     ).enrich()
     assert stage_criterion.stages == [0, 0, 1, 1, 2, 2]
     assert final_criterion.stages == [3]  # final phases: number of stages run
@@ -209,7 +213,10 @@ def test_final_phases_run_once_after_the_enrichment(make_model):
     assert len(history.stages) == 2
     assert model.decomposition.n_modes == 2
     assert history.final.phases == ["lbfgs"] * 3
-    assert history.losses == history.stages[0].losses + history.stages[1].losses + history.final.losses
+    assert (
+        history.losses
+        == history.stages[0].losses + history.stages[1].losses + history.final.losses
+    )
 
 
 def test_no_final_phases_by_default(make_model):
@@ -227,4 +234,6 @@ def test_final_phases_train_what_the_last_stage_left_trainable(make_model):
     trainer.final_phases = [_adam(FixedIterations(5))]
     trainer.finish()
     # Greedy: mode 0 stays frozen during the final phases.
-    assert all(torch.equal(b, a) for b, a in zip(before, _values(model.decomposition, 0)))
+    assert all(
+        torch.equal(b, a) for b, a in zip(before, _values(model.decomposition, 0))
+    )

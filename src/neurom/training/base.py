@@ -77,7 +77,12 @@ class PGDTrainer(ABC):
     """
 
     def __init__(
-        self, model, phases=None, enrichment_criterion=None, progress=None, final_phases=None
+        self,
+        model,
+        phases=None,
+        enrichment_criterion=None,
+        progress=None,
+        final_phases=None,
     ):
         self.model = model
         self.phases = phases or _default_phases()
@@ -194,7 +199,9 @@ class PGDTrainer(ABC):
         for phase in phases:
             self.make_optimizer(phase.optimizer_factory)
             phase.criterion.start(record.stage)
-            self.progress.phase_start(phase.name, getattr(phase.criterion, "max_iter", None))
+            self.progress.phase_start(
+                phase.name, getattr(phase.criterion, "max_iter", None)
+            )
             losses = []
             while not (reason := phase.criterion.stop_reason(losses)):
                 loss = self.step()
@@ -208,7 +215,9 @@ class PGDTrainer(ABC):
                     self.progress.phase_end(phase.name, len(losses), "diverged", loss)
                     return record
             record.stop_reason = reason
-            self.progress.phase_end(phase.name, len(losses), reason, losses[-1] if losses else None)
+            self.progress.phase_end(
+                phase.name, len(losses), reason, losses[-1] if losses else None
+            )
         record.final_energy = float(self.model.loss(self.model()).detach())
         if not math.isfinite(record.final_energy):
             record.stop_reason = "diverged"

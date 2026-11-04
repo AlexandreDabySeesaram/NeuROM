@@ -55,6 +55,29 @@ def test_stagnation_max_iter_wins():
     assert Stagnation(max_iter=3).stop_reason([3.0, 2.0, 1.0]) == "max_iter"
 
 
+
+def test_stagnation_tol_per_stage():
+    criterion = Stagnation(tol=lambda m: 1e-2 if m == 0 else 1e-4, patience=0,
+                           no_improvement=None)
+    losses = [1.0, 0.999]  # |d| ~ 1e-3
+    criterion.start(0)
+    assert criterion.stop_reason(losses) == "stagnated"
+    criterion.start(1)
+    assert criterion.stop_reason(losses) is None
+
+
+def test_stagnation_tol_function_before_start_is_tol_of_stage_zero():
+    criterion = Stagnation(tol=lambda m: 1e-2 * 10.0**-m, patience=0, no_improvement=None)
+    assert criterion.stage_tol == pytest.approx(1e-2, rel=1e-12)
+    assert criterion.stop_reason([1.0, 0.999]) == "stagnated"
+
+
+def test_stagnation_constant_tol_ignores_the_stage():
+    criterion = Stagnation(tol=1e-3, patience=0, no_improvement=None)
+    criterion.start(7)
+    assert criterion.stage_tol == pytest.approx(1e-3, rel=1e-12)
+
+
 # --- FixedIterations ----------------------------------------------------
 
 

@@ -14,7 +14,7 @@ from neurom.field_layout import FieldLayout
 from neurom.interpolation import IntegrationDomain, PointWiseInterpolator
 from neurom.decompositions import CPPGD, FactorSpace, MonomSpec
 from neurom.neurom_model import NeuROMModel
-from neurom.training import GreedyTrainer, Phase, RelativeChange, MaxStages
+from neurom.training import GreedyTrainer, Phase, Stagnation, MaxStages
 from neurom.math import jacobian, hessian, inner, integrate
 
 from modes import symmetric_mode, nodal_dofs
@@ -261,7 +261,8 @@ def axial_displacement(field_layout, cppgd, x_nodes, P_monoms, P):
 
 
 def default_phases(*, adam_lr, adam_max_iter, lbfgs_lr, lbfgs_max_iter, tol):
-    """Adam, then optionally LBFGS (strong Wolfe), each ended by `RelativeChange`.
+    """Adam, then optionally LBFGS (strong Wolfe), each ended at the first stagnating
+    iteration (`Stagnation` without patience).
 
     Args:
         adam_lr (float): Adam learning rate.
@@ -276,7 +277,7 @@ def default_phases(*, adam_lr, adam_max_iter, lbfgs_lr, lbfgs_max_iter, tol):
     """
     phases = [Phase(
         lambda params: torch.optim.Adam(params, lr=adam_lr),
-        RelativeChange(tol=tol, max_iter=adam_max_iter),
+        Stagnation(tol=tol, patience=0, no_improvement=None, max_iter=adam_max_iter),
         "adam",
     )]
     if lbfgs_max_iter > 0:
@@ -284,7 +285,9 @@ def default_phases(*, adam_lr, adam_max_iter, lbfgs_lr, lbfgs_max_iter, tol):
             lambda params: torch.optim.LBFGS(
                 params, lr=lbfgs_lr, line_search_fn="strong_wolfe"
             ),
-            RelativeChange(tol=tol, max_iter=lbfgs_max_iter),
+            Stagnation(
+                tol=tol, patience=0, no_improvement=None, max_iter=lbfgs_max_iter
+            ),
             "lbfgs",
         ))
     return phases

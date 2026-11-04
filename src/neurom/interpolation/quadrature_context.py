@@ -126,13 +126,47 @@ class QuadratureContext(nn.Module):
         """
         return self._quad_pos
 
+    @property
+    def graph_consumed(self) -> bool:
+        """Whether a ``backward()`` has gone through the cached positions graph.
+
+        The cached positions carry the autograd graph
+        ``xi_ref -> x_phys -> xi_back``.  When the loss depends on ``xi_back``
+        -- a term uses the field values, or the derivatives of shape functions
+        whose derivatives depend on ``xi`` (e.g. ``CubicHermiteBar``, quadratic
+        elements) -- ``backward()`` traverses this graph down to ``xi_ref``
+        and frees its saved tensors; the next forward pass would then fail.
+        This is detected by ``xi_ref.grad`` being set.
+
+        Returns:
+            bool: ``True`` if the cached graph was consumed and ``update()``
+            must be called before the next interpolation.
+        """
+        return self._xi_ref.grad is not None
+
     def update(self):
         """Refresh the mapping and recompute all geometry-dependent quantities.
 
         Calls ``self._mapping.update()`` to propagate any changes to the mesh
         node positions into the mapping, then recomputes the measure and
-        quadrature positions via ``_setup()``.  Call this at the start of each
-        forward pass when mesh nodes are trainable.
+        quadrature positions via ``_setup()``, which rebuilds a fresh autograd
+        graph and resets :attr:`graph_consumed`.  It is called automatically
+        by :meth:`refresh_if_consumed`, at the start of
+        ``QuadratureAssembly.interpolate``.  When mesh nodes are trainable, it must still be called at
+        the start of each forward pass (via
+        ``IntegrationDomain.update_contexts``): moved nodes are not detected
+        by :attr:`graph_consumed`.
         """
+        self._xi_ref.grad = None
         self._mapping.update()
         self._setup()
+
+    def refresh_if_consumed(self) -> None:
+        """Call :meth:`update` if a ``backward()`` consumed the cached graph.
+
+        Does nothing otherwise, so the cache is reused when the loss does not
+        depend on the back-mapped reference coordinates (see
+        :attr:`graph_consumed`).
+        """
+        if self.graph_consumed:
+            self.update()

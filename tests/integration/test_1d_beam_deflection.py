@@ -164,7 +164,7 @@ class Test1dBeamDeflection:
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
         u_test = pwi.at_position(x_test)
 
@@ -292,7 +292,7 @@ class Test1dBeamDeflection:
 
         # Generate test points and interpolate
         # This also tests the boundary condition
-        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1).unsqueeze(-1)
+        x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1)
         pwi = PointWiseInterpolator(mesh, sf, u, mapping)
         u_test = pwi.at_position(x_test)
 

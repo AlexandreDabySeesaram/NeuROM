@@ -14,13 +14,13 @@ The problem is self-contained (no external mesh file needed) and scales with
 
 ```bash
 # Default: 10 measured runs (after 2 warmup runs), 100 nodes, 3 epochs
-uv run python scripts/benchmark/benchmark.py
+uv run python examples/benchmark/benchmark.py
 
 # Larger problem, more repetitions, and save the raw numbers to JSON
-uv run python scripts/benchmark/benchmark.py --nodes 400 --repeats 30 --json results.json
+uv run python examples/benchmark/benchmark.py --nodes 400 --repeats 30 --json results.json
 
 # Different quadrature rule
-uv run python scripts/benchmark/benchmark.py --quadrature two-points
+uv run python examples/benchmark/benchmark.py --quadrature two-points
 ```
 
 ## Options

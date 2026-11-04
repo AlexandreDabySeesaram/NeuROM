@@ -16,3 +16,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Figures produced by docs/examples/1d_beam_deflection_PGD.py
+pgd_convergence.png
+pgd_vs_analytical.png

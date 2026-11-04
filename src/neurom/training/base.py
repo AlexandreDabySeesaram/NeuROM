@@ -24,9 +24,10 @@ class Phase:
     Attributes:
         optimizer_factory (Callable): ``params -> Optimizer``. LBFGS works too
             (the step uses a closure).
-        criterion (StageCriterion): When this phase is done. Checked before
-            every iteration on this phase's own losses, so a criterion that is
-            already met (e.g. ``FixedIterations(0)``) skips the phase.
+        criterion (StageCriterion): When this phase is done. Told the stage
+            index when the phase starts (``criterion.start``), then checked
+            before every iteration on this phase's own losses, so a criterion
+            that is already met (e.g. ``FixedIterations(0)``) skips the phase.
         name (str): Label recorded for each iteration in ``StageRecord.phases``.
     """
 
@@ -192,6 +193,7 @@ class PGDTrainer(ABC):
         """
         for phase in phases:
             self.make_optimizer(phase.optimizer_factory)
+            phase.criterion.start(record.stage)
             self.progress.phase_start(phase.name, getattr(phase.criterion, "max_iter", None))
             losses = []
             while not (reason := phase.criterion.stop_reason(losses)):

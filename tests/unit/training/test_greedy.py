@@ -6,6 +6,7 @@ from neurom.training import (
     GreedyTrainer,
     MaxStages,
     Phase,
+    StageCriterion,
     Stagnation,
 )
 
@@ -169,6 +170,29 @@ def test_lbfgs_after_adam_lowers_the_energy(make_model):
     # Same Adam phase on the same seed: identical losses up to the switch.
     assert record.losses[:20] == adam_only.history.stages[0].losses
     assert record.energy < e_adam
+
+
+class _StageRecorder(StageCriterion):
+    """Runs one iteration per phase and keeps every stage index it is told."""
+
+    def __init__(self):
+        self.stages = []
+
+    def start(self, stage_index):
+        self.stages.append(stage_index)
+
+    def stop_reason(self, losses):
+        return "n_iter" if losses else None
+
+
+def test_criterion_is_told_the_stage_of_every_phase(make_model):
+    stage_criterion, final_criterion = _StageRecorder(), _StageRecorder()
+    GreedyTrainer(
+        make_model(), phases=[_adam(stage_criterion), _adam(stage_criterion)],
+        enrichment_criterion=MaxStages(3), final_phases=[_adam(final_criterion)],
+    ).enrich()
+    assert stage_criterion.stages == [0, 0, 1, 1, 2, 2]
+    assert final_criterion.stages == [3]  # final phases: number of stages run
 
 
 # --- final phases -------------------------------------------------------

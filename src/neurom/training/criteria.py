@@ -15,6 +15,17 @@ from abc import ABC, abstractmethod
 class StageCriterion(ABC):
     """Decides when one training stage has finished."""
 
+    def start(self, stage_index):
+        """A phase using this criterion is about to run; no-op by default.
+
+        The trainer calls it before every phase, so a criterion can depend on
+        the stage (e.g. a looser tolerance for the first modes). The final
+        phases get the number of stages run so far.
+
+        Args:
+            stage_index (int): Index of the stage the phase belongs to.
+        """
+
     @abstractmethod
     def stop_reason(self, losses):
         """Return a short reason to stop, or None to continue.
@@ -62,8 +73,17 @@ class Stagnation(StageCriterion):
     The paper leaves ``tol`` and ``patience`` free, and reports the result
     insensitive to the patience between 5 and 100.
 
+    ``tol`` may depend on the stage ``m`` (the mode the stage adds), e.g. to
+    converge the first modes more coarsely::
+
+        Stagnation(tol=lambda m: 1e-3 if m < 3 else 1e-4)
+
+    The function is evaluated by :meth:`start`; before any call, the threshold
+    is ``tol(0)``.
+
     Args:
-        tol (float): Stagnation threshold ``eta_c`` on ``|d_k|``.
+        tol (float or Callable[[int], float]): Stagnation threshold ``eta_c``
+            on ``|d_k|``, or a function of the stage index returning it.
         patience (int): Stagnating iterations tolerated in a row.
         no_improvement (int or None): Iterations without a new minimum
             tolerated in a row; None disables this trigger.
@@ -72,9 +92,18 @@ class Stagnation(StageCriterion):
 
     def __init__(self, tol=1e-4, patience=5, no_improvement=90, max_iter=1000):
         self.tol = tol
+        self.stage_tol = tol(0) if callable(tol) else tol
         self.patience = patience
         self.no_improvement = no_improvement
         self.max_iter = max_iter
+
+    def start(self, stage_index):
+        """Evaluate the threshold of this stage when ``tol`` is a function.
+
+        Args:
+            stage_index (int): Index of the stage about to run.
+        """
+        self.stage_tol = self.tol(stage_index) if callable(self.tol) else self.tol
 
     def stop_reason(self, losses):
         if len(losses) >= self.max_iter:
@@ -82,7 +111,7 @@ class Stagnation(StageCriterion):
         # Count the trailing stagnating iterations, no further than needed.
         count = 0
         for k in range(len(losses) - 1, 0, -1):
-            if abs(_relative_decrease(losses[k - 1], losses[k])) >= self.tol:
+            if abs(_relative_decrease(losses[k - 1], losses[k])) >= self.stage_tol:
                 break
             count += 1
             if count > self.patience:

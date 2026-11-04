@@ -266,6 +266,45 @@ def plot_snapshot_map(x, a, W, *, title="w(x, a)"):
     return fig
 
 
+def plot_deflection_slider(x, mu, W, *, title=None):
+    """Deflection w(x) at one mu at a time, mu chosen with a slider.
+
+    The y axis is fixed to +-max|W| over all mu, so that amplitudes compare
+    from one mu to the next; with one abscissa per mu (e.g. the deformed
+    position x + u), the x axis is fixed too.
+
+    Args:
+        x (array-like): sampling in x, shape (N_x,), or one abscissa per mu,
+            shape (N_x, N_mu).
+        mu (array-like): parameter values, shape (N_mu,).
+        W (array-like): deflections, shape (N_x, N_mu).
+        title (str, optional): figure title.
+
+    Returns:
+        plotly.graph_objects.Figure
+    """
+    go, _ = _plotly()
+    import numpy as np
+
+    x, mu, W = (np.asarray(v, dtype=float) for v in (x, mu, W))
+    X = x if x.ndim == 2 else np.broadcast_to(x[:, None], W.shape)
+    fig = go.Figure([
+        go.Scatter(x=X[:, j], y=W[:, j], mode="lines", line=dict(width=3), visible=(j == 0),
+                   name=f"mu = {m:.3g}", showlegend=False)
+        for j, m in enumerate(mu)
+    ])
+    steps = [dict(method="update", label=f"{m:.3g}",
+                  args=[{"visible": [i == j for i in range(len(mu))]}])
+             for j, m in enumerate(mu)]
+    w_max = 1.05 * np.abs(W).max() or 1.0
+    fig.update_layout(
+        title=title, xaxis_title="x", yaxis_title="w", template="plotly_white",
+        xaxis_range=[X.min(), X.max()], yaxis_range=[-w_max, w_max],
+        sliders=[dict(active=0, currentvalue=dict(prefix="mu = "), steps=steps)],
+    )
+    return fig
+
+
 def plot_branches_k(branches, points, P, *, mu_critical=None, series=None, title=None):
     """Bifurcation diagram w(1/4) against mu = k^(1/4) of the unloaded beam, at fixed P.
 

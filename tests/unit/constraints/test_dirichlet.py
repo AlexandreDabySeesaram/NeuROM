@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn as nn
 
 # Import library modules
 from neurom.constraints import Dirichlet

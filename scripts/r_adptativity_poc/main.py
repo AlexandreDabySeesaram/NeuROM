@@ -1,17 +1,21 @@
-from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
 # Import library modules
-from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearSegment
+from neurom.quadratures import TwoPoints1D
+from neurom.shape_functions import LinearBar
 from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Topology, Mesh
+from neurom.meshes import Connectivity, Mesh
 from neurom.constraints import Dirichlet
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
-from neurom.interpolation import PointWiseInterpolator, Interpolator, FieldInterpolator
+from neurom.interpolation import (
+    PointWiseInterpolator,
+    QuadratureContext,
+    QuadratureAssembly,
+    IntegrationDomain,
+)
 
 from neurom.physics import ElasticEnergy, LoadPotential
 from neurom.physics_loss import PhysicsLoss
@@ -36,15 +40,13 @@ def main():
     # Define constant load
     load = 1000.0 * torch.ones(N, 1)
 
-    # Initialize topology
-    topology = Topology(nodes, elements)
+    # Initialize connectivity
+    connectivity = Connectivity(nodes, elements)
 
     # Define shape function to use
-    sf = LinearSegment()
+    sf = LinearBar()
     # Define quadrature method
     quad = TwoPoints1D()
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping1D(sf)
 
     # Prepare Field layout and fill it with actual fields
     field_layout = FieldLayout()
@@ -53,7 +55,7 @@ def main():
     u = field_layout.add(
         TrainableField(
             name="displacement",
-            topology=topology,
+            connectivity=connectivity,
             init_values=u_init,
             constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
         )
@@ -63,7 +65,7 @@ def main():
     x = field_layout.add(
         TrainableField(
             name="positions",
-            topology=topology,
+            connectivity=connectivity,
             init_values=x_array,
             constraint=Dirichlet(
                 nodes=[0, N - 1],
@@ -73,18 +75,21 @@ def main():
     )
 
     # Load
-    f = field_layout.add(Field(name="load", topology=topology, values=load))
+    f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
 
     # Generate mesh
-    mesh = Mesh(topology=topology, nodes_positions=x)
+    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
 
-    # Define interpolator
-    interpolator = Interpolator(
-        mesh,
-        quad,
-        mapping,
-        [FieldInterpolator(sf, u), FieldInterpolator(sf, f)],
-    )
+    # Define mapping (for positions only)
+    mapping = IsoparametricMapping1D(sf, mesh)
+
+    # Define interpolation at quadrature points.
+    # The positions are trainable (moving mesh / r-adaptivity), so the context
+    # geometry must be recomputed at each step via domain.update_contexts().
+    ctx = QuadratureContext(mesh, quad, mapping)
+    assembly_u = QuadratureAssembly(ctx, sf, u)
+    assembly_f = QuadratureAssembly(ctx, sf, f)
+    domain = IntegrationDomain([assembly_u, assembly_f])
 
     # Define physics to solve
     mu = 1e12
@@ -122,7 +127,7 @@ def main():
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
-        interpolator=interpolator,
+        integration_domain=domain,
         loss=total_loss,
     )
 
@@ -135,6 +140,8 @@ def main():
     print("* Training")
     n_epochs = 6000
     for i in range(n_epochs):
+        # Positions are trainable: recompute the geometry before interpolation.
+        domain.update_contexts()
         loss = model()
 
         optimizer.zero_grad()
@@ -150,13 +157,14 @@ def main():
     model = FEMModel(
         mesh=mesh,
         field_layout=field_layout,
-        interpolator=interpolator,
+        integration_domain=domain,
         loss=physics_loss,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-1)
     print("* Second training")
     for i in range(n_epochs):
+        domain.update_contexts()
         loss = model()
 
         optimizer.zero_grad()
@@ -173,7 +181,7 @@ def main():
     # At test points
     x_test = torch.linspace(0, 6, 30)
     pwi = PointWiseInterpolator(mesh, sf, u, mapping)
-    u_test = pwi.at_position(x_test).squeeze()
+    u_test = pwi.at_position(x_test).squeeze().detach()
     if plot_loss:
         plt.figure()
         plt.plot(loss_history)
@@ -185,8 +193,8 @@ def main():
     if plot_test:
         plt.figure()
         plt.plot(
-            result.x.flatten().detach(),
-            result.u.flatten().detach(),
+            result.x.values.flatten().detach(),
+            result.u.values.flatten().detach(),
             "+",
             label="Gauss points",
         )

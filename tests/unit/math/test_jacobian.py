@@ -2,13 +2,13 @@ import pytest
 import torch
 
 # Import library modules
-from neurom import differential
+from neurom.math.jacobian import jacobian
 
 torch.set_default_dtype(torch.float32)
 
 
-class TestJacobianField:
-    """Test jacobian_field computation for fields R^d -> R^m.
+class TestJacobian:
+    """Test jacobian computation for fields R^d -> R^m.
 
     Attributes:
         relative_tolerance (float): The relative tolerance used to compare floats.
@@ -26,7 +26,7 @@ class TestJacobianField:
             [[-3.0, 7.0], [10.0, 5.0], [6.0, -9.0]], requires_grad=True
         ).unsqueeze(-1)  # (3, 2, 1)
         u = torch.exp(x)  # (3, 2, 1)
-        grad = differential.jacobian_field(x, u)  # (3, 2, 1, 1)
+        grad = jacobian(x, u)  # (3, 2, 1, 1)
 
         assert x.shape == (3, 2, 1)
         assert u.shape == (3, 2, 1)
@@ -39,7 +39,7 @@ class TestJacobianField:
         """u = x^3, du/dx = 3x^2. Shape: x (2,3,1), u (2,3,1), J (2,3,1,1)"""
         x = torch.linspace(-2.0, 2.0, 6).reshape(2, 3, 1).requires_grad_(True)
         u = x**3
-        grad = differential.jacobian_field(x, u)
+        grad = jacobian(x, u)
 
         assert x.shape == (2, 3, 1)
         assert u.shape == (2, 3, 1)
@@ -58,7 +58,7 @@ class TestJacobianField:
             [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]], requires_grad=True
         )  # (2, 2, 2)
         u = 2.0 * x[..., :1] + 3.0 * x[..., 1:]  # (2, 2, 1)
-        grad = differential.jacobian_field(x, u)  # (2, 2, 1, 2)
+        grad = jacobian(x, u)  # (2, 2, 1, 2)
 
         assert x.shape == (2, 2, 2)
         assert u.shape == (2, 2, 1)
@@ -73,7 +73,7 @@ class TestJacobianField:
         """u = x0^2 * x1, grad = [2*x0*x1, x0^2]. Shape: x (1,2,2), u (1,2,1), J (1,2,1,2)"""
         x = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True)  # (1, 2, 2)
         u = (x[..., :1] ** 2) * x[..., 1:]  # (1, 2, 1)
-        grad = differential.jacobian_field(x, u)  # (1, 2, 1, 2)
+        grad = jacobian(x, u)  # (1, 2, 1, 2)
 
         assert x.shape == (1, 2, 2)
         assert u.shape == (1, 2, 1)
@@ -88,7 +88,7 @@ class TestJacobianField:
         """u = exp(x0)*sin(x1). Shape: x (1,2,2), u (1,2,1), J (1,2,1,2)"""
         x = torch.tensor([[[0.5, 1.0], [1.0, 0.5]]], requires_grad=True)  # (1, 2, 2)
         u = torch.exp(x[..., :1]) * torch.sin(x[..., 1:])  # (1, 2, 1)
-        grad = differential.jacobian_field(x, u)  # (1, 2, 1, 2)
+        grad = jacobian(x, u)  # (1, 2, 1, 2)
 
         assert x.shape == (1, 2, 2)
         assert u.shape == (1, 2, 1)
@@ -116,7 +116,7 @@ class TestJacobianField:
         u = torch.cat(
             [2.0 * x[..., :1] + x[..., 1:], x[..., :1] - 3.0 * x[..., 1:]], dim=-1
         )  # (2, 2, 2)
-        grad = differential.jacobian_field(x, u)  # (2, 2, 2, 2)
+        grad = jacobian(x, u)  # (2, 2, 2, 2)
 
         assert x.shape == (2, 2, 2)
         assert u.shape == (2, 2, 2)
@@ -132,7 +132,7 @@ class TestJacobianField:
         """
         x = torch.tensor([[[1.0, 2.0], [3.0, 0.5]]], requires_grad=True)  # (1, 2, 2)
         u = torch.stack([x[..., 0] ** 2, x[..., 0] * x[..., 1]], dim=-1)  # (1, 2, 2)
-        grad = differential.jacobian_field(x, u)  # (1, 2, 2, 2)
+        grad = jacobian(x, u)  # (1, 2, 2, 2)
 
         assert x.shape == (1, 2, 2)
         assert u.shape == (1, 2, 2)
@@ -159,7 +159,7 @@ class TestJacobianField:
         A = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
         x = torch.randn(2, 4, 3).requires_grad_(True)
         u = x @ A.T  # (2, 4, 3)
-        grad = differential.jacobian_field(x, u)  # (2, 4, 3, 3)
+        grad = jacobian(x, u)  # (2, 4, 3, 3)
 
         assert x.shape == (2, 4, 3)
         assert u.shape == (2, 4, 3)
@@ -182,7 +182,7 @@ class TestJacobianField:
         """
         x = torch.tensor([[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True)  # (1, 2, 2)
         u = x.unsqueeze(-1) * x.unsqueeze(-2)  # (1, 2, 2, 2)
-        grad = differential.jacobian_field(x, u)  # (1, 2, 2, 2, 2)
+        grad = jacobian(x, u)  # (1, 2, 2, 2, 2)
 
         assert x.shape == (1, 2, 2)
         assert u.shape == (1, 2, 2, 2)
@@ -203,12 +203,12 @@ class TestJacobianField:
     # ------------------------------------------------------------------ #
 
     def test_graph_retained_for_higher_order(self):
-        """jacobian_field with create_graph=True should allow second-order gradients.
+        """jacobian with create_graph=True should allow second-order gradients.
         Shape: x (1,2,1), u (1,2,1), J (1,2,1,1)
         """
         x = torch.tensor([[[1.0], [2.0]]], requires_grad=True)  # (1, 2, 1)
         u = x**3  # du/dx = 3x^2, d^2u/dx^2 = 6x
-        grad = differential.jacobian_field(x, u)  # (1, 2, 1, 1)
+        grad = jacobian(x, u)  # (1, 2, 1, 1)
 
         assert x.shape == (1, 2, 1)
         assert u.shape == (1, 2, 1)

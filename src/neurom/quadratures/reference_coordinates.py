@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import torch
 
 from neurom.geometry.barycentric_to_reference import barycentric_to_reference

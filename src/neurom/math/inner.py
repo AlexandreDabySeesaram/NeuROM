@@ -1,14 +1,32 @@
 import torch
 
 
-def inner(u: torch.Tensor, v: torch.Tensor):
+def inner_point(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    """Compute inner product for tensors with single point
+
+    The inner product is computed over the field dimensions for a single point.
+
+    Args:
+        u (torch.Tensor): First (*u_shape)
+        v (torch.Tensor): (*v_shape)
+    Returns:
+        A torch.Tensor of shape (1,) representing the inner product over the fields dimensions.
+    Raises:
+        ValueError if u.shape and v.shape don't match.
+    """
+
+    assert u.shape == v.shape
+    return (u * v).sum().unsqueeze(0)
+
+
+def inner(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     """Compute inner product
 
     The inner product is computed over the field dimensions for all elements and quadrature points N_e an N_q.
 
     Args:
         u (torch.Tensor): First (N_e, N_q, *u_shape)
-        v: (N_e, N_q, *u_shape)
+        v (torch.Tensor): (N_e, N_q, *v_shape)
     Returns:
         A torch.Tensor of shape (N_e, N_q, 1) representing the inner product over the fields dimensions.
     Raises:

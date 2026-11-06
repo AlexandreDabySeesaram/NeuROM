@@ -124,6 +124,14 @@ class FiniteElement:
         nodal (bool): Whether the coded basis is dual to the DOFs (default ``True``). If ``True``,
             the construction-time duality check requires ``V == I``; set ``False`` for a non-nodal
             (e.g. hierarchical) basis, whose ``C = V^{-1}`` is folded into the tabulation later.
+        dof_nodes (array-like, optional): Explicit reference DOF-node coordinates ``(n_dofs,
+            dim_ref)``; overrides the per-entity gather in :meth:`dof_nodes_xi` (needed when an
+            entity hosts several distinct nodes, e.g. :math:`P_3` edges). ``None`` to derive.
+        g_e_closed_form (callable, optional): A closed-form geometric DOF transformation
+            ``G_e(J_e)`` mapping the per-element Jacobian ``(n_e, gdim, dim_ref)`` to ``M_e``
+            ``(n_e, n_ref, n_dofs)``, used by :class:`~neurom.dof_transformations.transformation.Transformation`
+            instead of assembling/inverting ``L_e`` each forward (e.g. Hermite). ``None`` for the
+            generic path.
 
     Attributes:
         reference_basis (ShapeFunction): The basis presented downstream. The *coded* basis for a
@@ -134,6 +142,8 @@ class FiniteElement:
         value_shape (tuple[int, ...]): Field component shape.
         map_type (MapType): The reference-to-physical push-forward of the basis.
         nodal (bool): Whether the element is declared nodal.
+        g_e_closed_form (callable | None): The closed-form ``G_e(J_e)`` DOF transformation, or
+            ``None`` for the generic assemble-and-invert path.
         V (torch.Tensor | None): The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)` of the
             *coded* basis, computed at construction (``None`` if a DOF kind has no functional).
         C (torch.Tensor | None): The duality correction :math:`C = V^{-1}` folded into the
@@ -148,6 +158,7 @@ class FiniteElement:
         map_type: MapType = MapType.IDENTITY,
         nodal: bool = True,
         dof_nodes=None,
+        g_e_closed_form=None,
     ) -> None:
         self.reference_basis = reference_basis
         self.cell = reference_basis.reference_cell
@@ -163,6 +174,10 @@ class FiniteElement:
         self.value_shape = tuple(value_shape)
         self.map_type = MapType(int(map_type))
         self.nodal = nodal
+        # Optional closed-form geometric DOF transformation G_e(J_e) (see Transformation): a callable
+        # ``(J_e: (n_e, gdim, dim_ref)) -> M_e: (n_e, n_ref, n_dofs)`` that returns the runtime
+        # transformation directly instead of assembling and inverting L_e each forward (Hermite).
+        self.g_e_closed_form = g_e_closed_form
         self.V: torch.Tensor | None = None
         self.C: torch.Tensor | None = None
         self._resolve_duality()

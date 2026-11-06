@@ -121,6 +121,11 @@ class CPPGD(TensorDecomposition):
         # modes and the enriched ones cannot drift apart.
         self.monoms = nn.ModuleList()
         self._assemblies = nn.ModuleList()
+        # Point-evaluation interpolators, cached per (mode, factor) so evaluate()/assemble() reuse
+        # the mapping + DOF transformation instead of rebuilding them on every call. Safe because a
+        # monom field and its factor mesh are stable once built (training updates values in place);
+        # cleared in add_mode(). Assumes fixed factor geometry (PGD factor grids are not r-adaptive).
+        self._pwi_cache: dict = {}
         for _ in range(n_modes_ini):
             self.add_mode()
 
@@ -233,6 +238,7 @@ class CPPGD(TensorDecomposition):
                 ]
             )
         )
+        self._pwi_cache = {}  # the mode grid changed -> drop the point-evaluator cache
         return m
 
     def mode_parameters(self, m=None):
@@ -319,6 +325,19 @@ class CPPGD(TensorDecomposition):
             )
         return list(points.T)
 
+    def _interpolator(self, m, k):
+        """Cached :class:`PointWiseInterpolator` for mode ``m``, factor ``k``.
+
+        Built lazily and reused across ``evaluate``/``assemble`` calls (the monom field and its
+        factor mesh are stable; training only updates the field's values in place), so the mapping
+        and DOF transformation are not rebuilt on every call. The cache is cleared in ``add_mode``.
+        """
+        pwi = self._pwi_cache.get((m, k))
+        if pwi is None:
+            pwi = PointWiseInterpolator(self.monom_specs[k].space.mesh, self.monoms[m][k])
+            self._pwi_cache[(m, k)] = pwi
+        return pwi
+
     def evaluate(self, coords):
         """Evaluate ``u`` at matched query points (diagonal), summed over modes.
 
@@ -340,8 +359,7 @@ class CPPGD(TensorDecomposition):
         for m in range(n):
             prod = None
             for k, spec in enumerate(self.monom_specs):
-                pwi = PointWiseInterpolator(spec.space.mesh, self.monoms[m][k])
-                w = pwi.at_position(coords[k].reshape(-1, 1))  # (P, dim_k)
+                w = self._interpolator(m, k).at_position(coords[k].reshape(-1, 1))  # (P, dim_k)
                 prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
         return total
@@ -364,8 +382,7 @@ class CPPGD(TensorDecomposition):
         for k, spec in enumerate(self.monom_specs):
             cols = []
             for m in range(n_modes):
-                pwi = PointWiseInterpolator(spec.space.mesh, self.monoms[m][k])
-                w = pwi.at_position(coords[k].reshape(-1, 1))  # (N_k, d_k)
+                w = self._interpolator(m, k).at_position(coords[k].reshape(-1, 1))  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_factor.append(torch.stack(cols, dim=0))
 

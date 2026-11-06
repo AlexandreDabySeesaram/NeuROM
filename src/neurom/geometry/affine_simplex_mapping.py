@@ -146,6 +146,23 @@ class AffineSimplexMapping(nn.Module):
         J = J.expand(*points.batch_shape, *J.shape[-2:])
         return replace(points, values=J)
 
+    def element_jacobian(self, element_ids: torch.Tensor | None = None) -> torch.Tensor:
+        r"""The per-element (constant, affine) Jacobian :math:`J_e`, kept in the autograd graph.
+
+        Unlike :meth:`jacobian_at` this returns the raw per-element tensor (no point batch), for
+        consumers that need one :math:`J_e` per element -- e.g. an element's closed-form DOF
+        transformation :math:`G_e(J_e)`. Reads the stored ``_J`` built from the node positions, so
+        gradients still flow to trainable coordinates (r-adaptivity).
+
+        Args:
+            element_ids (torch.Tensor | None): Element subset ``(n_e,)``, or ``None`` for all.
+
+        Returns:
+            torch.Tensor: ``(n_e, gdim, dim_ref)``.
+        """
+        J = self._J.values
+        return J if element_ids is None else J[element_ids]
+
     @property
     def det_jacobian(self) -> Sampling:
         r"""Per-element Jacobian determinant :math:`\det J_e` as an ``ElementSampling`` (``f_shape (1,)``).

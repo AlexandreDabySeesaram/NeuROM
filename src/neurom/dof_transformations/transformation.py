@@ -100,6 +100,8 @@ class Transformation(nn.Module):
 
         # Does any functional depend on the geometry (the mapping)?
         self._geometry_dependent = any(f.geometry_dependent for f in groups)
+        # Optional closed-form G_e(J_e): skips assembling/inverting L_e each forward (e.g. Hermite).
+        self._g_e_closed_form = getattr(element, "g_e_closed_form", None)
 
         # Geometry-independent -> M_e is constant; precompute it once (and detect identity).
         self._identity = False
@@ -164,5 +166,10 @@ class Transformation(nn.Module):
             return torch.einsum(
                 "rp,ep...->er...", self._M_const.to(u_elem.dtype), u_elem
             )
+        if self._g_e_closed_form is not None:
+            # Closed form: M_e = G_e(J_e) directly from the (constant, affine) per-element Jacobian,
+            # kept in-graph so position gradients still flow (r-adaptivity). No assembly/inversion.
+            M = self._g_e_closed_form(self.mapping.element_jacobian(element_ids))
+            return torch.einsum("erp,ep...->er...", M.to(u_elem.dtype), u_elem)
         L = self._assemble_L(u_elem.shape[0], u_elem.dtype, u_elem.device, element_ids)
         return torch.einsum("erp,ep...->er...", _invert(L), u_elem)

@@ -8,6 +8,8 @@ for any cell), so a private :func:`_dg0` helper builds the per-cell DG0 constant
 duplication; every other element has a cell-specific basis and is written out directly.
 """
 
+import torch
+
 from neurom.elements.finite_element import FiniteElement, DoF, VALUE, D1
 from neurom.meshes.topology import EntityDim
 from neurom.reference_cell import ReferenceCell, BAR, TRIANGLE
@@ -41,6 +43,7 @@ def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
         value_shape=(dim,),
         map_type=base.map_type,
         dof_nodes=base._dof_nodes,
+        g_e_closed_form=base.g_e_closed_form,
     )
 
 
@@ -149,6 +152,26 @@ the DOF-map edge-reversal permutation (orientation, WP3) keeps the two edge DOFs
 a shared, oppositely-traversed edge."""
 
 
+def _hermite_g_e(J: torch.Tensor) -> torch.Tensor:
+    r"""Closed-form Hermite DOF transformation :math:`M_e = \operatorname{diag}(1, J_e, 1, J_e)`.
+
+    The reference coefficients multiplying the Hermite basis are :math:`(w, \partial w/\partial\xi)`
+    at each vertex, while the stored DOFs are physical :math:`(w, \partial w/\partial x)`; since
+    :math:`\partial w/\partial\xi = J_e\,\partial w/\partial x`, :math:`M_e` scales the two slope
+    DOFs by the (constant, affine) bar Jacobian :math:`J_e = \ell_e/2`. This is exactly
+    :math:`L_e^{-1}` of the generic path, computed directly -- no per-forward assembly/inversion.
+
+    Args:
+        J (torch.Tensor): Per-element Jacobian ``(n_e, 1, 1)`` (in the autograd graph).
+
+    Returns:
+        torch.Tensor: ``M_e`` of shape ``(n_e, 4, 4)``.
+    """
+    j = J[..., 0, 0]  # (n_e,) the scalar bar Jacobian l_e / 2
+    one = torch.ones_like(j)
+    return torch.diag_embed(torch.stack([one, j, one, j], dim=-1))
+
+
 HERMITE = FiniteElement(
     HermiteBeam(),
     [
@@ -157,6 +180,7 @@ HERMITE = FiniteElement(
         DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
         DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=D1),
     ],
+    g_e_closed_form=_hermite_g_e,
 )
 r"""**Cubic Hermite beam on the bar.** Reference cell :math:`\hat K=[-1,1]`, space :math:`P_3`,
 4 DOFs. Reference basis :math:`H_1=\tfrac14(1-\xi)^2(2+\xi)`,

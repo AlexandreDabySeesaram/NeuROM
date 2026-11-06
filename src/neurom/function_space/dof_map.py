@@ -104,8 +104,13 @@ class DofMap(nn.Module):
         """Union periodic vertex-DOF pairs, then compact to contiguous ids.
 
         Returns ``remap`` of shape ``(total,)`` mapping each naive global DOF to its
-        (possibly merged) compacted id. Identity when ``periodic`` is empty.
+        (possibly merged) compacted id. Identity when ``periodic`` is empty -- the common case,
+        returned without touching every DOF (the Python union-find below ran over all ``total`` DOFs
+        and dominated the DOF-map build).
         """
+        if not periodic:
+            return torch.arange(total, dtype=torch.int64)
+
         parent = list(range(total))
 
         def find(i):
@@ -115,19 +120,24 @@ class DofMap(nn.Module):
             return i
 
         dpe0, off0 = self._dofs_per_entity.get(0, 0), self._offset.get(0, 0)
-        for a, b in periodic or ():
+        for a, b in periodic:
             for r in range(dpe0):  # match DOFs by rank (value<->value, d1<->d1, ...)
                 ra, rb = find(off0 + a * dpe0 + r), find(off0 + b * dpe0 + r)
                 parent[max(ra, rb)] = min(ra, rb)
 
-        # Compact representatives to 0..k-1 in first-appearance order.
-        new_id, remap = {}, torch.empty(total, dtype=torch.int64)
-        for i in range(total):
-            root = find(i)
-            if root not in new_id:
-                new_id[root] = len(new_id)
-            remap[i] = new_id[root]
-        return remap
+        # Resolve every DOF to its group root (vectorised pointer-jumping), then compact to
+        # contiguous ids. Each root is the MIN of its group (``parent[max]=min`` above), so it first
+        # appears at its own index -- sorted order == first-appearance order, and ``torch.unique``'s
+        # inverse reproduces the original first-appearance numbering exactly.
+        parent_t = torch.tensor(parent, dtype=torch.int64)
+        roots = torch.arange(total, dtype=torch.int64)
+        while True:
+            nxt = parent_t[roots]
+            if torch.equal(nxt, roots):
+                break
+            roots = nxt
+        _, remap = torch.unique(roots, return_inverse=True)
+        return remap.to(torch.int64)
 
     @property
     def n_local_dofs(self) -> int:
@@ -149,13 +159,16 @@ class DofMap(nn.Module):
         """
         all_kinds = self._kinds_per_entity[entity_dim]
         if kinds is None:
-            ranks = range(len(all_kinds))
+            ranks = torch.arange(len(all_kinds), dtype=torch.int64)
         else:
             # Every DOF whose kind is requested -- so a repeated kind (e.g. two P3 edge values)
             # returns both its ranks, not just the first.
-            ranks = [r for r, k in enumerate(all_kinds) if k in kinds]
+            ranks = torch.tensor(
+                [r for r, k in enumerate(all_kinds) if k in kinds], dtype=torch.int64
+            )
         dpe, off = self._dofs_per_entity[entity_dim], self._offset[entity_dim]
-        naive = [off + int(g) * dpe + r for g in entities for r in ranks]
-        # Route through the periodic/compaction remap, then dedup (merged DOFs collapse).
-        idx = sorted({int(self._remap[i]) for i in naive})
-        return torch.tensor(idx, dtype=torch.int64)
+        entities = torch.as_tensor(list(entities), dtype=torch.int64)
+        # Naive global index of every (entity, rank) pair, as an outer sum; route through the
+        # periodic/compaction remap, then dedup+sort (torch.unique). Empty entities/ranks -> empty.
+        naive = (off + entities.reshape(-1, 1) * dpe + ranks.reshape(1, -1)).reshape(-1)
+        return torch.unique(self._remap[naive])

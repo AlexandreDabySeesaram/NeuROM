@@ -60,10 +60,16 @@ class Topology(nn.Module):
         self._n_vertices = (
             int(cell_vertices.max()) + 1 if n_vertices is None else n_vertices
         )
-        # Edges are intermediate entities, built only in 2-D+ (in 1-D an "edge" is the cell).
+        # Edges are intermediate entities (2-D+); built lazily on first access (see _ensure_edges)
+        # so a P1-only problem never pays for them. In 1-D an "edge" is the cell itself.
         self._n_edges = 0
-        if self._dim >= 2:
+        self._edges_built = False
+
+    def _ensure_edges(self) -> None:
+        """Build the edge tables on first access (idempotent); a no-op once built."""
+        if not self._edges_built:
             self._build_edges()
+            self._edges_built = True
 
     @staticmethod
     def _simplex_local_edges(n_verts_per_cell: int) -> torch.Tensor:
@@ -92,7 +98,7 @@ class Topology(nn.Module):
         edge_vertices, inverse = torch.unique(canon, dim=0, return_inverse=True)
         n_local = local.shape[0]
         self._n_edges = edge_vertices.shape[0]
-        self.register_buffer("edge_vertices", edge_vertices)  # (n_edges, 2)
+        self.register_buffer("_edge_vertices", edge_vertices)  # (n_edges, 2)
         self.register_buffer(
             "_cell_edges", inverse.reshape(-1, n_local)
         )  # (n_cells, n_local)
@@ -100,6 +106,12 @@ class Topology(nn.Module):
         # two cells sharing an edge must agree on for orientation-sensitive DOFs).
         signs = torch.where((flat == canon).all(dim=1), 1, -1)
         self.register_buffer("_edge_orientation", signs.reshape(-1, n_local))
+
+    @property
+    def edge_vertices(self) -> torch.Tensor:
+        """Global ``(n_edges, 2)`` ``(lo, hi)`` vertex pairs of the edges (builds them on first use)."""
+        self._ensure_edges()
+        return self._edge_vertices
 
     @property
     def dim(self) -> int:
@@ -141,6 +153,7 @@ class Topology(nn.Module):
         if d == EntityDim.VERTEX:
             return self.n_vertices
         if d == EntityDim.EDGE and self._dim >= 2:
+            self._ensure_edges()
             return self._n_edges
         if d == self.cell_dim:
             return self.n_cells
@@ -166,6 +179,7 @@ class Topology(nn.Module):
         if d == EntityDim.VERTEX:
             return self.cell_vertices
         if d == EntityDim.EDGE and self._dim >= 2:
+            self._ensure_edges()
             return self._cell_edges
         if d == self.cell_dim:
             return torch.arange(
@@ -186,5 +200,6 @@ class Topology(nn.Module):
             sharing an edge must agree on for orientation-sensitive DOFs (Morley/RT).
         """
         if d == EntityDim.EDGE and self._dim >= 2:
+            self._ensure_edges()
             return self._edge_orientation
         return torch.ones_like(self.cell_entities(d), dtype=torch.int64)

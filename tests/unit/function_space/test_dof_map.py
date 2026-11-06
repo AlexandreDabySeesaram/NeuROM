@@ -160,6 +160,21 @@ def test_edge_enumeration_shares_the_interior_edge():
     assert sorted(topo.edge_vertices[edge_id].tolist()) == [0, 2]  # the diagonal (0, 2)
 
 
+def test_edges_are_built_lazily():
+    """(T-WP6.3) edges are built on first access, so a P1-only problem never pays for them."""
+    topo = _two_triangle_square()
+    assert topo._edges_built is False  # nothing built at construction
+    # vertex / cell access must not trigger the edge build
+    _ = topo.cell_vertices
+    _ = topo.n_cells
+    _ = topo.cell_entities(EntityDim.VERTEX)
+    _ = topo.n_entities(EntityDim.VERTEX)
+    assert topo._edges_built is False
+    # the first edge access builds them (and only then)
+    _ = topo.n_entities(EntityDim.EDGE)
+    assert topo._edges_built is True
+
+
 def test_edge_orientation_is_signed():
     topo = _two_triangle_square()
     orient = topo.entity_orientation(EntityDim.EDGE)

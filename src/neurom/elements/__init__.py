@@ -3,6 +3,7 @@
 from neurom.elements.finite_element import (
     FiniteElement,
     DoF,
+    MapType,
     VALUE,
     D1,
     FLUX,
@@ -24,6 +25,7 @@ from neurom.elements.library import (
 __all__ = [
     "FiniteElement",
     "DoF",
+    "MapType",
     "EntityDim",
     "VALUE",
     "D1",

@@ -121,7 +121,7 @@ class TestQuadratureAssemblyDofTransformation:
 
         u_q = QuadratureAssembly(ctx, u).interpolate().u.values
         u_q_bare = FieldInterpolator(LinearBar(), u).at_reference(
-            ctx.interpolate.xi_back.values
-        )
+            ctx.interpolate.xi_back
+        ).values
 
         assert torch.equal(u_q, u_q_bare)

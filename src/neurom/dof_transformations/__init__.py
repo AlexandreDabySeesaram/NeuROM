@@ -6,6 +6,10 @@ The functionals are the only extension point (and are reused by ``FunctionSpace.
 """
 
 from neurom.dof_transformations.transformation import Transformation
+from neurom.dof_transformations.reference_to_physical import (
+    reference_to_physical,
+    reference_to_physical_at,
+)
 from neurom.dof_transformations.functionals import (
     DofFunctional,
     ValueFunctional,
@@ -15,6 +19,8 @@ from neurom.dof_transformations.functionals import (
 
 __all__ = [
     "Transformation",
+    "reference_to_physical",
+    "reference_to_physical_at",
     "DofFunctional",
     "ValueFunctional",
     "GradientFunctional",

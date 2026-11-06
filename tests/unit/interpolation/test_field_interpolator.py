@@ -8,6 +8,7 @@ from neurom.elements import P1_BAR
 from neurom.fields import Field, TrainableField
 from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.field_interpolator import FieldInterpolator
+from neurom.samplings import QuadratureSampling
 
 torch.set_default_dtype(torch.float32)
 
@@ -89,7 +90,7 @@ class TestFieldInterpolator:
         for val in values:
             xi = val["xi"]
             expected = val["expected"]
-            interp = field_interp.at_reference(xi)
+            interp = field_interp.at_reference(QuadratureSampling(xi)).values
             assert interp == pytest.approx(expected, rel=self.relative_tolerance), (
                 "xi = ",
                 xi,
@@ -130,7 +131,7 @@ class TestFieldInterpolator:
         for val in values:
             xi = val["xi"]
             expected = val["expected"]
-            interp = field_interp.at_reference(xi).detach()
+            interp = field_interp.at_reference(QuadratureSampling(xi)).values.detach()
             assert interp == pytest.approx(expected, rel=self.relative_tolerance), (
                 "xi = ",
                 xi,

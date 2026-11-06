@@ -6,11 +6,11 @@ from neurom.interpolation.field_interpolator import FieldInterpolator
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.fields.field_base import FieldBase
 from neurom.dof_transformations import Transformation
+from neurom.dof_transformations.reference_to_physical import reference_to_physical_at
 
 from neurom.interpolation.quadrature_assembly_result import (
     QuadratureAssemblyResult,
 )
-from neurom.samplings import QuadratureSampling
 
 
 class QuadratureAssembly(nn.Module):
@@ -63,9 +63,15 @@ class QuadratureAssembly(nn.Module):
         u_elem = self.field.at_elements()
         u_elem = self._dof_transformation.to_reference(u_elem)
 
-        # Interpolate field
-        u_q = QuadratureSampling(
-            self._field_interpolator.at_reference(quad_pos.xi_back.values, u_elem)
+        # Interpolate field (returns a Sampling, same batch as the quadrature positions)
+        u_q = self._field_interpolator.at_reference(quad_pos.xi_back, u_elem)
+
+        # Push the reference value forward to physical space (identity no-op for scalar/Lagrange).
+        u_q = reference_to_physical_at(
+            u_q,
+            self.context.mapping,
+            quad_pos.xi_back,
+            self.field.space.element.map_type,
         )
 
         # Assemble the result

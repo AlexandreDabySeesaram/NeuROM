@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 import torch
@@ -25,6 +26,27 @@ VALUE = "value"  # nodal value
 D1 = "d1"  # nodal first derivative (gradient)
 FLUX = "flux"  # edge/face normal flux (RT0)
 NORMAL_DERIVATIVE = "normal_derivative"  # Morley/HCT/Argyris (coupled)
+
+
+class MapType(IntEnum):
+    r"""Reference-to-physical push-forward of an element's basis under :math:`\phi_e`.
+
+    How a basis value transforms from the reference cell to a physical cell (applied *after* the
+    reference contraction; see :func:`neurom.dof_transformations.reference_to_physical`). The
+    integration measure always uses :math:`|\det J_e|`; the contravariant map uses the *signed*
+    :math:`\det J_e`.
+
+    Attributes:
+        IDENTITY (int): :math:`v(x) = \hat H(\xi)` -- point values (scalar / Lagrange / Hermite).
+        COVARIANT_PIOLA (int): :math:`v(x) = J_e^{-\top}\hat H(\xi)` -- preserves tangential
+            components (Nedelec / edge elements).
+        CONTRAVARIANT_PIOLA (int): :math:`v(x) = \tfrac{1}{\det J_e}\,J_e\,\hat H(\xi)` (signed) --
+            preserves normal fluxes w.r.t. :math:`R\,\mathbf t` (RT0 / face elements).
+    """
+
+    IDENTITY = 0
+    COVARIANT_PIOLA = 1
+    CONTRAVARIANT_PIOLA = 2
 
 
 @dataclass(frozen=True)
@@ -96,7 +118,9 @@ class FiniteElement:
             DoF(VERTEX,0,D1), DoF(VERTEX,1,VALUE), DoF(VERTEX,1,D1)]``.
         value_shape (tuple[int, ...]): Component shape of the field value; ``()``
             scalar, ``(2,)`` a 2-vector. Orthogonal to ``dof_layout``.
-        pullback (str): ``"identity"`` (scalar/Lagrange/Hermite) or ``"piola"`` (RT0).
+        map_type (MapType): Reference-to-physical push-forward of the basis (default
+            :attr:`MapType.IDENTITY`); :attr:`MapType.COVARIANT_PIOLA` / ``CONTRAVARIANT_PIOLA``
+            for edge/face elements. An ``int`` is accepted and coerced.
         nodal (bool): Whether the coded basis is dual to the DOFs (default ``True``). If ``True``,
             the construction-time duality check requires ``V == I``; set ``False`` for a non-nodal
             (e.g. hierarchical) basis, whose ``C = V^{-1}`` is folded into the tabulation later.
@@ -108,7 +132,7 @@ class FiniteElement:
         cell (ReferenceCell): The reference cell (``reference_basis.reference_cell``).
         dof_layout (tuple[DoF, ...]): The normalised DOF layout.
         value_shape (tuple[int, ...]): Field component shape.
-        pullback (str): The push-forward label.
+        map_type (MapType): The reference-to-physical push-forward of the basis.
         nodal (bool): Whether the element is declared nodal.
         V (torch.Tensor | None): The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)` of the
             *coded* basis, computed at construction (``None`` if a DOF kind has no functional).
@@ -121,7 +145,7 @@ class FiniteElement:
         reference_basis: ShapeFunction,
         dof_layout: Sequence[DoF | tuple],
         value_shape: tuple[int, ...] = (),
-        pullback: str = "identity",
+        map_type: MapType = MapType.IDENTITY,
         nodal: bool = True,
         dof_nodes=None,
     ) -> None:
@@ -137,7 +161,7 @@ class FiniteElement:
             None if dof_nodes is None else torch.as_tensor(dof_nodes, dtype=torch.float64)
         )
         self.value_shape = tuple(value_shape)
-        self.pullback = pullback
+        self.map_type = MapType(int(map_type))
         self.nodal = nodal
         self.V: torch.Tensor | None = None
         self.C: torch.Tensor | None = None

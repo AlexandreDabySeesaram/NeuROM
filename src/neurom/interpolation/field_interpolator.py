@@ -1,10 +1,13 @@
 """Interpolation of a field at reference coordinates using shape functions."""
 
+from dataclasses import replace
+
 import torch
 import torch.nn as nn
 
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.fields.field_base import FieldBase
+from neurom.samplings import Sampling
 
 
 class FieldInterpolator(nn.Module):
@@ -27,24 +30,27 @@ class FieldInterpolator(nn.Module):
         self.sf = sf
         self.field = field
 
-    def at_reference(self, xi: torch.Tensor, u_elem: torch.Tensor | None = None):
+    def at_reference(self, xi: Sampling, u_elem: torch.Tensor | None = None) -> Sampling:
         """Interpolate the field at reference-element coordinates.
 
-        Evaluates the shape functions at ``xi`` and contracts them with the
-        element-wise DOFs via an Einstein summation.
+        Evaluates the shape functions at ``xi`` and contracts them with the element-wise DOFs. The
+        contraction (a reduction over the DOF axis) is a direct einsum on ``xi.values``, rewrapped
+        with the input's subtype/batch via :func:`dataclasses.replace` -- the same Sampling-native
+        pattern as :meth:`neurom.geometry.AffineSimplexMapping.map` (which contracts geometry nodes
+        rather than field DOFs). Not an :func:`~neurom.apply.apply` op: ``apply`` broadcasts, this
+        reduces.
 
         Args:
-            xi (torch.Tensor): Reference coordinates, tensor of shape
-                ``(N_e, N_q, dim)``.
-            u_elem (torch.Tensor, optional): Reference DOFs gathered per
-                element, tensor of shape ``(N_e, N_dofs, field_dim)``.
-                Defaults to ``self.field.at_elements()``.
+            xi (Sampling): Reference coordinates, ``f_shape == (dim,)`` and a leading element axis
+                (e.g. a ``QuadratureSampling`` of batch ``(N_e, N_q)``).
+            u_elem (torch.Tensor, optional): Reference DOFs gathered per element, tensor of shape
+                ``(N_e, N_dofs, *field_dim)``. Defaults to ``self.field.at_elements()``.
 
         Returns:
-            torch.Tensor: Interpolated field values, tensor of shape
-            ``(N_e, N_q, field_dim)``.
+            Sampling: Interpolated field values, same subtype/batch as ``xi``,
+            ``f_shape == (*field_dim,)``.
         """
         if u_elem is None:
             u_elem = self.field.at_elements()
-        N = self.sf.N(xi)
-        return torch.einsum("en...,eqn...->eq...", u_elem, N)
+        N = self.sf.N(xi.values)
+        return replace(xi, values=torch.einsum("en...,eqn...->eq...", u_elem, N))

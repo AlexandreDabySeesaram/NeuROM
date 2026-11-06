@@ -7,6 +7,7 @@ from neurom.fields.field_base import FieldBase
 from neurom.meshes.mesh import Mesh
 from neurom.samplings import ElementSampling
 from neurom.dof_transformations import Transformation
+from neurom.dof_transformations.reference_to_physical import reference_to_physical_at
 
 
 class PointWiseInterpolator(nn.Module):
@@ -90,6 +91,15 @@ class PointWiseInterpolator(nn.Module):
         # One query point per element: a single ``(N_pts,)`` batch, no fabricated quadrature axis.
         # The mapping, shape functions and the contraction are all batch-rank-agnostic, so the point
         # layout flows through directly.
-        xi = self._mapping.inverse_map_at(ElementSampling(x), element_ids).values  # (N_pts, dim_ref)
+        points = ElementSampling(x)
+        xi = self._mapping.inverse_map_at(points, element_ids).values  # (N_pts, dim_ref)
         N = self.sf.N(xi)  # (N_pts, n_dofs)
-        return torch.einsum("en...,en->e...", u_elem, N)  # (N_pts, field_dim)
+        val = torch.einsum("en...,en->e...", u_elem, N)  # (N_pts, field_dim)
+        # Push the reference value forward to physical space (identity no-op for scalar/Lagrange).
+        return reference_to_physical_at(
+            ElementSampling(val),
+            self._mapping,
+            points,
+            self.field.space.element.map_type,
+            element_ids,
+        ).values

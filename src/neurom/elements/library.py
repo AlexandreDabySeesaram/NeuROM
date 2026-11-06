@@ -39,7 +39,7 @@ def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
         base.reference_basis,
         base.dof_layout,
         value_shape=(dim,),
-        pullback=base.pullback,
+        map_type=base.map_type,
         dof_nodes=base._dof_nodes,
     )
 

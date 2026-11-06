@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from neurom.meshes.topology import Topology
@@ -256,10 +257,11 @@ def test_p3_like_shared_edge_single_valued_under_the_permutation():
             p = xa + t * (xb - xa)
             g = int(dm.cell_dofs[e, 3 + 2 * s + rank])  # 3 vertex DOFs precede the edge block
             if g in point_of:
-                assert torch.allclose(point_of[g], p), (
+                assert point_of[g].numpy() == pytest.approx(p.numpy(), rel=1e-12), (
                     "same global DOF mapped to different physical points -- permutation wrong"
                 )
-                assert values[g] == value_of[g]  # same DOF -> one field value (continuous)
+                # same DOF -> one field value (continuous)
+                assert float(values[g]) == pytest.approx(float(value_of[g]), rel=1e-12)
             point_of[g], value_of[g] = p, values[g]
 
     assert len(point_of) == 2  # the edge's two DOFs are shared (4 contributions -> 2 globals)

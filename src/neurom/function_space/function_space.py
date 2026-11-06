@@ -150,8 +150,13 @@ class FunctionSpace(nn.Module):
         imposed = torch.zeros(n, n_comp, dtype=torch.get_default_dtype())
         for bc in bcs:
             comps, vals = bc.component_values(n_comp)
-            for d in bc.dofs(self.dof_map).tolist():
-                for c, v in zip(comps, vals):
-                    fixed[d, c] = True
-                    imposed[d, c] = v
+            dofs = bc.dofs(self.dof_map)  # (n_dofs,) global scalar-DOF indices
+            if dofs.numel() == 0:
+                continue
+            # Scatter this BC's (dof, component) block at once (rows = dofs, cols = fixed comps);
+            # later BCs overwrite earlier ones at shared slots, as the per-element loop did.
+            comps_t = torch.tensor(comps, dtype=torch.int64)
+            rows = dofs.reshape(-1, 1)
+            fixed[rows, comps_t] = True
+            imposed[rows, comps_t] = torch.tensor(vals, dtype=imposed.dtype)
         return ~fixed, imposed

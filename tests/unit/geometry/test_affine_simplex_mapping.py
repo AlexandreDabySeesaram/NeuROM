@@ -11,7 +11,7 @@ import torch
 
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace
-from neurom.elements import P1_BAR, P1_TRIANGLE, VectorElement
+from neurom.elements import P1_BAR, P1_TRIANGLE, P2_TRIANGLE, VectorElement
 from neurom.fields import Field
 from neurom.geometry import AffineSimplexMapping
 from neurom.samplings import QuadratureSampling
@@ -147,3 +147,12 @@ def test_map_reproduces_vertices(unit_square_mesh):
     x = mapping.map(QuadratureSampling(xi_vertices)).values
     expected = unit_square_mesh.coordinates.at_elements()
     assert x.detach().numpy() == pytest.approx(expected.detach().numpy(), rel=REL)
+
+
+def test_rejects_higher_order_geometry():
+    """(WP8 guard) the affine map needs a P1 coordinate space; a P2 (curved) geometry raises."""
+    topo = Topology(torch.tensor([[0, 1, 2], [0, 2, 3]]))
+    geo = FunctionSpace(topo, VectorElement(P2_TRIANGLE, 2))  # quadratic geometry basis
+    mesh = Mesh(topo, Field(geo, torch.zeros(geo.n_scalar_dofs, 2)))
+    with pytest.raises(NotImplementedError, match="affine"):
+        AffineSimplexMapping(mesh)

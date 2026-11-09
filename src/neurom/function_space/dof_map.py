@@ -95,6 +95,13 @@ class DofMap(nn.Module):
             cell_dofs[:, i] = self._offset[ed] + global_entity * dpe + eff_rank
 
         # Periodic identification + compaction: remap[old_global] -> new_global.
+        if periodic and any(d != EntityDim.VERTEX for d in self._dofs_per_entity):
+            nonv = sorted(int(d) for d in self._dofs_per_entity if d != EntityDim.VERTEX)
+            raise NotImplementedError(
+                f"periodic identification merges only vertex DOFs, but this element also has DOFs "
+                f"on dimension(s) {nonv} (edges/faces); periodic with non-vertex DOFs is not "
+                "implemented (edge identification would need orientation)."
+            )
         remap = self._build_remap(total, periodic)
         self.register_buffer("_remap", remap)
         self.n_scalar_dofs = int(remap.max().item()) + 1 if total else 0
@@ -157,6 +164,12 @@ class DofMap(nn.Module):
         Returns:
             torch.Tensor: Sorted global scalar-DOF indices.
         """
+        if entity_dim not in self._kinds_per_entity:
+            have = sorted(int(d) for d in self._kinds_per_entity)
+            raise ValueError(
+                f"the element has no DOFs on entity dimension {int(entity_dim)}; its DOFs live on "
+                f"dimension(s) {have}."
+            )
         all_kinds = self._kinds_per_entity[entity_dim]
         if kinds is None:
             ranks = torch.arange(len(all_kinds), dtype=torch.int64)

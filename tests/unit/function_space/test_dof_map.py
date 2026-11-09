@@ -4,6 +4,7 @@ import torch
 from neurom.meshes.topology import Topology
 from neurom.elements import (
     P1_BAR,
+    P1_TRIANGLE,
     HERMITE,
     DG0_BAR,
     DG0_TRIANGLE,
@@ -237,3 +238,17 @@ def test_locate_returns_both_dofs_of_a_repeated_kind():
     dofs = dm.locate(EntityDim.EDGE, [shared], ["value"])
     assert len(dofs) == 2
     assert set(dofs.tolist()) == {4 + shared * 2, 4 + shared * 2 + 1}
+
+
+def test_periodic_with_non_vertex_dofs_raises():
+    """(WP8 guard) periodic merges only vertex DOFs; a layout with edge DOFs + periodic raises."""
+    topo = _two_triangle_square()
+    with pytest.raises(NotImplementedError, match="periodic"):
+        DofMap(topo, P2_TRIANGLE.dof_layout, periodic=[(0, 1)])
+
+
+def test_locate_on_a_dimension_without_dofs_raises():
+    """(WP8 guard) locating a dimension the element has no DOFs on gives a clear error (not KeyError)."""
+    dm = DofMap(_two_triangle_square(), P1_TRIANGLE.dof_layout)  # vertex DOFs only
+    with pytest.raises(ValueError, match="no DOFs on entity dimension"):
+        dm.locate(EntityDim.EDGE, [0])

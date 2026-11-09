@@ -102,14 +102,15 @@ def test_gradient_functional_on_function_is_derivative():
     )
 
 
-def test_invert_square_and_rectangular():
-    # square -> inverse
+def test_invert_square():
     A = torch.tensor([[[2.0, 0.0], [0.0, 4.0]]], dtype=F64)
     assert torch.allclose(
         _invert(A), torch.tensor([[[0.5, 0.0], [0.0, 0.25]]], dtype=F64)
     )
-    # rectangular (n_phys=3, n_ref=2) -> pinv of shape (1, 2, 3); pinv(L) @ L == I_2
-    L = torch.randn(1, 3, 2, dtype=F64)
-    M = _invert(L)
-    assert M.shape == (1, 2, 3)
-    assert torch.allclose(M @ L, torch.eye(2, dtype=F64).unsqueeze(0), atol=1e-10)
+
+
+def test_invert_rejects_non_square_L():
+    """(WP8 guard) a rectangular L_e raises rather than silently pseudo-inverting (a wrong M_e)."""
+    L = torch.randn(1, 3, 2, dtype=F64)  # n_phys=3, n_ref=2
+    with pytest.raises(NotImplementedError, match="non-square"):
+        _invert(L)

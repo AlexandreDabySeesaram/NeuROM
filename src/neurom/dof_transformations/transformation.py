@@ -44,16 +44,26 @@ if TYPE_CHECKING:
 
 
 def _invert(L: torch.Tensor) -> torch.Tensor:
-    r"""Invert :math:`L_e` to :math:`M_e`: exact inverse if square, else the pseudo-inverse.
+    r"""Invert a square :math:`L_e` to :math:`M_e = L_e^{-1}`.
 
     Args:
         L (torch.Tensor): Batched :math:`L_e`, shape ``(n_e, n_phys, n_ref)``.
 
     Returns:
-        torch.Tensor: Batched :math:`M_e`, shape ``(n_e, n_ref, n_phys)`` -- ``torch.linalg.inv``
-        when ``n_phys == n_ref`` (square, unisolvent), otherwise ``torch.linalg.pinv``.
+        torch.Tensor: Batched :math:`M_e = L_e^{-1}`, shape ``(n_e, n_ref, n_phys)``.
+
+    Raises:
+        NotImplementedError: If :math:`L_e` is non-square (``n_phys != n_ref``). A pseudo-inverse
+            would silently give the wrong DOF transformation; a correct rectangular element needs
+            the constraint-functional extension of Kirby (2018, §4), not yet implemented.
     """
-    return torch.linalg.inv(L) if L.shape[-1] == L.shape[-2] else torch.linalg.pinv(L)
+    if L.shape[-1] != L.shape[-2]:
+        raise NotImplementedError(
+            f"non-square L_e {tuple(L.shape[-2:])} (n_phys != n_ref): rectangular DOF "
+            "transformations are not supported -- a pseudo-inverse is silently wrong; build a "
+            "unisolvent (square) element, or add the constraint functionals of Kirby (2018, §4)."
+        )
+    return torch.linalg.inv(L)
 
 
 class Transformation(nn.Module):

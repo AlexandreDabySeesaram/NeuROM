@@ -180,7 +180,27 @@ class FiniteElement:
         self.g_e_closed_form = g_e_closed_form
         self.V: torch.Tensor | None = None
         self.C: torch.Tensor | None = None
+        self._check_distinct_dofs()
         self._resolve_duality()
+
+    def _check_distinct_dofs(self) -> None:
+        """Reject a degenerate layout: two DOFs of the same kind at the same reference point.
+
+        Such a pair is the same functional twice, so the element cannot be unisolvent (the duality
+        matrix has a repeated row). Caught here with a precise message rather than surfacing later as
+        a singular/non-identity ``V``. Two DOFs of *different* kinds at one point (Hermite's value +
+        slope) or the same kind at *different* points (P3's two edge nodes) are both fine.
+        """
+        xi = self.dof_nodes_xi()  # (n_dofs, dim_ref)
+        seen: dict = {}
+        for i, dof in enumerate(self.dof_layout):
+            key = (dof.kind, tuple(round(float(c), 9) for c in xi[i]))
+            if key in seen:
+                raise ValueError(
+                    f"degenerate DOF layout: DOFs {seen[key]} and {i} are both kind {dof.kind!r} "
+                    f"at the same reference point {xi[i].tolist()} -- the element is not unisolvent."
+                )
+            seen[key] = i
 
     def duality_matrix(self) -> torch.Tensor | None:
         r"""The duality matrix :math:`V_{ab} = \hat\ell_a(\hat\Phi_b)`, or ``None``.

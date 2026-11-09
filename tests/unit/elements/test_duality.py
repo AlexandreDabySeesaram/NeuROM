@@ -23,6 +23,7 @@ from neurom.elements import (
 )
 from neurom.shape_functions.shape_function import ShapeFunction
 from neurom.shape_functions.quadratic_bar import QuadraticBar
+from neurom.shape_functions.linear_bar import LinearBar
 from neurom.reference_cell import BAR
 
 LIBRARY = [
@@ -99,4 +100,13 @@ def test_non_unisolvent_element_is_rejected():
         FiniteElement(
             QuadraticBar(),
             [DoF(EntityDim.VERTEX, 0, VALUE), DoF(EntityDim.VERTEX, 1, VALUE)],
+        )
+
+
+def test_degenerate_dof_layout_raises():
+    """(WP8 guard) two DOFs of the same kind at the same reference point -> not unisolvent."""
+    with pytest.raises(ValueError, match="same reference point"):
+        FiniteElement(
+            LinearBar(),
+            [DoF(EntityDim.VERTEX, 0, VALUE), DoF(EntityDim.VERTEX, 0, VALUE)],
         )

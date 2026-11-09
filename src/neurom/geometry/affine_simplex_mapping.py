@@ -86,6 +86,17 @@ class AffineSimplexMapping(nn.Module):
         self._grad0 = self.sf.grad_N(probe)[0, 0]  # (n_nodes, dim_ref), constant for P1
         self._xi0 = cell.simplex[0].to(dtype=dtype)  # (dim_ref,) reference image of local vertex 0
 
+        # Guard the affine assumption: the reference gradient must be constant. Evaluate it at a
+        # second reference point (another vertex) and reject a non-affine (curved / higher-order)
+        # geometry basis, whose gradient varies with xi -- it would need an isoparametric mapping.
+        probe2 = cell.simplex[-1:].unsqueeze(0).to(dtype=dtype)
+        if not torch.allclose(self._grad0, self.sf.grad_N(probe2)[0, 0], atol=1e-7):
+            raise NotImplementedError(
+                "AffineSimplexMapping requires an affine (P1) coordinate space, but the geometry "
+                "basis has a non-constant reference gradient (curved / higher-order geometry). Use "
+                "a P1 coordinate element, or a curved isoparametric mapping (not implemented)."
+            )
+
         self._build()
 
     def _build(self) -> None:

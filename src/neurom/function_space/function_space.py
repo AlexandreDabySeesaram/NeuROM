@@ -32,9 +32,16 @@ class DirichletBC:
             entity dimension.
         components (Sequence[int], optional): Value-component indices to fix; defaults to all
             components of the field.
-        value (float | Sequence[float]): Imposed value(s). A scalar applies to every fixed
-            component; a sequence must match the fixed components (``components`` if given,
-            else all ``n_components``).
+        value (float | Sequence[float] | torch.Tensor): Imposed value(s). A scalar applies to
+            every fixed component; a sequence must match the fixed components (``components`` if
+            given, else all ``n_components``). A **per-DOF tensor** ``(n_scalar_dofs, n_components)``
+            imposes function-valued data: evaluate ``g = interpolate(space, mesh, f)`` (the
+            mesh-explicit path) and pass ``g`` -- only its selected DOFs are read, so the space
+            stays geometry-free. A *callable* ``value`` is rejected (resolve it via ``interpolate``
+            first).
+        closure (bool): If ``True``, also fix the DOFs of the selected entities' sub-entities
+            (an edge's vertices) -- so a P2 clamp built from boundary *edges* also clamps the
+            boundary *vertices*. Defaults to ``False`` (only the entities' own DOFs).
     """
 
     def __init__(
@@ -44,15 +51,17 @@ class DirichletBC:
         kinds=None,
         components=None,
         value=0.0,
+        closure=False,
     ):
         self.entity_dim = entity_dim
         self.entities = entities
         self.kinds = kinds
         self.components = components
         self.value = value
+        self.closure = closure
 
     def dofs(self, dof_map: DofMap) -> torch.Tensor:
-        """Resolve to global scalar-DOF indices via the DOF map."""
+        """Resolve to global scalar-DOF indices via the DOF map (no closure; see FunctionSpace.locate)."""
         return dof_map.locate(self.entity_dim, self.entities, self.kinds)
 
     def component_values(self, n_components: int):
@@ -123,9 +132,36 @@ class FunctionSpace(nn.Module):
         """The DOF connectivity ``(cell -> global scalar DOFs)``."""
         return self._connectivity
 
-    def locate(self, entity_dim: int | EntityDim, entities, kinds=None) -> torch.Tensor:
-        """Global scalar-DOF indices for an ``(entity, kind)`` selection (for BCs / init)."""
-        return self.dof_map.locate(entity_dim, entities, kinds)
+    def locate(
+        self, entity_dim: int | EntityDim, entities, kinds=None, closure=False
+    ) -> torch.Tensor:
+        """Global scalar-DOF indices for an ``(entity, kind)`` selection (for BCs / init).
+
+        With ``closure=True`` the result also includes the DOFs of the selected entities'
+        sub-entities -- currently an edge's two vertices -- so a selection of boundary *edges*
+        also returns the boundary *vertex* DOFs. Needs the topology (edge -> vertices), which is
+        why closure lives here rather than on :class:`DofMap`.
+
+        Args:
+            entity_dim (int | EntityDim): Dimension of the entities.
+            entities (Sequence[int]): Global entity indices.
+            kinds (Sequence[str], optional): DOF kinds to select; defaults to all on that dimension.
+            closure (bool): Also include sub-entity DOFs (edge -> its vertices).
+
+        Returns:
+            torch.Tensor: Sorted global scalar-DOF indices.
+        """
+        dofs = self.dof_map.locate(entity_dim, entities, kinds)
+        if not closure or entity_dim == EntityDim.VERTEX:
+            return dofs
+        if entity_dim == EntityDim.EDGE:
+            edges = torch.as_tensor(list(entities), dtype=torch.int64)
+            verts = torch.unique(self.topology.edge_vertices[edges].reshape(-1))
+            vdofs = self.dof_map.locate(EntityDim.VERTEX, verts.tolist(), kinds)
+            return torch.unique(torch.cat([dofs, vdofs]))
+        raise NotImplementedError(
+            f"closure is implemented for edges (-> vertices); got entity_dim {int(entity_dim)}."
+        )
 
     def compile_constraint(self, bcs, n_comp: int):
         """Compile boundary conditions into a per-component free/fixed split.
@@ -136,6 +172,13 @@ class FunctionSpace(nn.Module):
         BC" leaves every slot free. The field (:class:`~neurom.fields.TrainableField`) stores
         the free slots as its parameter and scatters on expansion.
 
+        **Geometry-free by design:** this method never sees node positions. A BC value may be a
+        constant (scalar / per-component) or a **per-DOF tensor** -- the latter is how function-
+        valued boundary data is imposed: evaluate ``g = interpolate(space, mesh, f)`` (the
+        mesh-explicit interpolation path) and pass ``g`` as the BC ``value``; only its boundary
+        DOFs are read. Re-evaluating ``g`` when the geometry moves (r-adaptivity) is then an
+        explicit choice in the geometry layer, never hidden in the space.
+
         Args:
             bcs (Sequence[DirichletBC]): The essential boundary conditions.
             n_comp (int): The field's component count.
@@ -144,19 +187,33 @@ class FunctionSpace(nn.Module):
             tuple[torch.Tensor, torch.Tensor]: ``(free_mask, imposed)``, each
             ``(n_scalar_dofs, n_comp)`` -- ``free_mask`` is ``True`` where the slot is
             trainable, ``imposed`` holds the fixed values (``0`` on free slots).
+
+        Raises:
+            TypeError: If a BC ``value`` is a callable -- resolve it via
+                :func:`neurom.interpolation.interpolate` and pass the resulting per-DOF tensor
+                (keeping the space geometry-free).
         """
         n = self.n_scalar_dofs
         fixed = torch.zeros(n, n_comp, dtype=torch.bool)
         imposed = torch.zeros(n, n_comp, dtype=torch.get_default_dtype())
         for bc in bcs:
-            comps, vals = bc.component_values(n_comp)
-            dofs = bc.dofs(self.dof_map)  # (n_dofs,) global scalar-DOF indices
+            dofs = self.locate(bc.entity_dim, bc.entities, bc.kinds, closure=bc.closure)
             if dofs.numel() == 0:
                 continue
-            # Scatter this BC's (dof, component) block at once (rows = dofs, cols = fixed comps);
-            # later BCs overwrite earlier ones at shared slots, as the per-element loop did.
+            comps = (
+                list(range(n_comp)) if bc.components is None else list(bc.components)
+            )
             comps_t = torch.tensor(comps, dtype=torch.int64)
             rows = dofs.reshape(-1, 1)
             fixed[rows, comps_t] = True
-            imposed[rows, comps_t] = torch.tensor(vals, dtype=imposed.dtype)
+            if callable(bc.value):
+                raise TypeError(
+                    "DirichletBC value is a callable; FunctionSpace is geometry-free. Resolve it "
+                    "with g = interpolate(space, mesh, f) and pass g (a per-DOF tensor) as value."
+                )
+            if torch.is_tensor(bc.value):
+                imposed[rows, comps_t] = bc.value.to(imposed.dtype)[dofs][:, comps_t]
+            else:
+                _, vals = bc.component_values(n_comp)
+                imposed[rows, comps_t] = torch.tensor(vals, dtype=imposed.dtype)
         return ~fixed, imposed

@@ -203,3 +203,36 @@ class Topology(nn.Module):
             self._ensure_edges()
             return self._edge_orientation
         return torch.ones_like(self.cell_entities(d), dtype=torch.int64)
+
+    def boundary(self, dim: EntityDim) -> torch.Tensor:
+        """Global indices of the boundary entities of dimension ``dim``.
+
+        A **facet** (dimension :attr:`facet_dim`) is on the boundary when it belongs to exactly one
+        cell; lower-dimensional boundary entities are the sub-entities of those boundary facets. So
+        in 1-D ``boundary(0)`` is the two end vertices; in 2-D ``boundary(1)`` is the boundary edges
+        and ``boundary(0)`` their vertices.
+
+        Args:
+            dim (EntityDim): Dimension of the boundary entities to return
+                (``EntityDim.VERTEX`` or :attr:`facet_dim`).
+
+        Returns:
+            torch.Tensor: Sorted global entity indices.
+
+        Raises:
+            NotImplementedError: For a dimension that is neither the facets nor the vertices.
+        """
+        facet = self.facet_dim
+        incidence = self.cell_entities(facet).reshape(-1)  # each cell's facets, flattened
+        counts = torch.bincount(incidence, minlength=self.n_entities(facet))
+        boundary_facets = torch.nonzero(counts == 1, as_tuple=False).reshape(-1)
+        if dim == facet:
+            return boundary_facets
+        if dim == EntityDim.VERTEX:
+            if facet == EntityDim.VERTEX:  # 1-D: the facets already are vertices
+                return boundary_facets
+            return torch.unique(self.edge_vertices[boundary_facets].reshape(-1))
+        raise NotImplementedError(
+            f"boundary({int(dim)}) is not built: only facets ({facet}) and vertices (0) are "
+            "available."
+        )

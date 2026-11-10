@@ -93,8 +93,10 @@ class PointWiseInterpolator(nn.Module):
         # layout flows through directly.
         points = ElementSampling(x)
         xi = self._mapping.inverse_map_at(points, element_ids).values  # (N_pts, dim_ref)
-        N = self.sf.N(xi)  # (N_pts, n_dofs)
-        val = torch.einsum("en...,en->e...", u_elem, N)  # (N_pts, field_dim)
+        N = self.sf.N(xi)  # (N_pts, n_ref) scalar, or (N_pts, n_ref, gdim) vector
+        # Contract the basis axis; the "..." on N carries a vector basis's trailing gdim axis
+        # (symmetric with FieldInterpolator.at_reference), and is empty for a scalar basis.
+        val = torch.einsum("en...,en...->e...", u_elem, N)  # (N_pts, field_dim)
         # Push the reference value forward to physical space (identity no-op for scalar/Lagrange).
         return reference_to_physical_at(
             ElementSampling(val),

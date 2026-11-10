@@ -42,10 +42,23 @@ class ShapeFunction(ABC):
                 ``(N_e, N_q, dim_ref)``.
 
         Returns:
-            torch.Tensor: Shape-function values of shape
-            ``(N_e, N_q, N_nodes)``.
+            torch.Tensor: Shape-function values of shape ``(N_e, N_q, n_ref)`` for a **scalar**
+            basis, or ``(N_e, N_q, n_ref, gdim)`` for a **vector-valued** basis (each basis function
+            is itself a ``gdim``-vector, e.g. RT0). The basis-function axis is the one contracted
+            against the DOF coefficients; any trailing component axis rides along.
         """
         pass
+
+    @property
+    def n_ref(self) -> int:
+        r"""Number of reference basis functions :math:`\{\hat H_a\}` (the count contracted against DOFs).
+
+        Default: read it off a one-point probe, assuming a **scalar** basis where ``N``'s trailing
+        axis *is* the basis count. A **vector-valued** basis returns ``(*batch, n_ref, gdim)``, so it
+        **must override** this to report ``n_ref`` (the basis-function axis), not ``gdim``.
+        """
+        probe = self.reference_cell.simplex[:1]  # (1, dim_ref); any batch rank works
+        return self.N(probe).shape[-1]
 
     def grad_N(self, xi: torch.Tensor) -> torch.Tensor:
         r"""Reference gradient of the basis: :math:`\partial N_a/\partial\xi_j`.

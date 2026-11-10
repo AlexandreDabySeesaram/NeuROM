@@ -299,14 +299,14 @@ class FiniteElement:
 
     @property
     def n_ref(self) -> int:
-        r"""Number of reference basis functions = size of :math:`N(\xi)`'s trailing axis.
+        r"""Number of reference basis functions :math:`\{\hat H_a\}`, declared by the basis.
 
-        Obtained by evaluating the (batch-rank-agnostic) basis at a single probe point -- the first
-        reference vertex, shape ``(1, dim_ref)`` -- and reading the trailing axis. May differ from
-        ``n_dofs`` (e.g. a hierarchical/bubble basis).
+        Delegates to :attr:`~neurom.shape_functions.shape_function.ShapeFunction.n_ref` -- the basis
+        knows its own count (for a scalar basis it is ``N``'s trailing size; for a vector-valued
+        basis like RT0 it is the basis-function axis, not ``gdim``). May differ from ``n_dofs``
+        (a hierarchical/bubble basis).
         """
-        probe = self.cell.simplex[:1]  # (1, dim_ref), first vertex -- any batch shape works
-        return self.reference_basis.N(probe).shape[-1]
+        return self.reference_basis.n_ref
 
     @property
     def n_components(self) -> int:

@@ -38,6 +38,8 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 
+from neurom.elements.finite_element import MapType
+
 if TYPE_CHECKING:
     from neurom.dof_transformations.functionals import DofFunctional
     from neurom.elements.finite_element import FiniteElement
@@ -88,10 +90,11 @@ class Transformation(nn.Module):
             geometry-independent and not identity; otherwise ``None`` (a registered buffer).
     """
 
-    def __init__(self, element: FiniteElement, mapping) -> None:
+    def __init__(self, element: FiniteElement, mapping, entity_geometry=None) -> None:
         super().__init__()
         self.element = element
         self.mapping = mapping
+        self._entity_geometry = entity_geometry
 
         # Every DOF must carry a functional.
         layout = element.dof_layout
@@ -107,6 +110,18 @@ class Transformation(nn.Module):
         self._xi = element.dof_nodes_xi()  # (n_phys, dim_ref)
         self._n_phys = element.n_dofs
         self._n_ref = element.n_ref
+
+        # T_e = diag(sigma): a direction-carrying DOF (Piola element, map_type != IDENTITY) on a
+        # facet flips sign with the facet orientation, so the two cells sharing it agree on the
+        # globally oriented flux/circulation. Precompute, per DOF, the local-facet index whose sign
+        # applies (-1 for sign-free DOFs). None when the element carries no signs (every current
+        # scalar element) -- then to_reference touches nothing.
+        self._sign_facets = None
+        if entity_geometry is not None and element.map_type != MapType.IDENTITY:
+            facet = entity_geometry.facet_dim
+            idx = [d.local_index if d.entity_dim == facet else -1 for d in layout]
+            if any(i >= 0 for i in idx):
+                self._sign_facets = torch.tensor(idx, dtype=torch.int64)
 
         # Does any functional depend on the geometry (the mapping)?
         self._geometry_dependent = any(f.geometry_dependent for f in groups)
@@ -170,16 +185,29 @@ class Transformation(nn.Module):
         Returns:
             torch.Tensor: Reference coefficients, shape ``(n_e, n_ref, *value_shape)``.
         """
+        # T_e first (M_e = G_e T_e): bring the globally-oriented physical DOFs to local orientation.
+        u = self._apply_signs(u_elem, element_ids)
         if self._identity:
-            return u_elem
+            return u
         if self._M_const is not None:
-            return torch.einsum(
-                "rp,ep...->er...", self._M_const.to(u_elem.dtype), u_elem
-            )
+            return torch.einsum("rp,ep...->er...", self._M_const.to(u.dtype), u)
         if self._g_e_closed_form is not None:
             # Closed form: M_e = G_e(J_e) directly from the (constant, affine) per-element Jacobian,
             # kept in-graph so position gradients still flow (r-adaptivity). No assembly/inversion.
             M = self._g_e_closed_form(self.mapping.element_jacobian(element_ids))
-            return torch.einsum("erp,ep...->er...", M.to(u_elem.dtype), u_elem)
-        L = self._assemble_L(u_elem.shape[0], u_elem.dtype, u_elem.device, element_ids)
-        return torch.einsum("erp,ep...->er...", _invert(L), u_elem)
+            return torch.einsum("erp,ep...->er...", M.to(u.dtype), u)
+        L = self._assemble_L(u.shape[0], u.dtype, u.device, element_ids)
+        return torch.einsum("erp,ep...->er...", _invert(L), u)
+
+    def _apply_signs(self, u_elem: torch.Tensor, element_ids) -> torch.Tensor:
+        r"""Apply :math:`T_e = \operatorname{diag}(\sigma)` to the DOF axis (identity if sign-free).
+
+        For a direction-carrying element each facet DOF is multiplied by its facet's orientation sign
+        :math:`\sigma_{e,s}`; non-facet DOFs (and every DOF of a scalar element) are left unchanged.
+        """
+        if self._sign_facets is None:
+            return u_elem
+        signs = self._entity_geometry.facet_signs(element_ids).to(u_elem.dtype)  # (n_e, n_local_facets)
+        gathered = signs[:, self._sign_facets.clamp(min=0)]  # (n_e, n_dofs)
+        sigma = torch.where(self._sign_facets >= 0, gathered, torch.ones_like(gathered))
+        return u_elem * sigma.reshape(*sigma.shape, *([1] * (u_elem.ndim - 2)))

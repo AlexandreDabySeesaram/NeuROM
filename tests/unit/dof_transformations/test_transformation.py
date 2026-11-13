@@ -4,9 +4,17 @@ import torch
 from neurom.meshes import Mesh, Topology
 from neurom.function_space import FunctionSpace
 from neurom.fields import Field
-from neurom.geometry import AffineSimplexMapping
-from neurom.elements import P1_BAR, HERMITE, VectorElement, FiniteElement
-from neurom.shape_functions import HermiteBeam
+from neurom.geometry import AffineSimplexMapping, EntityGeometry
+from neurom.elements import (
+    P1_BAR,
+    HERMITE,
+    P1_TRIANGLE,
+    P2_TRIANGLE,
+    VectorElement,
+    FiniteElement,
+    MapType,
+)
+from neurom.shape_functions import HermiteBeam, QuadraticTriangle
 from neurom.dof_transformations import (
     Transformation,
     ValueFunctional,
@@ -15,6 +23,13 @@ from neurom.dof_transformations import (
 from neurom.dof_transformations.transformation import _invert
 
 F64 = torch.float64
+
+
+def _square_mesh():
+    """Unit square as two triangles sharing the diagonal edge (0, 2) -- for the T_e facet-sign tests."""
+    topo = Topology(torch.tensor([[0, 1, 2], [0, 2, 3]]))
+    pts = torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=F64)
+    return Mesh(topo, Field(FunctionSpace(topo, VectorElement(P1_TRIANGLE, 2)), pts))
 
 
 def _graded_mapping():
@@ -114,3 +129,34 @@ def test_invert_rejects_non_square_L():
     L = torch.randn(1, 3, 2, dtype=F64)  # n_phys=3, n_ref=2
     with pytest.raises(NotImplementedError, match="non-square"):
         _invert(L)
+
+
+def test_scalar_element_carries_no_T_e_even_with_entity_geometry():
+    """A plain (IDENTITY) element gets no facet signs even if an EntityGeometry is supplied."""
+    mesh = _square_mesh()
+    T = Transformation(P2_TRIANGLE, AffineSimplexMapping(mesh), EntityGeometry(mesh))
+    assert T._sign_facets is None  # map_type is IDENTITY -> T_e = I
+    u = torch.ones(2, 6, 1, dtype=F64)
+    assert torch.equal(T.to_reference(u), u)  # P2 is an identity transform, untouched
+
+
+def test_contravariant_element_applies_facet_signs_as_T_e():
+    """A direction-carrying (CONTRAVARIANT) element flips its facet DOFs by sigma; vertices unchanged.
+
+    Uses a synthetic contravariant element (P2 basis/layout forced to CONTRAVARIANT) so G_e = I and
+    to_reference reduces to exactly T_e = diag(sigma) -- isolating the sign factor (no flux
+    functional needed). Expected signs are hand-derived, not read back from EntityGeometry.
+    """
+    mesh = _square_mesh()
+    elem = FiniteElement(
+        QuadraticTriangle(), P2_TRIANGLE.dof_layout, map_type=MapType.CONTRAVARIANT_PIOLA
+    )
+    T = Transformation(elem, AffineSimplexMapping(mesh), EntityGeometry(mesh))
+    assert T._sign_facets is not None
+
+    out = T.to_reference(torch.ones(2, 6, 1, dtype=F64))  # G_e = I -> out = sigma (x) 1
+    # 3 vertex DOFs unchanged (+1); then the 3 edge DOFs scaled by their orientation sign -- both
+    # cells' local edge 2 (the (2,0)-reversed edge) is -1 (see the facet-signs ground truth).
+    sign = torch.tensor([[1, 1, -1], [1, 1, -1]], dtype=F64)
+    expected = torch.cat([torch.ones(2, 3, dtype=F64), sign], dim=1).unsqueeze(-1)
+    assert out.numpy() == pytest.approx(expected.numpy(), rel=1e-12)

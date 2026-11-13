@@ -15,9 +15,9 @@ from neurom.dof_transformations import reference_to_physical
 
 F64 = torch.float64
 REL = 1e-12  # relative tolerance for the (float64, exact-algebra) comparisons; all expected != 0
-# R: rotation by +90 deg (the symplectic form); satisfies J^T R J = det(J) R for any 2x2 J, which
-# is exactly why the contravariant map preserves the flux through ``n = R t``.
-R = torch.tensor([[0.0, -1.0], [1.0, 0.0]], dtype=F64)
+# R: rotation by -90 deg (plan 3.1 convention, n = R t outward on the CCW reference cell); satisfies
+# J^T R J = det(J) R for any 2x2 J, which is why the contravariant map preserves the flux through n = R t.
+R = torch.tensor([[0.0, 1.0], [-1.0, 0.0]], dtype=F64)
 
 # A CCW cell (det J > 0) and a CW cell (det J < 0), both non-axis-aligned.
 J_CCW = torch.tensor([[2.0, 0.3], [0.1, 1.5]], dtype=F64)  # det = 2.97

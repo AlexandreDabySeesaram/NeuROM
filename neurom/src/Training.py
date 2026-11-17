@@ -24,14 +24,15 @@ from .PDE_Library import RHS, PotentialEnergy, \
 PressureGravity_default_parameters = {  3: ["E", "theta", "phi"],
                                         4: ["E", "theta", "phi", "P0"],
                                         5: ["E", "theta", "P0", "H", "K"],
-                                        6: ["E", "theta", "phi", "P0", "H", "K"]}
+                                        6: ["E", "theta", "phi", "P0", "H", "K"],
+                                        8: ["E", "theta", "phi", "P0", "H", "K", "PD", "PT"]}
 
 def PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_list, config):
     """Potential energy of the lung problem (gravity + pressure P0 + H*(z-z0) + K*(y-y0) + normal springs).
     Parameters that are not extra-coordinates are taken as constants from the [loads] section of the config file."""
     loads   = config.get("loads", {})
     names   = loads.get("parameters", PressureGravity_default_parameters[config["solver"]["N_ExtraCoordinates"]])
-    idx     = {name: names.index(name) if name in names else None for name in ["E", "theta", "phi", "P0", "H", "K"]}
+    idx     = {name: names.index(name) if name in names else None for name in ["E", "theta", "phi", "P0", "H", "K", "PD", "PT"]}
     options = {}
     match config["material"].get("constitutive", "linear"):
         case "linear":
@@ -39,6 +40,9 @@ def PressureGravityBoundaryStiffness_loss(model, Mat, Training_para_coordinates_
             options["fast_path"] = config["solver"].get("FastPath", False)         # assembled sparse operators (frozen mesh)
         case "SVK":                                                                 # Saint Venant-Kirchhoff, follower pressure
             energy = InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK
+            if any(idx[n] is not None or loads.get(n, 0.0) != 0 for n in ["PD", "PT"]):  # regional breathing pressures (diaphragmatic, costal)
+                options.update(pd_idx = idx["PD"], pt_idx = idx["PT"], pd_val = loads.get("PD", 0.0), pt_val = loads.get("PT", 0.0),
+                               regions = loads.get("regions", None))
     return energy(**options, model=model, lmbda=Mat.lmbda, mu=Mat.mu, E=Training_para_coordinates_list,
                 E_idx       = idx["E"], theta_idx = idx["theta"], phi_idx = idx["phi"],
                 p0_idx      = idx["P0"], h_idx    = idx["H"],     k_idx   = idx["K"],

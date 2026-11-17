@@ -962,6 +962,34 @@ def BoundaryNormalsTensor(model):
             mesh.boundary_normals = n
     return mesh.boundary_normals
 
+def _smoothstep(x, a, b):
+    t = torch.clamp((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+def BreathingRegionWeights(X, tri, caudal=(0., 0., 1.), medial=(1., 0., 0.), n_smooth=20):
+    r"""Smooth weights in [0, 1] of the two breathing regions of the lung surface, per boundary facet (tri oriented outward)
+        w_D : diaphragmatic surface (base, outward normal pointing caudally)
+        w_T : costal surface (in contact with the rib cage: lateral, anterior and posterior faces), i.e. neither the
+              base, nor the mediastinal (medial) face, nor the apex
+    The weights are functions of the outward normal, computed at the nodes (area weighted normals, smoothed n_smooth times
+    over the facet-node adjacency to remove the faceting of the segmented surface), then averaged per facet.
+    Returns w_D, w_T [f] and the nodal weights [nodes, 2] (for visualisation)."""
+    dtype = X.dtype
+    caudal = torch.tensor(caudal, dtype=dtype); medial = torch.tensor(medial, dtype=dtype)
+    cr = torch.linalg.cross(X[tri[:, 1]] - X[tri[:, 0]], X[tri[:, 2]] - X[tri[:, 0]], dim=1)   # 2 * area * n
+    n_nodes = torch.zeros(len(X), 3, dtype=dtype).index_add_(0, tri.reshape(-1), cr.repeat_interleave(3, dim=0))
+    count = torch.zeros(len(X), dtype=dtype).index_add_(0, tri.reshape(-1), torch.ones(tri.numel(), dtype=dtype))
+    on_b = count > 0
+    for _ in range(n_smooth):                                                       # nodal normals <- mean over the adjacent facets of their nodal means
+        n_f = n_nodes[tri].mean(dim=1)
+        n_nodes = torch.zeros_like(n_nodes).index_add_(0, tri.reshape(-1), n_f.repeat_interleave(3, dim=0))
+    n_nodes[on_b] = n_nodes[on_b] / torch.norm(n_nodes[on_b], dim=1, keepdim=True)
+    nc, nm = n_nodes @ caudal, n_nodes @ medial
+    w_D = _smoothstep(nc, 0.25, 0.65)
+    w_T = (1 - w_D) * (1 - _smoothstep(nm, 0.25, 0.65)) * (1 - _smoothstep(-nc, 0.45, 0.85))
+    w_nodes = torch.stack([w_D, w_T], dim=1) * on_b[:, None]
+    return w_nodes[tri].mean(dim=1)[:, 0], w_nodes[tri].mean(dim=1)[:, 1], w_nodes
+
 #%% Saint Venant-Kirchhoff lung problem (gravity + follower pressure + normal springs)
 #
 # Separated representation u(x, p) = sum_m U_m(x) Lambda_m(p),   Lambda_m(p) = prod_q lambda_mq(p_q)
@@ -1098,7 +1126,8 @@ def InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK(
     p0_idx=None, h_idx=None, k_idx=None,
     p0_val=0.0, h_val=0.0, k_val=0.0,
     k_spring=1e2, BoundaryNormals=True,
-    z0=0.0, y0=0.0, rho=1e-9, n_chunks=8, checkpoint=False
+    z0=0.0, y0=0.0, rho=1e-9, n_chunks=8, checkpoint=False,
+    pd_idx=None, pt_idx=None, pd_val=0.0, pt_val=0.0, regions=None
 ):
     r"""
     Parametric potential energy of a Saint Venant-Kirchhoff body (finite strains) loaded by
@@ -1210,7 +1239,24 @@ def InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK(
         elif val != 0:
             W_ext_pressure = W_ext_pressure + val * torch.sum(B * G_1 * no_constant)
 
-    return 0.5 * W_int - W_ext_gravity + 0.5 * W_spring - W_ext_pressure
+    #  Regional breathing pressures (optional): diaphragmatic P_D and costal P_T, dead loads along the reference outward normal
+    #  - P_R \int w_R(X) N.u dS (linear in u, one point quadrature as the springs), see BreathingRegionWeights
+    W_ext_regional = 0
+    if pd_idx is not None or pt_idx is not None or pd_val != 0 or pt_val != 0:
+        if "w_regions" not in cache:
+            regions = regions or {}
+            w_D, w_T, _ = BreathingRegionWeights(cache["X"].cpu(), tri.cpu(), caudal=regions.get("caudal", (0., 0., 1.)),
+                                                 medial=regions.get("medial", (1., 0., 0.)), n_smooth=regions.get("n_smooth", 20))
+            cache["w_regions"] = torch.stack([w_D, w_T]).to(dtype).to(U.device)
+        un_c = torch.einsum('mfx,fx->mf', u_c, cache["n"])
+        for w_R, idx, val in [(cache["w_regions"][0], pd_idx, pd_val), (cache["w_regions"][1], pt_idx, pt_val)]:
+            I_R = un_c @ (w_R * cache["area"])                                                    # \int w_R U_m.N dS  [m]
+            if idx is not None:
+                W_ext_regional = W_ext_regional + torch.sum(I_R * SeparableGram(Mu, E, idx)[0, 1:n_m+1])
+            elif val != 0:
+                W_ext_regional = W_ext_regional + val * torch.sum(I_R * G_1[0, 1:n_m+1])
+
+    return 0.5 * W_int - W_ext_gravity + 0.5 * W_spring - W_ext_pressure - W_ext_regional
 
 
 def InternalEnergy_2_3D_einsum_Tripara_BoundaryStiffness(model,lmbda, mu,E, k_spring=1e2, BoundaryNormals = False):

@@ -7,6 +7,7 @@ from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.fields.field_base import FieldBase
 from neurom.dof_transformations import Transformation
 from neurom.dof_transformations.reference_to_physical import reference_to_physical_at
+from neurom.geometry import EntityGeometry
 
 from neurom.interpolation.quadrature_assembly_result import (
     QuadratureAssemblyResult,
@@ -39,8 +40,12 @@ class QuadratureAssembly(nn.Module):
         self.field = field
         self.sf = field.space.element.reference_basis
         self._field_interpolator = FieldInterpolator(self.sf, self.field)
-        # Physical element DOFs -> reference coefficients (identity for nodal Lagrange).
-        self._dof_transformation = Transformation(field.space.element, context.mapping)
+        # Physical element DOFs -> reference coefficients (identity for nodal Lagrange). A
+        # direction-carrying element (RT0) also needs facet geometry for its T_e = diag(sigma).
+        element = field.space.element
+        self._dof_transformation = Transformation(
+            element, context.mapping, EntityGeometry.for_element(element, context.mesh)
+        )
 
     def interpolate(self) -> QuadratureAssemblyResult:
         """Interpolate the field at all quadrature points.

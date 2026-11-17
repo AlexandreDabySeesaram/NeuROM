@@ -33,6 +33,7 @@ from neurom.elements import (
     HERMITE,
     DG0_BAR,
     DG0_TRIANGLE,
+    RT0_TRIANGLE,
     VectorElement,
 )
 from neurom.quadratures import (
@@ -218,6 +219,17 @@ def _vec2d(seed, deg):
     return lambda X: torch.cat([fx(X), fy(X)], dim=1)
 
 
+def _rt0_field(seed):
+    """A field *in* RT0 :math:`=[P_0]^2\\oplus\\mathbf x P_0`: ``(a1 + c x, a2 + c y)``, seeded.
+
+    Note the **single shared** ``c`` -- that is what makes it lie in RT0 (a general vector linear, two
+    independent gradients as in ``_vec2d``, does **not**), so its RT0 interpolant is exact.
+    """
+    g = torch.Generator().manual_seed(seed)
+    a1, a2, c = torch.rand(3, generator=g)
+    return lambda X: torch.stack([a1 + c * X[:, 0], a2 + c * X[:, 1]], dim=1)
+
+
 # Fixed "arbitrary" functions for the type-2 convergence tests: deliberately *outside* every
 # element's polynomial space (a transcendental part + a high-degree monomial) so no element
 # reproduces them exactly and the L2 error genuinely decays at the element's rate.
@@ -249,6 +261,9 @@ EXACT_CASES = [
         check_gradient=True,
     ),
     ExactCase("P1_TRIANGLE_vector", VectorElement(P1_TRIANGLE, 2), 2, _vec2d(0, 1)),
+    # RT0: vector-valued H(div) with an edge-flux DOF. Exact func must be the RT0 template (shared c);
+    # no gradient check (its derivative invariant is the divergence -- covered in test_rt0_element.py).
+    ExactCase("RT0_TRIANGLE", RT0_TRIANGLE, 2, _rt0_field(0)),
 ]
 
 # Type 2 -- a function OUTSIDE each element's space, measured for rate + absolute accuracy. DG0 is
@@ -280,6 +295,9 @@ CONV_CASES = [
         acc_n=32,
         max_err=0.01,
     ),
+    # RT0 is lowest-order H(div): L2 rate 1, so (like DG0) 1% needs an impractically fine mesh --
+    # max_err reflects its order on this hard field (~6.7% at n=32) while still catching a regression.
+    ConvCase("RT0_TRIANGLE", RT0_TRIANGLE, 2, _ARB_VEC, rate=1, acc_n=32, max_err=0.08),
 ]
 
 
@@ -538,6 +556,24 @@ def test_mutation_perturbed_dofs_fail_the_checker():
     space = FunctionSpace(mesh.topology, P2_TRIANGLE)
     dofs = interpolate(space, mesh, f)
     dofs = dofs + 0.1  # mutate every DOF
+    u = Field(space, dofs)
+    res = QuadratureAssembly(QuadratureContext(mesh, ThreePoints2D()), u).interpolate()
+    f_q = f(res.x.values.reshape(-1, 2)).reshape(res.u.values.shape)
+    assert _max_rel_error(res.u.values, f_q) > _MUTATION_MIN_ERROR
+
+
+def test_mutation_rt0_perturbed_flux_fails_the_checker():
+    """Self-check: perturbing the flux DOFs of a correct RT0 interpolant is grossly wrong.
+
+    The H(div) counterpart of the mutations above: RT0's single edge-flux DOFs drive the whole
+    (vector) field through the contravariant Piola map, so shifting them must break the exact
+    reproduction of an in-space field by far more than round-off -- proving the type-1 check has
+    teeth on the flux path (the vector value, not just a scalar).
+    """
+    f = _rt0_field(0)
+    mesh = _triangle_mesh(3, jitter=0.25, seed=1)
+    space = FunctionSpace(mesh.topology, RT0_TRIANGLE)
+    dofs = interpolate(space, mesh, f) + 0.1  # mutate every flux DOF
     u = Field(space, dofs)
     res = QuadratureAssembly(QuadratureContext(mesh, ThreePoints2D()), u).interpolate()
     f_q = f(res.x.values.reshape(-1, 2)).reshape(res.u.values.shape)

@@ -20,6 +20,7 @@ from neurom.elements.library import (
     HERMITE,
     DG0_BAR,
     DG0_TRIANGLE,
+    RT0_TRIANGLE,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "HERMITE",
     "DG0_BAR",
     "DG0_TRIANGLE",
+    "RT0_TRIANGLE",
 ]

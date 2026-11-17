@@ -10,7 +10,7 @@ duplication; every other element has a cell-specific basis and is written out di
 
 import torch
 
-from neurom.elements.finite_element import FiniteElement, DoF, VALUE, D1
+from neurom.elements.finite_element import FiniteElement, DoF, MapType, VALUE, D1, FLUX
 from neurom.meshes.topology import EntityDim
 from neurom.reference_cell import ReferenceCell, BAR, TRIANGLE
 from neurom.shape_functions import (
@@ -20,6 +20,7 @@ from neurom.shape_functions import (
     CubicTriangle,
     HierarchicalP2Triangle,
     HermiteBeam,
+    RaviartThomas0Triangle,
     Constant,
 )
 
@@ -198,3 +199,22 @@ r"""**DG0 (piecewise constant) on the bar.** Space :math:`P_0`, a single cell-va
 DG0_TRIANGLE = _dg0(TRIANGLE)
 r"""**DG0 (piecewise constant) on the triangle.** Space :math:`P_0`, a single cell-value DOF
 (:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). Built by :func:`_dg0`."""
+
+
+RT0_TRIANGLE = FiniteElement(
+    RaviartThomas0Triangle(),
+    [DoF(entity_dim=EntityDim.EDGE, local_index=i, kind=FLUX) for i in range(3)],
+    map_type=MapType.CONTRAVARIANT_PIOLA,
+)
+r"""**RT0 (lowest-order Raviart--Thomas) on the triangle** -- H(div), the first vector-valued and
+first non-identity-map library element. Space
+:math:`RT_0=[P_0]^2\oplus\mathbf x\,P_0`, 3 DOFs: the normal flux through each edge,
+:math:`\ell_i(\mathbf v)=\int_{E_i}\mathbf v\cdot\mathbf n_i\,\mathrm ds` (kind ``FLUX``). The
+reference basis (:class:`~neurom.shape_functions.RaviartThomas0Triangle`) is flux-nodal
+(:math:`V=I`); the field value is the contravariant Piola push-forward
+:math:`\tfrac1{\det J_e}J_e\hat{\mathbf H}` (``map_type = CONTRAVARIANT_PIOLA``), so the 2-vector
+value comes from the (vector) basis -- ``value_shape`` stays ``()`` (the 3 DOFs are *scalar* flux
+coefficients, one per basis function, **not** replicated per component as in a
+:func:`VectorElement`). The per-cell facet-orientation sign :math:`\sigma` enters as
+:math:`T_e=\operatorname{diag}(\sigma)` in the DOF transformation, keeping the flux continuous
+across a shared edge."""

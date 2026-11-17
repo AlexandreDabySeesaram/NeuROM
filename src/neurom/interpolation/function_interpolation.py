@@ -1,4 +1,4 @@
-"""Build the FE interpolant of a known function: its DOF values on a space.
+r"""Build the FE interpolant of a known function: its DOF values on a space.
 
 This is the classical finite-element interpolation operation -- given a function ``f`` and a
 :class:`~neurom.function_space.FunctionSpace`, produce the DOF values whose FE field represents
@@ -11,10 +11,15 @@ every incident cell -- and the orientation permutation (WP3) sends each cell's l
 matching global index -- the scatter is single-valued, so an entity carrying several DOFs (e.g.
 :math:`P_3`'s two edge nodes) is handled with no special casing.
 
+A **point** functional (``value``/``d1``) is driven through ``on_function`` at its physical node; an
+**integral** functional (``flux``, ``acts_pointwise=False``) instead gets the facet normal/measure
+gathered from the mesh and is driven through its entity-aware path (e.g. RT0:
+:math:`|E|\,\mathbf f(\mathbf m)\cdot\hat{\mathbf n}`). A DOF kind with *no* functional
+(``normal_derivative``) still raises.
+
 It is an **optional** utility, separate from field construction: a :class:`TrainableField`'s
 initial values are a seed for the optimiser and need *not* be any function's interpolant, so a
-field is always built from raw values. Only point-functional elements (Lagrange, Hermite) are
-supported; a DOF kind without a functional (``flux``/``normal_derivative``) raises.
+field is always built from raw values.
 """
 
 import torch
@@ -64,12 +69,11 @@ def interpolate(space, mesh, f) -> torch.Tensor:
     element = space.element
     if any(d.functional is None for d in element.dof_layout):
         raise NotImplementedError(
-            "interpolate: a DOF kind has no functional (e.g. flux/normal_derivative); the FE "
-            "interpolant of a function is only defined for point-functional elements (Lagrange, "
-            "Hermite) so far."
+            "interpolate: a DOF kind has no functional (e.g. normal_derivative); the FE interpolant "
+            "of a function is only defined for elements whose DOF kinds have a functional."
         )
 
-    from neurom.geometry import AffineSimplexMapping
+    from neurom.geometry import AffineSimplexMapping, EntityGeometry
 
     n_comp = element.n_components
     dtype = mesh.coordinates.full_values().dtype
@@ -84,9 +88,20 @@ def interpolate(space, mesh, f) -> torch.Tensor:
 
     cell_dofs = space.dof_map.cell_dofs  # (n_cells, n_dofs) global indices
     out = torch.zeros(space.n_scalar_dofs, n_comp, dtype=dtype)
+    entity_geom = None  # built lazily, only if an integral (non-point) functional needs it
     for functional, cols in _functionals_by_dof(element).items():
-        pts_f = x_phys[:, cols, :].reshape(-1, gdim)  # (n_cells * len(cols), gdim)
-        vals = functional.on_function(f, pts_f).reshape(n_cells, len(cols), n_comp)
+        if functional.acts_pointwise:
+            pts_f = x_phys[:, cols, :].reshape(-1, gdim)  # (n_cells * len(cols), gdim)
+            vals = functional.on_function(f, pts_f).reshape(n_cells, len(cols), n_comp)
+        else:
+            # Integral (flux/moment) functional: it needs the facet normal and measure, gathered
+            # here where the mesh is known (not a single point). The canonical (global) facet
+            # geometry makes the scatter single-valued across a shared facet; T_e handles the sign.
+            entity_geom = entity_geom or EntityGeometry(mesh)
+            facets = [element.dof_layout[c].local_index for c in cols]  # local facet of each DOF
+            normals = entity_geom.facet_normals()[:, facets, :]  # (n_cells, len(cols), gdim)
+            measures = entity_geom.facet_measures()[:, facets, :]  # (n_cells, len(cols), 1)
+            vals = functional.flux_values(f, x_phys[:, cols, :], normals, measures)
         # Scatter to global DOFs; shared DOFs receive the same value from every incident cell.
         out[cell_dofs[:, cols]] = vals.detach()
     return out

@@ -65,6 +65,26 @@ class EntityGeometry(nn.Module):
         ce = ce if element_ids is None else ce[element_ids]
         return length[ce]
 
+    @staticmethod
+    def for_element(element, mesh) -> "EntityGeometry | None":
+        r"""An :class:`EntityGeometry` for a direction-carrying element, else ``None``.
+
+        A scalar (``IDENTITY``-map) element needs no :math:`T_e`, so returns ``None`` -- the single
+        place that decides whether an interpolator/assembly must thread facet geometry into its
+        :class:`~neurom.dof_transformations.transformation.Transformation` (covariant/contravariant
+        Piola elements do; Lagrange/Hermite/DG0 do not).
+
+        Args:
+            element: The element whose ``map_type`` decides whether facet geometry is needed.
+            mesh (Mesh): The mesh to build the geometry from.
+
+        Returns:
+            EntityGeometry | None: A new geometry for a Piola element, or ``None`` for a scalar one.
+        """
+        from neurom.elements.finite_element import MapType
+
+        return None if element.map_type == MapType.IDENTITY else EntityGeometry(mesh)
+
     def facet_signs(self, element_ids: torch.Tensor | None = None) -> torch.Tensor:
         r"""Orientation sign :math:`\sigma_{e,s} \in \{+1, -1\}` per cell and local facet.
 

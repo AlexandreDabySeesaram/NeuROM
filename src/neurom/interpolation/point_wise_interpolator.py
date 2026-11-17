@@ -39,13 +39,17 @@ class PointWiseInterpolator(nn.Module):
 
     def __init__(self, mesh: Mesh, field: FieldBase):
         super().__init__()
-        from neurom.geometry import AffineSimplexMapping
+        from neurom.geometry import AffineSimplexMapping, EntityGeometry
 
         self.mesh = mesh
         self.field = field
-        self.sf = field.space.element.reference_basis
+        element = field.space.element
+        self.sf = element.reference_basis
         self._mapping = AffineSimplexMapping(mesh)
-        self._dof_transformation = Transformation(field.space.element, self._mapping)
+        # A direction-carrying element (RT0) also needs facet geometry for its T_e = diag(sigma).
+        self._dof_transformation = Transformation(
+            element, self._mapping, EntityGeometry.for_element(element, mesh)
+        )
 
     def at_position(self, x: torch.Tensor):
         """Interpolate the field at the given physical positions.

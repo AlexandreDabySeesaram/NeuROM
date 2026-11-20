@@ -14,7 +14,7 @@ from neurom.elements import (
     FiniteElement,
     MapType,
 )
-from neurom.shape_functions import HermiteBeam, QuadraticTriangle
+from neurom.shape_functions import CubicHermiteBar, QuadraticTriangle
 from neurom.dof_transformations import (
     Transformation,
     ValueFunctional,
@@ -66,7 +66,7 @@ def test_hermite_closed_form_matches_generic_inversion():
     mapping = _graded_mapping()
     T_closed = Transformation(HERMITE, mapping)  # uses g_e_closed_form
     T_generic = Transformation(  # same element, no closed form -> assemble L_e + invert
-        FiniteElement(HermiteBeam(), HERMITE.dof_layout), mapping
+        FiniteElement(CubicHermiteBar(), HERMITE.dof_layout), mapping
     )
     assert T_closed._g_e_closed_form is not None and T_generic._g_e_closed_form is None
     torch.manual_seed(0)

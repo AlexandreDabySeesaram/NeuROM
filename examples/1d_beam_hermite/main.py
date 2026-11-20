@@ -17,7 +17,7 @@ from neurom.interpolation import (
 from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
-from neurom.math import jacobian, second_derivative
+from neurom.math import jacobian, hessian
 
 
 # Physical constants (steel, 1 cm x 1 cm square section)
@@ -94,7 +94,7 @@ def main():
 
     # Bending
     bending_energy = SolidElasticEnergy(
-        u, strain=second_derivative, stress_point=lambda kappa: kappa
+        u, strain=hessian, stress_point=lambda kappa: kappa
     )
 
     # Axial load (non-dimensional P, first clamped-clamped critical load is 4*pi^2)
@@ -110,7 +110,7 @@ def main():
     # Stretch: integrand w'^2 dx (SolidElasticEnergy has a built-in 1/2, hence 2 * eps)
     stretch = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: 2 * eps)
 
-    membrane_stretching_energy = MembraneStretchEnergy(stretch)
+    membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1.0 / 8.0)
 
     # Sum the pieces
     energy = bending_energy + axial_loading_energy + membrane_stretching_energy

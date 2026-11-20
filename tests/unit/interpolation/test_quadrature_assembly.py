@@ -16,7 +16,7 @@ from neurom.interpolation import (
     IntegrationDomain,
 )
 from neurom.physics import SolidElasticEnergy
-from neurom.math import jacobian, second_derivative
+from neurom.math import jacobian, hessian
 from neurom.elements import P1_BAR, HERMITE, VectorElement
 
 torch.set_default_dtype(torch.float32)
@@ -99,7 +99,7 @@ class TestQuadratureAssemblyDofTransformation:
         field_layout, w = _cubic_hermite_layout(TwoPoints1D())
 
         energy = SolidElasticEnergy(
-            w, strain=second_derivative, stress_point=lambda k: k
+            w, strain=hessian, stress_point=lambda k: k
         ).integrand(field_layout)
 
         assert energy.sum().item() == pytest.approx(6.0, rel=self.relative_tolerance)

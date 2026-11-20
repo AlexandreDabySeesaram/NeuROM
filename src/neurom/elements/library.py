@@ -19,7 +19,7 @@ from neurom.shape_functions import (
     QuadraticTriangle,
     CubicTriangle,
     HierarchicalP2Triangle,
-    HermiteBeam,
+    CubicHermiteBar,
     RaviartThomas0Triangle,
     Constant,
 )
@@ -174,7 +174,7 @@ def _hermite_g_e(J: torch.Tensor) -> torch.Tensor:
 
 
 HERMITE = FiniteElement(
-    HermiteBeam(),
+    CubicHermiteBar(),
     [
         DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
         DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=D1),

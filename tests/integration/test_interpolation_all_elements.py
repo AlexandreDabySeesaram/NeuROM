@@ -48,7 +48,7 @@ from neurom.interpolation import (
     PointWiseInterpolator,
     interpolate,
 )
-from neurom.math import integrate, jacobian, second_derivative
+from neurom.math import integrate, jacobian, hessian
 
 
 @pytest.fixture(autouse=True)
@@ -427,13 +427,13 @@ def test_type1_gradient_exact(case):
     assert _max_rel_error(grad_h.values, grad_f) < 1e-11, case.name
 
 
-def test_type1_hermite_second_derivative_exact():
+def test_type1_hermite_hessian_exact():
     """Hermite reproduces a cubic's *second* derivative exactly (H2), even on a graded mesh.
 
     Hermite is the one element here with second-derivative accuracy, and its DOF transformation
     ``M_e`` is genuinely geometry-dependent (the slope DOFs scale with the physical cell size),
     so a mistake in ``M_e`` surfaces first in the curvature. This interpolates a cubic, takes
-    ``second_derivative(res.x, res.u)``, and checks it against the twice-applied autograd
+    ``hessian(res.x, res.u)``, and checks it against the twice-applied autograd
     derivative of ``f`` on a graded mesh (non-constant ``h``), to ``atol=1e-9``.
     """
     mesh = _bar_mesh(6, graded=True)
@@ -441,7 +441,7 @@ def test_type1_hermite_second_derivative_exact():
     f = _poly1d(0, 3)
     u = Field(space, interpolate(space, mesh, f))
     res = QuadratureAssembly(QuadratureContext(mesh, TwoPoints1D()), u).interpolate()
-    d2_h = second_derivative(res.x, res.u)  # (n_e, n_q, 1)
+    d2_h = hessian(res.x, res.u)  # (n_e, n_q, 1)
     x = res.x.values.reshape(-1, 1).detach().requires_grad_(True)
     (g,) = torch.autograd.grad(f(x).sum(), x, create_graph=True)
     (g2,) = torch.autograd.grad(g.sum(), x, create_graph=False)

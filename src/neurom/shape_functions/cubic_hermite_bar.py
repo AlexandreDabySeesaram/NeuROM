@@ -1,4 +1,4 @@
-"""Hermite P3 shape functions on the reference bar."""
+"""Cubic Hermite shape functions on the reference bar."""
 
 import torch
 
@@ -6,8 +6,8 @@ from neurom.reference_cell import BAR
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
-class HermiteBeam(ShapeFunction):
-    """Hermite beam shape function defined on the 1-D reference bar ``[-1, 1]``.
+class CubicHermiteBar(ShapeFunction):
+    """Cubic Hermite shape function defined on the 1-D reference bar ``[-1, 1]``.
 
     The four nodal basis functions are:
 
@@ -19,7 +19,7 @@ class HermiteBeam(ShapeFunction):
         H_4(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(\\xi - 1).
 
     The element DOFs are ``(w, dw/dxi)`` at ``xi = -1`` then at ``xi = 1`` -- declared
-    by :func:`neurom.elements.Hermite`, not here.
+    by :data:`neurom.elements.HERMITE`, not here.
     """
 
     def __init__(self):

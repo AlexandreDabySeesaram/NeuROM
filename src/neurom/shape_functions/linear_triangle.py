@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.triangle import Triangle
+from neurom.reference_cell import TRIANGLE
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
@@ -20,8 +20,8 @@ class LinearTriangle(ShapeFunction):
     """
 
     def __init__(self):
-        """Initialise using the standard ``Triangle`` reference element."""
-        super().__init__(Triangle())
+        """Initialise using the reference triangle."""
+        super().__init__(TRIANGLE)
 
     def N(self, xi):
         """Evaluate the three linear shape functions at reference coordinates.
@@ -41,3 +41,21 @@ class LinearTriangle(ShapeFunction):
             [1.0 - xi0 - xi1, xi0, xi1],
             dim=-1,
         )
+
+    def grad_N(self, xi):
+        r"""Constant reference gradient :math:`\partial N/\partial\xi`.
+
+        Overrides the autograd default with the closed form (P1 is affine, so the gradient does not
+        depend on :math:`\xi`), broadcast to the input batch. Rows are
+        :math:`[[-1,-1],[1,0],[0,1]]` for :math:`N = [1-\xi_0-\xi_1,\ \xi_0,\ \xi_1]`.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, 2)``.
+
+        Returns:
+            torch.Tensor: :math:`\partial N/\partial\xi`, shape ``(N_e, N_q, 3, 2)``.
+        """
+        g = torch.tensor(
+            [[-1.0, -1.0], [1.0, 0.0], [0.0, 1.0]], dtype=xi.dtype, device=xi.device
+        )  # (3, 2)
+        return g.expand(*xi.shape[:-1], 3, 2)

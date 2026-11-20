@@ -4,15 +4,15 @@ import torch
 from neurom.decompositions import CPPGD, TensorDecomposition
 from neurom.field_layout import FieldLayout
 from neurom.fields import Field
-from neurom.geometry import IsoparametricMapping1D
 from neurom.interpolation import IntegrationDomain
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.math import integrate
-from neurom.meshes import Connectivity, Mesh
+from neurom.meshes import Mesh, Topology
+from neurom.function_space import FunctionSpace
+from neurom.elements import P1_BAR, VectorElement
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearBar
 
 torch.set_default_dtype(torch.float32)
 
@@ -27,15 +27,15 @@ class _ConstantDecomposition(TensorDecomposition):
         super().__init__()
         n = 4
         coords = torch.linspace(0.0, 1.0, n).unsqueeze(-1)
-        nodes = torch.arange(0, n)
         elements = torch.vstack([torch.arange(0, n - 1), torch.arange(1, n)]).T
-        conn = Connectivity(nodes, elements)
-        positions = Field(name="dummy_pos", connectivity=conn, values=coords)
-        self.field = Field(name="dummy", connectivity=conn, values=torch.ones(n, 1))
-        sf = LinearBar()
-        mesh = Mesh(connectivity=conn, nodes_positions=positions)
-        ctx = QuadratureContext(mesh, TwoPoints1D(), IsoparametricMapping1D(sf, mesh))
-        self._assembly = QuadratureAssembly(ctx, sf, self.field)
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        mesh_coords = Field(geometry, coords, name="dummy_pos")
+        mesh = Mesh(topology, mesh_coords)
+        space = FunctionSpace(mesh.topology, P1_BAR)
+        self.field = Field(space, torch.ones(n, 1), name="dummy")
+        ctx = QuadratureContext(mesh, TwoPoints1D())
+        self._assembly = QuadratureAssembly(ctx, self.field)
 
     def register_into(self, field_layout):
         field_layout.add(self.field)

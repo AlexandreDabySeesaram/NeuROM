@@ -93,7 +93,7 @@ def write_mesh(fname: Path, mesh: Mesh, field_layout: FieldLayout) -> None:
     """
 
     # Convert tensors to NumPy – meshio works with plain NumPy arrays.
-    points_np: np.ndarray = mesh.nodes_positions.full_values().detach().cpu().numpy()
+    points_np: np.ndarray = mesh.coordinates.full_values().detach().cpu().numpy()
 
     # meshio expects a (N, dim) array; ensure a 3‑D shape for XDMF
     if points_np.shape[1] == 2:  # 2‑D case → pad with zero Z

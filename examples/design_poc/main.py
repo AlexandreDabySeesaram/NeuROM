@@ -3,10 +3,9 @@ import matplotlib.pyplot as plt
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearBar
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Connectivity, Mesh
-from neurom.constraints import Dirichlet
+from neurom.meshes import Mesh, Topology
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
@@ -25,7 +24,6 @@ torch.set_default_dtype(torch.float32)
 
 def main():
     N = 40
-    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
     # Positions
@@ -39,11 +37,13 @@ def main():
     # Define constant load
     load = 1000.0 * torch.ones(N, 1)
 
-    # Initialize connectivity
-    connectivity = Connectivity(nodes, elements)
+    # Mesh (topology + P1 geometry) and the function space the fields live on
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, x_array, name="positions")
+    mesh = Mesh(topology, coords)
+    space = FunctionSpace(mesh.topology, P1_BAR)
 
-    # Define shape function to use
-    sf = LinearBar()
     # Define quadrature method
     quad = TwoPoints1D()
 
@@ -53,26 +53,15 @@ def main():
     # Displacement
     u = field_layout.add(
         TrainableField(
+            space,
+            u_init,
+            bcs=[DirichletBC(0, [0, N - 1], value=0.0)],
             name="displacement",
-            connectivity=connectivity,
-            init_values=u_init,
-            constraint=Dirichlet(nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)),
         )
     )
 
-    # Positions
-    x = field_layout.add(
-        Field(name="positions", connectivity=connectivity, values=x_array)
-    )
-
     # Load
-    f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
-
-    # Generate mesh
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-
-    # Define mapping (for positions only)
-    mapping = IsoparametricMapping1D(sf, mesh)
+    f = field_layout.add(Field(space, load, name="load"))
 
     # Define physics to solve
     physics = ElasticEnergy(field=u) + LoadPotential(field=u, f=f)
@@ -81,11 +70,11 @@ def main():
     physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
     # Define quadrature context
-    ctx = QuadratureContext(mesh, quad, mapping)
+    ctx = QuadratureContext(mesh, quad)
 
     # Define quadrature assemblies
-    assembly_u = QuadratureAssembly(ctx, sf, u)
-    assembly_f = QuadratureAssembly(ctx, sf, f)
+    assembly_u = QuadratureAssembly(ctx, u)
+    assembly_f = QuadratureAssembly(ctx, f)
 
     domain = IntegrationDomain([assembly_u, assembly_f])
 
@@ -125,9 +114,9 @@ def main():
     # At quadrature points
     result = field_layout["displacement"]
 
-    # At test points
-    x_test = torch.linspace(0, 6, 30)
-    pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+    # At test points (shape (N, 1): at_position wants one point per row, not a flat list)
+    x_test = torch.linspace(0, 6, 30).unsqueeze(-1)
+    pwi = PointWiseInterpolator(mesh, u)
     u_test = pwi.at_position(x_test).squeeze().detach()
     if plot_loss:
         plt.figure()

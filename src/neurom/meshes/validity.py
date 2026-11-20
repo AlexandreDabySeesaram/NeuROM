@@ -35,7 +35,7 @@ def is_valid_mesh(mesh: Mesh) -> bool:
         ``True`` if all triangles have a strictly positive signed area, ``False``
         otherwise.
     """
-    x = mesh.nodes_positions.at_elements()
+    x = mesh.coordinates.at_elements()
     for x_e in x:
         if signed_area(*x_e) <= 0.0:
             return False

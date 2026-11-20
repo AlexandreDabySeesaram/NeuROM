@@ -3,10 +3,10 @@ import torch
 
 # Import library modules
 from neurom.quadratures.mid_point_1d import MidPoint1D
-from neurom.geometry.iso_parametric_mapping_1d import IsoparametricMapping1D
-from neurom.meshes import Connectivity, Mesh
+from neurom.meshes import Mesh, Topology
+from neurom.function_space import FunctionSpace
+from neurom.elements import P1_BAR, VectorElement
 from neurom.fields import Field
-from neurom.shape_functions.linear_bar import LinearBar
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.interpolation.quadrature_positions import QuadraturePositions
 
@@ -21,12 +21,11 @@ def mesh():
     * Positions: [3., 7., 6., -5.]
     """
     N = 4
-    nodes = torch.arange(0, N)
     elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
-    connectivity = Connectivity(nodes, elements)
     values = torch.tensor([3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-    x = Field(name="x", connectivity=connectivity, values=values)
-    mesh = Mesh(connectivity=connectivity, nodes_positions=x)
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    mesh = Mesh(topology, Field(geometry, values))
 
     return mesh
 
@@ -45,10 +44,6 @@ class TestQuadratureContext:
         quad_context = QuadratureContext(
             mesh=mesh,
             quad=MidPoint1D(),
-            mapping=IsoparametricMapping1D(
-                LinearBar(),
-                mesh,
-            ),
         )
 
         # Prepare expected interpolated positiosn
@@ -78,11 +73,9 @@ class TestQuadratureContext:
             measure_expected, rel=self.relative_tolerance
         )
 
-        # Change positions
+        # Change positions (reassign the coordinate field on the same geometry space)
         new_values = torch.tensor([2.0, 5.0, 15.0, -10.0]).unsqueeze(-1)
-        mesh.nodes_positions = Field(
-            name="x", connectivity=mesh.connectivity, values=new_values
-        )
+        mesh.coordinates = Field(mesh.coordinates.space, new_values, name="x")
 
         # Check the interpolation and the measure did not change
         interp = quad_context.interpolate

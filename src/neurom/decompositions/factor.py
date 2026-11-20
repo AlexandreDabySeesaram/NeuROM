@@ -29,13 +29,14 @@ from dataclasses import dataclass
 
 import torch
 
-from neurom.constraints.constraint import Constraint
+from dataclasses import field as dataclass_field
+
+from neurom.elements.finite_element import FiniteElement
 from neurom.fields.field import Field
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.meshes.connectivity import Connectivity
 from neurom.meshes.mesh import Mesh
 from neurom.quadratures.quadrature_rule import QuadratureRule
-from neurom.shape_functions.shape_function import ShapeFunction
 
 
 @dataclass
@@ -46,26 +47,17 @@ class FactorSpace:
     field posed on that space, and nothing else. See the module docstring for
     how it pairs with :class:`MonomSpec`.
 
-    The ``mesh`` and the ``mapping`` are built by the caller and injected: the
-    mapping is mesh-bound, so each space needs its own instance (they must not
-    be shared between spaces). ``Mesh`` itself enforces that its
-    ``Connectivity`` is the very same object as ``nodes_positions.connectivity``,
-    which is what the monoms' ``TrainableField`` also bind to.
-
-    The space carries no shape function of its own: the one used to interpolate
-    a field belongs to the :class:`MonomSpec` posed on it, and the one used for
-    the geometry is enclosed in ``mapping``. Keeping them apart is what allows a
-    sub/super-parametric element, whose geometry shape function differs from the
-    field's.
+    The ``mesh`` is built by the caller and injected; the geometric mapping and the
+    ``QuadratureContext`` are built here from it (the mapping's geometry basis comes from
+    the mesh's coordinate element). The space carries no field shape function of its own:
+    that belongs to the :class:`MonomSpec` posed on it, which allows a sub/super-parametric
+    element whose field basis differs from the geometry basis.
 
     Attributes:
         name (str): Factor name, used as key in the separated interpolation
             output and in the monom field names.
-        mesh (Mesh): Mesh of this space; also carries ``nodes_positions`` and
-            the ``Connectivity`` the fields are built on.
-        mapping: Reference/physical mapping built on this space' ``mesh``
-            (e.g. ``IsoparametricMapping1D(sf, mesh)``); it owns the geometry
-            shape function.
+        mesh (Mesh): Mesh of this space; also carries ``coordinates`` and the topology the
+            fields are numbered over.
         quad (QuadratureRule): Quadrature rule for integration on this space.
         context (QuadratureContext): Built here, in ``__post_init__``, so it is
             a first-class attribute every field on this space can share.
@@ -73,7 +65,6 @@ class FactorSpace:
 
     name: str
     mesh: Mesh
-    mapping: object
     quad: QuadratureRule
 
     @property
@@ -81,11 +72,11 @@ class FactorSpace:
         return self.mesh.connectivity
 
     @property
-    def nodes_positions(self) -> Field:
-        return self.mesh.nodes_positions
+    def coordinates(self) -> Field:
+        return self.mesh.coordinates
 
     def __post_init__(self):
-        self.context = QuadratureContext(self.mesh, self.quad, self.mapping)
+        self.context = QuadratureContext(self.mesh, self.quad)
 
 
 @dataclass
@@ -98,9 +89,9 @@ class MonomSpec:
 
     **One spec, many monoms.** This is not a monom ``w_m^k``: it is the recipe
     :class:`~neurom.decompositions.pgd.CPPGD` reads to build one
-    ``TrainableField`` per mode on that factor, all sharing this ``constraint``
-    and seeded from these ``init_values``. Enriching the decomposition with a
-    mode instantiates one more field per spec; it never creates a spec.
+    ``TrainableField`` per mode on that factor, all sharing these ``bcs`` and
+    seeded from these ``init_values``. Enriching the decomposition with a mode
+    instantiates one more field per spec; it never creates a spec.
 
     Several ``MonomSpec`` may share one ``FactorSpace`` -- two differently
     constrained fields on a single mesh and quadrature, with the geometry
@@ -108,12 +99,11 @@ class MonomSpec:
 
     Attributes:
         space (FactorSpace): The discretised space this factor lives on.
-        sf (ShapeFunction): Shape function used to interpolate this factor's
-            monoms. Unrelated to the geometry shape function held by
-            ``space.mapping``, which it only happens to match for an
-            isoparametric element.
-        constraint (Constraint): Constraint (boundary conditions) shared by
-            every monom built from this spec.
+        element (FiniteElement): Finite element used to interpolate this factor's
+            monoms; its DOF layout drives the (deduced) DOF numbering. Unrelated to
+            the geometry shape function held by ``space.mapping``.
+        bcs (Sequence[DirichletBC]): Essential boundary conditions shared by every
+            monom built from this spec (empty for an unconstrained factor).
         init_values (torch.Tensor): Initial nodal values for each new monom,
             shape (n_nodes, dim). Its width is the monom's value dimension: 1
             for a scalar factor, >1 for the single vector-valued factor a CP
@@ -121,6 +111,6 @@ class MonomSpec:
     """
 
     space: FactorSpace
-    sf: ShapeFunction
-    constraint: Constraint
+    element: FiniteElement
     init_values: torch.Tensor
+    bcs: tuple = dataclass_field(default_factory=tuple)

@@ -3,7 +3,7 @@
 import torch
 
 from neurom.samplings import Sampling
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 def transpose_point(u: torch.Tensor) -> torch.Tensor:
@@ -59,4 +59,4 @@ def transpose(u: Sampling) -> Sampling:
         Sampling: A Sampling with the same type and ``batch_shape`` as ``u``,
         with the last two field dimensions swapped for non-1-D field shapes.
     """
-    return apply(transpose_point, u)
+    return apply_pointwise(transpose_point, u)

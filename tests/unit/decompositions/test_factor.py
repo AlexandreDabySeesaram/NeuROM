@@ -1,11 +1,11 @@
 import torch
 
 from neurom.decompositions import MonomSpec
-from neurom.constraints import Dirichlet, NoConstraint
 from neurom.interpolation import IntegrationDomain, QuadratureAssembly
 from neurom.interpolation.quadrature_context import QuadratureContext
 from neurom.meshes import Mesh
-from neurom.shape_functions import LinearBar
+from neurom.function_space import FunctionSpace, DirichletBC
+from neurom.elements import P1_BAR
 from neurom.fields import TrainableField
 
 torch.set_default_dtype(torch.float32)
@@ -22,9 +22,11 @@ def test_factor_space_wires_mesh_context_and_connectivity(make_factor_space):
     assert space.name == "space"
     assert isinstance(space.mesh, Mesh)
     assert isinstance(space.context, QuadratureContext)
-    assert space.connectivity is space.nodes_positions.connectivity
-    assert space.mesh.connectivity is space.connectivity
-    assert space.mesh.nodes_positions is space.nodes_positions
+    # New model: coordinates and connectivity are derived from the mesh, so the
+    # meaningful invariant is that the FactorSpace exposes the mesh's own objects
+    # (no copy detaches the monoms from the mesh they live on).
+    assert space.coordinates is space.mesh.coordinates
+    assert space.connectivity is space.mesh.connectivity
     assert space.connectivity.n_nodes == 5
 
 
@@ -35,17 +37,17 @@ def test_two_specs_have_distinct_contexts(two_specs):
 
 
 def test_monom_spec_holds_the_field_side_only(make_factor_space):
-    """``sf``, ``constraint`` and ``init_values`` belong to the spec, not the space."""
+    """``element``, ``bcs`` and ``init_values`` belong to the spec, not the space."""
     space = make_factor_space()
     factor = MonomSpec(
         space=space,
-        sf=LinearBar(),
-        constraint=NoConstraint(),
+        element=P1_BAR,
         init_values=torch.zeros(5, 1),
     )
     assert factor.space is space
+    assert factor.bcs == ()
     assert not hasattr(space, "sf")
-    assert not hasattr(space, "constraint")
+    assert not hasattr(space, "bcs")
     assert not hasattr(space, "init_values")
 
 
@@ -61,30 +63,28 @@ def test_two_specs_share_one_space_and_its_context(make_factor_space):
     space = make_factor_space(n=5)
     free = MonomSpec(
         space=space,
-        sf=LinearBar(),
-        constraint=NoConstraint(),
+        element=P1_BAR,
         init_values=torch.zeros(5, 1),
     )
     clamped = MonomSpec(
         space=space,
-        sf=LinearBar(),
-        constraint=Dirichlet(nodes=[0], values_imposed=torch.zeros(1, 1)),
+        element=P1_BAR,
+        bcs=[DirichletBC(0, [0], value=0.0)],
         init_values=torch.ones(5, 1),
     )
 
     assert free.space is clamped.space
     assert free.space.context is clamped.space.context
-    assert free.constraint is not clamped.constraint
+    assert free.bcs != clamped.bcs  # each spec keeps its own BCs
 
     assemblies = [
         QuadratureAssembly(
             f.space.context,
-            f.sf,
             TrainableField(
+                FunctionSpace(f.space.mesh.topology, f.element),
+                f.init_values,
+                bcs=f.bcs,
                 name=name,
-                connectivity=f.space.connectivity,
-                init_values=f.init_values,
-                constraint=f.constraint,
             ),
         )
         for name, f in (("free", free), ("clamped", clamped))

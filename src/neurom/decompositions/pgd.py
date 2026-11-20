@@ -7,6 +7,7 @@ from neurom.fields.trainable_field import TrainableField
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.decompositions.tensor_decomposition import TensorDecomposition
+from neurom.function_space.function_space import FunctionSpace
 
 
 class CPPGD(TensorDecomposition):
@@ -105,11 +106,26 @@ class CPPGD(TensorDecomposition):
         # this list can hold duplicates.
         self._contexts = nn.ModuleList([s.space.context for s in self.monom_specs])
 
+        # One FunctionSpace per spec (deduces the DOF numbering from the element's
+        # DOF layout). Built once; every mode's monom is a field on it, and the
+        # assembly / point evaluator derive the basis and M_e transform from it.
+        self._spec_space = nn.ModuleList(
+            [
+                FunctionSpace(spec.space.mesh.topology, spec.element)
+                for spec in self.monom_specs
+            ]
+        )
+
         # Grid of monoms: modes x factors, grown one row at a time. Empty here;
         # add_mode() is the single code path that builds a mode, so the initial
         # modes and the enriched ones cannot drift apart.
         self.monoms = nn.ModuleList()
         self._assemblies = nn.ModuleList()
+        # Point-evaluation interpolators, cached per (mode, factor) so evaluate()/assemble() reuse
+        # the mapping + DOF transformation instead of rebuilding them on every call. Safe because a
+        # monom field and its factor mesh are stable once built (training updates values in place);
+        # cleared in add_mode(). Assumes fixed factor geometry (PGD factor grids are not r-adaptive).
+        self._pwi_cache: dict = {}
         for _ in range(n_modes_ini):
             self.add_mode()
 
@@ -206,22 +222,23 @@ class CPPGD(TensorDecomposition):
         m = self.n_modes
         fields = [
             TrainableField(
+                self._spec_space[k],
+                spec.init_values,
+                bcs=spec.bcs,
                 name=f"{self.name}_dim{spec.space.name}_mode{m}",
-                connectivity=spec.space.connectivity,
-                init_values=spec.init_values,
-                constraint=spec.constraint,
             )
-            for spec in self.monom_specs
+            for k, spec in enumerate(self.monom_specs)
         ]
         self.monoms.append(nn.ModuleList(fields))
         self._assemblies.append(
             nn.ModuleList(
                 [
-                    QuadratureAssembly(spec.space.context, spec.sf, field)
+                    QuadratureAssembly(spec.space.context, field)
                     for spec, field in zip(self.monom_specs, fields)
                 ]
             )
         )
+        self._pwi_cache = {}  # the mode grid changed -> drop the point-evaluator cache
         return m
 
     def mode_parameters(self, m=None):
@@ -308,6 +325,21 @@ class CPPGD(TensorDecomposition):
             )
         return list(points.T)
 
+    def _interpolator(self, m, k):
+        """Cached :class:`PointWiseInterpolator` for mode ``m``, factor ``k``.
+
+        Built lazily and reused across ``evaluate``/``assemble`` calls (the monom field and its
+        factor mesh are stable; training only updates the field's values in place), so the mapping
+        and DOF transformation are not rebuilt on every call. The cache is cleared in ``add_mode``.
+        """
+        pwi = self._pwi_cache.get((m, k))
+        if pwi is None:
+            pwi = PointWiseInterpolator(
+                self.monom_specs[k].space.mesh, self.monoms[m][k]
+            )
+            self._pwi_cache[(m, k)] = pwi
+        return pwi
+
     def evaluate(self, coords):
         """Evaluate ``u`` at matched query points (diagonal), summed over modes.
 
@@ -329,13 +361,9 @@ class CPPGD(TensorDecomposition):
         for m in range(n):
             prod = None
             for k, spec in enumerate(self.monom_specs):
-                pwi = PointWiseInterpolator(
-                    spec.space.mesh,
-                    spec.sf,
-                    self.monoms[m][k],
-                    spec.space.mapping,
-                )
-                w = pwi.at_position(coords[k].reshape(-1, 1))  # (P, dim_k)
+                w = self._interpolator(m, k).at_position(
+                    coords[k].reshape(-1, 1)
+                )  # (P, dim_k)
                 prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
         return total
@@ -358,13 +386,9 @@ class CPPGD(TensorDecomposition):
         for k, spec in enumerate(self.monom_specs):
             cols = []
             for m in range(n_modes):
-                pwi = PointWiseInterpolator(
-                    spec.space.mesh,
-                    spec.sf,
-                    self.monoms[m][k],
-                    spec.space.mapping,
-                )
-                w = pwi.at_position(coords[k].reshape(-1, 1))  # (N_k, d_k)
+                w = self._interpolator(m, k).at_position(
+                    coords[k].reshape(-1, 1)
+                )  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_factor.append(torch.stack(cols, dim=0))
 

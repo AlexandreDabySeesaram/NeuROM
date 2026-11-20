@@ -1,0 +1,263 @@
+import pytest
+import torch
+
+from neurom.meshes.topology import Topology
+from neurom.elements import (
+    P1_BAR,
+    P1_TRIANGLE,
+    HERMITE,
+    DG0_BAR,
+    DG0_TRIANGLE,
+    P2_TRIANGLE,
+    DoF,
+    EntityDim,
+)
+from neurom.function_space.dof_map import DofMap
+
+F64 = torch.float64
+
+
+def _bar_topology(N=5):
+    # N vertices, N-1 cells on a line
+    cell_vertices = torch.vstack([torch.arange(N - 1), torch.arange(1, N)]).T
+    return Topology(cell_vertices), N
+
+
+# (pure-topology tests -- basics, edge enumeration/orientation/lazy, boundary -- live in
+# tests/unit/meshes/test_topology.py; this file keeps the DofMap numbering/locate/periodic tests.)
+
+
+def test_element_deduces_dof_nodes_and_counts():
+    hermite = HERMITE
+    assert hermite.n_dofs == 4
+    assert hermite.dof_kinds == ("value", "d1", "value", "d1")
+    # deduced from dof_layout + Bar vertices [-1, 1]
+    assert torch.equal(
+        hermite.dof_nodes_xi().flatten(), torch.tensor([-1.0, -1.0, 1.0, 1.0])
+    )
+    assert torch.equal(P1_BAR.dof_nodes_xi().flatten(), torch.tensor([-1.0, 1.0]))
+
+
+def test_dof_layout_entity_dim_is_entity_dim():
+    # entity_dim in the layout is a typed EntityDim (not a bare int).
+    assert HERMITE.dof_layout[0].entity_dim is EntityDim.VERTEX
+    assert all(isinstance(d.entity_dim, EntityDim) for d in HERMITE.dof_layout)
+    # a cell DOF carries the cell's *absolute* dimension: bar cell = EDGE, triangle = FACE.
+    assert DG0_BAR.dof_layout[0].entity_dim == EntityDim.EDGE
+    assert DG0_TRIANGLE.dof_layout[0].entity_dim == EntityDim.FACE
+    assert isinstance(DG0_TRIANGLE.dof_layout[0].entity_dim, EntityDim)
+
+
+def test_p1_dofmap_equals_vertex_connectivity():
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, P1_BAR.dof_layout)
+    assert dm.n_scalar_dofs == N
+    assert torch.equal(dm.cell_dofs, topo.cell_vertices)  # one DOF per vertex
+
+
+def test_hermite_dofmap_two_dofs_per_vertex():
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, HERMITE.dof_layout)
+    assert dm.n_scalar_dofs == 2 * N
+    # cell e gathers [2e, 2e+1, 2e+2, 2e+3]
+    expected = torch.stack([torch.arange(2 * e, 2 * e + 4) for e in range(N - 1)])
+    assert torch.equal(dm.cell_dofs, expected)
+
+
+def test_dg0_dofmap_one_dof_per_cell():
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, DG0_BAR.dof_layout)
+    assert dm.n_scalar_dofs == N - 1
+    assert torch.equal(dm.cell_dofs, torch.arange(N - 1).unsqueeze(-1))
+
+
+def test_locate_hermite_clamped_ends():
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, HERMITE.dof_layout)
+    dofs = dm.locate(0, entities=[0, N - 1], kinds=["value", "d1"])
+    assert torch.equal(dofs, torch.tensor([0, 1, 2 * N - 2, 2 * N - 1]))
+    # value only (pinned, slope free)
+    pinned = dm.locate(0, entities=[0], kinds=["value"])
+    assert torch.equal(pinned, torch.tensor([0]))
+
+
+def test_periodic_p1_identifies_end_vertices():
+    # Identify the last vertex with the first: one fewer DOF, both ends share it.
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, P1_BAR.dof_layout, periodic=[(0, N - 1)])
+    assert dm.n_scalar_dofs == N - 1  # one vertex collapsed
+    # the first and last cell now reference the SAME global DOF at the seam
+    assert dm.cell_dofs[0, 0].item() == dm.cell_dofs[-1, 1].item()
+    # locate on either identified vertex returns the one shared DOF
+    assert torch.equal(dm.locate(0, [0]), dm.locate(0, [N - 1]))
+
+
+def test_periodic_hermite_identifies_value_and_slope():
+    # Both DOFs (value and slope) of the seam vertices are matched by rank.
+    topo, N = _bar_topology(5)
+    dm = DofMap(topo, HERMITE.dof_layout, periodic=[(0, N - 1)])
+    assert dm.n_scalar_dofs == 2 * N - 2  # 2 DOFs collapsed
+    first = dm.locate(0, [0], kinds=["value", "d1"])
+    last = dm.locate(0, [N - 1], kinds=["value", "d1"])
+    assert torch.equal(first, last)
+
+
+def test_periodic_shares_one_trainable_parameter():
+    # End-to-end: a field on a periodic space has u(0) == u(N-1) by construction,
+    # with gradient flowing to a single shared parameter.
+    from neurom.meshes import Mesh
+    from neurom.fields import Field, TrainableField
+    from neurom.function_space import FunctionSpace
+    from neurom.elements import VectorElement
+
+    N = 5
+    cell_vertices = torch.vstack([torch.arange(N - 1), torch.arange(1, N)]).T
+    points = torch.linspace(0, 1, N).unsqueeze(-1)
+    topology = Topology(cell_vertices)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    mesh = Mesh(topology, Field(geometry, points))
+    space = FunctionSpace(mesh.topology, P1_BAR, periodic=[(0, N - 1)])
+
+    init = torch.arange(space.n_scalar_dofs, dtype=F64).unsqueeze(-1)
+    u = TrainableField(space, init, name="u")
+    # at_elements gathers per-cell DOFs: the seam ends (cell 0 left, last cell right)
+    # resolve to the SAME global DOF, so they carry one identical value.
+    per_cell = u.at_elements().squeeze(-1)  # (n_cells, n_local)
+    assert per_cell[0, 0].item() == per_cell[-1, 1].item()  # u(0) == u(N-1)
+    assert u.values_reduced.numel() == N - 1  # one shared parameter at the seam
+
+
+def _two_triangle_square():
+    # Unit square split into two triangles sharing the diagonal edge (0, 2).
+    return Topology(torch.tensor([[0, 1, 2], [0, 2, 3]]))
+
+
+def test_p2_dofmap_numbers_vertices_then_edges():
+    topo = _two_triangle_square()
+    dm = DofMap(topo, P2_TRIANGLE.dof_layout)
+    # 4 vertices + 5 edges, one value DOF each
+    assert dm.n_scalar_dofs == 4 + 5
+    # each cell gathers its 3 vertex DOFs then its 3 edge DOFs (edges offset past vertices)
+    assert dm.cell_dofs.shape == (2, 6)
+    assert torch.equal(dm.cell_dofs[:, :3], topo.cell_vertices)
+    assert torch.equal(dm.cell_dofs[:, 3:], 4 + topo.cell_entities(EntityDim.EDGE))
+    # the shared diagonal edge -> one shared global DOF (cell 0 local edge 2, cell 1 local 0)
+    assert dm.cell_dofs[0, 5].item() == dm.cell_dofs[1, 3].item()
+
+
+def test_p2_dof_nodes_xi_places_edge_dofs_at_reference_midpoints():
+    xi = P2_TRIANGLE.dof_nodes_xi()  # (6, 2)
+    # vertices then edge midpoints of the reference triangle (0,0),(1,0),(0,1)
+    expected = torch.tensor(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
+    )
+    assert torch.allclose(xi, expected)
+
+
+def _p3_like_layout():
+    """A synthetic P3-like dof_layout: 3 vertex values + two value DOFs on each of the 3 local edges.
+
+    DofMap takes a ``dof_layout`` directly (no basis needed to test the numbering); the two edge DOFs
+    stand for P3's edge points at 1/3 and 2/3.
+    """
+    verts = [DoF(EntityDim.VERTEX, i, "value") for i in range(3)]
+    edges = [DoF(EntityDim.EDGE, e, "value") for e in range(3) for _ in range(2)]
+    return tuple(verts + edges)
+
+
+def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
+    """Two cells sharing a reversed edge read its two DOFs in OPPOSITE order (T-WP3.2).
+
+    Without the reversal both cells would map their local rank-0 DOF to the same global DOF, even
+    though those are physically opposite points (1/3-from-a vs 1/3-from-b) -- a discontinuity.
+    """
+    topo = _two_triangle_square()
+    dm = DofMap(topo, _p3_like_layout())
+    assert dm.n_scalar_dofs == 4 + 5 * 2  # 4 vertices x1 + 5 edges x2
+
+    ce = topo.cell_entities(EntityDim.EDGE)  # (2, 3)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+    s0 = ce[0].tolist().index(shared)  # shared edge's local index in cell 0
+    s1 = ce[1].tolist().index(shared)  # ... and in cell 1
+    # 3 vertex DOFs precede the edge block; each edge owns 2 consecutive local DOFs.
+    c0 = dm.cell_dofs[0, [3 + 2 * s0, 3 + 2 * s0 + 1]]
+    c1 = dm.cell_dofs[1, [3 + 2 * s1, 3 + 2 * s1 + 1]]
+    assert set(c0.tolist()) == set(
+        c1.tolist()
+    )  # the same two global DOFs (shared edge)
+    assert (
+        c0.tolist() == c1.flip(0).tolist()
+    )  # but read in reversed order (orientation applied)
+    assert c0.tolist() != c1.tolist()  # and NOT the same order -- the bug this fixes
+
+
+def test_p3_like_shared_edge_single_valued_under_the_permutation():
+    """A field of arbitrary per-DOF values is single-valued on the shared edge (T-WP3.2).
+
+    The end-to-end consequence of the reversal: for every physical point carrying an edge DOF,
+    the two cells meeting on that edge read the SAME global DOF -- so any field built from
+    arbitrary global-DOF values is continuous there. Without the reversal both cells' local
+    rank-0 DOF would share a global id while sitting at DIFFERENT physical points (1/3-from-a vs
+    1/3-from-b), and the coincidence assertion below fails.
+    """
+    from neurom.reference_cell import TRIANGLE
+
+    topo = _two_triangle_square()
+    coords = torch.tensor(
+        [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=F64
+    )  # the unit square's vertices
+    dm = DofMap(topo, _p3_like_layout())
+    local_edges = TRIANGLE.local_entities(EntityDim.EDGE)  # (3, 2) local vertex pairs
+
+    ce = topo.cell_entities(EntityDim.EDGE)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+
+    # For the shared edge, gather (global DOF -> physical point) and a random per-DOF value from
+    # BOTH cells; a repeat global DOF must agree on both.
+    values = torch.randn(dm.n_scalar_dofs, dtype=F64)
+    point_of, value_of = {}, {}
+    for e in (0, 1):
+        s = ce[e].tolist().index(shared)  # shared edge's local index in cell e
+        a, b = local_edges[s].tolist()  # its local endpoints (local direction a -> b)
+        xa, xb = coords[topo.cell_vertices[e, a]], coords[topo.cell_vertices[e, b]]
+        for rank, t in enumerate((1.0 / 3.0, 2.0 / 3.0)):  # the two edge-DOF points
+            p = xa + t * (xb - xa)
+            g = int(
+                dm.cell_dofs[e, 3 + 2 * s + rank]
+            )  # 3 vertex DOFs precede the edge block
+            if g in point_of:
+                assert point_of[g].numpy() == pytest.approx(p.numpy(), rel=1e-12), (
+                    "same global DOF mapped to different physical points -- permutation wrong"
+                )
+                # same DOF -> one field value (continuous)
+                assert float(values[g]) == pytest.approx(float(value_of[g]), rel=1e-12)
+            point_of[g], value_of[g] = p, values[g]
+
+    assert (
+        len(point_of) == 2
+    )  # the edge's two DOFs are shared (4 contributions -> 2 globals)
+
+
+def test_locate_returns_both_dofs_of_a_repeated_kind():
+    """locate(EDGE, [g], ['value']) returns BOTH value DOFs of the edge (T-WP3.3)."""
+    topo = _two_triangle_square()
+    dm = DofMap(topo, _p3_like_layout())
+    ce = topo.cell_entities(EntityDim.EDGE)
+    (shared,) = set(ce[0].tolist()) & set(ce[1].tolist())
+    dofs = dm.locate(EntityDim.EDGE, [shared], ["value"])
+    assert len(dofs) == 2
+    assert set(dofs.tolist()) == {4 + shared * 2, 4 + shared * 2 + 1}
+
+
+def test_periodic_with_non_vertex_dofs_raises():
+    """(WP8 guard) periodic merges only vertex DOFs; a layout with edge DOFs + periodic raises."""
+    topo = _two_triangle_square()
+    with pytest.raises(NotImplementedError, match="periodic"):
+        DofMap(topo, P2_TRIANGLE.dof_layout, periodic=[(0, 1)])
+
+
+def test_locate_on_a_dimension_without_dofs_raises():
+    """(WP8 guard) locating a dimension the element has no DOFs on gives a clear error (not KeyError)."""
+    dm = DofMap(_two_triangle_square(), P1_TRIANGLE.dof_layout)  # vertex DOFs only
+    with pytest.raises(ValueError, match="no DOFs on entity dimension"):
+        dm.locate(EntityDim.EDGE, [0])

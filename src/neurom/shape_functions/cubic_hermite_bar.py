@@ -2,7 +2,7 @@
 
 import torch
 
-from neurom.reference_elements.bar import Bar
+from neurom.reference_cell import BAR
 from neurom.shape_functions.shape_function import ShapeFunction
 
 
@@ -13,32 +13,21 @@ class CubicHermiteBar(ShapeFunction):
 
     .. math::
 
-        H_1(\\xi) = \\tfrac{1}{4}(1 - \\xi)^2(2 + \\xi)
+        H_1(\\xi) = \\tfrac{1}{4}(1 - \\xi)^2(2+\\xi), \\quad
+        H_2(\\xi) = \\tfrac{1}{4}(1 - \\xi)^2(\\xi + 1), \\quad
+        H_3(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(2-\\xi), \\quad
+        H_4(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(\\xi - 1).
 
-        H_2(\\xi) = \\tfrac{1}{4}(1 - \\xi)^2(\\xi + 1)
-
-        H_3(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(2 - \\xi)
-
-        H_4(\\xi) = \\tfrac{1}{4}(1 + \\xi)^2(\\xi - 1)
-
-    :math:`H_1` and :math:`H_3` carry the value at the end nodes
-    :math:`\\xi = -1` and :math:`\\xi = 1` respectively; :math:`H_2` and
-    :math:`H_4` carry the slope :math:`\\mathrm{d}/\\mathrm{d}\\xi` at the
-    same nodes.
-
-    The element DOFs are :math:`(w, \\mathrm{d}w/\\mathrm{d}\\xi)` at
-    :math:`\\xi = -1` then at :math:`\\xi = 1`.
+    The element DOFs are ``(w, dw/dxi)`` at ``xi = -1`` then at ``xi = 1`` -- declared
+    by :data:`neurom.elements.HERMITE`, not here.
     """
 
-    dof_kinds = ("value", "d1", "value", "d1")
-    dof_nodes_xi = (-1.0, -1.0, 1.0, 1.0)
-
     def __init__(self):
-        """Initialise using the standard ``Bar`` reference element."""
-        super().__init__(Bar())
+        """Initialise using the reference bar."""
+        super().__init__(BAR)
 
     def N(self, xi):
-        """Evaluate the four cubic Hermite shape functions at reference coordinates.
+        """Evaluate the four Hermite shape functions at reference coordinates.
 
         Args:
             xi (torch.Tensor): Reference coordinates, tensor of shape
@@ -50,15 +39,12 @@ class CubicHermiteBar(ShapeFunction):
         """
         xi0 = xi[..., 0]
 
-        one_minus_xi_squared = (1.0 - xi0) ** 2
-        one_plus_xi_squared = (1.0 + xi0) ** 2
-
         return torch.stack(
             [
-                (2.0 + xi0) * one_minus_xi_squared,
-                (xi0 + 1.0) * one_minus_xi_squared,
-                (2.0 - xi0) * one_plus_xi_squared,
-                (xi0 - 1.0) * one_plus_xi_squared,
+                0.25 * (2 + xi0) * (1 - xi0) ** 2,
+                0.25 * (xi0 + 1.0) * (1 - xi0) ** 2,
+                0.25 * (2 - xi0) * (1 + xi0) ** 2,
+                0.25 * (xi0 - 1.0) * (1 + xi0) ** 2,
             ],
             dim=-1,
-        ).mul_(0.25)
+        )

@@ -26,10 +26,10 @@ def reference_coordinates(n_elements: int, quad: QuadratureRule) -> torch.Tensor
         ``(n_elements, N_q, dim_ref)``.
     """
     # (N_q, N_nodes), barycentric coordinates of the quadrature rule
-    x_q_bary = quad.points()
+    x_q_bary = quad.points_barycentric
 
     # (N_q, dim), reference coordinates of the reference element
-    xi = barycentric_to_reference(x_lambda=x_q_bary, element=quad.reference_element)
+    xi = barycentric_to_reference(x_lambda=x_q_bary, element=quad.reference_cell)
 
     # Broadcast to every element: (N_e, N_q, dim)
     return xi.unsqueeze(0).expand(n_elements, -1, -1)

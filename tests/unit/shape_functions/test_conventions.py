@@ -39,7 +39,7 @@ def test_shape_functions_match_barycentric_node_ordering(sf, barycentric):
     For each barycentric point, mapping to reference coordinates and
     evaluating the shape functions must give back the barycentric weights.
     """
-    xi = barycentric_to_reference(barycentric, sf.reference_element)  # (N_q, dim)
+    xi = barycentric_to_reference(barycentric, sf.reference_cell)  # (N_q, dim)
 
     # Shape functions expect (N_e, N_q, dim)
     N = sf.N(xi.unsqueeze(0))  # (1, N_q, N_nodes)
@@ -56,10 +56,10 @@ def test_shape_functions_partition_of_unity(sf):
     """
     barycentric = torch.tensor(
         [[0.25, 0.75], [0.5, 0.5]]
-        if sf.reference_element.simplex.shape[0] == 2
+        if sf.reference_cell.simplex.shape[0] == 2
         else [[0.25, 0.5, 0.25], [0.1, 0.2, 0.7]]
     )
-    xi = barycentric_to_reference(barycentric, sf.reference_element)
+    xi = barycentric_to_reference(barycentric, sf.reference_cell)
     N = sf.N(xi.unsqueeze(0))
 
     assert N.sum(dim=-1).detach().numpy() == pytest.approx(

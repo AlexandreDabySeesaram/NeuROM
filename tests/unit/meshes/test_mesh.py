@@ -4,10 +4,11 @@ import torch.nn as nn
 
 # Import library modules
 from neurom.meshes.mesh import Mesh, is_in_triangle
-from neurom.meshes.connectivity import Connectivity
+from neurom.meshes import Topology
+from neurom.function_space import FunctionSpace
 from neurom.fields.field import Field
 from neurom.fields.trainable_field import TrainableField
-from neurom.constraints.no_constraint import NoConstraint
+from neurom.elements import P1_BAR, P1_TRIANGLE, VectorElement
 
 torch.set_default_dtype(torch.float32)
 
@@ -23,17 +24,20 @@ class TestMesh:
     relative_tolerance: float = 1e-9
 
     def test_mesh_construction_with_field(self):
-        """Test construction of mesh where nodes_positions are defined by a Field"""
+        """Test construction of mesh whose coordinates are defined by a Field"""
         # Number of vertices
         N = 6
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        connectivity = Connectivity(nodes, elements)
         nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-        x = Field(name="x", connectivity=connectivity, values=nodes_positions)
-        mesh = Mesh(connectivity, x)
+        # New model: a mesh is (topology, coordinates). Build a fixed P1
+        # coordinate Field over the cell table explicitly.
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        coords = Field(geometry, nodes_positions, name="x")
+        mesh = Mesh(topology, coords)
 
-        # - 1 - Check connectivity
+        # - 1 - Check connectivity (derived from the topology)
         # Nodes
         assert "nodes_indices" in mesh.connectivity._buffers
         assert isinstance(getattr(mesh.connectivity, "nodes_indices"), torch.Tensor)
@@ -54,30 +58,28 @@ class TestMesh:
         # Number of elements
         assert mesh.connectivity.n_elements == N - 1
 
-        # - 2- Check nodes_positions
-        assert mesh.nodes_positions.name == "x"
-        assert "values" in mesh.nodes_positions._buffers
-        assert isinstance(getattr(mesh.nodes_positions, "values"), torch.Tensor)
-        assert mesh.nodes_positions.full_values() == pytest.approx(
+        # - 2- Check coordinates
+        assert mesh.coordinates.name == "x"
+        assert "values" in mesh.coordinates._buffers
+        assert isinstance(getattr(mesh.coordinates, "values"), torch.Tensor)
+        assert mesh.coordinates.full_values() == pytest.approx(
             nodes_positions, rel=self.relative_tolerance
         )
 
     def test_mesh_construction_with_trainable_field(self):
-        """Test construction of mesh where nodes_positions are defined by a TrainableField"""
+        """Test construction of mesh whose coordinates are a TrainableField"""
 
         # Number of vertices
         N = 6
         nodes = torch.tensor([0, 1, 2, 3, 4, 5])
         elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        connectivity = Connectivity(nodes, elements)
         nodes_positions = torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1)
-        x = TrainableField(
-            name="x",
-            connectivity=connectivity,
-            init_values=nodes_positions,
-            constraint=NoConstraint(),
-        )
-        mesh = Mesh(connectivity, x)
+        # A trainable coordinate field (r-adaptivity): build the geometry space
+        # explicitly over the topology and inject the field into the mesh.
+        topology = Topology(elements)
+        geometry_space = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        x = TrainableField(geometry_space, nodes_positions, name="x")
+        mesh = Mesh(topology, x)
 
         # - 1 - Check connectivity
         # Nodes
@@ -100,72 +102,68 @@ class TestMesh:
         # Number of elements
         assert mesh.connectivity.n_elements == N - 1
 
-        # - 2- Check nodes_positions
-        assert mesh.nodes_positions.name == "x"
-        assert isinstance(mesh.nodes_positions.values_reduced, nn.Parameter)
-        assert mesh.nodes_positions.full_values().detach() == pytest.approx(
+        # - 2- Check coordinates
+        assert mesh.coordinates.name == "x"
+        assert isinstance(mesh.coordinates.values_reduced, nn.Parameter)
+        assert mesh.coordinates.full_values().detach() == pytest.approx(
             nodes_positions, rel=self.relative_tolerance
         )
 
     def test_incompatible_connectivities(self):
-        """Tries to create a mesh with nodes positions having a different connectivity than the one owned by mesh"""
-        # Number of vertices
-        nodes = torch.tensor([0, 1, 2, 3, 4, 5])
-        elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
-        connectivity = Connectivity(nodes, elements)
+        """Mesh must reject coordinates built over a different topology.
 
-        # Less nodes positions than nodes
+        The old invariant was ``mesh.connectivity is nodes_positions.connectivity``;
+        the new one is ``coordinates.space.topology is mesh.topology``. Building the
+        coordinate field over one topology and the mesh over another must raise.
+        """
+        elements = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]])
+        topology = Topology(elements)
+        geometry_space = FunctionSpace(topology, VectorElement(P1_BAR, 1))
         x = Field(
+            geometry_space,
+            torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1),
             name="x",
-            connectivity=connectivity,
-            values=torch.tensor([15.0, -1.0, 3.0, 7.0, 6.0, -5.0]).unsqueeze(-1),
         )
-        other_connectivity = Connectivity(nodes, elements)
+        other_topology = Topology(elements)
         with pytest.raises(ValueError):
-            Mesh(other_connectivity, x)
+            Mesh(other_topology, x)
 
 
 def _mesh_1d(n_nodes=5, x_min=0.0, x_max=4.0):
     """A uniform 1-D mesh of ``n_nodes - 1`` elements."""
-    nodes = torch.arange(0, n_nodes)
     elements = torch.vstack([torch.arange(0, n_nodes - 1), torch.arange(1, n_nodes)]).T
-    connectivity = Connectivity(nodes, elements)
-    positions = Field(
-        name="x",
-        connectivity=connectivity,
-        values=torch.linspace(x_min, x_max, n_nodes).unsqueeze(-1),
-    )
-    return Mesh(connectivity, positions)
+    positions = torch.linspace(x_min, x_max, n_nodes).unsqueeze(-1)
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, positions, name="x")
+    return Mesh(topology, coords)
 
 
 def _mesh_2d(reverse_winding=False):
     """The unit square split into two triangles: [0, 1, 2] and [0, 2, 3]."""
-    nodes = torch.arange(0, 4)
     elements = torch.tensor([[0, 1, 2], [0, 2, 3]])
     if reverse_winding:
         elements = elements.flip(-1)
-    connectivity = Connectivity(nodes, elements)
-    positions = Field(
-        name="x",
-        connectivity=connectivity,
-        values=torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
-    )
-    return Mesh(connectivity, positions)
+    positions = torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 2))
+    coords = Field(geometry, positions, name="x")
+    return Mesh(topology, coords)
 
 
 def _mesh_3d():
-    """A single tetrahedron -- enough to have ``dim == 3``."""
-    nodes = torch.arange(0, 4)
-    elements = torch.tensor([[0, 1, 2, 3]])
-    connectivity = Connectivity(nodes, elements)
-    positions = Field(
-        name="x",
-        connectivity=connectivity,
-        values=torch.tensor(
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        ),
-    )
-    return Mesh(connectivity, positions)
+    """A mesh with geometric ``dim == 3`` (a triangle embedded in 3-D space).
+
+    The library ships no tetrahedral element, and only ``dim`` matters here
+    (point location must reject 3-D meshes). A triangle with 3-D coordinates
+    gives ``mesh.dim == 3`` via ``coordinates.dim``, which is all the test needs.
+    """
+    elements = torch.tensor([[0, 1, 2]])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_TRIANGLE, 3))
+    coords = Field(geometry, positions, name="x")
+    return Mesh(topology, coords)
 
 
 class TestElementsAt:

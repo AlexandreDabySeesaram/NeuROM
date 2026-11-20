@@ -3,11 +3,10 @@ import torch
 
 # Import library modules
 from neurom.quadratures import MidPoint1D, TwoPoints1D
-from neurom.shape_functions import LinearBar
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Mesh, Connectivity
+from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
-from neurom.constraints import Dirichlet
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.field_layout import FieldLayout
 from neurom.interpolation import (
     PointWiseInterpolator,
@@ -67,7 +66,6 @@ class Test1dBeamDeflection:
 
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
-        nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
         # Initialize displacement values
@@ -77,10 +75,12 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate connectivity
-        connectivity = Connectivity(nodes, elements)
-        # Shape function
-        sf = LinearBar()
+        # Mesh (topology + P1 geometry) and function space the fields live on
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        coords = Field(geometry, x_array, name="positions")
+        mesh = Mesh(topology, coords)
+        space = FunctionSpace(mesh.topology, P1_BAR)
         # Quadrature strategy
         quad = MidPoint1D()
 
@@ -90,28 +90,15 @@ class Test1dBeamDeflection:
         # Displacement
         u = field_layout.add(
             TrainableField(
+                space,
+                u_init,
+                bcs=[DirichletBC(0, [0, N - 1], value=0.0)],
                 name="displacement",
-                connectivity=connectivity,
-                init_values=u_init,
-                constraint=Dirichlet(
-                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
-                ),
             )
         )
 
-        # Positions
-        x = field_layout.add(
-            Field(name="positions", connectivity=connectivity, values=x_array)
-        )
-
         # Load
-        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
-
-        # Generate mesh
-        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf, mesh)
+        f = field_layout.add(Field(space, load, name="load"))
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -120,11 +107,11 @@ class Test1dBeamDeflection:
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
         # Define quadrature context
-        ctx = QuadratureContext(mesh, quad, mapping)
+        ctx = QuadratureContext(mesh, quad)
 
         # Define quadrature assemblies
-        assembly_u = QuadratureAssembly(ctx, sf, u)
-        assembly_f = QuadratureAssembly(ctx, sf, f)
+        assembly_u = QuadratureAssembly(ctx, u)
+        assembly_f = QuadratureAssembly(ctx, f)
 
         domain = IntegrationDomain([assembly_u, assembly_f])
 
@@ -165,7 +152,7 @@ class Test1dBeamDeflection:
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1)
-        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        pwi = PointWiseInterpolator(mesh, u)
         u_test = pwi.at_position(x_test)
 
         # Compute analytical solution
@@ -195,7 +182,6 @@ class Test1dBeamDeflection:
 
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
-        nodes = torch.arange(0, N)
         elements = torch.vstack([torch.arange(0, N - 1), torch.arange(1, N)]).T
 
         # Initialize displacement values
@@ -205,10 +191,12 @@ class Test1dBeamDeflection:
         load_value = 1000.0
         load = load_value * torch.ones(N, 1)
 
-        # Generate connectivity
-        connectivity = Connectivity(nodes, elements)
-        # Shape function
-        sf = LinearBar()
+        # Mesh (topology + P1 geometry) and function space the fields live on
+        topology = Topology(elements)
+        geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+        coords = Field(geometry, x_array, name="positions")
+        mesh = Mesh(topology, coords)
+        space = FunctionSpace(mesh.topology, P1_BAR)
         # Quadrature strategy
         quad = TwoPoints1D()
 
@@ -218,28 +206,15 @@ class Test1dBeamDeflection:
         # Displacement
         u = field_layout.add(
             TrainableField(
+                space,
+                u_init,
+                bcs=[DirichletBC(0, [0, N - 1], value=0.0)],
                 name="displacement",
-                connectivity=connectivity,
-                init_values=u_init,
-                constraint=Dirichlet(
-                    nodes=[0, N - 1], values_imposed=torch.zeros(2, 1)
-                ),
             )
         )
 
-        # Positions
-        x = field_layout.add(
-            Field(name="positions", connectivity=connectivity, values=x_array)
-        )
-
         # Load
-        f = field_layout.add(Field(name="load", connectivity=connectivity, values=load))
-
-        # Generate mesh
-        mesh = Mesh(connectivity=connectivity, nodes_positions=x)
-
-        # Mapping from/to reference/physical coordinates
-        mapping = IsoparametricMapping1D(sf, mesh)
+        f = field_layout.add(Field(space, load, name="load"))
 
         # Define physics to solve
         physics = ElasticEnergy(field=u) - LoadPotential(field=u, f=f)
@@ -248,11 +223,11 @@ class Test1dBeamDeflection:
         physics_loss = PhysicsLoss(physics=physics, field_layout=field_layout)
 
         # Define quadrature context
-        ctx = QuadratureContext(mesh, quad, mapping)
+        ctx = QuadratureContext(mesh, quad)
 
         # Define quadrature assemblies
-        assembly_u = QuadratureAssembly(ctx, sf, u)
-        assembly_f = QuadratureAssembly(ctx, sf, f)
+        assembly_u = QuadratureAssembly(ctx, u)
+        assembly_f = QuadratureAssembly(ctx, f)
 
         domain = IntegrationDomain([assembly_u, assembly_f])
 
@@ -293,7 +268,7 @@ class Test1dBeamDeflection:
         # Generate test points and interpolate
         # This also tests the boundary condition
         x_test = torch.linspace(x_min, x_max, 30).unsqueeze(-1)
-        pwi = PointWiseInterpolator(mesh, sf, u, mapping)
+        pwi = PointWiseInterpolator(mesh, u)
         u_test = pwi.at_position(x_test)
 
         # Compute analytical solution

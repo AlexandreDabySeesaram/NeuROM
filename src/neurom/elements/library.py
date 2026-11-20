@@ -1,0 +1,220 @@
+"""Concrete finite elements as ready-to-use singletons.
+
+Each element is a pure reference-space object (no geometry, no trainable state), so a single
+shared instance serves every mesh and dtype -- hence the public surface is module-level
+constants, one per concrete element. Vector-valued elements are a scalar element wrapped by the
+one public combinator, :func:`VectorElement`. The DG0 construction is *cell-generic* (one recipe
+for any cell), so a private :func:`_dg0` helper builds the per-cell DG0 constants without
+duplication; every other element has a cell-specific basis and is written out directly.
+"""
+
+import torch
+
+from neurom.elements.finite_element import FiniteElement, DoF, MapType, VALUE, D1, FLUX
+from neurom.meshes.topology import EntityDim
+from neurom.reference_cell import ReferenceCell, BAR, TRIANGLE
+from neurom.shape_functions import (
+    LinearBar,
+    LinearTriangle,
+    QuadraticTriangle,
+    CubicTriangle,
+    HierarchicalP2Triangle,
+    CubicHermiteBar,
+    RaviartThomas0Triangle,
+    Constant,
+)
+
+
+def VectorElement(base: FiniteElement, dim: int) -> FiniteElement:
+    """A vector-valued element: ``base``'s scalar layout replicated across ``dim`` components.
+
+    The reference basis and DOF layout are shared with ``base``; only ``value_shape`` changes to
+    ``(dim,)``, so each scalar DOF becomes ``dim`` DOFs (one per component).
+
+    Args:
+        base (FiniteElement): The scalar element to vectorise (e.g. :data:`P1_TRIANGLE`).
+        dim (int): Number of value components.
+
+    Returns:
+        FiniteElement: Same reference basis and DOF layout as ``base``, with ``value_shape=(dim,)``.
+    """
+    return FiniteElement(
+        base.reference_basis,
+        base.dof_layout,
+        value_shape=(dim,),
+        map_type=base.map_type,
+        dof_nodes=base._dof_nodes,
+        g_e_closed_form=base.g_e_closed_form,
+    )
+
+
+def _dg0(cell: ReferenceCell) -> FiniteElement:
+    r"""Build the piecewise-constant (:math:`P_0`) element on ``cell`` (the cell-generic DG0 recipe).
+
+    One DOF, the constant cell value -- basis :math:`N_0\equiv1`, functional :math:`\ell(v)=v|_K`
+    -- attached to the top-dimensional cell entity (``EDGE`` for a bar, ``FACE`` for a triangle).
+    Private: the public surface is the per-cell constants :data:`DG0_BAR` / :data:`DG0_TRIANGLE`
+    (and a vector DG0 is :func:`VectorElement` over one of them, as for any element).
+    """
+    cell_dim = EntityDim(cell.simplex.shape[1])  # EDGE for a bar, FACE for a triangle
+    return FiniteElement(
+        Constant(cell),
+        [DoF(entity_dim=cell_dim, local_index=0, kind=VALUE)],
+    )
+
+
+P1_BAR = FiniteElement(
+    LinearBar(),
+    [
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
+    ],
+)
+r"""**P1 (linear Lagrange) on the bar.** Reference cell :math:`\hat K=[-1,1]`, space :math:`P_1`.
+Nodal basis :math:`N_i(\xi)=\tfrac12(1\mp\xi)` -- the barycentric coordinates
+:math:`(\lambda_0,\lambda_1)`. DOFs: the value at each vertex, :math:`\ell_i(v)=v(\xi_i)` with
+:math:`\xi_0=-1,\ \xi_1=+1`. Nodal basis, so the DOF transformation :math:`M_e` is the identity."""
+
+
+P1_TRIANGLE = FiniteElement(
+    LinearTriangle(),
+    [DoF(entity_dim=EntityDim.VERTEX, local_index=i, kind=VALUE) for i in range(3)],
+)
+r"""**P1 (linear Lagrange) on the triangle.** Reference cell the unit triangle
+:math:`\{\lambda_i\ge0,\ \sum_i\lambda_i=1\}`, space :math:`P_1`. Nodal basis equal to the
+barycentric coordinates, :math:`N_i=\lambda_i\ (i=0,1,2)`. DOFs: the value at each of the three
+vertices, :math:`\ell_i(v)=v(\mathbf x_i)`. Identity DOF transformation."""
+
+
+P2_TRIANGLE = FiniteElement(
+    QuadraticTriangle(),
+    [
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=2, kind=VALUE),
+        DoF(entity_dim=EntityDim.EDGE, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.EDGE, local_index=1, kind=VALUE),
+        DoF(entity_dim=EntityDim.EDGE, local_index=2, kind=VALUE),
+    ],
+)
+r"""**P2 (quadratic Lagrange) on the triangle.** Space :math:`P_2`, 6 DOFs. Nodal basis in
+barycentric coordinates: vertices :math:`N_{v_i}=\lambda_i(2\lambda_i-1)` and edge midpoints
+:math:`N_{e_{ij}}=4\lambda_i\lambda_j`, edges ordered :math:`(0,1),(1,2),(2,0)`. DOFs: the value
+at the three vertices and the three edge midpoints. Identity DOF transformation."""
+
+
+HIERARCHICAL_P2_TRIANGLE = FiniteElement(
+    HierarchicalP2Triangle(), P2_TRIANGLE.dof_layout, nodal=False
+)
+r"""**Non-nodal P2 on the triangle** -- same :math:`P_2` space and nodal P2 DOFs as
+:data:`P2_TRIANGLE`, but a *hierarchical* coded basis (three linear vertex hats
+:math:`\lambda_i` plus three quadratic edge bubbles :math:`4\lambda_i\lambda_j`) that is **not**
+dual to the DOFs. Declared ``nodal=False``, so construction computes :math:`C = V^{-1}` and folds
+it into the tabulation (see :class:`~neurom.shape_functions.folded_basis.FoldedBasis`), recovering
+the nodal P2 basis exactly. Not a production element: it exists to exercise and verify the
+non-nodal :math:`C`-folding path (every other library element is nodal, so its coded basis equals
+the basis it presents)."""
+
+
+_T = 1.0 / 3.0  # the P3 edge nodes sit at 1/3 and 2/3 along each edge
+P3_TRIANGLE = FiniteElement(
+    CubicTriangle(),
+    [
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=2, kind=VALUE),
+        DoF(entity_dim=EntityDim.EDGE, local_index=0, kind=VALUE),  # e01, nearer v0
+        DoF(entity_dim=EntityDim.EDGE, local_index=0, kind=VALUE),  # e01, nearer v1
+        DoF(entity_dim=EntityDim.EDGE, local_index=1, kind=VALUE),  # e12, nearer v1
+        DoF(entity_dim=EntityDim.EDGE, local_index=1, kind=VALUE),  # e12, nearer v2
+        DoF(entity_dim=EntityDim.EDGE, local_index=2, kind=VALUE),  # e20, nearer v2
+        DoF(entity_dim=EntityDim.EDGE, local_index=2, kind=VALUE),  # e20, nearer v0
+        DoF(entity_dim=EntityDim.FACE, local_index=0, kind=VALUE),  # centroid
+    ],
+    dof_nodes=[
+        [0.0, 0.0],  # v0
+        [1.0, 0.0],  # v1
+        [0.0, 1.0],  # v2
+        [_T, 0.0],  # e01, nearer v0 (1/3 from v0)
+        [2.0 * _T, 0.0],  # e01, nearer v1 (2/3 from v0)
+        [2.0 * _T, _T],  # e12, nearer v1
+        [_T, 2.0 * _T],  # e12, nearer v2
+        [0.0, 2.0 * _T],  # e20, nearer v2
+        [0.0, _T],  # e20, nearer v0
+        [_T, _T],  # centroid
+    ],
+)
+r"""**P3 (cubic Lagrange) on the triangle.** Space :math:`P_3`, 10 DOFs: the value at the three
+vertices, two points on each edge (at :math:`1/3` and :math:`2/3`) and one at the centroid. Nodal
+basis (:class:`~neurom.shape_functions.CubicTriangle`), identity DOF transformation. The two DOFs
+per edge make it the first library element with a *repeated* kind on one entity, so its reference
+node coordinates are given explicitly (``dof_nodes``) rather than gathered as entity centroids, and
+the DOF-map edge-reversal permutation (orientation, WP3) keeps the two edge DOFs continuous across
+a shared, oppositely-traversed edge."""
+
+
+def _hermite_g_e(J: torch.Tensor) -> torch.Tensor:
+    r"""Closed-form Hermite DOF transformation :math:`M_e = \operatorname{diag}(1, J_e, 1, J_e)`.
+
+    The reference coefficients multiplying the Hermite basis are :math:`(w, \partial w/\partial\xi)`
+    at each vertex, while the stored DOFs are physical :math:`(w, \partial w/\partial x)`; since
+    :math:`\partial w/\partial\xi = J_e\,\partial w/\partial x`, :math:`M_e` scales the two slope
+    DOFs by the (constant, affine) bar Jacobian :math:`J_e = \ell_e/2`. This is exactly
+    :math:`L_e^{-1}` of the generic path, computed directly -- no per-forward assembly/inversion.
+
+    Args:
+        J (torch.Tensor): Per-element Jacobian ``(n_e, 1, 1)`` (in the autograd graph).
+
+    Returns:
+        torch.Tensor: ``M_e`` of shape ``(n_e, 4, 4)``.
+    """
+    j = J[..., 0, 0]  # (n_e,) the scalar bar Jacobian l_e / 2
+    one = torch.ones_like(j)
+    return torch.diag_embed(torch.stack([one, j, one, j], dim=-1))
+
+
+HERMITE = FiniteElement(
+    CubicHermiteBar(),
+    [
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=0, kind=D1),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=VALUE),
+        DoF(entity_dim=EntityDim.VERTEX, local_index=1, kind=D1),
+    ],
+    g_e_closed_form=_hermite_g_e,
+)
+r"""**Cubic Hermite beam on the bar.** Reference cell :math:`\hat K=[-1,1]`, space :math:`P_3`,
+4 DOFs. Reference basis :math:`H_1=\tfrac14(1-\xi)^2(2+\xi)`,
+:math:`H_2=\tfrac14(1-\xi)^2(\xi+1)`, :math:`H_3=\tfrac14(1+\xi)^2(2-\xi)`,
+:math:`H_4=\tfrac14(1+\xi)^2(\xi-1)`. DOFs at each vertex are the value and the **physical**
+first derivative, :math:`(\,v\mapsto v(x_i),\ v\mapsto v'(x_i)\,)`, at :math:`\xi_0=-1` then
+:math:`\xi_1=+1`. The derivative DOFs are physical, so :math:`M_e` scales with the cell size
+(geometry-dependent, unlike the nodal Lagrange elements)."""
+
+
+DG0_BAR = _dg0(BAR)
+r"""**DG0 (piecewise constant) on the bar.** Space :math:`P_0`, a single cell-value DOF
+(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). Built by :func:`_dg0`."""
+
+DG0_TRIANGLE = _dg0(TRIANGLE)
+r"""**DG0 (piecewise constant) on the triangle.** Space :math:`P_0`, a single cell-value DOF
+(:math:`N_0\equiv1`, :math:`\ell(v)=v|_K`). Built by :func:`_dg0`."""
+
+
+RT0_TRIANGLE = FiniteElement(
+    RaviartThomas0Triangle(),
+    [DoF(entity_dim=EntityDim.EDGE, local_index=i, kind=FLUX) for i in range(3)],
+    map_type=MapType.CONTRAVARIANT_PIOLA,
+)
+r"""**RT0 (lowest-order Raviart--Thomas) on the triangle** -- H(div), the first vector-valued and
+first non-identity-map library element. Space
+:math:`RT_0=[P_0]^2\oplus\mathbf x\,P_0`, 3 DOFs: the normal flux through each edge,
+:math:`\ell_i(\mathbf v)=\int_{E_i}\mathbf v\cdot\mathbf n_i\,\mathrm ds` (kind ``FLUX``). The
+reference basis (:class:`~neurom.shape_functions.RaviartThomas0Triangle`) is flux-nodal
+(:math:`V=I`); the field value is the contravariant Piola push-forward
+:math:`\tfrac1{\det J_e}J_e\hat{\mathbf H}` (``map_type = CONTRAVARIANT_PIOLA``), so the 2-vector
+value comes from the (vector) basis -- ``value_shape`` stays ``()`` (the 3 DOFs are *scalar* flux
+coefficients, one per basis function, **not** replicated per component as in a
+:func:`VectorElement`). The per-cell facet-orientation sign :math:`\sigma` enters as
+:math:`T_e=\operatorname{diag}(\sigma)` in the DOF transformation, keeping the flux continuous
+across a shared edge."""

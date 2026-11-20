@@ -1,6 +1,9 @@
 """Mesh data structure and point-location utilities."""
 
+import torch
 import torch.nn as nn
+
+from neurom.meshes.connectivity import Connectivity
 
 
 def is_in_triangle(pts, vertices):
@@ -128,58 +131,63 @@ def elements_at_2d(x, nodes_positions, connectivity):
 
 
 class Mesh(nn.Module):
-    """A finite-element mesh combining topology and node positions.
+    """A finite-element mesh: a topology together with a coordinate field.
 
-    A mesh is defined by its topology (node indices and element connectivity)
-    together with the spatial positions of each node.
+    The geometry is just another field -- ``coordinates`` is a
+    :class:`~neurom.fields.Field` (or :class:`~neurom.fields.TrainableField`, for
+    r-adaptivity) on a geometry :class:`~neurom.function_space.FunctionSpace` over the same
+    topology. Its value components are the spatial coordinates, so ``coordinates.dim`` is the
+    geometric dimension. There is no hidden builder: the caller creates the coordinate field
+    explicitly and so chooses whether the mesh geometry is trainable, e.g.
+
+    .. code-block:: python
+
+        topology = Topology(cell_vertices)
+        V = FunctionSpace(topology, VectorElement(P1_BAR, gdim))   # P1_TRIANGLE in 2-D
+        coords = Field(V, points)                                  # or TrainableField(V, ...)
+        mesh = Mesh(topology, coords)
 
     Args:
-        connectivity (Connectivity): The mesh connectivity (node indices and
-            element-to-node mapping).
-        nodes_positions (Field or TrainableField): A ``Field`` or
-            ``TrainableField`` holding the spatial coordinates of every node.
+        topology (Topology): The mesh topology (cell-to-vertex table).
+        coordinates (FieldBase): The nodal coordinate field; its space must be built over
+            ``topology``.
 
     Attributes:
-        connectivity (Connectivity): The mesh connectivity.
-        nodes_positions (Field or TrainableField): The spatial coordinates of
-            every node.
-        dim (int): Spatial dimension of the mesh, taken from
-            ``nodes_positions.dim``.
+        topology (Topology): The mesh topology.
+        coordinates (FieldBase): The coordinate field.
+        dim (int): Geometric dimension, taken from ``coordinates.dim``.
 
     Raises:
-        ValueError: If ``connectivity`` is not the same object as
-            ``nodes_positions.connectivity``.
+        ValueError: If ``coordinates`` is defined over a different topology.
     """
 
-    def __init__(self, connectivity, nodes_positions):
+    def __init__(self, topology, coordinates):
         super().__init__()
-
-        self.connectivity = connectivity
-        self.nodes_positions = nodes_positions
-        self.dim = self.nodes_positions.dim
-
-        if self.connectivity is not self.nodes_positions.connectivity:
+        if coordinates.space.topology is not topology:
             raise ValueError(
-                "Mesh self.connectivity does not correspond to self.nodes_positions.connectivity"
+                "Mesh coordinates must live on a space built over the given topology."
             )
+        self.topology = topology
+        self.coordinates = coordinates
+        self.dim = coordinates.dim
+        self._connectivity = Connectivity(
+            torch.arange(topology.n_vertices), topology.cell_vertices
+        )
+
+    @property
+    def connectivity(self) -> Connectivity:
+        """Vertex connectivity ``(cell -> vertices)``, derived from the topology."""
+        return self._connectivity
 
     @property
     def n_nodes(self):
-        """The number of nodes in the mesh.
-
-        Returns:
-            int: The number of nodes.
-        """
-        return self.connectivity.n_nodes
+        """The number of vertices in the mesh."""
+        return self.topology.n_vertices
 
     @property
     def n_elements(self):
-        """The number of elements in the mesh.
-
-        Returns:
-            int: The number of elements.
-        """
-        return self.connectivity.n_elements
+        """The number of cells in the mesh."""
+        return self.topology.n_cells
 
     def elements_at(self, x):
         """Find the element index containing each query point.
@@ -216,8 +224,8 @@ class Mesh(nn.Module):
                 f"list of points with x.reshape(-1, {self.dim})."
             )
 
-        nodes = self.nodes_positions.full_values()  # (N_nodes, dim)
-        connectivity = self.connectivity.element_connectivity  # (N_e, n_nodes_per_elem)
+        nodes = self.coordinates.full_values()  # (N_nodes, dim)
+        connectivity = self.topology.cell_vertices  # (N_e, n_nodes_per_elem)
 
         if self.dim == 1:
             return elements_at_1d(x, nodes, connectivity)

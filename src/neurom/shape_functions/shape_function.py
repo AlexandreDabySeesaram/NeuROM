@@ -2,42 +2,36 @@
 
 from abc import ABC, abstractmethod
 import torch
-import torch.nn as nn
 
-from neurom.reference_elements.reference_element import ReferenceElement
+from neurom.math.jacobian import jacobian
+from neurom.reference_cell import ReferenceCell
 
 
-class ShapeFunction(nn.Module, ABC):
-    """Abstract base class for finite-element shape functions.
+class ShapeFunction(ABC):
+    r"""Abstract base class for finite-element shape functions.
 
-    Subclasses implement the ``N`` method for a specific element type and
-    polynomial order.  The class inherits from ``torch.nn.Module`` so that
-    registered buffers (e.g. quadrature data) are handled automatically by
-    PyTorch.
+    Subclasses implement the ``N`` method for a specific element type and polynomial order.
+    A ``ShapeFunction`` is a plain immutable object (not an ``nn.Module``): :math:`N(\xi)` is
+    computed directly from the input :math:`\xi`, so it carries no dtype/device state and a single
+    instance is shared across meshes.
+
+    The DOF layout (which DOF is a value, a derivative, etc., and where it lives)
+    is owned by the :class:`~neurom.elements.FiniteElement`, not the shape function;
+    a ``ShapeFunction`` only evaluates the reference basis :math:`N(\xi)`.
 
     Attributes:
-        reference_element (ReferenceElement): The reference element on which
+        reference_cell (ReferenceCell): The reference element on which
             the shape function is defined.
-        dof_kinds (tuple[str, ...] | None): Kind of each element DOF, e.g.
-            ``"value"`` for a nodal value or ``"d1"`` for a nodal first
-            derivative.  ``None`` means every DOF is a nodal value (Lagrange).
-        dof_nodes_xi (tuple[float, ...] | None): Reference coordinate of the
-            node carrying each element DOF.  Only needed when some DOFs are
-            not nodal values.
     """
 
-    dof_kinds = None
-    dof_nodes_xi = None
-
-    def __init__(self, reference_element: ReferenceElement):
+    def __init__(self, reference_cell: ReferenceCell):
         """Initialise the shape function with its reference element.
 
         Args:
-            reference_element (ReferenceElement): The reference element on
+            reference_cell (ReferenceCell): The reference element on
                 which the shape function is defined.
         """
-        super().__init__()
-        self.reference_element = reference_element
+        self.reference_cell = reference_cell
 
     @abstractmethod
     def N(self, xi: torch.Tensor) -> torch.Tensor:
@@ -48,7 +42,38 @@ class ShapeFunction(nn.Module, ABC):
                 ``(N_e, N_q, dim_ref)``.
 
         Returns:
-            torch.Tensor: Shape-function values of shape
-            ``(N_e, N_q, N_nodes)``.
+            torch.Tensor: Shape-function values of shape ``(N_e, N_q, n_ref)`` for a **scalar**
+            basis, or ``(N_e, N_q, n_ref, gdim)`` for a **vector-valued** basis (each basis function
+            is itself a ``gdim``-vector, e.g. RT0). The basis-function axis is the one contracted
+            against the DOF coefficients; any trailing component axis rides along.
         """
         pass
+
+    @property
+    def n_ref(self) -> int:
+        r"""Number of reference basis functions :math:`\{\hat H_a\}` (the count contracted against DOFs).
+
+        Default: read it off a one-point probe, assuming a **scalar** basis where ``N``'s trailing
+        axis *is* the basis count. A **vector-valued** basis returns ``(*batch, n_ref, gdim)``, so it
+        **must override** this to report ``n_ref`` (the basis-function axis), not ``gdim``.
+        """
+        probe = self.reference_cell.simplex[:1]  # (1, dim_ref); any batch rank works
+        return self.N(probe).shape[-1]
+
+    def grad_N(self, xi: torch.Tensor) -> torch.Tensor:
+        r"""Reference gradient of the basis: :math:`\partial N_a/\partial\xi_j`.
+
+        Default implementation differentiates :meth:`N` with autograd (so it holds for any basis,
+        including high-order ones nonlinear in :math:`\xi`); a subclass with a known closed form may
+        override it. ``xi`` is detached and re-marked ``requires_grad`` internally -- the reference
+        gradient depends only on :math:`\xi`, never on node positions -- so callers need not manage
+        the graph.
+
+        Args:
+            xi (torch.Tensor): Reference coordinates, shape ``(N_e, N_q, dim_ref)``.
+
+        Returns:
+            torch.Tensor: :math:`\partial N/\partial\xi`, shape ``(N_e, N_q, n_ref, dim_ref)``.
+        """
+        xi = xi.detach().requires_grad_(True)
+        return jacobian(xi, self.N(xi))  # (N_e, N_q, n_ref, dim_ref)

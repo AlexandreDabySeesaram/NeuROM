@@ -28,9 +28,7 @@ def _f64():
 
 
 # B_{s, a_s} = B_{s, b_s} = 1/2 for edge s = (a_s, b_s), edges (0,1),(1,2),(2,0).
-_B = torch.tensor(
-    [[0.5, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, 0.0, 0.5]], dtype=F64
-)
+_B = torch.tensor([[0.5, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, 0.0, 0.5]], dtype=F64)
 
 
 def test_duality_matrix_has_the_block_structure():

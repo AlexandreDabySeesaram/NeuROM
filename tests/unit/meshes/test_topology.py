@@ -22,7 +22,9 @@ def _square(n):
     for i in range(n):
         for j in range(n):
             a, b, c, d = vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)
-            cells += [[a, b, c], [a, c, d]] if (i + j) % 2 == 0 else [[a, b, d], [b, c, d]]
+            cells += (
+                [[a, b, c], [a, c, d]] if (i + j) % 2 == 0 else [[a, b, d], [b, c, d]]
+            )
     return Topology(torch.tensor(cells))
 
 

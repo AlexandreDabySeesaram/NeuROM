@@ -21,7 +21,9 @@ os.environ.setdefault(
 
 # TEMPORARY: the examples are being cleaned up after the master merge; skip the whole module until
 # they are updated, then remove this marker to restore the §6 safety net.
-pytestmark = pytest.mark.skip(reason="examples cleanup pending (post-merge) -- re-enable after")
+pytestmark = pytest.mark.skip(
+    reason="examples cleanup pending (post-merge) -- re-enable after"
+)
 
 EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 

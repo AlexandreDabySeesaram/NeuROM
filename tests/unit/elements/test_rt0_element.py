@@ -44,7 +44,9 @@ def _constant_field_dofs(topo, pts, a, b):
     ev = topo.edge_vertices
     t = pts[ev[:, 1]] - pts[ev[:, 0]]
     n_canon = torch.stack([t[:, 1], -t[:, 0]], dim=-1)  # R t, R = -90 deg
-    return (n_canon * torch.tensor([a, b], dtype=F64)).sum(dim=-1, keepdim=True)  # (n_edges, 1)
+    return (n_canon * torch.tensor([a, b], dtype=F64)).sum(
+        dim=-1, keepdim=True
+    )  # (n_edges, 1)
 
 
 def test_rt0_element_is_a_unisolvent_contravariant_vector_element():
@@ -52,8 +54,12 @@ def test_rt0_element_is_a_unisolvent_contravariant_vector_element():
     e = RT0_TRIANGLE
     assert (e.n_dofs, e.n_ref) == (3, 3)  # unisolvent
     assert e.map_type == MapType.CONTRAVARIANT_PIOLA
-    assert e.value_shape == () and e.n_components == 1  # scalar flux coeffs; vector value via basis
-    assert e.V.numpy() == pytest.approx(torch.eye(3, dtype=e.V.dtype).numpy(), abs=1e-12)
+    assert (
+        e.value_shape == () and e.n_components == 1
+    )  # scalar flux coeffs; vector value via basis
+    assert e.V.numpy() == pytest.approx(
+        torch.eye(3, dtype=e.V.dtype).numpy(), abs=1e-12
+    )
 
 
 def test_rt0_reproduces_a_constant_field_in_both_cells():
@@ -66,9 +72,13 @@ def test_rt0_reproduces_a_constant_field_in_both_cells():
     topo, mesh = _square()
     pts = mesh.coordinates.full_values()
     a, b = 2.0, -3.0
-    fld = Field(FunctionSpace(topo, RT0_TRIANGLE), _constant_field_dofs(topo, pts, a, b))
+    fld = Field(
+        FunctionSpace(topo, RT0_TRIANGLE), _constant_field_dofs(topo, pts, a, b)
+    )
 
-    x = torch.tensor([[0.6, 0.2], [0.2, 0.6]], dtype=F64)  # one point inside each triangle
+    x = torch.tensor(
+        [[0.6, 0.2], [0.2, 0.6]], dtype=F64
+    )  # one point inside each triangle
     val = PointWiseInterpolator(mesh, fld).at_position(x)
     expected = torch.tensor([[a, b], [a, b]], dtype=F64)
     assert val.detach().numpy() == pytest.approx(expected.numpy(), rel=1e-12)
@@ -83,10 +93,14 @@ def test_dropping_T_e_breaks_the_reproduction():
     topo, mesh = _square()
     pts = mesh.coordinates.full_values()
     a, b = 2.0, -3.0
-    fld = Field(FunctionSpace(topo, RT0_TRIANGLE), _constant_field_dofs(topo, pts, a, b))
+    fld = Field(
+        FunctionSpace(topo, RT0_TRIANGLE), _constant_field_dofs(topo, pts, a, b)
+    )
 
     pw = PointWiseInterpolator(mesh, fld)
-    pw._dof_transformation = Transformation(RT0_TRIANGLE, AffineSimplexMapping(mesh))  # no T_e
+    pw._dof_transformation = Transformation(
+        RT0_TRIANGLE, AffineSimplexMapping(mesh)
+    )  # no T_e
     x = torch.tensor([[0.6, 0.2], [0.2, 0.6]], dtype=F64)
     val = pw.at_position(x).detach()
     expected = torch.tensor([[a, b], [a, b]], dtype=F64)
@@ -140,7 +154,10 @@ def _reference_divergences(element):
     H = element.reference_basis.N(xi)  # (1, n_ref, gdim)
     return torch.stack(
         [
-            sum(torch.autograd.grad(H[0, s, c], xi, retain_graph=True)[0][0, c] for c in range(2))
+            sum(
+                torch.autograd.grad(H[0, s, c], xi, retain_graph=True)[0][0, c]
+                for c in range(2)
+            )
             for s in range(element.n_ref)
         ]
     )
@@ -148,7 +165,9 @@ def _reference_divergences(element):
 
 def _closed_form_div(mesh, field, d_ref):
     """Closed-form physical divergence per cell: ``(1/det J) sum_s sigma_{e,s} U_s div_hat H_s``."""
-    detJ = AffineSimplexMapping(mesh).det_jacobian.values.squeeze(-1)  # (n_cells,) signed
+    detJ = AffineSimplexMapping(mesh).det_jacobian.values.squeeze(
+        -1
+    )  # (n_cells,) signed
     U = field.at_elements().squeeze(-1)  # (n_cells, n_dofs) flux DOFs
     sigma = EntityGeometry(mesh).facet_signs().to(U.dtype)  # (n_cells, n_dofs)
     return (sigma * U * d_ref).sum(dim=-1) / detJ  # (n_cells,)
@@ -159,9 +178,11 @@ def _autograd_div(mesh, field, cell_id, x):
     elem = field.space.element
     mapping = AffineSimplexMapping(mesh)
     eid = torch.tensor([cell_id])
-    q = Transformation(elem, mapping, EntityGeometry.for_element(elem, mesh)).to_reference(
-        field.at_elements()[eid], eid
-    ).squeeze(-1)  # (1, n_ref)
+    q = (
+        Transformation(elem, mapping, EntityGeometry.for_element(elem, mesh))
+        .to_reference(field.at_elements()[eid], eid)
+        .squeeze(-1)
+    )  # (1, n_ref)
     nodes = mapping.x_nodes[cell_id]
     J = torch.stack([nodes[1] - nodes[0], nodes[2] - nodes[0]], dim=1)  # (2, 2) columns
     det = (J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0]).reshape(1, 1)
@@ -169,7 +190,9 @@ def _autograd_div(mesh, field, cell_id, x):
     xi = (xg - nodes[0]) @ torch.linalg.inv(J).T
     val = torch.einsum("en,eng->eg", q, elem.reference_basis.N(xi))
     v = reference_to_physical(val, J.unsqueeze(0), det, elem.map_type)  # (1, 2)
-    return sum(torch.autograd.grad(v[0, c], xg, create_graph=True)[0][0, c] for c in range(2))
+    return sum(
+        torch.autograd.grad(v[0, c], xg, create_graph=True)[0][0, c] for c in range(2)
+    )
 
 
 def test_rt0_normal_continuity_for_random_dofs_and_the_sign_ablation():
@@ -179,14 +202,16 @@ def test_rt0_normal_continuity_for_random_dofs_and_the_sign_ablation():
     uses random flux DOFs. The normal component agrees from both cells (H(div) conformity); the
     tangential component may jump. Dropping the facet signs breaks it with an order-1 jump.
     """
-    topo, mesh = _square()  # both CCW -> the shared diagonal has OPPOSITE sigma in the two cells
+    topo, mesh = (
+        _square()
+    )  # both CCW -> the shared diagonal has OPPOSITE sigma in the two cells
     sp = FunctionSpace(topo, RT0_TRIANGLE)
     g = torch.Generator().manual_seed(1)
     fld = Field(sp, torch.randn(sp.n_scalar_dofs, 1, generator=g, dtype=F64))
 
     x = torch.tensor([[0.5, 0.5]], dtype=F64)  # midpoint of the shared diagonal (0, 2)
-    n = torch.tensor([[1.0], [-1.0]], dtype=F64) / (2.0 ** 0.5)  # unit edge normal
-    t = torch.tensor([[1.0], [1.0]], dtype=F64) / (2.0 ** 0.5)  # unit edge tangent
+    n = torch.tensor([[1.0], [-1.0]], dtype=F64) / (2.0**0.5)  # unit edge normal
+    t = torch.tensor([[1.0], [1.0]], dtype=F64) / (2.0**0.5)  # unit edge tangent
     v0, v1 = _eval_in_cell(mesh, fld, x, 0), _eval_in_cell(mesh, fld, x, 1)
     # normal component continuous across the edge ...
     assert float(v0 @ n) == pytest.approx(float(v1 @ n), rel=1e-10)
@@ -211,13 +236,18 @@ def test_rt0_divergence_closed_form_matches_autograd_on_ccw_and_cw_cells():
     assert detJ[0] > 0 and detJ[1] < 0  # cell 0 CCW, cell 1 CW
 
     d_ref = _reference_divergences(RT0_TRIANGLE)
-    assert d_ref.detach().numpy() == pytest.approx([2.0, 2.0, 2.0], rel=1e-12)  # branch convention
+    assert d_ref.detach().numpy() == pytest.approx(
+        [2.0, 2.0, 2.0], rel=1e-12
+    )  # branch convention
 
     sp = FunctionSpace(topo, RT0_TRIANGLE)
     g = torch.Generator().manual_seed(5)
     fld = Field(sp, torch.randn(sp.n_scalar_dofs, 1, generator=g, dtype=F64))
     closed = _closed_form_div(mesh, fld, d_ref)
-    probes = [torch.tensor([[0.6, 0.5]], dtype=F64), torch.tensor([[0.3, 0.6]], dtype=F64)]
+    probes = [
+        torch.tensor([[0.6, 0.5]], dtype=F64),
+        torch.tensor([[0.3, 0.6]], dtype=F64),
+    ]
     for e in range(2):
         auto = float(_autograd_div(mesh, fld, e, probes[e]))
         assert closed[e].item() == pytest.approx(auto, rel=1e-10)
@@ -231,7 +261,9 @@ def test_rt0_commuting_property_on_ccw_and_cw_cells():
     outside RT0 (independent component gradients), so this is not mere reproduction.
     """
     topo, mesh = _mixed_square()
-    f = lambda X: torch.stack([2 * X[:, 0] + X[:, 1], X[:, 0] + 3 * X[:, 1]], dim=1)  # div f = 5
+    f = lambda X: torch.stack(
+        [2 * X[:, 0] + X[:, 1], X[:, 0] + 3 * X[:, 1]], dim=1
+    )  # div f = 5
     div_f = 5.0
 
     sp = FunctionSpace(topo, RT0_TRIANGLE)

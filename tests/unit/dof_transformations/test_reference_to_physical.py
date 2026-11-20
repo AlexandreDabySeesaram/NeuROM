@@ -61,7 +61,9 @@ def test_contravariant_preserves_normal_flux_signed(J):
     v_ref = torch.tensor([0.7, -0.3])
     t_ref = torch.tensor([0.4, 1.1])
     detJ = _detJ(J)
-    v_phys = reference_to_physical(v_ref, J, detJ.reshape(1), MapType.CONTRAVARIANT_PIOLA)
+    v_phys = reference_to_physical(
+        v_ref, J, detJ.reshape(1), MapType.CONTRAVARIANT_PIOLA
+    )
     t_phys = J @ t_ref  # the reference tangent pushes forward as J t
     n_phys = R @ t_phys  # physical normal = R * (pushed-forward tangent)
     n_ref = R @ t_ref  # reference normal = R * reference tangent
@@ -76,7 +78,9 @@ def test_contravariant_ablation_absdet_flips_sign_on_cw(J):
     detJ = _detJ(J)
     n_phys = R @ (J @ t_ref)  # physical normal = R * (pushed-forward tangent)
     n_ref = R @ t_ref  # reference normal = R * reference tangent
-    v_phys_abs = torch.einsum("ij,j->i", J, v_ref) / detJ.abs()  # the |det J| variant (ablation)
+    v_phys_abs = (
+        torch.einsum("ij,j->i", J, v_ref) / detJ.abs()
+    )  # the |det J| variant (ablation)
     flux = v_phys_abs @ n_phys
     expected = torch.sign(detJ) * (v_ref @ n_ref)
     assert float(flux) == pytest.approx(float(expected), rel=REL)
@@ -93,7 +97,9 @@ def test_contravariant_divergence_equals_reference_over_detJ():
 
     x = torch.tensor([[0.7, 0.4], [0.1, 0.9]], requires_grad=True)  # physical points
     xi = (x - x0) @ J_inv.T  # reference coords, xi = J^{-1} (x - x0)
-    v_ref = torch.stack([xi[:, 0] ** 2, xi[:, 0] * xi[:, 1]], dim=-1)  # reference divergence = 3 xi0
+    v_ref = torch.stack(
+        [xi[:, 0] ** 2, xi[:, 0] * xi[:, 1]], dim=-1
+    )  # reference divergence = 3 xi0
     Jb = J.expand(x.shape[0], 2, 2)
     detb = detJ.reshape(1, 1).expand(x.shape[0], 1)
     v_phys = reference_to_physical(v_ref, Jb, detb, MapType.CONTRAVARIANT_PIOLA)

@@ -90,11 +90,15 @@ def test_evaluate_reuses_cached_point_evaluators(two_specs):
     calls (mapping + DOF transformation not rebuilt each call); add_mode drops the cache."""
     model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
     assert model._pwi_cache == {}  # nothing built until the first evaluation
-    coords = torch.tensor([[5.0, 500.0], [1.0, 200.0]])  # inside both factor domains [0,10], [100,1000]
+    coords = torch.tensor(
+        [[5.0, 500.0], [1.0, 200.0]]
+    )  # inside both factor domains [0,10], [100,1000]
 
     model.evaluate(coords)
     built = dict(model._pwi_cache)
-    assert len(built) == model.n_modes * len(model.monom_specs)  # one per (mode, factor)
+    assert len(built) == model.n_modes * len(
+        model.monom_specs
+    )  # one per (mode, factor)
 
     model.evaluate(coords)  # second call reuses the same interpolator objects
     assert all(model._pwi_cache[key] is pwi for key, pwi in built.items())

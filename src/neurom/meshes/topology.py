@@ -223,7 +223,9 @@ class Topology(nn.Module):
             NotImplementedError: For a dimension that is neither the facets nor the vertices.
         """
         facet = self.facet_dim
-        incidence = self.cell_entities(facet).reshape(-1)  # each cell's facets, flattened
+        incidence = self.cell_entities(facet).reshape(
+            -1
+        )  # each cell's facets, flattened
         counts = torch.bincount(incidence, minlength=self.n_entities(facet))
         boundary_facets = torch.nonzero(counts == 1, as_tuple=False).reshape(-1)
         if dim == facet:

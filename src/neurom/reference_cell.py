@@ -127,7 +127,9 @@ class ReferenceCell:
         Raises:
             ValueError: If the cell has no entity of that dimension.
         """
-        local_verts = self.local_entities(entity_dim)[local_index]  # (n_verts_of_entity,)
+        local_verts = self.local_entities(entity_dim)[
+            local_index
+        ]  # (n_verts_of_entity,)
         return self.simplex[local_verts].mean(dim=0)  # (dim_ref,)
 
 

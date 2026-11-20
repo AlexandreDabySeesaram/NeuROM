@@ -169,7 +169,9 @@ class FiniteElement:
         # Optional explicit reference DOF-node coordinates (see dof_nodes_xi). Kept raw so a
         # vectorised copy can forward it; stored as a float64 master, cast on access.
         self._dof_nodes = (
-            None if dof_nodes is None else torch.as_tensor(dof_nodes, dtype=torch.float64)
+            None
+            if dof_nodes is None
+            else torch.as_tensor(dof_nodes, dtype=torch.float64)
         )
         self.value_shape = tuple(value_shape)
         self.map_type = MapType(int(map_type))

@@ -96,7 +96,9 @@ class DofMap(nn.Module):
 
         # Periodic identification + compaction: remap[old_global] -> new_global.
         if periodic and any(d != EntityDim.VERTEX for d in self._dofs_per_entity):
-            nonv = sorted(int(d) for d in self._dofs_per_entity if d != EntityDim.VERTEX)
+            nonv = sorted(
+                int(d) for d in self._dofs_per_entity if d != EntityDim.VERTEX
+            )
             raise NotImplementedError(
                 f"periodic identification merges only vertex DOFs, but this element also has DOFs "
                 f"on dimension(s) {nonv} (edges/faces); periodic with non-vertex DOFs is not "

@@ -93,4 +93,6 @@ def reference_to_physical_at(values, mapping, points, map_type, element_ids=None
     if element_ids is not None:
         det = ElementSampling(det.values[element_ids])
     # apply prefix-broadcasts the per-element det (and J) over values' trailing point/quad axis.
-    return apply(lambda v, j, d: reference_to_physical(v, j, d, map_type), values, J, det)
+    return apply(
+        lambda v, j, d: reference_to_physical(v, j, d, map_type), values, J, det
+    )

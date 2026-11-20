@@ -57,7 +57,7 @@ def test_non_prefix_batch_shape_raises():
     with pytest.raises(ValueError, match="prefix"):
         apply(
             lambda Ji, xq: Ji @ xq,
-            ElementSampling(torch.randn(5, 2, 2, dtype=F64)),   # N_e = 5
+            ElementSampling(torch.randn(5, 2, 2, dtype=F64)),  # N_e = 5
             QuadratureSampling(torch.randn(4, 3, 2, dtype=F64)),  # N_e = 4 -> mismatch
         )
 
@@ -92,17 +92,13 @@ def test_three_axis_broadcast():
         def batch_shape(self):
             return self.shape[:3]
 
-    low = _Rank1(torch.randn(M, d, dtype=F64))          # (M,) batch
-    mid = _Rank2(torch.randn(M, Ne, d, dtype=F64))      # (M, N_e) batch
+    low = _Rank1(torch.randn(M, d, dtype=F64))  # (M,) batch
+    mid = _Rank2(torch.randn(M, Ne, d, dtype=F64))  # (M, N_e) batch
     high = _Rank3(torch.randn(M, Ne, Nq, d, dtype=F64))  # (M, N_e, N_q) batch
 
     res = apply(lambda a, b, c: a + b + c, low, mid, high)
     assert res.batch_shape == (M, Ne, Nq)
-    expected = (
-        low.values[:, None, None, :]
-        + mid.values[:, :, None, :]
-        + high.values
-    )
+    expected = low.values[:, None, None, :] + mid.values[:, :, None, :] + high.values
     assert torch.allclose(res.values, expected)
 
 
@@ -123,4 +119,6 @@ def test_apply_pointwise_mixed_rank():
     x = QuadratureSampling(torch.randn(Ne, Nq, d, dtype=F64))
     res = apply_pointwise(lambda Ji, xq: Ji @ xq, J_inv, x)
     assert res.batch_shape == (Ne, Nq)
-    assert torch.allclose(res.values, torch.einsum("eij,eqj->eqi", J_inv.values, x.values))
+    assert torch.allclose(
+        res.values, torch.einsum("eij,eqj->eqi", J_inv.values, x.values)
+    )

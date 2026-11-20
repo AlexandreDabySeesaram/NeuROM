@@ -45,7 +45,9 @@ def _richest(samplings: list[Sampling]) -> Sampling:
     return ref
 
 
-def apply(fn: Callable, *args: Sampling | torch.Tensor, **kwargs) -> Sampling | torch.Tensor:
+def apply(
+    fn: Callable, *args: Sampling | torch.Tensor, **kwargs
+) -> Sampling | torch.Tensor:
     """Fast engine: broadcast-align the operands and call ``fn`` once on the full-batch tensors.
 
     Each lower-rank ``Sampling`` has singleton axes inserted after its own batch axes (zero-copy views)

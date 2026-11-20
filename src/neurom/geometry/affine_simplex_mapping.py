@@ -84,7 +84,9 @@ class AffineSimplexMapping(nn.Module):
         dtype = mesh.coordinates.full_values().dtype
         probe = cell.simplex[:1].unsqueeze(0).to(dtype=dtype)  # (1, 1, dim_ref)
         self._grad0 = self.sf.grad_N(probe)[0, 0]  # (n_nodes, dim_ref), constant for P1
-        self._xi0 = cell.simplex[0].to(dtype=dtype)  # (dim_ref,) reference image of local vertex 0
+        self._xi0 = cell.simplex[0].to(
+            dtype=dtype
+        )  # (dim_ref,) reference image of local vertex 0
 
         # Guard the affine assumption: the reference gradient must be constant. Evaluate it at a
         # second reference point (another vertex) and reject a non-affine (curved / higher-order)
@@ -137,7 +139,9 @@ class AffineSimplexMapping(nn.Module):
         N = self.sf.N(points.values)  # (N_e, *pts, n_nodes)
         return replace(points, values=torch.einsum("eng,e...n->e...g", self.x_nodes, N))
 
-    def jacobian_at(self, points: Sampling, element_ids: torch.Tensor | None = None) -> Sampling:
+    def jacobian_at(
+        self, points: Sampling, element_ids: torch.Tensor | None = None
+    ) -> Sampling:
         r"""Jacobian :math:`J_e=\partial x/\partial\xi` at each of ``points`` (constant per element).
 
         Args:
@@ -149,7 +153,9 @@ class AffineSimplexMapping(nn.Module):
             Sampling: Jacobian at each point, same subtype/batch as ``points``,
             ``f_shape == (gdim, dim_ref)``.
         """
-        J = self._J.values if element_ids is None else self._J.values[element_ids]  # (N_e, gdim, dim_ref)
+        J = (
+            self._J.values if element_ids is None else self._J.values[element_ids]
+        )  # (N_e, gdim, dim_ref)
         # J is constant per element: broadcast it over the points' batch (singletons after the element
         # axis, then expand to the full batch so consumers see one J per query point).
         for _ in range(len(points.batch_shape) - 1):

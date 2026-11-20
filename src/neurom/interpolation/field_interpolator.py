@@ -30,7 +30,9 @@ class FieldInterpolator(nn.Module):
         self.sf = sf
         self.field = field
 
-    def at_reference(self, xi: Sampling, u_elem: torch.Tensor | None = None) -> Sampling:
+    def at_reference(
+        self, xi: Sampling, u_elem: torch.Tensor | None = None
+    ) -> Sampling:
         """Interpolate the field at reference-element coordinates.
 
         Evaluates the shape functions at ``xi`` and contracts them with the element-wise DOFs. The

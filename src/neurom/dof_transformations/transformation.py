@@ -207,7 +207,9 @@ class Transformation(nn.Module):
         """
         if self._sign_facets is None:
             return u_elem
-        signs = self._entity_geometry.facet_signs(element_ids).to(u_elem.dtype)  # (n_e, n_local_facets)
+        signs = self._entity_geometry.facet_signs(element_ids).to(
+            u_elem.dtype
+        )  # (n_e, n_local_facets)
         gathered = signs[:, self._sign_facets.clamp(min=0)]  # (n_e, n_dofs)
         sigma = torch.where(self._sign_facets >= 0, gathered, torch.ones_like(gathered))
         return u_elem * sigma.reshape(*sigma.shape, *([1] * (u_elem.ndim - 2)))

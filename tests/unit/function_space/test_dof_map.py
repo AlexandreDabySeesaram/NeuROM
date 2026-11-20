@@ -22,6 +22,7 @@ def _bar_topology(N=5):
     cell_vertices = torch.vstack([torch.arange(N - 1), torch.arange(1, N)]).T
     return Topology(cell_vertices), N
 
+
 # (pure-topology tests -- basics, edge enumeration/orientation/lazy, boundary -- live in
 # tests/unit/meshes/test_topology.py; this file keeps the DofMap numbering/locate/periodic tests.)
 
@@ -181,8 +182,12 @@ def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
     # 3 vertex DOFs precede the edge block; each edge owns 2 consecutive local DOFs.
     c0 = dm.cell_dofs[0, [3 + 2 * s0, 3 + 2 * s0 + 1]]
     c1 = dm.cell_dofs[1, [3 + 2 * s1, 3 + 2 * s1 + 1]]
-    assert set(c0.tolist()) == set(c1.tolist())  # the same two global DOFs (shared edge)
-    assert c0.tolist() == c1.flip(0).tolist()  # but read in reversed order (orientation applied)
+    assert set(c0.tolist()) == set(
+        c1.tolist()
+    )  # the same two global DOFs (shared edge)
+    assert (
+        c0.tolist() == c1.flip(0).tolist()
+    )  # but read in reversed order (orientation applied)
     assert c0.tolist() != c1.tolist()  # and NOT the same order -- the bug this fixes
 
 
@@ -217,7 +222,9 @@ def test_p3_like_shared_edge_single_valued_under_the_permutation():
         xa, xb = coords[topo.cell_vertices[e, a]], coords[topo.cell_vertices[e, b]]
         for rank, t in enumerate((1.0 / 3.0, 2.0 / 3.0)):  # the two edge-DOF points
             p = xa + t * (xb - xa)
-            g = int(dm.cell_dofs[e, 3 + 2 * s + rank])  # 3 vertex DOFs precede the edge block
+            g = int(
+                dm.cell_dofs[e, 3 + 2 * s + rank]
+            )  # 3 vertex DOFs precede the edge block
             if g in point_of:
                 assert point_of[g].numpy() == pytest.approx(p.numpy(), rel=1e-12), (
                     "same global DOF mapped to different physical points -- permutation wrong"
@@ -226,7 +233,9 @@ def test_p3_like_shared_edge_single_valued_under_the_permutation():
                 assert float(values[g]) == pytest.approx(float(value_of[g]), rel=1e-12)
             point_of[g], value_of[g] = p, values[g]
 
-    assert len(point_of) == 2  # the edge's two DOFs are shared (4 contributions -> 2 globals)
+    assert (
+        len(point_of) == 2
+    )  # the edge's two DOFs are shared (4 contributions -> 2 globals)
 
 
 def test_locate_returns_both_dofs_of_a_repeated_kind():

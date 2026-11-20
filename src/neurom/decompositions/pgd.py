@@ -334,7 +334,9 @@ class CPPGD(TensorDecomposition):
         """
         pwi = self._pwi_cache.get((m, k))
         if pwi is None:
-            pwi = PointWiseInterpolator(self.monom_specs[k].space.mesh, self.monoms[m][k])
+            pwi = PointWiseInterpolator(
+                self.monom_specs[k].space.mesh, self.monoms[m][k]
+            )
             self._pwi_cache[(m, k)] = pwi
         return pwi
 
@@ -359,7 +361,9 @@ class CPPGD(TensorDecomposition):
         for m in range(n):
             prod = None
             for k, spec in enumerate(self.monom_specs):
-                w = self._interpolator(m, k).at_position(coords[k].reshape(-1, 1))  # (P, dim_k)
+                w = self._interpolator(m, k).at_position(
+                    coords[k].reshape(-1, 1)
+                )  # (P, dim_k)
                 prod = w if prod is None else prod * w  # scalar * vector broadcasts
             total = prod if total is None else total + prod
         return total
@@ -382,7 +386,9 @@ class CPPGD(TensorDecomposition):
         for k, spec in enumerate(self.monom_specs):
             cols = []
             for m in range(n_modes):
-                w = self._interpolator(m, k).at_position(coords[k].reshape(-1, 1))  # (N_k, d_k)
+                w = self._interpolator(m, k).at_position(
+                    coords[k].reshape(-1, 1)
+                )  # (N_k, d_k)
                 cols.append(w.reshape(-1) if w.shape[1] == 1 else w)
             per_factor.append(torch.stack(cols, dim=0))
 

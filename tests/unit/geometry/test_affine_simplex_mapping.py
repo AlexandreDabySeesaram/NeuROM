@@ -84,7 +84,9 @@ def test_jacobian_on_element_subset():
     """element_ids restricts the computation to the selected elements."""
     mapping = _non_uniform_bar(torch.tensor([0.0, 0.25, 1.0]))
     xi = torch.zeros(1, 1, 1)
-    J = mapping.jacobian_at(QuadratureSampling(xi), element_ids=torch.tensor([1])).values
+    J = mapping.jacobian_at(
+        QuadratureSampling(xi), element_ids=torch.tensor([1])
+    ).values
     assert J.shape == (1, 1, 1, 1)
     assert J.item() == pytest.approx(0.375, rel=REL)
 
@@ -95,13 +97,19 @@ def test_inverse_map_at_round_trips_a_subset():
     xi = torch.tensor([-1.0, 0.0, 1.0]).reshape(1, 3, 1).expand(2, 3, 1)  # (2, 3, 1)
     x = mapping.map(QuadratureSampling(xi)).values  # (2, 3, 1) physical
     ids = torch.tensor([1])
-    xi_back = mapping.inverse_map_at(QuadratureSampling(x[ids]), ids).values  # (1, 3, 1)
+    xi_back = mapping.inverse_map_at(
+        QuadratureSampling(x[ids]), ids
+    ).values  # (1, 3, 1)
     assert xi_back == pytest.approx(xi[ids], rel=REL)
 
 
 def test_jacobian_is_differentiable_wrt_nodes():
     """Gradients flow from the (analytical) J back to the node positions."""
-    xi = torch.tensor([-1.0, 0.3, 1.0], dtype=torch.float64).reshape(1, 3, 1).expand(2, 3, 1)
+    xi = (
+        torch.tensor([-1.0, 0.3, 1.0], dtype=torch.float64)
+        .reshape(1, 3, 1)
+        .expand(2, 3, 1)
+    )
 
     def J_of_nodes(positions):
         return _non_uniform_bar(positions).jacobian_at(QuadratureSampling(xi)).values

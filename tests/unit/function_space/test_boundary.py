@@ -37,7 +37,9 @@ def _square(n):
     for i in range(n):
         for j in range(n):
             a, b, c, d = vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)
-            cells += [[a, b, c], [a, c, d]] if (i + j) % 2 == 0 else [[a, b, d], [b, c, d]]
+            cells += (
+                [[a, b, c], [a, c, d]] if (i + j) % 2 == 0 else [[a, b, d], [b, c, d]]
+            )
     topo = Topology(torch.tensor(cells))
     mesh = Mesh(topo, Field(FunctionSpace(topo, VectorElement(P1_TRIANGLE, 2)), pts))
     return topo, mesh
@@ -108,10 +110,16 @@ def test_function_valued_dirichlet_reproduces_quadratic_on_p2():
     topo, mesh = _square(3)
     space = FunctionSpace(topo, P2_TRIANGLE)
     # quadratic, lives in P2
-    f = lambda X: 1.0 + 2 * X[:, 0:1] - X[:, 1:2] + 3 * X[:, 0:1] ** 2 + X[:, 0:1] * X[:, 1:2]
+    f = lambda X: (
+        1.0 + 2 * X[:, 0:1] - X[:, 1:2] + 3 * X[:, 0:1] ** 2 + X[:, 0:1] * X[:, 1:2]
+    )
     g = interpolate(space, mesh, f)
-    all_edges = list(range(topo.n_entities(EntityDim.EDGE)))  # closure also covers every vertex
-    _reproduces(space, mesh, [DirichletBC(EntityDim.EDGE, all_edges, value=g, closure=True)], f)
+    all_edges = list(
+        range(topo.n_entities(EntityDim.EDGE))
+    )  # closure also covers every vertex
+    _reproduces(
+        space, mesh, [DirichletBC(EntityDim.EDGE, all_edges, value=g, closure=True)], f
+    )
 
 
 def test_callable_dirichlet_value_is_rejected():

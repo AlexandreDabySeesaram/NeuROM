@@ -42,7 +42,9 @@ def _one_triangle_mapping():
 
 def test_on_function_matches_analytic_partials():
     """d.grad f with d = e_x / e_y recovers the analytic partials of a nonlinear f."""
-    f = lambda x: (x[:, 0:1] ** 2) * x[:, 1:2]  # f = x0^2 x1 -> df/dx0 = 2 x0 x1, df/dx1 = x0^2
+    f = lambda x: (
+        (x[:, 0:1] ** 2) * x[:, 1:2]
+    )  # f = x0^2 x1 -> df/dx0 = 2 x0 x1, df/dx1 = x0^2
     x = torch.tensor([[1.0, 2.0], [0.5, -1.0], [3.0, 0.25]], dtype=F64)
 
     dfx = GradientFunctional(direction=[1.0, 0.0]).on_function(f, x)
@@ -61,7 +63,9 @@ def test_l_rows_pushes_reference_gradient_with_J_inv_transpose():
     """
     mapping, points = _one_triangle_mapping()
     basis = LinearTriangle()
-    xi = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=F64)  # reference vertices
+    xi = torch.tensor(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=F64
+    )  # reference vertices
 
     L_ex = GradientFunctional(direction=[1.0, 0.0]).l_rows(basis, mapping, xi, None, 1)
     L_ey = GradientFunctional(direction=[0.0, 1.0]).l_rows(basis, mapping, xi, None, 1)
@@ -70,10 +74,10 @@ def test_l_rows_pushes_reference_gradient_with_J_inv_transpose():
     p_y = points[:, 1]  # nodal values of p(x, y) = y
 
     # sum_a p(x_a) (L_e)_{i a}  -> directional derivative of the interpolant at each xi_i
-    assert torch.allclose(L_ex[0] @ p_x, torch.ones(3, dtype=F64))   # d/dx of x = 1
+    assert torch.allclose(L_ex[0] @ p_x, torch.ones(3, dtype=F64))  # d/dx of x = 1
     assert torch.allclose(L_ex[0] @ p_y, torch.zeros(3, dtype=F64))  # d/dx of y = 0
     assert torch.allclose(L_ey[0] @ p_x, torch.zeros(3, dtype=F64))  # d/dy of x = 0
-    assert torch.allclose(L_ey[0] @ p_y, torch.ones(3, dtype=F64))   # d/dy of y = 1
+    assert torch.allclose(L_ey[0] @ p_y, torch.ones(3, dtype=F64))  # d/dy of y = 1
 
 
 def test_1d_direction_reduces_to_plain_derivative():

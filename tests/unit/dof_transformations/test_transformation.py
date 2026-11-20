@@ -82,7 +82,9 @@ def test_hermite_closed_form_is_differentiable_in_the_jacobian():
     reaches trainable node positions (the mapping already carries positions -> J_e in-graph, per the
     r-adaptivity examples). Here: sum of reference coeffs^2 with q = [1, J, 1, J] gives dS/dJ = 4 J.
     Detaching J inside G_e severs the dependence and the gradient vanishes (the ablation)."""
-    J = torch.tensor([[[0.05]], [[0.15]], [[0.30]]], dtype=F64, requires_grad=True)  # (n_e,1,1)
+    J = torch.tensor(
+        [[[0.05]], [[0.15]], [[0.30]]], dtype=F64, requires_grad=True
+    )  # (n_e,1,1)
     u = torch.ones(3, 4, 1, dtype=F64)
 
     def energy(g_e):
@@ -90,7 +92,9 @@ def test_hermite_closed_form_is_differentiable_in_the_jacobian():
         return (q**2).sum()  # S = sum_e (2 + 2 J_e^2)
 
     (g,) = torch.autograd.grad(energy(HERMITE.g_e_closed_form), J)
-    assert g[..., 0, 0].numpy() == pytest.approx((4.0 * J[..., 0, 0]).detach().numpy(), rel=1e-12)
+    assert g[..., 0, 0].numpy() == pytest.approx(
+        (4.0 * J[..., 0, 0]).detach().numpy(), rel=1e-12
+    )
 
     # Ablation: detaching J inside G_e makes M_e constant -> the energy no longer depends on J at
     # all (no gradient path to node positions), which is exactly the bug the in-graph form avoids.
@@ -149,7 +153,9 @@ def test_contravariant_element_applies_facet_signs_as_T_e():
     """
     mesh = _square_mesh()
     elem = FiniteElement(
-        QuadraticTriangle(), P2_TRIANGLE.dof_layout, map_type=MapType.CONTRAVARIANT_PIOLA
+        QuadraticTriangle(),
+        P2_TRIANGLE.dof_layout,
+        map_type=MapType.CONTRAVARIANT_PIOLA,
     )
     T = Transformation(elem, AffineSimplexMapping(mesh), EntityGeometry(mesh))
     assert T._sign_facets is not None

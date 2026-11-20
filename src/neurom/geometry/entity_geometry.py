@@ -48,7 +48,9 @@ class EntityGeometry(nn.Module):
         ev = self._mesh.topology.edge_vertices  # (n_edges, 2) canonical (lo, hi)
         t = x[ev[:, 1]] - x[ev[:, 0]]  # (n_edges, gdim) tangent lo -> hi
         length = t.norm(dim=-1, keepdim=True)  # (n_edges, 1) |E|
-        normal = (t @ self._R.to(t.dtype).T) / length  # (n_edges, gdim) unit n = R t / |E|
+        normal = (
+            t @ self._R.to(t.dtype).T
+        ) / length  # (n_edges, gdim) unit n = R t / |E|
         return normal, length
 
     def facet_normals(self, element_ids: torch.Tensor | None = None) -> torch.Tensor:

@@ -8,7 +8,9 @@ from neurom.reference_cell import TRIANGLE
 from neurom.elements import EntityDim
 
 F64 = torch.float64
-R = torch.tensor([[0.0, 1.0], [-1.0, 0.0]], dtype=F64)  # -90 deg rotation -> n = R t is OUTWARD (plan 3.1)
+R = torch.tensor(
+    [[0.0, 1.0], [-1.0, 0.0]], dtype=F64
+)  # -90 deg rotation -> n = R t is OUTWARD (plan 3.1)
 
 
 def test_n_ref_and_vector_shape():

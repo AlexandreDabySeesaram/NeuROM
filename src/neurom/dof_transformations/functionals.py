@@ -193,7 +193,9 @@ class ValueFunctional(DofFunctional):
         Returns:
             torch.Tensor: ``N(\xi)`` on the reference cell, shape ``(n_rows, n_ref)``.
         """
-        return basis.N(xi)  # (n_rows, n_ref) -- N is batch-rank-agnostic, no fake batch axis needed
+        return basis.N(
+            xi
+        )  # (n_rows, n_ref) -- N is batch-rank-agnostic, no fake batch axis needed
 
 
 class GradientFunctional(DofFunctional):
@@ -213,7 +215,9 @@ class GradientFunctional(DofFunctional):
     geometry_dependent: bool = True
 
     def __init__(self, direction=None) -> None:
-        self.direction = None if direction is None else tuple(float(d) for d in direction)
+        self.direction = (
+            None if direction is None else tuple(float(d) for d in direction)
+        )
 
     def l_rows(
         self,
@@ -267,7 +271,9 @@ class GradientFunctional(DofFunctional):
             )
         J_inv = torch.linalg.inv(J)  # (n_e, n_rows, dim_ref, gdim)
         # grad_x N_i = sum_j (J^{-1})_{ji} dN/dxi_j  (= (J^{-T} grad_xi N)_i)
-        grad_x = torch.einsum("eqji,eqaj->eqai", J_inv, ref_grad)  # (n_e,n_rows,n_ref,gdim)
+        grad_x = torch.einsum(
+            "eqji,eqaj->eqai", J_inv, ref_grad
+        )  # (n_e,n_rows,n_ref,gdim)
         d = torch.tensor(self.direction, dtype=J.dtype, device=J.device)  # (gdim,)
         return torch.einsum("eqai,i->eqa", grad_x, d)  # (n_e, n_rows, n_ref)
 
@@ -360,7 +366,9 @@ class FluxFunctional(DofFunctional):
     """
 
     geometry_dependent: bool = False
-    acts_pointwise: bool = False  # an edge integral, not a point value -> entity-aware interpolation
+    acts_pointwise: bool = (
+        False  # an edge integral, not a point value -> entity-aware interpolation
+    )
 
     def flux_values(
         self,
@@ -389,7 +397,9 @@ class FluxFunctional(DofFunctional):
             torch.Tensor: Flux DOF values, shape ``(n_e, n_facets, 1)`` (one scalar per facet DOF).
         """
         n_e, n_f, gdim = midpoints.shape
-        fval = f(midpoints.reshape(-1, gdim)).reshape(n_e, n_f, gdim)  # f at each midpoint
+        fval = f(midpoints.reshape(-1, gdim)).reshape(
+            n_e, n_f, gdim
+        )  # f at each midpoint
         return (fval * normals).sum(dim=-1, keepdim=True) * measures  # |E| (f . n_hat)
 
     @staticmethod
@@ -414,8 +424,12 @@ class FluxFunctional(DofFunctional):
         normals = torch.stack([t[:, 1], -t[:, 0]], dim=-1)  # R t = (t1, -t0), -90 deg
         dist = torch.cdist(xi, mids)  # (n_rows, n_edges)
         idx = dist.argmin(dim=1)  # (n_rows,) the edge each DOF node is the midpoint of
-        if not torch.allclose(dist.gather(1, idx[:, None]), torch.zeros_like(idx, dtype=xi.dtype)):
-            raise ValueError("a flux DOF node is not an edge midpoint of the reference cell.")
+        if not torch.allclose(
+            dist.gather(1, idx[:, None]), torch.zeros_like(idx, dtype=xi.dtype)
+        ):
+            raise ValueError(
+                "a flux DOF node is not an edge midpoint of the reference cell."
+            )
         return normals[idx]  # (n_rows, dim_ref)
 
     def reference_row(self, basis: ShapeFunction, xi: torch.Tensor) -> torch.Tensor:

@@ -49,7 +49,9 @@ def test_vector_basis_n_ref_is_the_basis_count_not_gdim():
     """A vector basis reports n_ref = basis-function count (3), not gdim (= N.shape[-1] = 2)."""
     toy = _ToyVectorBasis()
     probe = TRIANGLE.simplex[:1].to(F64)
-    assert toy.N(probe).shape[-1] == 2  # trailing axis is gdim -- what the default probe would read
+    assert (
+        toy.N(probe).shape[-1] == 2
+    )  # trailing axis is gdim -- what the default probe would read
     assert toy.n_ref == 3  # ... but the overridden n_ref is the basis count
 
 

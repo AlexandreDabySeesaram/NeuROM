@@ -96,7 +96,9 @@ class PointWiseInterpolator(nn.Module):
         # The mapping, shape functions and the contraction are all batch-rank-agnostic, so the point
         # layout flows through directly.
         points = ElementSampling(x)
-        xi = self._mapping.inverse_map_at(points, element_ids).values  # (N_pts, dim_ref)
+        xi = self._mapping.inverse_map_at(
+            points, element_ids
+        ).values  # (N_pts, dim_ref)
         N = self.sf.N(xi)  # (N_pts, n_ref) scalar, or (N_pts, n_ref, gdim) vector
         # Contract the basis axis; the "..." on N carries a vector basis's trailing gdim axis
         # (symmetric with FieldInterpolator.at_reference), and is empty for a scalar basis.

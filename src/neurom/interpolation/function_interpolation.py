@@ -82,13 +82,17 @@ def interpolate(space, mesh, f) -> torch.Tensor:
     # Physical node of every DOF, per cell: map each DOF's reference coordinate through the cell's
     # (affine) geometry. The DOF axis rides the quadrature slot of the sampling (batch-agnostic map).
     xi = element.dof_nodes_xi().to(dtype)  # (n_dofs, dim_ref)
-    pts = QuadratureSampling(xi.unsqueeze(0).expand(n_cells, *xi.shape))  # (n_cells, n_dofs, dim_ref)
+    pts = QuadratureSampling(
+        xi.unsqueeze(0).expand(n_cells, *xi.shape)
+    )  # (n_cells, n_dofs, dim_ref)
     x_phys = AffineSimplexMapping(mesh).map(pts).values  # (n_cells, n_dofs, gdim)
     gdim = x_phys.shape[-1]
 
     cell_dofs = space.dof_map.cell_dofs  # (n_cells, n_dofs) global indices
     out = torch.zeros(space.n_scalar_dofs, n_comp, dtype=dtype)
-    entity_geom = None  # built lazily, only if an integral (non-point) functional needs it
+    entity_geom = (
+        None  # built lazily, only if an integral (non-point) functional needs it
+    )
     for functional, cols in _functionals_by_dof(element).items():
         if functional.acts_pointwise:
             pts_f = x_phys[:, cols, :].reshape(-1, gdim)  # (n_cells * len(cols), gdim)
@@ -98,9 +102,15 @@ def interpolate(space, mesh, f) -> torch.Tensor:
             # here where the mesh is known (not a single point). The canonical (global) facet
             # geometry makes the scatter single-valued across a shared facet; T_e handles the sign.
             entity_geom = entity_geom or EntityGeometry(mesh)
-            facets = [element.dof_layout[c].local_index for c in cols]  # local facet of each DOF
-            normals = entity_geom.facet_normals()[:, facets, :]  # (n_cells, len(cols), gdim)
-            measures = entity_geom.facet_measures()[:, facets, :]  # (n_cells, len(cols), 1)
+            facets = [
+                element.dof_layout[c].local_index for c in cols
+            ]  # local facet of each DOF
+            normals = entity_geom.facet_normals()[
+                :, facets, :
+            ]  # (n_cells, len(cols), gdim)
+            measures = entity_geom.facet_measures()[
+                :, facets, :
+            ]  # (n_cells, len(cols), 1)
             vals = functional.flux_values(f, x_phys[:, cols, :], normals, measures)
         # Scatter to global DOFs; shared DOFs receive the same value from every incident cell.
         out[cell_dofs[:, cols]] = vals.detach()

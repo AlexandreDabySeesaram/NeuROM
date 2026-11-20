@@ -54,8 +54,10 @@ def test_derivatives_fold_through_autograd():
     xi = torch.linspace(-1.0, 1.0, 5, dtype=F64).reshape(1, 5, 1).requires_grad_(True)
     H = fb.N(xi)  # (1, 5, 2)
     grads = torch.stack(
-        [torch.autograd.grad(H[..., a].sum(), xi, retain_graph=True)[0][..., 0]
-         for a in range(2)],
+        [
+            torch.autograd.grad(H[..., a].sum(), xi, retain_graph=True)[0][..., 0]
+            for a in range(2)
+        ],
         dim=-1,
     )  # (1, 5, 2)
     assert torch.allclose(grads, torch.ones_like(grads), atol=1e-12)

@@ -16,7 +16,7 @@ from neurom.geometry import EntityGeometry
 from neurom.elements import P1_TRIANGLE, VectorElement, EntityDim
 
 F64 = torch.float64
-INV_SQRT2 = 0.5 ** 0.5
+INV_SQRT2 = 0.5**0.5
 
 
 def _square():
@@ -63,22 +63,30 @@ def test_facet_normals_and_measures_match_hand_computed_values():
     L = eg.facet_measures()  # (2, 3, 1)
     assert n.shape == (2, 3, 2) and L.shape == (2, 3, 1)
 
-    r2 = 2.0 ** 0.5
+    r2 = 2.0**0.5
     expected_n = torch.tensor(
-        [[[0.0, -1.0], [1.0, 0.0], [INV_SQRT2, -INV_SQRT2]],  # cell 0
-         [[INV_SQRT2, -INV_SQRT2], [0.0, 1.0], [1.0, 0.0]]],  # cell 1
+        [
+            [[0.0, -1.0], [1.0, 0.0], [INV_SQRT2, -INV_SQRT2]],  # cell 0
+            [[INV_SQRT2, -INV_SQRT2], [0.0, 1.0], [1.0, 0.0]],
+        ],  # cell 1
         dtype=F64,
     )
     expected_L = torch.tensor([[[1.0], [1.0], [r2]], [[r2], [1.0], [1.0]]], dtype=F64)
-    assert n.numpy() == pytest.approx(expected_n.numpy(), abs=1e-12)  # has 0 components -> abs
+    assert n.numpy() == pytest.approx(
+        expected_n.numpy(), abs=1e-12
+    )  # has 0 components -> abs
     assert L.numpy() == pytest.approx(expected_L.numpy(), rel=1e-12)
 
     # Invariants that must hold for every facet: unit length, and perpendicular to the edge tangent.
-    assert n.norm(dim=-1).numpy() == pytest.approx(torch.ones(2, 3, dtype=F64).numpy(), rel=1e-12)
+    assert n.norm(dim=-1).numpy() == pytest.approx(
+        torch.ones(2, 3, dtype=F64).numpy(), rel=1e-12
+    )
     ce = topo.cell_entities(EntityDim.EDGE)  # (2, 3) local -> global edge
     ev, x = topo.edge_vertices, mesh.coordinates.full_values()
     for e in range(2):
         for s in range(3):
             t = x[ev[ce[e, s], 1]] - x[ev[ce[e, s], 0]]  # edge tangent lo -> hi
-            assert float(n[e, s] @ t) == pytest.approx(0.0, abs=1e-12)  # normal _|_ tangent
+            assert float(n[e, s] @ t) == pytest.approx(
+                0.0, abs=1e-12
+            )  # normal _|_ tangent
             assert float(L[e, s, 0]) == pytest.approx(float(t.norm()), rel=1e-12)

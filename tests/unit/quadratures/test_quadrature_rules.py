@@ -22,8 +22,8 @@ def test_weights_sum_to_reference_measure(quad):
     """
     Test that the quadrature weights sum to the reference element measure.
     """
-    assert quad.weights().sum().item() == pytest.approx(
-        quad.reference_element.measure.item(), rel=relative_tolerance
+    assert quad.weights_ref.sum().item() == pytest.approx(
+        quad.reference_cell.measure.item(), rel=relative_tolerance
     )
 
 
@@ -35,7 +35,7 @@ def test_points_are_barycentric(quad):
     Test that quadrature points are valid barycentric coordinates:
     components in [0, 1] summing to 1 per point.
     """
-    points = quad.points()
+    points = quad.points_barycentric
     assert (points >= 0.0).all()
     assert (points <= 1.0).all()
     assert points.sum(dim=-1).numpy() == pytest.approx(

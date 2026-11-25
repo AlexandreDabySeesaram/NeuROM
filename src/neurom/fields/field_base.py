@@ -1,62 +1,55 @@
-"""Abstract base class for nodal fields in neurom FEM models."""
+"""Abstract base class for fields living on a :class:`~neurom.function_space.FunctionSpace`."""
 
 from abc import ABC, abstractmethod
-import torch.nn as nn
 
-from neurom.meshes.connectivity import Connectivity
+import torch.nn as nn
 
 
 class FieldBase(nn.Module, ABC):
-    """Abstract base class for all nodal field types.
+    """Abstract base for every field -- a function living on a ``FunctionSpace``.
 
-    A field is defined at the nodes of a mesh and provides methods to retrieve
-    the full nodal values and the values gathered per element.  Concrete
-    subclasses must implement :meth:`full_values` and :meth:`at_elements`.
+    A field holds one value per scalar degree of freedom of its space (with a trailing
+    component axis for vector fields) and knows how to gather those values per cell via
+    the space's DOF map. Concrete subclasses supply :meth:`full_values` (how the stored,
+    possibly reduced, parameters expand to the full DOF vector).
+
+    Args:
+        space (FunctionSpace): The function space the field is defined on.
+        name (str): Human-readable identifier (used by :class:`FieldLayout` for lookup).
 
     Attributes:
-        name (str): Human-readable identifier for the field.
-        connectivity (Connectivity): Mesh connectivity that defines the node
-            indices and element-to-node mapping used by the field.
+        space (FunctionSpace): The function space this field belongs to.
+        name (str): The field's identifier.
     """
 
-    def __init__(
-        self,
-        name: str,
-        connectivity: Connectivity,
-    ):
-        """Initialize the field base with a name and connectivity.
-
-        Args:
-            name (str): Human-readable identifier for the field.
-            connectivity (Connectivity): Mesh connectivity that describes the
-                node indices and element-to-node mapping.
-        """
+    def __init__(self, space, name: str = ""):
         super().__init__()
-
+        self.space = space
         self.name = name
-        self.connectivity = connectivity
+
+    @property
+    def connectivity(self):
+        """DOF connectivity ``(cell -> global scalar DOFs)`` taken from the space."""
+        return self.space.connectivity
 
     @abstractmethod
     def full_values(self):
-        """Return the complete nodal values across all degrees of freedom.
-
-        Concrete subclasses expand the (possibly reduced) stored values so that
-        both free and constrained degrees of freedom are represented.
+        """Return the complete DOF values.
 
         Returns:
-            torch.Tensor: Nodal field values of shape ``(n_nodes, dim)``.
+            torch.Tensor: Values of shape ``(n_scalar_dofs, n_components)``.
         """
-        pass
+        ...
 
-    @abstractmethod
+    @property
+    def dim(self) -> int:
+        """Number of value components per DOF."""
+        return self.full_values().shape[1]
+
     def at_elements(self):
-        """Return nodal values gathered per element.
-
-        Uses the element connectivity to index into the full nodal values,
-        producing one value block per element.
+        """Gather the DOF values per cell through the space's DOF map.
 
         Returns:
-            torch.Tensor: Field values indexed by element connectivity, of
-            shape ``(n_elements, n_simplex, dim)``.
+            torch.Tensor: Values of shape ``(n_cells, n_local_dofs, n_components)``.
         """
-        pass
+        return self.full_values()[self.space.dof_map.cell_dofs]

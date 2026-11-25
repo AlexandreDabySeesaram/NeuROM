@@ -57,6 +57,6 @@ def inner(u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     n_e = u_shape[0]
     n_q = u_shape[1]
 
-    # Reshape result to tensor of shape (n_e,n_q,1)
-    result = torch.einsum("eq...,eq...->eq", u, v).squeeze().reshape(n_e, n_q, 1)
-    return result
+    # Contract the field axes, keep the explicit scalar component axis -> (n_e, n_q, 1).
+    # (No bare .squeeze(): it would collapse a genuine n_e==1 or n_q==1 mesh.)
+    return torch.einsum("eq...,eq...->eq", u, v).reshape(n_e, n_q, 1)

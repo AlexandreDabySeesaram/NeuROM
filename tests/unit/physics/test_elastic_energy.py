@@ -19,8 +19,8 @@ class DummyField(FieldBase):
     """
 
     def __init__(self, name: str):
-        # ``connectivity`` is unused in these tests; ``None`` is acceptable.
-        super().__init__(name=name, connectivity=None)
+        # ``space`` is unused in these tests; ``None`` is acceptable.
+        super().__init__(space=None, name=name)
 
     def full_values(self):
         return torch.tensor([])

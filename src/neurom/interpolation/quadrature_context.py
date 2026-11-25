@@ -19,13 +19,13 @@ class QuadratureContext(nn.Module):
     mapping (physical space -> reference space) is required so that autograd
     can trace the dependency of ``u(x)`` back through ``x``.
 
+    The geometric mapping is built from the mesh (its coordinate element supplies the
+    geometry basis), so it is not passed in.
+
     Args:
         mesh (Mesh): The mesh on which to interpolate.
         quad (QuadratureRule): The quadrature rule that defines the reference
             positions and weights.
-        mapping: The geometric mapping that provides ``map``,
-            ``inverse_map``, and ``det_jacobian`` for translating between
-            physical and reference coordinates.
 
     Attributes:
         _mesh (Mesh): The mesh on which to interpolate.
@@ -45,10 +45,12 @@ class QuadratureContext(nn.Module):
             ``(N_e, N_q, 1)``.
     """
 
-    def __init__(self, mesh: Mesh, quad: QuadratureRule, mapping):
+    def __init__(self, mesh: Mesh, quad: QuadratureRule):
         super().__init__()
+        from neurom.geometry import AffineSimplexMapping
+
         self._mesh = mesh
-        self._mapping = mapping
+        self._mapping = AffineSimplexMapping(mesh)
         self._quad = quad
         self._xi_ref = reference_coordinates(
             self._mesh.connectivity.n_elements, self._quad
@@ -74,17 +76,15 @@ class QuadratureContext(nn.Module):
         reference coordinates. Stores the result in ``self._quad_pos`` as a
         ``QuadraturePositions`` instance.
         """
-        # map to physical space for all quadrature points
-        # Tensor of shape (N_e, N_q, dim)
-        x_phys = self._mapping.map(self._xi_ref)
+        # map to physical space for all quadrature points (Sampling in, Sampling out)
+        xi_ref = QuadratureSampling(self._xi_ref)  # (N_e, N_q, dim)
+        x_phys = self._mapping.map(xi_ref)
 
         # back‑to‑reference (needed for autograd‑safe field interpolation)
         xi_back = self._mapping.inverse_map(x_phys)
 
         self._quad_pos = QuadraturePositions(
-            xi_ref=QuadratureSampling(self._xi_ref),
-            x_phys=QuadratureSampling(x_phys),
-            xi_back=QuadratureSampling(xi_back),
+            xi_ref=xi_ref, x_phys=x_phys, xi_back=xi_back
         )
 
     def _compute_measure(self) -> None:
@@ -96,13 +96,18 @@ class QuadratureContext(nn.Module):
         ``(N_e, N_q, 1)``.
         """
         # Compute weighted measure
-        w = self._quad.weights()
-        dx = self._mapping.det_jacobian
+        w = self._quad.weights_ref
+        dx = self._mapping.det_jacobian.values  # ElementSampling -> (N_e, 1)
         m = torch.abs(dx) * w
         n_e = dx.shape[0]
         n_q = w.shape[0]
 
         self._measure = QuadratureSampling(m.reshape(n_e, n_q, 1))
+
+    @property
+    def mesh(self) -> Mesh:
+        """The mesh this context is built on."""
+        return self._mesh
 
     @property
     def mapping(self):

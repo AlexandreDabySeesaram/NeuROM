@@ -5,14 +5,14 @@ import torch
 from neurom.decompositions import CPPGD, FactorSpace, MonomSpec
 from neurom.neurom_model import NeuROMModel
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import LinearBar
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Connectivity, Mesh
+from neurom.elements import P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace
+from neurom.meshes import Mesh, Topology
 from neurom.fields import Field
 from neurom.interpolation.quadrature_assembly import QuadratureAssembly
 from neurom.interpolation.point_wise_interpolator import PointWiseInterpolator
 from neurom.interpolation.integration_domain import IntegrationDomain
-from neurom.constraints import Dirichlet, NoConstraint
+from neurom.function_space import DirichletBC
 from neurom.math import jacobian
 from neurom.math import inner
 from neurom.math import integrate
@@ -100,8 +100,6 @@ class Test1dBeamDeflectionPGD:
         torch.manual_seed(0)
 
         ## Factors
-        # Shape function
-        sf = LinearBar()
         # Quadrature strategy
         quad = TwoPoints1D()
 
@@ -119,33 +117,27 @@ class Test1dBeamDeflectionPGD:
 
         # Generate vertices and connectivity
         x_array = torch.linspace(x_min, x_max, N_space).unsqueeze(-1)
-        nodes_space = torch.arange(0, N_space)
         elements_space = torch.vstack(
             [torch.arange(0, N_space - 1), torch.arange(1, N_space)]
         ).T
 
-        connectivity_space = Connectivity(nodes_space, elements_space)
-        nodes_positions_space = Field(
-            name="space_positions", connectivity=connectivity_space, values=x_array
-        )
-
         # Initialize displacement values
         u_init = 0.5 * torch.ones(N_space, 1)
 
-        mesh_space = Mesh(connectivity_space, nodes_positions_space)
+        topology_space = Topology(elements_space)
+        geometry_space = FunctionSpace(topology_space, VectorElement(P1_BAR, 1))
+        coords_space = Field(geometry_space, x_array, name="space_positions")
+        mesh_space = Mesh(topology_space, coords_space)
 
         space_x = FactorSpace(
             name="space",
             mesh=mesh_space,
-            mapping=IsoparametricMapping1D(sf, mesh_space),
             quad=quad,
         )
         spec_x = MonomSpec(
             space=space_x,
-            sf=sf,
-            constraint=Dirichlet(
-                nodes=[0, N_space - 1], values_imposed=torch.zeros(2, 1)
-            ),
+            element=P1_BAR,
+            bcs=[DirichletBC(0, [0, N_space - 1], value=0.0)],
             init_values=u_init,
         )
 
@@ -157,29 +149,24 @@ class Test1dBeamDeflectionPGD:
 
         # Generate vertices and connectivity
         E_array = torch.linspace(E_min, E_max, N_E).unsqueeze(-1)
-        nodes_E = torch.arange(0, N_E)
         elements_E = torch.vstack([torch.arange(0, N_E - 1), torch.arange(1, N_E)]).T
-
-        connectivity_E = Connectivity(nodes_E, elements_E)
-        nodes_positions_E = Field(
-            name="E_positions", connectivity=connectivity_E, values=E_array
-        )
 
         # Initialize E mode values
         E_init = 0.5 * torch.ones(N_E, 1)
 
-        mesh_E = Mesh(connectivity_E, nodes_positions_E)
+        topology_E = Topology(elements_E)
+        geometry_E = FunctionSpace(topology_E, VectorElement(P1_BAR, 1))
+        coords_E = Field(geometry_E, E_array, name="E_positions")
+        mesh_E = Mesh(topology_E, coords_E)
 
         space_E = FactorSpace(
             name="E",
             mesh=mesh_E,
-            mapping=IsoparametricMapping1D(sf, mesh_E),
             quad=quad,
         )
         spec_E = MonomSpec(
             space=space_E,
-            sf=sf,
-            constraint=NoConstraint(),
+            element=P1_BAR,
             init_values=E_init,
         )
 
@@ -198,15 +185,16 @@ class Test1dBeamDeflectionPGD:
         # factor "1" is what the Gm = ∫ lmbda dE term below carries implicitly
 
         load_value = 1000.0  # a constant here; could be x**2 or any expression of x
+        load_space = FunctionSpace(mesh_space.topology, P1_BAR)
         load_field = field_layout.add(
             Field(
+                load_space,
+                load_value * torch.ones(N_space, 1),
                 name="load",
-                connectivity=connectivity_space,
-                values=load_value * torch.ones(N_space, 1),
             )
         )
         context_f = space_x.context  # the same context as the space part
-        assembly_f = QuadratureAssembly(context_f, sf, load_field)
+        assembly_f = QuadratureAssembly(context_f, load_field)
 
         # The domain holds the *static* assemblies only. The PGD's own grow with
         # every mode added, so the model passes them per forward instead.
@@ -454,11 +442,10 @@ def _factor(pgd_approx, m, k, pts):
     Same tool the decomposition uses internally: PointWiseInterpolator evaluates
     one monom field on its own axis mesh at arbitrary query points.
     """
+    spec = pgd_approx.monom_specs[k]
     pwi = PointWiseInterpolator(
-        pgd_approx.monom_specs[k].space.mesh,
-        pgd_approx.monom_specs[k].sf,
+        spec.space.mesh,
         pgd_approx.monoms[m][k],
-        pgd_approx.monom_specs[k].space.mapping,
     )
     return pwi.at_position(pts.reshape(-1, 1)).reshape(-1)
 

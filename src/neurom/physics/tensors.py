@@ -9,7 +9,7 @@ from neurom.math.identity import identity_point
 from neurom.math.trace import trace_point
 
 from neurom.samplings import Sampling
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 
 
 def linear_elastic_stress_point(
@@ -54,7 +54,7 @@ def linear_elastic_stress(
         ``strain``.
     """
 
-    return apply(
+    return apply_pointwise(
         linear_elastic_stress_point,
         strain,
         lame_lambda=lame_lambda,
@@ -87,7 +87,7 @@ def green_lagrange_strain(x: Sampling, u: Sampling) -> Sampling:
     )
 
     grad = jacobian(x, u)
-    return apply(lambda du_dx: 0.5 * (du_dx + transpose_point(du_dx)), grad)
+    return apply_pointwise(lambda du_dx: 0.5 * (du_dx + transpose_point(du_dx)), grad)
 
 
 def stress_deviator_point(stress: torch.Tensor) -> torch.Tensor:
@@ -120,7 +120,7 @@ def stress_deviator(stress: Sampling) -> torch.Tensor:
         torch.Tensor: Deviatoric stress tensor sampling with the same structure
         as the input.
     """
-    return apply(stress_deviator_point, stress)
+    return apply_pointwise(stress_deviator_point, stress)
 
 
 def stress_von_mises_point(stress_dev):
@@ -152,4 +152,4 @@ def stress_von_mises(stress_dev):
         torch.Tensor: Von Mises equivalent stress sampling with the batch
         shape of the input.
     """
-    return apply(stress_von_mises_point, stress_dev)
+    return apply_pointwise(stress_von_mises_point, stress_dev)

@@ -5,7 +5,7 @@ import torch
 from neurom.physics.term import Term
 from neurom.field_layout import FieldLayout
 from neurom.fields.field_base import FieldBase
-from neurom.apply import apply
+from neurom.apply import apply_pointwise
 from neurom.math.inner import inner_point
 from neurom.math.integrate import integrate
 from neurom.math.jacobian import jacobian
@@ -45,7 +45,10 @@ class MembraneStretchEnergy(Term):
         dx = interp.measure
 
         w_prime = jacobian(x, u)  # w'
-        stretch = apply(
+        # Per-point op (inner_point sums the field axes of one point), so use the point-wise engine:
+        # the default apply() is the whole-batch engine, under which inner_point's full sum would
+        # collapse every quadrature point together.
+        stretch = apply_pointwise(
             lambda g, m: inner_point(g, g) * m, w_prime, dx
         ).values  # w'^2 dx
         S = integrate(stretch)  # ∫ w'^2 dx  (scalar, kept in the graph)

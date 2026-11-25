@@ -220,14 +220,19 @@ class TestHessian:
     # Errors                                                               #
     # ------------------------------------------------------------------ #
 
-    def test_x_without_requires_grad_raises(self):
-        """x without requires_grad must raise instead of returning zeros."""
-        x = torch.linspace(0.0, 1.0, 5).unsqueeze(-1)  # (5, 1)
-        with pytest.raises(RuntimeError):
-            hessian(x, 2 * x)
+    def test_x_without_requires_grad_returns_zeros(self):
+        """Lenient contract (this branch): x without requires_grad yields a zero Hessian, not a raise.
 
-    def test_u_independent_of_x_raises(self):
-        """u independent of x must raise instead of returning zeros."""
+        ``jacobian`` here uses ``allow_unused=True`` with a zero fallback (so a field with no
+        x-dependence, e.g. a DG0 field, flows through second-derivative terms as a genuine zero),
+        so the first ``jacobian`` returns a non-grad zero and the Hessian is zero.
+        """
+        x = torch.linspace(0.0, 1.0, 5).unsqueeze(-1)  # (5, 1), no requires_grad
+        H = hessian(x, 2 * x)
+        assert torch.equal(H, torch.zeros_like(H))
+
+    def test_u_independent_of_x_returns_zeros(self):
+        """Lenient contract (this branch): u independent of x yields a zero Hessian, not a raise."""
         x = torch.linspace(0.0, 1.0, 5).unsqueeze(-1).requires_grad_(True)  # (5, 1)
-        with pytest.raises(RuntimeError):
-            hessian(x, torch.ones(5, 1))
+        H = hessian(x, torch.ones(5, 1))
+        assert torch.equal(H, torch.zeros_like(H))

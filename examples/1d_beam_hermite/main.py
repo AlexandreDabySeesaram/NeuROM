@@ -3,23 +3,18 @@ import torch
 
 # Import library modules
 from neurom.quadratures import TwoPoints1D
-from neurom.shape_functions import CubicHermiteBar, LinearBar
-from neurom.meshes import Connectivity
-from neurom.geometry import IsoparametricMapping1D
-from neurom.meshes import Mesh
-from neurom.constraints import Dirichlet
+from neurom.meshes import Mesh, Topology
 from neurom.fields import Field, TrainableField
 from neurom.field_layout import FieldLayout
+from neurom.elements import HERMITE, P1_BAR, VectorElement
+from neurom.function_space import FunctionSpace, DirichletBC
 from neurom.interpolation import (
     QuadratureContext,
     QuadratureAssembly,
     IntegrationDomain,
+    interpolate,
 )
 from neurom.physics import SolidElasticEnergy, MembraneStretchEnergy
-from neurom.physics.tensors import (
-    green_lagrange_strain,
-    linear_elastic_stress_point,
-)
 from neurom.physics_loss import PhysicsLoss
 from neurom.fem_model import FEMModel
 from neurom.math import jacobian, hessian
@@ -51,77 +46,47 @@ def main():
     # Generate vertices and connectivity
     x_array = torch.linspace(x_min, x_max, N).unsqueeze(-1)
 
-    nodes = torch.arange(0, N)
     elements = torch.vstack(
         [torch.arange(0, N - 1), torch.arange(1, N)]
     ).T  # [e, e+1] for e in range(N-1)
 
-    connectivity_geom = Connectivity(nodes, elements)
+    # Generate mesh (topology + P1 geometry)
+    topology = Topology(elements)
+    geometry = FunctionSpace(topology, VectorElement(P1_BAR, 1))
+    coords = Field(geometry, x_array, name="positions")
+    mesh = Mesh(topology, coords)
 
-    # Positions
-    x = field_layout.add(
-        Field(name="positions", connectivity=connectivity_geom, values=x_array)
-    )
+    ## Field space: cubic Hermite. The element owns the DOF layout (per vertex: a
+    ## value and a slope); the FunctionSpace deduces the numbering and connectivity,
+    ## so nothing here mentions "2 DOFs per node" or raw DOF indices. The space knows
+    ## nothing of quadrature -- that is supplied at assembly time.
+    space = FunctionSpace(mesh.topology, HERMITE)
 
-    # Generate mesh
-    mesh = Mesh(connectivity=connectivity_geom, nodes_positions=x)
-
-    # Define mapping (for positions only)
-    sf_geom = LinearBar()
-    mapping_geom = IsoparametricMapping1D(sf_geom, mesh)
-
-    ## Field
-    # Initialize displacement values: slightly curved beam w = eps (1 - cos 2 pi x)
-    # 2 DOFs per node (w and its physical slope w')
+    # Seed the field from a shape w0 = eps (1 - cos 2 pi x). Interpolation is a *separate*,
+    # optional step: `interpolate` builds the FE interpolant's DOF values (value DOFs <- w0,
+    # slope DOFs <- w0' via autograd); the field itself just takes those raw values -- its
+    # init is a seed for training, not tied to any DOF's "meaning". Clamped-clamped: fix the
+    # value and slope at both end vertices (by meaning).
     eps_init = 1e-2
-    x_n = x_array.squeeze(-1)
-    u_init = torch.empty(2 * N, 1)  # We keep it 1D but with twice the number of nodes
-
-    # Use a stride of 2 because we store dofs intertwined
-    # This is to match how shapes functions are ordered in the later sf_field = CubicHermiteBar())
-    u_init[0::2, 0] = eps_init * (1 - torch.cos(2 * torch.pi * x_n))
-    u_init[1::2, 0] = eps_init * 2 * torch.pi * torch.sin(2 * torch.pi * x_n)
-
-    nodes = torch.arange(0, 2 * N)
-
-    # elements[i] gives the list of the indices of the DoFs inside element i
-    elements = torch.vstack(
-        [
-            torch.arange(0, 2 * N - 2, 2),  # 0, 2, ..., 2N-4
-            torch.arange(1, 2 * N - 1, 2),  # 1, 3, ..., 2N-3
-            torch.arange(2, 2 * N, 2),  # 2, 4, ..., 2N-2
-            torch.arange(3, 2 * N + 1, 2),  # 3, 5, ..., 2N-1
-        ]
-    ).T
-
-    connectivity_field = Connectivity(nodes, elements)
-
-    # Boundary conditions
-    # Clamped - Clamped so that position and slopes are zeros on both ends.
-    nodes_u_bc = [0, 1, 2 * N - 2, 2 * N - 1]
-    u_bc = torch.zeros(4, 1)
-
-    # Displacement
+    u0 = interpolate(
+        space,
+        mesh,
+        lambda z: eps_init * (1 - torch.cos(2 * torch.pi * z)),
+    )
     u = field_layout.add(
         TrainableField(
+            space,
+            u0,
+            bcs=[DirichletBC(0, [0, N - 1], kinds=["value", "d1"])],
             name="displacement",
-            connectivity=connectivity_field,
-            init_values=u_init,  # used to initialize the values # self.dim = init_values.shape[1]
-            constraint=Dirichlet(nodes=nodes_u_bc, values_imposed=u_bc),
         )
     )
 
-    # Shape function for the interpolation
-    sf_field = CubicHermiteBar()
-
-    # Quadrature strategy: two Gauss points per element.
+    # Interpolation at quadrature points: quadrature + mapping enter here, at the
+    # integration layer, not in the space.
     quad = TwoPoints1D()
-
-    # Define interpolation at quadrature
-    ## Quad context: meqsure and points of quadratures
-    ctx = QuadratureContext(mesh, quad, mapping_geom)
-    ## Quad assembly, ready to be called
-    assembly_u = QuadratureAssembly(ctx, sf_field, u)
+    ctx = QuadratureContext(mesh, quad)
+    assembly_u = QuadratureAssembly(ctx, u)
     domain = IntegrationDomain([assembly_u])
 
     # Energy.
@@ -145,7 +110,7 @@ def main():
     # Stretch: integrand w'^2 dx (SolidElasticEnergy has a built-in 1/2, hence 2 * eps)
     stretch = SolidElasticEnergy(u, strain=jacobian, stress_point=lambda eps: 2 * eps)
 
-    membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1 / 8)
+    membrane_stretching_energy = MembraneStretchEnergy(u, coefficient=1.0 / 8.0)
 
     # Sum the pieces
     energy = bending_energy + axial_loading_energy + membrane_stretching_energy
@@ -197,7 +162,9 @@ def main():
     domain.interpolate_all(field_layout)
 
     x_nodes = x_array.squeeze(-1)
-    w_nodes = u.full_values()[0::2].squeeze(-1).detach()
+    w_nodes = (
+        u.full_values()[space.locate(0, range(N), ["value"])].squeeze(-1).detach()
+    )  # value DOFs, by meaning
     u_axial = axial_displacement(stretch, field_layout, x_nodes, P)
 
     x_hat, w_hat, u_hat, P_hat = rescale(

@@ -72,6 +72,7 @@ autoapi_options = [
     "members",
     "undoc-members",
     "show-inheritance",
+    "show-module-summary",  # render the module's attributes/functions summary table
 ]
 
 # HTML output

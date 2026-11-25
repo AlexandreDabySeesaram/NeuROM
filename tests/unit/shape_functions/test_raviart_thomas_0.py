@@ -1,4 +1,4 @@
-"""WP9 stage C: the RT0 vector reference basis (flux-nodal V = I, constant divergence -2)."""
+"""The RT0 vector reference basis (flux-nodal V = I, constant divergence -2)."""
 
 import pytest
 import torch

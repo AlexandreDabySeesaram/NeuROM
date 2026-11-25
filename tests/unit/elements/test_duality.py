@@ -67,7 +67,7 @@ class _MonomialBar(ShapeFunction):
 
 @pytest.mark.parametrize("element", LIBRARY, ids=IDS)
 def test_duality_matrix_is_identity_for_library_elements(element):
-    """``V_{ab} = l_a(phi_b) == I`` for every library element (T-WP2.1).
+    """``V_{ab} = l_a(phi_b) == I`` for every library element.
 
     The reference functional of each DOF applied to the coded reference basis at that DOF's
     reference point reproduces the Kronecker delta -- i.e. the hand-written basis really is the
@@ -79,7 +79,7 @@ def test_duality_matrix_is_identity_for_library_elements(element):
 
 
 def test_nodal_element_with_non_dual_basis_is_rejected():
-    """A nodal element whose basis is not dual to its DOFs is rejected at construction (T-WP2.6).
+    """A nodal element whose basis is not dual to its DOFs is rejected at construction.
 
     The monomial basis ``{1, xi}`` spans P1 but is not nodal at the vertices, so ``V != I``; the
     element is declared nodal (the default), so construction must raise.
@@ -92,7 +92,7 @@ def test_nodal_element_with_non_dual_basis_is_rejected():
 
 
 def test_non_unisolvent_element_is_rejected():
-    """A nodal element with ``n_dofs != n_ref`` is rejected at construction (T-WP2.6).
+    """A nodal element with ``n_dofs != n_ref`` is rejected at construction.
 
     Two vertex-value DOFs against a quadratic (3-function) basis is not unisolvent.
     """
@@ -104,7 +104,7 @@ def test_non_unisolvent_element_is_rejected():
 
 
 def test_degenerate_dof_layout_raises():
-    """(WP8 guard) two DOFs of the same kind at the same reference point -> not unisolvent."""
+    """Two DOFs of the same kind at the same reference point -> not unisolvent."""
     with pytest.raises(ValueError, match="same reference point"):
         FiniteElement(
             LinearBar(),

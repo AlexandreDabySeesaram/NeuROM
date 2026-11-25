@@ -1,11 +1,11 @@
-"""WP7: boundary entities, closure in locate/BCs, and callable Dirichlet values.
+"""Boundary entities, closure in locate/BCs, and callable Dirichlet values.
 
-- T-WP7.1 boundary counts (unit square: 4n edges, 4n vertices; 1-D bar: 2 end vertices);
-- T-WP7.2 a P2 selection of boundary edges with closure equals the edge-plus-vertex selection;
-- T-WP7.3 a callable Dirichlet value reproduces an affine (P1) / quadratic (P2) field exactly
+- boundary counts (unit square: 4n edges, 4n vertices; 1-D bar: 2 end vertices);
+- a P2 selection of boundary edges with closure equals the edge-plus-vertex selection;
+- a callable Dirichlet value reproduces an affine (P1) / quadratic (P2) field exactly
   (patch test): fixing every DOF through the functionals yields the FE interpolant of f, which
   point-evaluates back to f;
-- T-WP7.4 constant BCs are unchanged (covered by the existing BC tests + a direct mask check here).
+- constant BCs are unchanged (covered by the existing BC tests + a direct mask check here).
 """
 
 import pytest
@@ -46,7 +46,7 @@ def _square(n):
 
 
 def test_closure_of_boundary_edges_adds_their_vertices():
-    """(T-WP7.2) locating boundary edges with closure equals edge DOFs + their vertices' DOFs."""
+    """Locating boundary edges with closure equals edge DOFs + their vertices' DOFs."""
     topo, _ = _square(3)
     space = FunctionSpace(topo, P2_TRIANGLE)
     bedges = topo.boundary(EntityDim.EDGE).tolist()
@@ -67,7 +67,7 @@ def test_closure_of_boundary_edges_adds_their_vertices():
 
 
 def test_constant_bc_mask_is_unchanged_by_the_refactor():
-    """(T-WP7.4) a plain constant clamp still fixes exactly its DOFs, every component."""
+    """A plain constant clamp still fixes exactly its DOFs, every component."""
     topo, _ = _square(2)
     space = FunctionSpace(topo, P1_TRIANGLE)
     bverts = topo.boundary(EntityDim.VERTEX).tolist()
@@ -96,7 +96,7 @@ def _reproduces(space, mesh, bcs, f):
 
 
 def test_function_valued_dirichlet_reproduces_affine_on_p1():
-    """(T-WP7.3) imposing interpolate(f) on every P1 vertex reproduces an affine field exactly."""
+    """Imposing interpolate(f) on every P1 vertex reproduces an affine field exactly."""
     topo, mesh = _square(3)
     space = FunctionSpace(topo, P1_TRIANGLE)
     f = lambda X: 2.0 - X[:, 0:1] + 0.5 * X[:, 1:2]  # affine, lives in P1
@@ -106,7 +106,7 @@ def test_function_valued_dirichlet_reproduces_affine_on_p1():
 
 
 def test_function_valued_dirichlet_reproduces_quadratic_on_p2():
-    """(T-WP7.3) imposing interpolate(f) on every P2 DOF (all edges + closure) reproduces a quadratic."""
+    """Imposing interpolate(f) on every P2 DOF (all edges + closure) reproduces a quadratic."""
     topo, mesh = _square(3)
     space = FunctionSpace(topo, P2_TRIANGLE)
     # quadratic, lives in P2

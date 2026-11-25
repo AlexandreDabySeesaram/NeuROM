@@ -1,4 +1,4 @@
-"""WP9 stage B/C: EntityGeometry -- per-facet orientation signs, normals and measures.
+"""EntityGeometry -- per-facet orientation signs, normals and measures.
 
 Pure geometry/topology of the mesh facets (edges in 2-D): the orientation sign sigma_{e,s} that two
 cells sharing a facet must agree on, and the canonical outward normal n_E and measure |E| a flux

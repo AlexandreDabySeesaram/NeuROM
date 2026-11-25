@@ -1,8 +1,8 @@
-"""WP4 push-forward (map-type) strategies: covariant / contravariant Piola + wiring.
+"""Push-forward (map-type) strategies: covariant / contravariant Piola + wiring.
 
 The strategy ``reference_to_physical`` is tested in isolation against the defining invariants
-(T-WP4.2 covariant preserves tangential inner products / contravariant preserves normal fluxes
-w.r.t. ``R t``, on CCW *and* CW cells, with the signed ``det J``; T-WP4.3 the contravariant
+(covariant preserves tangential inner products / contravariant preserves normal fluxes
+w.r.t. ``R t``, on CCW *and* CW cells, with the signed ``det J``; the contravariant
 autograd divergence equals ``(1/det J) div_hat``), then the wiring into point evaluation is checked
 end-to-end with a synthetic contravariant element.
 """
@@ -45,7 +45,7 @@ def test_identity_map_is_a_noop(J):
 
 @pytest.mark.parametrize("J", [J_CCW, J_CW], ids=["CCW", "CW"])
 def test_covariant_preserves_tangential_inner_product(J):
-    """(T-WP4.2) J^{-T} maps covectors so that (J^{-T} v) . (J t) = v . t -- tangential/circulation."""
+    """J^{-T} maps covectors so that (J^{-T} v) . (J t) = v . t -- tangential/circulation."""
     v_ref = torch.tensor([0.7, -0.3])
     t_ref = torch.tensor([0.4, 1.1])  # a reference tangent; it pushes forward as J t
     v_phys = reference_to_physical(
@@ -57,7 +57,7 @@ def test_covariant_preserves_tangential_inner_product(J):
 
 @pytest.mark.parametrize("J", [J_CCW, J_CW], ids=["CCW", "CW"])
 def test_contravariant_preserves_normal_flux_signed(J):
-    """(T-WP4.2) (J/det J) v . (R J t) = v . (R t) for the SIGNED det J, on CCW and CW cells."""
+    """(J/det J) v . (R J t) = v . (R t) for the SIGNED det J, on CCW and CW cells."""
     v_ref = torch.tensor([0.7, -0.3])
     t_ref = torch.tensor([0.4, 1.1])
     detJ = _detJ(J)
@@ -72,7 +72,7 @@ def test_contravariant_preserves_normal_flux_signed(J):
 
 @pytest.mark.parametrize("J", [J_CCW, J_CW], ids=["CCW", "CW"])
 def test_contravariant_ablation_absdet_flips_sign_on_cw(J):
-    """(T-WP4.2 ablation) using |det J| gives sign(det J) * flux -> a -1 flux factor on CW cells."""
+    """(Ablation) using |det J| gives sign(det J) * flux -> a -1 flux factor on CW cells."""
     v_ref = torch.tensor([0.7, -0.3])
     t_ref = torch.tensor([0.4, 1.1])
     detJ = _detJ(J)
@@ -90,7 +90,7 @@ def test_contravariant_ablation_absdet_flips_sign_on_cw(J):
 
 
 def test_contravariant_divergence_equals_reference_over_detJ():
-    """(T-WP4.3) autograd div of a contravariant-mapped field equals (1/det J) div_hat."""
+    """Autograd div of a contravariant-mapped field equals (1/det J) div_hat."""
     J, x0 = J_CCW, torch.tensor([0.5, -0.2])
     detJ = _detJ(J)
     J_inv = torch.linalg.inv(J)

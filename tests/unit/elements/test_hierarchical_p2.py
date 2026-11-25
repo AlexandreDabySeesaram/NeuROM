@@ -1,4 +1,4 @@
-"""The non-nodal ``C``-folding path on a test-only hierarchical P2 triangle (T-WP2.5).
+"""The non-nodal ``C``-folding path on a test-only hierarchical P2 triangle.
 
 A hierarchical P2 basis (vertex hats + edge bubbles) spans the same space as the nodal P2 basis but
 is not dual to the P2 DOFs. An element declared ``nodal=False`` must compute ``C = V^{-1}`` at

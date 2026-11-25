@@ -1,4 +1,4 @@
-"""WP9 stage C: the RT0_TRIANGLE element end-to-end (contravariant Piola + T_e facet signs).
+"""The RT0_TRIANGLE element end-to-end (contravariant Piola + T_e facet signs).
 
 The RT0 *basis* (flux duality V=I, divergence) is covered in
 ``tests/unit/shape_functions/test_raviart_thomas_0.py``; here we cover the assembled element: it is
@@ -109,7 +109,7 @@ def test_dropping_T_e_breaks_the_reproduction():
 
 
 # ---------------------------------------------------------------------------
-# --- WP9 acceptance tests (plan section 329): continuity, divergence, commuting
+# --- acceptance tests: continuity, divergence, commuting
 # ---------------------------------------------------------------------------
 
 
@@ -117,7 +117,7 @@ def _mixed_square():
     """Two triangles sharing the diagonal (0, 2), one wound CCW and one CW (det J < 0).
 
     cell 0 = [0,1,2] is CCW (det J = +1); cell 1 = [0,3,2] is CW (det J = -1) -- so the divergence /
-    Piola checks exercise the *signed* det J on a reversed cell, as the plan requires.
+    Piola checks exercise the *signed* det J on a reversed cell.
     """
     topo = Topology(torch.tensor([[0, 1, 2], [0, 3, 2]]))
     pts = torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=F64)
@@ -148,7 +148,7 @@ def _reference_divergences(element):
     """Constant reference divergence ``div_hat H_s`` of each basis function, via autograd (= 2 here).
 
     Read off the element's own basis (not hard-coded 2): another edge convention would change the
-    signs, so the closed-form divergence below is built from these, per the plan.
+    signs, so the closed-form divergence below is built from these.
     """
     xi = torch.tensor([[1.0 / 3, 1.0 / 3]], dtype=F64, requires_grad=True)
     H = element.reference_basis.N(xi)  # (1, n_ref, gdim)
@@ -198,7 +198,7 @@ def _autograd_div(mesh, field, cell_id, x):
 def test_rt0_normal_continuity_for_random_dofs_and_the_sign_ablation():
     """An arbitrary RT0 field is normal-continuous across a shared edge; without T_e the normal jumps.
 
-    Continuity for *reproduced* fields is weaker than for arbitrary DOFs (plan section 267), so this
+    Continuity for *reproduced* fields is weaker than for arbitrary DOFs, so this
     uses random flux DOFs. The normal component agrees from both cells (H(div) conformity); the
     tangential component may jump. Dropping the facet signs breaks it with an order-1 jump.
     """

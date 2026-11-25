@@ -7,7 +7,7 @@ This is the classical finite-element interpolation operation -- given a function
 Each DOF is evaluated at its *own* reference node (``element.dof_nodes_xi``), mapped to physical
 space per cell, and its functional applied there; the result is scattered to the DOF's global index
 through the DOF map's ``cell_dofs``. Because a shared DOF lands on the same physical point from
-every incident cell -- and the orientation permutation (WP3) sends each cell's local DOF to the
+every incident cell -- and the orientation permutation sends each cell's local DOF to the
 matching global index -- the scatter is single-valued, so an entity carrying several DOFs (e.g.
 :math:`P_3`'s two edge nodes) is handled with no special casing.
 

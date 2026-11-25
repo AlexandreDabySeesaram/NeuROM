@@ -236,8 +236,7 @@ class FiniteElement:
     def _resolve_duality(self) -> None:
         r"""Construction-time unisolvence / nodality check, and the :math:`C`-fold for non-nodal bases.
 
-        Computes the coded basis's duality matrix :math:`V` (stored as :attr:`V`) and then, per
-        section 5 of the architecture plan:
+        Computes the coded basis's duality matrix :math:`V` (stored as :attr:`V`) and then:
 
         - if a DOF kind has no functional yet (e.g. ``flux``/``normal_derivative`` before their
           functionals exist), :math:`V` cannot be built, so the check is skipped: the element may

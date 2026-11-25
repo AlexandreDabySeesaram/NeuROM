@@ -1,6 +1,6 @@
 """§6 safety net: every example's ``main()`` runs to completion with its default options.
 
-A deliberately shallow guard for the frozen public API (architecture plan §4). It asserts only
+A deliberately shallow guard for the frozen public API. It asserts only
 that each example *runs* end to end under its default settings -- it inspects no return value, so
 it stays valid as the work packages legitimately change the numbers. The defaults are light enough
 to run in a few seconds each (the heaviest, ``r_adptativity_poc``, is ~13 s). The two 2-D examples

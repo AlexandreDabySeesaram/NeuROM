@@ -86,7 +86,7 @@ def test_add_mode_never_recomputes_geometry(two_specs):
 
 
 def test_evaluate_reuses_cached_point_evaluators(two_specs):
-    """(T-WP5.4) evaluate builds one PointWiseInterpolator per (mode, factor) and reuses it across
+    """Evaluate builds one PointWiseInterpolator per (mode, factor) and reuses it across
     calls (mapping + DOF transformation not rebuilt each call); add_mode drops the cache."""
     model = CPPGD(monom_specs=two_specs, n_modes_ini=2)
     assert model._pwi_cache == {}  # nothing built until the first evaluation

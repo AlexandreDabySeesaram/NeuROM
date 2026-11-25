@@ -149,7 +149,7 @@ vertices, two points on each edge (at :math:`1/3` and :math:`2/3`) and one at th
 basis (:class:`~neurom.shape_functions.CubicTriangle`), identity DOF transformation. The two DOFs
 per edge make it the first library element with a *repeated* kind on one entity, so its reference
 node coordinates are given explicitly (``dof_nodes``) rather than gathered as entity centroids, and
-the DOF-map edge-reversal permutation (orientation, WP3) keeps the two edge DOFs continuous across
+the DOF-map edge-reversal permutation (orientation) keeps the two edge DOFs continuous across
 a shared, oppositely-traversed edge."""
 
 

@@ -3,7 +3,7 @@ r"""Per-facet entity geometry derived from a mesh -- the entity-level sibling of
 :class:`~neurom.geometry.affine_simplex_mapping.AffineSimplexMapping` provides *cell* geometry (the
 Jacobian :math:`J_e`); :class:`EntityGeometry` provides *facet* geometry/topology that a
 direction-carrying (H(div)/H(curl)) element needs: the orientation sign :math:`\sigma_{e,s}` now,
-and -- with the flux functional (WP9 stage C) -- the physical normal :math:`\mathbf n_E` and measure
+and -- with the flux functional -- the physical normal :math:`\mathbf n_E` and measure
 :math:`|E|`.
 
 Dimension-generic: everything is expressed on the mesh's **facet** dimension

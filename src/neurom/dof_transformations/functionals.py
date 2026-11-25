@@ -201,7 +201,7 @@ class ValueFunctional(DofFunctional):
 class GradientFunctional(DofFunctional):
     r"""Directional first derivative :math:`\ell_i(w) = \mathbf d\cdot\nabla w(\mathbf x_i)`.
 
-    One functional family (plan section 3.3): the derivative of :math:`w` along a fixed physical
+    One functional family: the derivative of :math:`w` along a fixed physical
     direction :math:`\mathbf d`. Geometry-dependent (the physical gradient needs the mapping).
 
     Args:
@@ -315,12 +315,12 @@ class GradientFunctional(DofFunctional):
 
         Raises:
             NotImplementedError: If a direction is set (the reference duality convention for 2-D
-                directional DOFs lands with the elements that use them, WP9) or ``dim_ref != 1``.
+                directional DOFs lands with the elements that use them) or ``dim_ref != 1``.
         """
         if self.direction is not None:
             raise NotImplementedError(
                 "reference duality for a directional derivative is not defined yet "
-                "(the 2-D directional elements that need it land in WP9)."
+                "(the 2-D directional elements that need it)."
             )
         if basis.reference_cell.dim_ref != 1:
             raise NotImplementedError(
@@ -338,7 +338,7 @@ class FluxFunctional(DofFunctional):
 
     - **the rows of** :math:`L_e` **are geometry-free.** The contravariant Piola map preserves
       normal fluxes (:math:`(\tfrac1{\det J}J\hat{\mathbf v})\cdot(R J\hat{\mathbf t}) =
-      \hat{\mathbf v}\cdot(R\hat{\mathbf t})`, WP4), so the *physical* flux of a pushed-forward
+      \hat{\mathbf v}\cdot(R\hat{\mathbf t})`), so the *physical* flux of a pushed-forward
       reference basis function equals its *reference* flux. Hence
       :math:`(L_e)_{ia}=\hat\ell_i(\hat H_a)` -- independent of the cell -- and ``l_rows`` is just
       the reference row broadcast over the elements (``geometry_dependent = False``, so the
@@ -488,7 +488,7 @@ class FluxFunctional(DofFunctional):
         |E_i|\,\mathbf f(\mathbf m_i)\cdot\hat{\mathbf n}_i` requires the physical normal
         :math:`\hat{\mathbf n}_i` and measure :math:`|E_i|` of each facet, which the point-only
         ``(f, x_phys)`` signature cannot supply. Interpolating a field onto an RT0 space therefore
-        goes through the entity-geometry-aware path (WP9 stage C wiring), not this method.
+        goes through the entity-geometry-aware path, not this method.
         """
         raise NotImplementedError(
             "FluxFunctional is not point-based (acts_pointwise=False): on_function needs the physical "

@@ -75,7 +75,7 @@ def test_edge_orientation_is_signed():
 
 
 def test_edges_are_built_lazily():
-    """(T-WP6.3) edges are built on first access, so a P1-only problem never pays for them."""
+    """Edges are built on first access, so a P1-only problem never pays for them."""
     topo = _two_triangle_square()
     assert topo._edges_built is False  # nothing built at construction
     # vertex / cell access must not trigger the edge build
@@ -89,11 +89,11 @@ def test_edges_are_built_lazily():
     assert topo._edges_built is True
 
 
-# --- boundary (WP7) -----------------------------------------------------------
+# --- boundary -----------------------------------------------------------------
 
 
 def test_boundary_counts_on_the_unit_square():
-    """(T-WP7.1) an n x n square has 4n boundary edges and 4n boundary vertices."""
+    """An n x n square has 4n boundary edges and 4n boundary vertices."""
     for n in (2, 3, 4):
         topo = _square(n)
         assert topo.boundary(EntityDim.EDGE).numel() == 4 * n
@@ -109,7 +109,7 @@ def test_boundary_vertices_lie_on_boundary_edges():
 
 
 def test_boundary_of_a_bar_is_the_two_ends():
-    """(T-WP7.1, 1-D) the boundary vertices of a bar are its two end points (facets = vertices)."""
+    """(1-D) the boundary vertices of a bar are its two end points (facets = vertices)."""
     topo = _bar(5)  # vertices 0..4
     assert sorted(topo.boundary(EntityDim.VERTEX).tolist()) == [0, 4]
 

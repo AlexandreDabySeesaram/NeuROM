@@ -158,7 +158,7 @@ def test_map_reproduces_vertices(unit_square_mesh):
 
 
 def test_rejects_higher_order_geometry():
-    """(WP8 guard) the affine map needs a P1 coordinate space; a P2 (curved) geometry raises."""
+    """The affine map needs a P1 coordinate space; a P2 (curved) geometry raises."""
     topo = Topology(torch.tensor([[0, 1, 2], [0, 2, 3]]))
     geo = FunctionSpace(topo, VectorElement(P2_TRIANGLE, 2))  # quadratic geometry basis
     mesh = Mesh(topo, Field(geo, torch.zeros(geo.n_scalar_dofs, 2)))

@@ -166,7 +166,7 @@ def _p3_like_layout():
 
 
 def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
-    """Two cells sharing a reversed edge read its two DOFs in OPPOSITE order (T-WP3.2).
+    """Two cells sharing a reversed edge read its two DOFs in OPPOSITE order.
 
     Without the reversal both cells would map their local rank-0 DOF to the same global DOF, even
     though those are physically opposite points (1/3-from-a vs 1/3-from-b) -- a discontinuity.
@@ -192,7 +192,7 @@ def test_p3_like_edge_dofs_reverse_on_a_shared_edge():
 
 
 def test_p3_like_shared_edge_single_valued_under_the_permutation():
-    """A field of arbitrary per-DOF values is single-valued on the shared edge (T-WP3.2).
+    """A field of arbitrary per-DOF values is single-valued on the shared edge.
 
     The end-to-end consequence of the reversal: for every physical point carrying an edge DOF,
     the two cells meeting on that edge read the SAME global DOF -- so any field built from
@@ -239,7 +239,7 @@ def test_p3_like_shared_edge_single_valued_under_the_permutation():
 
 
 def test_locate_returns_both_dofs_of_a_repeated_kind():
-    """locate(EDGE, [g], ['value']) returns BOTH value DOFs of the edge (T-WP3.3)."""
+    """locate(EDGE, [g], ['value']) returns BOTH value DOFs of the edge."""
     topo = _two_triangle_square()
     dm = DofMap(topo, _p3_like_layout())
     ce = topo.cell_entities(EntityDim.EDGE)
@@ -250,14 +250,14 @@ def test_locate_returns_both_dofs_of_a_repeated_kind():
 
 
 def test_periodic_with_non_vertex_dofs_raises():
-    """(WP8 guard) periodic merges only vertex DOFs; a layout with edge DOFs + periodic raises."""
+    """Periodic merges only vertex DOFs; a layout with edge DOFs + periodic raises."""
     topo = _two_triangle_square()
     with pytest.raises(NotImplementedError, match="periodic"):
         DofMap(topo, P2_TRIANGLE.dof_layout, periodic=[(0, 1)])
 
 
 def test_locate_on_a_dimension_without_dofs_raises():
-    """(WP8 guard) locating a dimension the element has no DOFs on gives a clear error (not KeyError)."""
+    """Locating a dimension the element has no DOFs on gives a clear error (not KeyError)."""
     dm = DofMap(_two_triangle_square(), P1_TRIANGLE.dof_layout)  # vertex DOFs only
     with pytest.raises(ValueError, match="no DOFs on entity dimension"):
         dm.locate(EntityDim.EDGE, [0])

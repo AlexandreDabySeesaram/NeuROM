@@ -1,4 +1,4 @@
-"""WP9 stage A: the vector-valued-basis plumbing (ShapeFunction.n_ref + the contraction).
+"""The vector-valued-basis plumbing (ShapeFunction.n_ref + the contraction).
 
 A vector basis returns ``N(xi) = (*batch, n_ref, gdim)`` -- each basis function is itself a
 ``gdim``-vector (RT0). This exercises, with a tiny toy basis (so it's independent of RT0's

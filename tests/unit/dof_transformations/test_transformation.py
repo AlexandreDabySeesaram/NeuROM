@@ -62,7 +62,7 @@ def test_hermite_scales_slope_dofs_by_jacobian():
 
 
 def test_hermite_closed_form_matches_generic_inversion():
-    """(T-WP5.1) the closed-form Hermite M_e equals the generic assemble-L + invert, on a graded mesh."""
+    """The closed-form Hermite M_e equals the generic assemble-L + invert, on a graded mesh."""
     mapping = _graded_mapping()
     T_closed = Transformation(HERMITE, mapping)  # uses g_e_closed_form
     T_generic = Transformation(  # same element, no closed form -> assemble L_e + invert
@@ -78,7 +78,7 @@ def test_hermite_closed_form_matches_generic_inversion():
 
 
 def test_hermite_closed_form_is_differentiable_in_the_jacobian():
-    """(T-WP5.2) the closed-form G_e keeps M_e in the autograd graph of J_e, so the loss gradient
+    """The closed-form G_e keeps M_e in the autograd graph of J_e, so the loss gradient
     reaches trainable node positions (the mapping already carries positions -> J_e in-graph, per the
     r-adaptivity examples). Here: sum of reference coeffs^2 with q = [1, J, 1, J] gives dS/dJ = 4 J.
     Detaching J inside G_e severs the dependence and the gradient vanishes (the ablation)."""
@@ -129,7 +129,7 @@ def test_invert_square():
 
 
 def test_invert_rejects_non_square_L():
-    """(WP8 guard) a rectangular L_e raises rather than silently pseudo-inverting (a wrong M_e)."""
+    """A rectangular L_e raises rather than silently pseudo-inverting (a wrong M_e)."""
     L = torch.randn(1, 3, 2, dtype=F64)  # n_phys=3, n_ref=2
     with pytest.raises(NotImplementedError, match="non-square"):
         _invert(L)

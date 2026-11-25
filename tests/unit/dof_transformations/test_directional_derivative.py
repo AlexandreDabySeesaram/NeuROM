@@ -1,4 +1,4 @@
-"""2-D directional-derivative functional via :math:`J^{-\\top}` (T-WP2.3).
+"""2-D directional-derivative functional via :math:`J^{-\\top}`.
 
 ``GradientFunctional(direction=d)`` computes :math:`\\mathbf d\\cdot\\nabla` in any dimension: on a
 user function via autograd, and on the reference basis by pushing the reference gradient to physical
@@ -117,7 +117,7 @@ def test_l_rows_raises_in_2d_without_a_direction():
 
 
 def test_reference_row_raises_for_a_directional_functional():
-    """The reference duality row for a directional derivative is deferred to WP9 -- it must raise."""
+    """The reference duality row for a directional derivative is deferred -- it must raise."""
     basis = LinearTriangle()
     xi = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=F64)
     with pytest.raises(NotImplementedError, match="directional"):

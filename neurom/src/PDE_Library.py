@@ -966,7 +966,7 @@ def _smoothstep(x, a, b):
     t = torch.clamp((x - a) / (b - a), 0, 1)
     return t * t * (3 - 2 * t)
 
-def BreathingRegionWeights(X, tri, caudal=(0., 0., 1.), medial=(1., 0., 0.), n_smooth=20):
+def BreathingRegionWeights(X, tri, caudal=(0., 0., 1.), medial=(1., 0., 0.), n_smooth=20, diaphragm_range=(0.25, 0.65)):
     r"""Smooth weights in [0, 1] of the two breathing regions of the lung surface, per boundary facet (tri oriented outward)
         w_D : diaphragmatic surface (base, outward normal pointing caudally)
         w_T : costal surface (in contact with the rib cage: lateral, anterior and posterior faces), i.e. neither the
@@ -985,7 +985,7 @@ def BreathingRegionWeights(X, tri, caudal=(0., 0., 1.), medial=(1., 0., 0.), n_s
         n_nodes = torch.zeros_like(n_nodes).index_add_(0, tri.reshape(-1), n_f.repeat_interleave(3, dim=0))
     n_nodes[on_b] = n_nodes[on_b] / torch.norm(n_nodes[on_b], dim=1, keepdim=True)
     nc, nm = n_nodes @ caudal, n_nodes @ medial
-    w_D = _smoothstep(nc, 0.25, 0.65)
+    w_D = _smoothstep(nc, *diaphragm_range)                                       # diaphragm_range: n.caudal from 0 to 1 weight
     w_T = (1 - w_D) * (1 - _smoothstep(nm, 0.25, 0.65)) * (1 - _smoothstep(-nc, 0.45, 0.85))
     w_nodes = torch.stack([w_D, w_T], dim=1) * on_b[:, None]
     return w_nodes[tri].mean(dim=1)[:, 0], w_nodes[tri].mean(dim=1)[:, 1], w_nodes
@@ -1246,7 +1246,8 @@ def InternalEnergy_3D_einsum_Multipara_PressureGravityBoundaryStiffness_SVK(
         if "w_regions" not in cache:
             regions = regions or {}
             w_D, w_T, _ = BreathingRegionWeights(cache["X"].cpu(), tri.cpu(), caudal=regions.get("caudal", (0., 0., 1.)),
-                                                 medial=regions.get("medial", (1., 0., 0.)), n_smooth=regions.get("n_smooth", 20))
+                                                 medial=regions.get("medial", (1., 0., 0.)), n_smooth=regions.get("n_smooth", 20),
+                                                 diaphragm_range=tuple(regions.get("diaphragm_range", (0.25, 0.65))))
             cache["w_regions"] = torch.stack([w_D, w_T]).to(dtype).to(U.device)
         un_c = torch.einsum('mfx,fx->mf', u_c, cache["n"])
         for w_R, idx, val in [(cache["w_regions"][0], pd_idx, pd_val), (cache["w_regions"][1], pt_idx, pt_val)]:
